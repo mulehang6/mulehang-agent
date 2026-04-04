@@ -66,6 +66,18 @@ class MySimpleAgentTest {
     }
 
     @Test
+    fun `should fallback when DeepSeek reports missing reasoning content`() {
+        val error = IllegalStateException(
+            """
+            Error from client: DeepSeekLLMClient Status code: 400 Error body:
+            {"error":{"message":"Missing `reasoning_content` field in the assistant message at message index 3.","type":"invalid_request_error"}}
+            """.trimIndent()
+        )
+
+        assertTrue(shouldFallbackToNonStreaming(error))
+    }
+
+    @Test
     fun `should not fallback for unrelated errors`() {
         val error = IllegalStateException("Status code: 401")
 
@@ -84,6 +96,26 @@ class MySimpleAgentTest {
             streamingRunner = { _, _ ->
                 throw IllegalStateException("Expected status code 200 but was 400")
             },
+            fallbackRunner = { input, sessionId -> "fallback:$sessionId:$input" },
+            onFallback = notices::add
+        )
+
+        assertEquals("fallback:session-1:你好", response)
+        assertEquals(listOf("[系统] DeepSeek 流式请求失败（400），已自动切换到非流式模式重试。"), notices)
+    }
+
+    @Test
+    fun `should use dedicated fallback runner for non tool chat`() = runBlocking {
+        val notices = mutableListOf<String>()
+
+        val response = runAgentByMode(
+            input = "你好",
+            sessionId = "session-1",
+            streamedOutput = StringBuilder(),
+            streamingRunner = { _, _ ->
+                throw IllegalStateException("Error from client: DeepSeekLLMClient Status code: 400")
+            },
+            toolRunner = { _, _ -> error("tool runner should not be used as chat fallback") },
             fallbackRunner = { input, sessionId -> "fallback:$sessionId:$input" },
             onFallback = notices::add
         )

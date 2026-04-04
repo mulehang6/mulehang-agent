@@ -5,10 +5,7 @@ build/
 !**/src/test/**/build/
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -46,4 +43,8 @@ bin/
 
 ### 环境变量 ###
 /.env
-/.idea/
+
+### 本地聊天记录 ###
+my_chat_history/
+chat_history/
+

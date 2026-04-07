@@ -10,7 +10,6 @@ import ai.koog.agents.ext.tool.file.ReadFileTool
 import ai.koog.agents.ext.tool.file.WriteFileTool
 import ai.koog.rag.base.files.JVMFileSystemProvider
 import kotlinx.coroutines.runBlocking
-import utils.loadEnv
 import kotlin.uuid.Uuid
 
 /**
@@ -33,9 +32,11 @@ private fun createBuiltInToolRegistry(): ToolRegistry {
 @OptIn(kotlin.uuid.ExperimentalUuidApi::class)
 internal fun runAgentCli() {
     runBlocking {
-        val apiKey: String = loadEnv()
-            .getProperty("OPENROUTER_API_KEY")
-            ?: error("没有在.env文件中找到OPENROUTER_API_KEY")
+        val defaultBinding = DEFAULT_BINDING
+            ?: error("当前默认 provider 未配置 apiKey: ${APP_CONFIG.defaultProvider}")
+        val apiKey = defaultBinding.apiKey.ifBlank {
+            error("当前默认 provider 未配置 apiKey: ${defaultBinding.providerId}")
+        }
 
         val chatHistoryProvider = FileChatHistoryProvider(CHAT_HISTORY_DIR)
         val sessionId = Uuid.random().toString()

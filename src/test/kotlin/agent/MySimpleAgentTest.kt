@@ -10,6 +10,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import ai.koog.rag.base.files.JVMFileSystemProvider
 import java.io.File
+import mulehang.config.AppConfig
+import mulehang.config.ProviderConfig
+import mulehang.provider.ExecutorFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,6 +23,25 @@ import kotlin.test.assertTrue
  * 验证 agent 包拆分后的关键行为保持不变。
  */
 class MySimpleAgentTest {
+    @Test
+    fun `should build default provider binding from config`() {
+        val cfg = AppConfig(
+            defaultProvider = "openrouter",
+            defaultModel = "openrouter.gpt4o",
+            providers = mapOf(
+                "openrouter" to ProviderConfig(
+                    apiKey = "abc",
+                    baseUrl = "https://openrouter.ai/api/v1"
+                )
+            )
+        )
+
+        val binding = ExecutorFactory(cfg).defaultBinding()
+
+        assertEquals("openrouter", binding.providerId)
+        assertEquals("openrouter.gpt4o", binding.modelId)
+        assertEquals("abc", binding.apiKey)
+    }
 
     /**
      * 校验聊天历史存储只会保留可复用的用户与助手消息。
@@ -69,7 +91,7 @@ class MySimpleAgentTest {
         )
         val reasoning = requestBody["reasoning"]?.jsonObject
 
-        assertEquals("qwen/qwen3.6-plus:free", requestBody["model"]?.jsonPrimitive?.content)
+        assertEquals(CHAT_MODEL_ID, requestBody["model"]?.jsonPrimitive?.content)
         assertEquals(true, requestBody["stream"]?.jsonPrimitive?.content?.toBooleanStrict())
         assertEquals(0.7, requestBody["temperature"]?.jsonPrimitive?.content?.toDouble())
         assertEquals("high", reasoning?.get("effort")?.jsonPrimitive?.content)

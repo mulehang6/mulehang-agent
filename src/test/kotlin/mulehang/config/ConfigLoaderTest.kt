@@ -4,6 +4,9 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+/**
+ * 验证配置加载器对 JSON、环境变量和 `.env` 的合并规则。
+ */
 class ConfigLoaderTest {
     @Test
     fun `should read provider config from mulehang-agent json`() {

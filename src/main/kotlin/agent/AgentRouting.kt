@@ -26,6 +26,9 @@ internal fun shouldFallbackToNonStreaming(error: Throwable): Boolean {
     }
 }
 
+/**
+ * 从 OpenRouter 相关异常文本中提取状态码，供错误分级与提示复用。
+ */
 internal fun extractOpenRouterStatusCode(error: Throwable): Int? {
     val message = generateSequence(error) { it.cause }
         .mapNotNull(Throwable::message)
@@ -36,6 +39,9 @@ internal fun extractOpenRouterStatusCode(error: Throwable): Int? {
         .firstOrNull()
 }
 
+/**
+ * 将可恢复的 OpenRouter 错误映射为终端可展示的提示语。
+ */
 internal fun recoverableAgentFailureNotice(error: Throwable): String? {
     return when (extractOpenRouterStatusCode(error)) {
         429 -> "[系统] OpenRouter 当前被上游限流（HTTP 429），本次请求未完成，请稍后重试。"
@@ -44,6 +50,9 @@ internal fun recoverableAgentFailureNotice(error: Throwable): String? {
     }
 }
 
+/**
+ * 统一封装单轮 CLI 调用的异常处理，只吞掉已知可恢复错误。
+ */
 internal suspend fun runAgentCliTurn(
     execute: suspend () -> AgentRunResult,
     onError: (String) -> Unit = ::println

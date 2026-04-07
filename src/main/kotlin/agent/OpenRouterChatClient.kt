@@ -110,12 +110,18 @@ private val openRouterExcludedToolNames = setOf(
     "__exit__"
 )
 
+/**
+ * 去掉 thinking 块结束后正文前可能附带的首个空行。
+ */
 private fun stripLeadingThinkingSeparator(text: String): String {
     return text
         .removePrefix("\r\n")
         .removePrefix("\n")
 }
 
+/**
+ * 从完整助手消息中拆出 thinking 片段和最终可展示正文。
+ */
 private fun extractThinkingTaggedContent(content: String): Pair<String, String> {
     val matches = thinkingTagPattern.findAll(content).toList()
     if (matches.isEmpty()) return "" to content
@@ -127,6 +133,9 @@ private fun extractThinkingTaggedContent(content: String): Pair<String, String> 
     return thinkingContent to plainContent
 }
 
+/**
+ * 在流式分片尾部查找一个标签的“部分命中”起点，处理跨 chunk 标签。
+ */
 private fun findPartialTagStart(text: String, tag: String): Int {
     val searchStart = (text.length - tag.length + 1).coerceAtLeast(0)
     for (index in searchStart until text.length) {
@@ -137,6 +146,9 @@ private fun findPartialTagStart(text: String, tag: String): Int {
     return -1
 }
 
+/**
+ * 把普通正文追加到最终回复缓冲区，并在需要时裁掉首个空行。
+ */
 private fun appendPlainStreamingContent(
     text: String,
     responseBuilder: StringBuilder,
@@ -157,6 +169,9 @@ private fun appendPlainStreamingContent(
     return state.copy(shouldStripLeadingSeparator = false)
 }
 
+/**
+ * 逐块解析带 `<thinking>` 标签的流式内容，维护 thinking 与正文的切换状态。
+ */
 private fun processThinkingTaggedContentChunk(
     contentChunk: String,
     responseBuilder: StringBuilder,
@@ -262,6 +277,9 @@ private fun processThinkingTaggedContentChunk(
     return nextState.copy(pendingContent = "")
 }
 
+/**
+ * 在流结束时清空残留的 pending 内容，并补齐未关闭的 thinking 标签。
+ */
 internal fun finalizeThinkingTaggedContentStream(
     responseBuilder: StringBuilder,
     state: OpenRouterThinkingState,
@@ -324,7 +342,13 @@ internal fun buildTaggedAssistantResponse(
     }
 }
 
+/**
+ * 将单个工具参数描述转换为 OpenRouter 所需的 JSON Schema。
+ */
 private fun buildOpenRouterParameterSchema(parameter: ToolParameterDescriptor): JsonObject {
+    /**
+     * 把 Koog 的工具参数类型映射为 OpenRouter 兼容的 JSON Schema 片段。
+     */
     fun buildTypeSchema(type: ToolParameterType): JsonObject {
         return when (type) {
             is ToolParameterType.String -> buildJsonObject { put("type", "string") }
@@ -386,6 +410,9 @@ private fun buildOpenRouterParameterSchema(parameter: ToolParameterDescriptor): 
     }
 }
 
+/**
+ * 构造 OpenRouter 所需的工具列表 Schema，并过滤掉会话控制类工具。
+ */
 internal fun buildOpenRouterToolsSchema(toolRegistry: ToolRegistry): JsonArray {
     return buildJsonArray {
         toolRegistry.tools

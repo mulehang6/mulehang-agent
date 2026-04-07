@@ -5,6 +5,9 @@ import mulehang.config.ProviderConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+/**
+ * 验证 provider 配置与静态注册表的绑定解析行为。
+ */
 class ProviderGatewayTest {
     @Test
     fun `should merge registry defaults with config overrides`() {

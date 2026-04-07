@@ -15,30 +15,46 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.net.http.HttpResponse
 import kotlin.time.Clock
 
+/**
+ * 描述从 OpenRouter 响应中提取出的单次工具调用。
+ */
 internal data class OpenRouterToolCall(
     val id: String,
     val name: String,
     val arguments: String
 )
 
+/**
+ * 描述一次流式工具轮次的助手输出、工具调用和 thinking 状态。
+ */
 internal data class OpenRouterToolTurn(
     val taggedResponse: String,
     val toolCalls: List<OpenRouterToolCall>,
     val thinkingState: OpenRouterThinkingState = OpenRouterThinkingState()
 )
 
+/**
+ * 描述工具循环下一步应继续还是结束。
+ */
 internal data class ToolLoopDecision(
     val shouldStop: Boolean,
     val hitIterationLimit: Boolean
 )
 
 private val toolEnvironmentLogger = KotlinLogging.logger("OpenRouterToolStreaming")
+
+/**
+ * 用于拼接流式返回中被拆分的工具调用字段。
+ */
 private data class OpenRouterStreamingToolCallPartial(
     val id: String = "",
     val name: String = "",
     val arguments: String = ""
 )
 
+/**
+ * 从单个 OpenRouter SSE payload 中抽取完整的工具调用片段。
+ */
 internal fun extractOpenRouterToolCalls(payload: String): List<OpenRouterToolCall> {
     val root = openRouterJson.parseToJsonElement(payload).jsonObject
     val choice = root["choices"]?.jsonArray?.firstOrNull()?.jsonObject ?: return emptyList()
@@ -55,6 +71,9 @@ internal fun extractOpenRouterToolCalls(payload: String): List<OpenRouterToolCal
     }
 }
 
+/**
+ * 在终端流中输出工具结果块，并在必要时先关闭 thinking 标签。
+ */
 internal fun emitToolResultBlock(
     resultText: String,
     thinkingState: OpenRouterThinkingState,
@@ -75,6 +94,9 @@ internal fun emitToolResultBlock(
     return nextState
 }
 
+/**
+ * 根据本轮工具调用结果和最大轮次限制决定是否继续循环。
+ */
 internal fun decideNextToolLoopStep(
     toolCalls: List<OpenRouterToolCall>,
     iteration: Int,
@@ -114,6 +136,9 @@ private fun accumulateOpenRouterToolCalls(
     }
 }
 
+/**
+ * 将按索引累积的工具调用碎片整理为可执行的完整调用列表。
+ */
 private fun finalizeOpenRouterToolCalls(
     partials: Map<Int, OpenRouterStreamingToolCallPartial>
 ): List<OpenRouterToolCall> {
@@ -130,6 +155,9 @@ private fun finalizeOpenRouterToolCalls(
     }
 }
 
+/**
+ * 发起一轮带工具能力的流式请求，并返回本轮助手输出与工具调用集合。
+ */
 private suspend fun streamOpenRouterToolTurn(
     apiKey: String,
     toolRegistry: ToolRegistry,
@@ -236,6 +264,9 @@ internal suspend fun executeOpenRouterToolCalls(
     ).map { it.toMessage(Clock.System) }
 }
 
+/**
+ * 运行带工具调用能力的 OpenRouter 流式智能体主循环。
+ */
 internal suspend fun runStreamingAgent(
     apiKey: String,
     chatHistoryProvider: ChatHistoryProvider,
@@ -268,6 +299,9 @@ internal suspend fun runStreamingAgent(
     return response
 }
 
+/**
+ * 驱动“助手输出 -> 工具调用 -> 工具结果回灌”的统一流式循环。
+ */
 internal suspend fun runStreamingToolLoop(
     chatHistoryProvider: ChatHistoryProvider,
     sessionId: String,

@@ -1,5 +1,8 @@
 package mulehang.provider
 
+/**
+ * 描述一次实际执行请求时使用的 provider 绑定结果。
+ */
 data class ExecutorBinding(
     val providerId: String,
     val modelId: String,

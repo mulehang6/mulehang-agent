@@ -13,6 +13,7 @@ fun loadEnv(root: Path = Path.of("").toAbsolutePath().normalize()): Map<String, 
     }
 
     return Properties().apply {
+        // .use 核心语法糖，用完自动关闭资源
         envFile.inputStream().use { load(it) }
     }.entries.associate { (key, value) ->
         key.toString() to value.toString()

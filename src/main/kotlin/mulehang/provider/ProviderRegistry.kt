@@ -1,6 +1,12 @@
 package mulehang.provider
 
+/**
+ * 维护当前仓库内置支持的 provider 及模型目录。
+ */
 object ProviderRegistry {
+    /**
+     * 按 providerId 索引当前仓库内置的 provider 定义。
+     */
     val providers = listOf(
         ProviderSpec(
             id = "openrouter",

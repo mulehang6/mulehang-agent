@@ -21,6 +21,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/**
+ * 验证 OpenRouter 工具流式协议与 Koog 工具执行之间的桥接逻辑。
+ */
 class OpenRouterToolStreamingTest {
 
     @Test

@@ -2,7 +2,13 @@ package mulehang.provider
 
 import mulehang.config.AppConfig
 
+/**
+ * 负责把静态 provider 注册信息与本地配置合成为可执行绑定。
+ */
 class ProviderGateway(private val cfg: AppConfig) {
+    /**
+     * 解析指定 provider 和模型，返回最终可用于请求的执行参数。
+     */
     fun resolve(providerId: String, modelId: String): ExecutorBinding {
         val spec = ProviderRegistry.providers.getValue(providerId)
         val model = spec.models.getValue(modelId)

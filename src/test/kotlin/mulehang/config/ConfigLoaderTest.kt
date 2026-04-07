@@ -53,4 +53,51 @@ class ConfigLoaderTest {
 
         assertEquals("env-key", cfg.providers.getValue("openrouter").apiKey)
     }
+
+    @Test
+    fun `should resolve api key from dot env when apiKeyEnv is provided`() {
+        val dir = Files.createTempDirectory("mulehang-config-dotenv").toFile()
+        dir.resolve("mulehang-agent.json").writeText(
+            """
+            {
+              "providers": {
+                "openrouter": {
+                  "apiKeyEnv": "OPENROUTER_API_KEY",
+                  "baseUrl": "https://openrouter.ai/api/v1"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        dir.resolve(".env").writeText("OPENROUTER_API_KEY=dot-env-key")
+
+        val cfg = ConfigLoader(root = dir.toPath(), env = emptyMap()).load()
+
+        assertEquals("dot-env-key", cfg.providers.getValue("openrouter").apiKey)
+    }
+
+    @Test
+    fun `should prefer process env over dot env when both provide the same key`() {
+        val dir = Files.createTempDirectory("mulehang-config-env-priority").toFile()
+        dir.resolve("mulehang-agent.json").writeText(
+            """
+            {
+              "providers": {
+                "openrouter": {
+                  "apiKeyEnv": "OPENROUTER_API_KEY",
+                  "baseUrl": "https://openrouter.ai/api/v1"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        dir.resolve(".env").writeText("OPENROUTER_API_KEY=dot-env-key")
+
+        val cfg = ConfigLoader(
+            root = dir.toPath(),
+            env = mapOf("OPENROUTER_API_KEY" to "process-env-key")
+        ).load()
+
+        assertEquals("process-env-key", cfg.providers.getValue("openrouter").apiKey)
+    }
 }

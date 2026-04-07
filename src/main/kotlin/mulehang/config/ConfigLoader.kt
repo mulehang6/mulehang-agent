@@ -2,6 +2,7 @@ package mulehang.config
 
 import java.nio.file.Path
 import kotlinx.serialization.json.Json
+import utils.loadEnv
 
 class ConfigLoader(
     private val root: Path = Path.of("").toAbsolutePath().normalize(),
@@ -13,6 +14,7 @@ class ConfigLoader(
     }
 
     fun load(): AppConfig {
+        val resolvedEnv = loadEnv(root) + env
         val file = root.resolve("mulehang-agent.json").toFile()
         if (!file.exists()) {
             return AppConfig()
@@ -21,7 +23,7 @@ class ConfigLoader(
         val cfg = json.decodeFromString<AppConfig>(file.readText())
         return cfg.copy(
             providers = cfg.providers.mapValues { (_, item) ->
-                val apiKey = item.apiKey ?: item.apiKeyEnv?.let(env::get)
+                val apiKey = item.apiKey ?: item.apiKeyEnv?.let(resolvedEnv::get)
                 item.copy(apiKey = apiKey)
             }
         )

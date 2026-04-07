@@ -1,18 +1,20 @@
 package utils
 
-import java.io.File
+import java.nio.file.Path
 import java.util.Properties
 
 /**
- * 从 .env 文件中加载环境变量
+ * 从指定目录下的 .env 文件中加载键值对。
  */
-fun loadEnv(): Properties {
+fun loadEnv(root: Path = Path.of("").toAbsolutePath().normalize()): Map<String, String> {
+    val envFile = root.resolve(".env").toFile()
+    if (!envFile.exists()) {
+        return emptyMap()
+    }
+
     return Properties().apply {
-        val envFile = File(".env")
-        if (envFile.exists()) {
-            // .use {} 核心语法糖，自动关闭资源
-            envFile.inputStream().use { load(it) }
-        }
+        envFile.inputStream().use { load(it) }
+    }.entries.associate { (key, value) ->
+        key.toString() to value.toString()
     }
 }
-

@@ -14,7 +14,6 @@
 
 **Files:**
 - Modify: `README.md`
-- Modify: `docs/README.md`
 - Modify: `AGENTS.md`
 - Check: `mulehang-agent.json.example`
 
@@ -36,28 +35,17 @@
 5. 最后补 memory、hardening 与可选 client surface
 ```
 
-- [ ] **Step 2: 重写 `docs/README.md` 的文档导航**
+- [ ] **Step 2: 删除 `docs/README.md`，把入口收敛到总 spec / 总 plan**
 
-把旧的“纯手搓学习”入口改成新的 superpowers 文档入口，至少保留以下结构：
+删除 `docs/README.md`，避免在 `docs` 目录继续保留非 superpowers 标准入口。删除后，仓库入口只保留：
 
 ```md
-# Docs
-
-## 文档主线
-
-1. 先读总设计文档
-2. 再读总 implementation plan
-3. 再按阶段进入对应 spec 与 plan
-
-## 阶段顺序
-
-1. `01-runtime-foundation-and-contracts`
-2. `02-provider-byok-and-model-discovery`
-3. `03-agent-strategy-and-capability-integration`
-4. `04-cli-streaming-and-output`
-5. `05-acp-protocol-bridge`
-6. `06-memory-features-and-hardening`
-7. `07-client-surfaces-optional`
+1. `README.md`
+2. `AGENTS.md`
+3. `docs/superpowers/specs/2026-04-16-koog-agent-architecture-design.md`
+4. `docs/superpowers/plans/2026-04-16-koog-agent-implementation-plan.md`
+5. 当前阶段对应的 `docs/superpowers/specs/*.md`
+6. 当前阶段对应的 `docs/superpowers/plans/*.md`
 ```
 
 - [ ] **Step 3: 同步 `AGENTS.md` 的仓库结构与文档入口**
@@ -80,7 +68,6 @@
 
 ```text
 README.md
-docs/README.md
 AGENTS.md
 ```
 
@@ -354,7 +341,6 @@ Expected after delete: 只剩新的总文档与 `01-07` 阶段文档。
 
 **Files:**
 - Check: `README.md`
-- Check: `docs/README.md`
 - Check: `AGENTS.md`
 - Check: `docs/superpowers/specs/*.md`
 - Check: `docs/superpowers/plans/*.md`

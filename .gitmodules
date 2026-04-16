@@ -1,0 +1,3 @@
+[submodule "vendor/kilocode"]
+	path = vendor/kilocode
+	url = https://github.com/Kilo-Org/kilocode.git

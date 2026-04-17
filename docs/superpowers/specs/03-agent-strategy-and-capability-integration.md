@@ -87,7 +87,7 @@ phase 03 完成时，必须满足：
 输出：
 
 1. Koog `ToolRegistry`
-2. 必要的 MCP registry provider
+2. 通过 `McpToolRegistryProvider` 创建的 MCP `ToolRegistry`
 3. 必要的 HTTP tool wrapper
 
 它只负责桥接，不负责执行。
@@ -216,7 +216,7 @@ phase 03 完成时，必须满足：
 桥接方式固定为：
 
 1. local/custom tool -> Koog `ToolRegistry`
-2. MCP-backed capability -> Koog MCP registry / provider
+2. MCP-backed capability -> `McpToolRegistryProvider` 创建出的 Koog `ToolRegistry`
 3. direct HTTP internal API capability -> Koog tool wrapper
 
 仓库层不允许让 agent 直接理解 `CapabilityAdapter`；所有差异必须被桥接层吸收。
@@ -262,7 +262,7 @@ runtime 不允许把它们全部折叠成单一通用异常。
 必须验证：
 
 1. local/custom tool 已进入 Koog `ToolRegistry`
-2. MCP capability 已进入 Koog MCP registry / provider
+2. MCP capability 已通过 `McpToolRegistryProvider` 进入 Koog `ToolRegistry`
 3. HTTP capability 已被包装成 Koog 可调用 tool
 
 ### Agent 装配验证

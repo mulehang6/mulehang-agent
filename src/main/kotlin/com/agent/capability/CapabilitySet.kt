@@ -17,6 +17,21 @@ class CapabilitySet(
     fun descriptors(): List<CapabilityDescriptor> = adaptersById.values.map { it.descriptor }
 
     /**
+     * 返回当前集合中的 tool adapters。
+     */
+    fun toolAdapters(): List<ToolCapabilityAdapter> = adaptersById.values.filterIsInstance<ToolCapabilityAdapter>()
+
+    /**
+     * 返回当前集合中的 MCP adapters。
+     */
+    fun mcpAdapters(): List<McpCapabilityAdapter> = adaptersById.values.filterIsInstance<McpCapabilityAdapter>()
+
+    /**
+     * 返回当前集合中的 HTTP adapters。
+     */
+    fun httpAdapters(): List<HttpCapabilityAdapter> = adaptersById.values.filterIsInstance<HttpCapabilityAdapter>()
+
+    /**
      * 根据能力标识执行一次统一能力调用。
      */
     suspend fun execute(

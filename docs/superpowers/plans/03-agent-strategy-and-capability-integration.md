@@ -338,7 +338,9 @@ class KoogToolRegistryAssembler {
             capabilitySet.httpAdapters().forEach { tool(it.asKoogTool()) }
         }
 
-        val mcpRegistries = capabilitySet.mcpAdapters().map { it.createRegistry() }
+        val mcpRegistries = capabilitySet.mcpAdapters().map { adapter ->
+            McpToolRegistryProvider.fromSseUrl(adapter.serverUrl)
+        }
 
         return KoogToolingBundle(
             primaryRegistry = primaryRegistry,
@@ -349,7 +351,7 @@ class KoogToolRegistryAssembler {
 }
 ```
 
-`McpCapabilityAdapter` 只负责描述 server/client 连接所需元数据；真正的 `McpToolRegistryProvider.fromSseUrl(...)` 或 `fromTransport(...)` 调用只能出现在 `KoogToolRegistryAssembler`。
+`McpCapabilityAdapter` 只负责描述 server/client 连接所需元数据；真正的 `McpToolRegistryProvider.fromSseUrl(...)` 或 `fromTransport(...)` 调用只能出现在 `KoogToolRegistryAssembler`，并且其返回值是可直接合并到 agent 的 `ToolRegistry`。
 
 - [ ] **Step 4: 运行 capability 桥接测试，确认三类能力都进入 Koog 视图**
 
@@ -364,7 +366,7 @@ Expected: PASS，并覆盖：
 ```text
 local/custom tool -> Koog ToolRegistry
 direct HTTP internal API -> Koog tool wrapper
-MCP-backed capability -> Koog MCP registry provider
+MCP-backed capability -> McpToolRegistryProvider 创建的 Koog ToolRegistry
 capability 元数据缺失时的桥接失败
 ```
 
@@ -456,7 +458,7 @@ class AgentAssembly(
 }
 ```
 
-如果需要把 `tooling.mcpRegistries` 合并成 Koog 可消费的单一 registry，也只允许在 `KoogToolRegistryAssembler` 内完成；`AgentAssembly` 不允许感知具体 capability 来源。
+`tooling.mcpRegistries` 必须在 `KoogToolRegistryAssembler` 内合并成 Koog 可消费的单一 registry；`AgentAssembly` 不允许感知具体 capability 来源。
 
 - [ ] **Step 4: 运行 agent 装配测试，确认真实 AIAgent 装配稳定**
 

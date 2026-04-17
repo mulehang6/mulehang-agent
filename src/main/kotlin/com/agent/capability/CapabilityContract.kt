@@ -22,3 +22,12 @@ data class CapabilityDescriptor(
     val id: String,
     val kind: String,
 )
+
+/**
+ * 表示可桥接到 Koog 的最小能力描述。
+ */
+data class KoogCapabilityDescriptor(
+    val id: String,
+    val title: String,
+    val description: String,
+)

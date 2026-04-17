@@ -2,6 +2,7 @@ package com.agent.runtime
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -34,5 +35,26 @@ class RuntimeContractsTest {
         assertTrue(RuntimeEvent::class.java.isSealed)
         assertTrue(RuntimeResult::class.java.isSealed)
         assertTrue(RuntimeFailure::class.java.isSealed)
+    }
+
+    @Test
+    fun `should represent agent run request through runtime contract`() {
+        val request = RuntimeAgentRunRequest(prompt = "summarize this")
+
+        assertEquals("agent.run", request.capabilityId)
+        assertEquals("summarize this", request.prompt)
+    }
+
+    @Test
+    fun `should keep provider capability and agent failures distinct`() {
+        assertIs<RuntimeProviderResolutionFailure>(
+            RuntimeProviderResolutionFailure(message = "provider failed"),
+        )
+        assertIs<RuntimeCapabilityBridgeFailure>(
+            RuntimeCapabilityBridgeFailure(message = "capability failed"),
+        )
+        assertIs<RuntimeAgentExecutionFailure>(
+            RuntimeAgentExecutionFailure(message = "agent failed"),
+        )
     }
 }

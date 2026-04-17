@@ -50,3 +50,4 @@
 - 新增本地配置文件时，默认提交 `mulehang-agent.json.example`，不要提交真实的 `mulehang-agent.json`
 - `vendor/kilocode` 仅用于对照阅读与局部参考，不要把其中代码整段迁入当前主线
 - 涉及到Koog相关代码开发，应该先去查找文档，使用`context7 mcp`或者直接搜索均可
+- 使用docx、ppt、excel等文档skill时，应该将各种临时文件和文件夹放在对应的实验目录中例如[实验1](./homework/exp1)，而不是项目根目录，如果不清楚是哪个实验目录，询问用户。

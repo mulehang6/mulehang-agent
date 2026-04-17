@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mulehang-agent 原型主页</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --paper: #fffaf2;
+      --ink: #1f2a2e;
+      --muted: #5f6b70;
+      --line: #d7c7ae;
+      --accent: #c7682e;
+      --accent-soft: #f3d6c3;
+      --accent-deep: #8a3f13;
+      --ok: #2f6b52;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, #fff6df 0, transparent 34%),
+        linear-gradient(180deg, #f7f1e8 0%, var(--bg) 100%);
+      color: var(--ink);
+    }
+
+    .page {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 32px 20px 56px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, rgba(199, 104, 46, 0.12), rgba(255, 250, 242, 0.94));
+      border: 1px solid rgba(138, 63, 19, 0.12);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 16px 50px rgba(77, 55, 28, 0.08);
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin-top: 14px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.08;
+    }
+
+    .hero p {
+      max-width: 760px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .tag {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.66);
+      font-size: 13px;
+    }
+
+    .section-title {
+      margin: 34px 0 16px;
+      font-size: 22px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: rgba(255, 250, 242, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 10px 28px rgba(70, 51, 25, 0.06);
+    }
+
+    .card h3 {
+      font-size: 18px;
+      margin-bottom: 12px;
+    }
+
+    .card p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .card ul {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.7;
+      color: var(--ink);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .step {
+      position: relative;
+      min-height: 136px;
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+    }
+
+    .step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      transform: translateY(-50%);
+      color: var(--accent);
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .step span {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: var(--accent-deep);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .footer-box {
+      margin-top: 18px;
+      padding: 18px 20px;
+      border-left: 4px solid var(--ok);
+      border-radius: 14px;
+      background: rgba(47, 107, 82, 0.08);
+      color: #214636;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .step:not(:last-child)::after {
+        content: "↓";
+        right: 50%;
+        top: auto;
+        bottom: -17px;
+        transform: translateX(50%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">实验一原型主页</div>
+      <h1>mulehang-agent Runtime Core Overview</h1>
+      <p>
+        本页面用于展示项目在实验一中的原型化表达方式。它不模拟完整 Web 产品，
+        而是把运行时核心结构压缩为一个静态主页，用于说明系统的输入、运行时主轴、
+        provider 与 binding、agent 能力接入以及统一输出模型。
+      </p>
+      <div class="tag-row">
+        <div class="tag">runtime-first</div>
+        <div class="tag">CLI first</div>
+        <div class="tag">custom provider</div>
+        <div class="tag">Koog AIAgent</div>
+        <div class="tag">unified output</div>
+      </div>
+    </section>
+
+    <h2 class="section-title">核心功能分区</h2>
+    <section class="grid">
+      <article class="card">
+        <h3>输入入口层</h3>
+        <p>负责接收外部请求，并将其导入统一 runtime 主轴。当前主入口为 CLI，后续入口也只能复用同一套契约。</p>
+        <ul>
+          <li>CLI 请求输入</li>
+          <li>后续入口适配</li>
+          <li>统一进入 runtime</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h3>Runtime 主轴</h3>
+        <p>负责组织系统调用流，明确请求如何进入、如何流动、如何结束。</p>
+        <ul>
+          <li>Session</li>
+          <li>Request Context</li>
+          <li>Capability Request</li>
+          <li>Error Boundary</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h3>Provider 与 Binding</h3>
+        <p>负责把用户输入的连接信息转化为运行时真正可消费的模型 binding。</p>
+        <ul>
+          <li>Custom Provider Profile</li>
+          <li>Provider Type</li>
+          <li>Connection Probe Result</li>
+          <li>Model Discovery Result</li>
+          <li>Executor / Model Binding</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h3>Agent 与 Capability Integration</h3>
+        <p>基于 Koog 执行请求，并统一接入多种能力来源。</p>
+        <ul>
+          <li>Koog AIAgent</li>
+          <li>Local / Custom Tools</li>
+          <li>MCP</li>
+          <li>Direct HTTP Internal API</li>
+        </ul>
+      </article>
+    </section>
+
+    <h2 class="section-title">一次请求的运行时流转</h2>
+    <section class="flow">
+      <article class="step">
+        <span>STEP 01</span>
+        <strong>接收输入</strong>
+        <p>入口层接收用户请求，并准备交给 runtime 处理。</p>
+      </article>
+      <article class="step">
+        <span>STEP 02</span>
+        <strong>建立上下文</strong>
+        <p>runtime 创建 session、request context，并确定本次执行边界。</p>
+      </article>
+      <article class="step">
+        <span>STEP 03</span>
+        <strong>解析 binding</strong>
+        <p>系统选择 provider、模型 binding 以及可用 capability set。</p>
+      </article>
+      <article class="step">
+        <span>STEP 04</span>
+        <strong>Agent 执行</strong>
+        <p>Koog AIAgent 发起执行，并按需要调用工具、MCP 或 HTTP 适配能力。</p>
+      </article>
+      <article class="step">
+        <span>STEP 05</span>
+        <strong>统一输出</strong>
+        <p>最终返回 RuntimeEvent、RuntimeResult 或 RuntimeFailure。</p>
+      </article>
+    </section>
+
+    <div class="footer-box">
+      说明：该 HTML 原型只用于表达系统的运行时结构与核心流程，不包含真实请求执行、
+      配置保存、模型探测和工具调用逻辑。
+    </div>
+  </main>
+</body>
+</html>

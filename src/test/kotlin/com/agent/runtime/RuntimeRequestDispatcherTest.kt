@@ -14,7 +14,7 @@ class RuntimeRequestDispatcherTest {
     fun `should dispatch request through unified runtime pipeline`() = runTest {
         val session = RuntimeSession(id = "session-1")
         val context = RuntimeRequestContext(sessionId = session.id, requestId = "request-1")
-        val request = RuntimeCapabilityRequest(capabilityId = "agent.run")
+        val request = RuntimeAgentRunRequest(prompt = "hello")
         val expected = RuntimeSuccess(events = listOf(RuntimeInfoEvent(message = "routed")))
         val router = RecordingRouter(result = expected)
         val dispatcher = RuntimeRequestDispatcher(capabilityRouter = router)

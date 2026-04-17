@@ -35,6 +35,15 @@ data class RuntimeCapabilityRequest(
 ) : CapabilityRequest
 
 /**
+ * 表示 runtime 交给 agent 执行的一次统一运行请求。
+ */
+data class RuntimeAgentRunRequest(
+    val prompt: String,
+    override val capabilityId: String = "agent.run",
+    override val payload: JsonElement? = null,
+) : CapabilityRequest
+
+/**
  * 表示 runtime 在处理过程中产生的统一事件契约。
  */
 sealed interface RuntimeEvent {
@@ -62,6 +71,30 @@ sealed interface RuntimeFailure {
  * 表示默认的 runtime 错误实现。
  */
 data class RuntimeError(
+    override val message: String,
+    override val cause: Throwable? = null,
+) : RuntimeFailure
+
+/**
+ * 表示 provider 解析阶段的结构化失败。
+ */
+data class RuntimeProviderResolutionFailure(
+    override val message: String,
+    override val cause: Throwable? = null,
+) : RuntimeFailure
+
+/**
+ * 表示 capability 桥接阶段的结构化失败。
+ */
+data class RuntimeCapabilityBridgeFailure(
+    override val message: String,
+    override val cause: Throwable? = null,
+) : RuntimeFailure
+
+/**
+ * 表示 agent 执行阶段的结构化失败。
+ */
+data class RuntimeAgentExecutionFailure(
     override val message: String,
     override val cause: Throwable? = null,
 ) : RuntimeFailure

@@ -1,12 +1,25 @@
 package com.agent.agent
 
+import ai.koog.agents.core.tools.SimpleTool
+import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.serialization.typeToken
+import com.agent.capability.CapabilityDescriptor
 import com.agent.capability.CapabilitySet
+import com.agent.capability.McpCapabilityAdapter
+import com.agent.capability.ToolCapabilityAdapter
 import com.agent.provider.ProviderBinding
 import com.agent.provider.ProviderType
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.Serializable
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+
+@Serializable
+private data class AgentAssemblyMcpArgs(
+    @property:LLMDescription("Mock MCP payload")
+    val payload: String? = null,
+)
 
 /**
  * 验证 runtime 可基于 binding 与 capability set 组装真实 Koog agent。
@@ -14,19 +27,32 @@ import kotlin.test.assertFailsWith
 class AgentAssemblyTest {
 
     @Test
-    fun `should assemble real koog ai agent for openai compatible binding`() {
+    fun `should assemble real koog ai agent from resolved binding and capability registries`() = runTest {
         val binding = ProviderBinding(
             providerId = "provider-1",
             providerType = ProviderType.OPENAI_COMPATIBLE,
-            baseUrl = "https://api.example.com/v1",
+            baseUrl = "https://openrouter.ai/api/v1",
             apiKey = "test-key",
-            modelId = "gpt-4o-mini",
+            modelId = "openai/gpt-4.1-mini",
         )
-        val assembly = AgentAssembly()
+        val assembly = AgentAssembly(
+            toolRegistryAssembler = KoogToolRegistryAssembler(
+                createMcpRegistry = { serverUrl: String ->
+                    ToolRegistry {
+                        tool(AssemblyMockMcpTool(serverUrl))
+                    }
+                },
+            ),
+        )
 
         val assembledAgent = assembly.assemble(
             binding = binding,
-            capabilitySet = CapabilitySet(adapters = emptyList()),
+            capabilitySet = CapabilitySet(
+                adapters = listOf(
+                    ToolCapabilityAdapter.echo(id = "tool.echo"),
+                    McpCapabilityAdapter.sse(id = "mcp.playwright", serverUrl = "http://localhost:8931/sse"),
+                ),
+            ),
         )
 
         assertEquals(binding, assembledAgent.binding)
@@ -35,7 +61,17 @@ class AgentAssemblyTest {
             "ai.koog.agents.core.agent.entity.AIAgentGraphStrategy",
             assembledAgent.strategy::class.qualifiedName,
         )
-        assertEquals(emptyList(), assembledAgent.capabilities)
+        assertEquals(
+            listOf(
+                CapabilityDescriptor(id = "tool.echo", kind = "tool"),
+                CapabilityDescriptor(id = "mcp.playwright", kind = "mcp"),
+            ),
+            assembledAgent.capabilities,
+        )
+        assertEquals(
+            listOf("tool.echo", "mcp:http://localhost:8931/sse"),
+            assembledAgent.toolRegistry.tools.map { it.descriptor.name },
+        )
     }
 
     @Test
@@ -48,24 +84,13 @@ class AgentAssemblyTest {
         )
     }
 
-    @Test
-    fun `should reject unsupported provider type until koog assembly is verified`() {
-        val binding = ProviderBinding(
-            providerId = "provider-2",
-            providerType = ProviderType.ANTHROPIC_COMPATIBLE,
-            baseUrl = "https://api.example.com",
-            apiKey = "test-key",
-            modelId = "claude-sonnet",
-        )
-        val assembly = AgentAssembly()
-
-        val error = assertFailsWith<IllegalArgumentException> {
-            assembly.assemble(
-                binding = binding,
-                capabilitySet = CapabilitySet(adapters = emptyList()),
-            )
-        }
-
-        assertContains(error.message.orEmpty(), "OPENAI_COMPATIBLE")
+    private class AssemblyMockMcpTool(
+        serverUrl: String,
+    ) : SimpleTool<AgentAssemblyMcpArgs>(
+        argsType = typeToken<AgentAssemblyMcpArgs>(),
+        name = "mcp:$serverUrl",
+        description = "Mock MCP tool registry entry for AgentAssembly tests.",
+    ) {
+        override suspend fun execute(args: AgentAssemblyMcpArgs): String = args.payload.orEmpty()
     }
 }

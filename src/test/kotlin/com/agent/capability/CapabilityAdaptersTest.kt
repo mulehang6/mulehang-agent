@@ -26,7 +26,7 @@ class CapabilityAdaptersTest {
                 },
                 McpCapabilityAdapter(
                     id = "mcp.list",
-                    serverUrl = "http://localhost:8931/sse",
+                    transport = McpTransport.StreamableHttp("http://localhost:8931/mcp"),
                 ) {
                     RuntimeSuccess(events = listOf(RuntimeInfoEvent(message = "mcp")))
                 },
@@ -75,9 +75,13 @@ class CapabilityAdaptersTest {
     @Test
     fun `should expose koog bridge metadata for tool mcp and http adapters`() = runTest {
         val toolAdapter = ToolCapabilityAdapter.echo(id = "tool.echo")
-        val mcpAdapter = McpCapabilityAdapter.sse(
+        val mcpAdapter = McpCapabilityAdapter.streamableHttp(
             id = "mcp.playwright",
-            serverUrl = "http://localhost:8931/sse",
+            url = "http://localhost:8931/mcp",
+        )
+        val stdioAdapter = McpCapabilityAdapter.stdio(
+            id = "mcp.filesystem",
+            command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", "."),
         )
         val httpAdapter = HttpCapabilityAdapter.internalGet(
             id = "http.health",
@@ -85,7 +89,11 @@ class CapabilityAdaptersTest {
         )
 
         assertEquals("echo", toolAdapter.toolName)
-        assertEquals("http://localhost:8931/sse", mcpAdapter.serverUrl)
+        assertEquals(McpTransport.StreamableHttp("http://localhost:8931/mcp"), mcpAdapter.transport)
+        assertEquals(
+            McpTransport.Stdio(listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", ".")),
+            stdioAdapter.transport,
+        )
         assertEquals("/health", httpAdapter.path)
         assertNotNull(toolAdapter.toKoogDescriptor())
         assertNotNull(httpAdapter.toKoogDescriptor())

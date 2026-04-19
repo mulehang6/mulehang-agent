@@ -8,6 +8,7 @@ import ai.koog.serialization.typeToken
 import com.agent.capability.CapabilitySet
 import com.agent.capability.HttpCapabilityAdapter
 import com.agent.capability.McpCapabilityAdapter
+import com.agent.capability.McpTransport
 import com.agent.capability.ToolCapabilityAdapter
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
@@ -53,14 +54,14 @@ class KoogToolRegistryAssemblerTest {
     fun `should keep mcp capabilities as separate koog registry entries`() = runTest {
         val capabilitySet = CapabilitySet(
             adapters = listOf(
-                McpCapabilityAdapter.sse(id = "mcp.playwright", serverUrl = "http://localhost:8931/sse"),
+                McpCapabilityAdapter.streamableHttp(id = "mcp.playwright", url = "http://localhost:8931/mcp"),
             ),
         )
 
         val assembled = KoogToolRegistryAssembler(
-            createMcpRegistry = { serverUrl: String ->
+            createMcpRegistry = { transport: McpTransport ->
                 ToolRegistry {
-                    tool(MockMcpTool(serverUrl))
+                    tool(MockMcpTool(transport.description))
                 }
             },
         ).assemble(capabilitySet)
@@ -68,8 +69,14 @@ class KoogToolRegistryAssemblerTest {
         assertEquals(listOf("mcp.playwright"), assembled.descriptors.map { it.id })
         assertEquals(1, assembled.mcpRegistries.size)
         assertEquals(emptyList(), assembled.primaryCapabilityIds)
-        assertEquals(listOf("mcp:http://localhost:8931/sse"), assembled.mcpRegistries.single().tools.map { it.descriptor.name })
-        assertEquals(listOf("mcp:http://localhost:8931/sse"), assembled.toolRegistry.tools.map { it.descriptor.name })
+        assertEquals(
+            listOf("mcp:streamable-http:http://localhost:8931/mcp"),
+            assembled.mcpRegistries.single().tools.map { it.descriptor.name },
+        )
+        assertEquals(
+            listOf("mcp:streamable-http:http://localhost:8931/mcp"),
+            assembled.toolRegistry.tools.map { it.descriptor.name },
+        )
     }
 
     @Test
@@ -92,7 +99,7 @@ class KoogToolRegistryAssemblerTest {
     fun `should fail with capability bridge context when mcp registry creation fails`() = runTest {
         val capabilitySet = CapabilitySet(
             adapters = listOf(
-                McpCapabilityAdapter.sse(id = "mcp.playwright", serverUrl = "http://localhost:8931/sse"),
+                McpCapabilityAdapter.streamableHttp(id = "mcp.playwright", url = "http://localhost:8931/mcp"),
             ),
         )
 
@@ -104,14 +111,30 @@ class KoogToolRegistryAssemblerTest {
 
         assertContains(error.message.orEmpty(), "Failed to create MCP tool registry")
         assertContains(error.message.orEmpty(), "mcp.playwright")
-        assertContains(error.message.orEmpty(), "http://localhost:8931/sse")
+        assertContains(error.message.orEmpty(), "streamable-http:http://localhost:8931/mcp")
+    }
+
+    @Test
+    fun `should fail clearly when default koog assembler receives streamable http mcp transport`() = runTest {
+        val capabilitySet = CapabilitySet(
+            adapters = listOf(
+                McpCapabilityAdapter.streamableHttp(id = "mcp.playwright", url = "http://localhost:8931/mcp"),
+            ),
+        )
+
+        val error = assertFailsWith<IllegalStateException> {
+            KoogToolRegistryAssembler().assemble(capabilitySet)
+        }
+
+        assertContains(error.message.orEmpty(), "Failed to create MCP tool registry")
+        assertContains(error.cause?.message.orEmpty(), "Streamable HTTP MCP transport is not supported by Koog 0.8.0")
     }
 
     private class MockMcpTool(
-        serverUrl: String,
+        transportDescription: String,
     ) : SimpleTool<MockMcpToolArgs>(
         argsType = typeToken<MockMcpToolArgs>(),
-        name = "mcp:$serverUrl",
+        name = "mcp:$transportDescription",
         description = "Mock MCP tool registry entry for tests.",
     ) {
         override suspend fun execute(args: MockMcpToolArgs): String = "mcp:${args.payload.orEmpty()}"

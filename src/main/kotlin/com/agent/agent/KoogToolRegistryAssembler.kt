@@ -4,11 +4,14 @@ import ai.koog.agents.core.tools.SimpleTool
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.mcp.McpToolRegistryProvider
+import ai.koog.agents.mcp.defaultStdioTransport
+import ai.koog.agents.mcp.metadata.McpServerInfo
 import ai.koog.serialization.typeToken
 import com.agent.capability.CapabilityDescriptor
 import com.agent.capability.CapabilitySet
 import com.agent.capability.HttpCapabilityAdapter
 import com.agent.capability.McpCapabilityAdapter
+import com.agent.capability.McpTransport
 import com.agent.capability.ToolCapabilityAdapter
 import com.agent.runtime.RuntimeCapabilityRequest
 import com.agent.runtime.RuntimeResult
@@ -31,8 +34,21 @@ data class KoogToolingBundle(
  * 负责把 capability set 组装成 Koog 可消费的 registry bundle。
  */
 class KoogToolRegistryAssembler(
-    private val createMcpRegistry: suspend (String) -> ToolRegistry = { serverUrl ->
-        McpToolRegistryProvider.fromSseUrl(serverUrl)
+    private val createMcpRegistry: suspend (McpTransport) -> ToolRegistry = { transport ->
+        when (transport) {
+            is McpTransport.Stdio -> {
+                val process = ProcessBuilder(transport.command).start()
+                McpToolRegistryProvider.fromTransport(
+                    transport = McpToolRegistryProvider.defaultStdioTransport(process),
+                    serverInfo = McpServerInfo(command = transport.command.joinToString(separator = " ")),
+                )
+            }
+
+            is McpTransport.StreamableHttp -> throw UnsupportedOperationException(
+                "Streamable HTTP MCP transport is not supported by Koog 0.8.0. " +
+                    "Inject createMcpRegistry when a compatible transport implementation is available.",
+            )
+        }
     },
 ) {
 
@@ -68,10 +84,10 @@ class KoogToolRegistryAssembler(
      * 把 MCP adapter 描述安全转换成真实 Koog ToolRegistry。
      */
     private suspend fun createMcpRegistrySafely(adapter: McpCapabilityAdapter): ToolRegistry = try {
-        createMcpRegistry(adapter.serverUrl)
+        createMcpRegistry(adapter.transport)
     } catch (error: Throwable) {
         throw IllegalStateException(
-            "Failed to create MCP tool registry for '${adapter.descriptor.id}' from '${adapter.serverUrl}'.",
+            "Failed to create MCP tool registry for '${adapter.descriptor.id}' from '${adapter.transport.description}'.",
             error,
         )
     }

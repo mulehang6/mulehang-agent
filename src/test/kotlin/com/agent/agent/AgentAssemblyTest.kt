@@ -7,6 +7,7 @@ import ai.koog.serialization.typeToken
 import com.agent.capability.CapabilityDescriptor
 import com.agent.capability.CapabilitySet
 import com.agent.capability.McpCapabilityAdapter
+import com.agent.capability.McpTransport
 import com.agent.capability.ToolCapabilityAdapter
 import com.agent.provider.ProviderBinding
 import com.agent.provider.ProviderType
@@ -37,9 +38,9 @@ class AgentAssemblyTest {
         )
         val assembly = AgentAssembly(
             toolRegistryAssembler = KoogToolRegistryAssembler(
-                createMcpRegistry = { serverUrl: String ->
+                createMcpRegistry = { transport: McpTransport ->
                     ToolRegistry {
-                        tool(AssemblyMockMcpTool(serverUrl))
+                        tool(AssemblyMockMcpTool(transport.description))
                     }
                 },
             ),
@@ -50,7 +51,7 @@ class AgentAssemblyTest {
             capabilitySet = CapabilitySet(
                 adapters = listOf(
                     ToolCapabilityAdapter.echo(id = "tool.echo"),
-                    McpCapabilityAdapter.sse(id = "mcp.playwright", serverUrl = "http://localhost:8931/sse"),
+                    McpCapabilityAdapter.streamableHttp(id = "mcp.playwright", url = "http://localhost:8931/mcp"),
                 ),
             ),
         )
@@ -69,7 +70,7 @@ class AgentAssemblyTest {
             assembledAgent.capabilities,
         )
         assertEquals(
-            listOf("tool.echo", "mcp:http://localhost:8931/sse"),
+            listOf("tool.echo", "mcp:streamable-http:http://localhost:8931/mcp"),
             assembledAgent.toolRegistry.tools.map { it.descriptor.name },
         )
     }
@@ -85,10 +86,10 @@ class AgentAssemblyTest {
     }
 
     private class AssemblyMockMcpTool(
-        serverUrl: String,
+        transportDescription: String,
     ) : SimpleTool<AgentAssemblyMcpArgs>(
         argsType = typeToken<AgentAssemblyMcpArgs>(),
-        name = "mcp:$serverUrl",
+        name = "mcp:$transportDescription",
         description = "Mock MCP tool registry entry for AgentAssembly tests.",
     ) {
         override suspend fun execute(args: AgentAssemblyMcpArgs): String = args.payload.orEmpty()

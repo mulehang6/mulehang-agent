@@ -21,7 +21,7 @@ class KoogExecutorResolverTest {
             providerType = ProviderType.OPENAI_COMPATIBLE,
             baseUrl = "https://api.example.com/v1",
             apiKey = "test-key",
-            modelId = "openai/gpt-4.1-mini",
+            modelId = "openai/gpt-oss-120b:free",
         )
 
         val resolved = KoogExecutorResolver().resolve(binding)
@@ -32,7 +32,7 @@ class KoogExecutorResolverTest {
             resolved.promptExecutor::class.qualifiedName,
         )
         assertEquals(LLMProvider.OpenAI, resolved.llmModel.provider)
-        assertEquals("openai/gpt-4.1-mini", resolved.llmModel.id)
+        assertEquals("openai/gpt-oss-120b:free", resolved.llmModel.id)
         assertEquals(true, resolved.llmModel.supports(LLMCapability.OpenAIEndpoint.Completions))
     }
 
@@ -43,14 +43,14 @@ class KoogExecutorResolverTest {
             providerType = ProviderType.OPENAI_COMPATIBLE,
             baseUrl = "https://openrouter.ai/api/v1",
             apiKey = "test-key",
-            modelId = "google/gemma-4-26b-4b-it:free",
+            modelId = "nvidia/nemotron-nano-12b-v2-vl:free",
         )
 
         val resolved = KoogExecutorResolver().resolve(binding)
 
         assertEquals(binding, resolved.binding)
         assertEquals(LLMProvider.OpenAI, resolved.llmModel.provider)
-        assertEquals("google/gemma-4-26b-4b-it:free", resolved.llmModel.id)
+        assertEquals("nvidia/nemotron-nano-12b-v2-vl:free", resolved.llmModel.id)
         assertEquals(true, resolved.llmModel.supports(LLMCapability.OpenAIEndpoint.Completions))
     }
 

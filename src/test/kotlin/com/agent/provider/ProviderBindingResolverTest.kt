@@ -26,8 +26,8 @@ class ProviderBindingResolverTest {
         val discovery = ModelDiscoveryResult(
             providerId = profile.id,
             providerType = profile.providerType,
-            models = listOf(DiscoveredModel(id = "gpt-4o-mini")),
-            defaultModelId = "gpt-4o-mini",
+            models = listOf(DiscoveredModel(id = "openai/gpt-oss-120b:free")),
+            defaultModelId = "openai/gpt-oss-120b:free",
         )
         val resolver = ProviderBindingResolver()
 
@@ -43,7 +43,7 @@ class ProviderBindingResolverTest {
                 providerType = ProviderType.OPENAI_COMPATIBLE,
                 baseUrl = "https://api.example.com",
                 apiKey = "test-key",
-                modelId = "gpt-4o-mini",
+                modelId = "openai/gpt-oss-120b:free",
             ),
             binding,
         )
@@ -54,13 +54,13 @@ class ProviderBindingResolverTest {
         val previousSnapshot = ProviderResolutionSnapshot(
             providerId = "provider-1",
             providerType = ProviderType.OPENAI_COMPATIBLE,
-            discoveredModels = listOf(DiscoveredModel(id = "gpt-4o-mini")),
+            discoveredModels = listOf(DiscoveredModel(id = "openai/gpt-oss-120b:free")),
             binding = ProviderBinding(
                 providerId = "provider-1",
                 providerType = ProviderType.OPENAI_COMPATIBLE,
                 baseUrl = "https://api.example.com",
                 apiKey = "test-key",
-                modelId = "gpt-4o-mini",
+                modelId = "openai/gpt-oss-120b:free",
             ),
         )
         val unchangedProfile = CustomProviderProfile(

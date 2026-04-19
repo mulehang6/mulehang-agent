@@ -57,7 +57,7 @@ class LoggingRuntimeHttpServiceTest {
             providerType = "OPENAI_COMPATIBLE",
             baseUrl = "https://openrouter.ai/api/v1",
             apiKey = "test-key",
-            modelId = "google/gemma-4-26b-4b-it:free",
+            modelId = "nvidia/nemotron-nano-12b-v2-vl:free",
         ),
     )
 

@@ -31,7 +31,7 @@
 测试栈为 `kotlin.test` + JUnit 5，`build.gradle.kts` 已启用 `useJUnitPlatform()`。新增功能或缺陷修复时，应补充对应单元测试，优先覆盖错误分支、回退流程和边界条件。测试文件名建议与被测对象对应，例如 `MySimpleAgentTest.kt`。
 
 ## 提交与 Pull Request 规范
-- 现有提交历史同时包含简洁主题和 Conventional Commits 风格，例如 `fix(git): ...`、`refactor(agent): ...`。建议统一采用 `<type>(<scope>): <summary>`，例如 `feat(agent): add streaming fallback guard`。PR 应说明变更目的、核心实现与验证方式；如果输出行为有变化，附上示例输入输出。使用中文
+- 现有提交历史同时包含简洁主题和 Conventional Commits 风格，例如 `fix(git): ...`、`refactor(agent): ...`。建议统一采用 `<type>(<scope>): <summary>`，例如 `feat(agent): 添加流式回退指导`。PR 应说明变更目的、核心实现与验证方式；如果输出行为有变化，附上示例输入输出。使用中文
 - 不要擅自提交，即使是 skill 中明确说明了。只有用户明确说明可以时才提交。
 
 ## 安全与配置提示

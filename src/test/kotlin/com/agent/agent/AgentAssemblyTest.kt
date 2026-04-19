@@ -33,7 +33,7 @@ class AgentAssemblyTest {
             providerType = ProviderType.OPENAI_COMPATIBLE,
             baseUrl = "https://openrouter.ai/api/v1",
             apiKey = "test-key",
-            modelId = "openai/gpt-4.1-mini",
+            modelId = "openai/gpt-oss-120b:free",
         )
         val assembly = AgentAssembly(
             toolRegistryAssembler = KoogToolRegistryAssembler(

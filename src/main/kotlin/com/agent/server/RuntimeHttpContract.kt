@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /**
- * 表示 HTTP 宿主的最小健康检查响应。
+ * 表示 HTTP 宿主的最小存活检查响应，只说明 HTTP 进程可响应，不代表 provider 或 runtime 可用。
  */
 @Serializable
 data class HealthHttpResponse(

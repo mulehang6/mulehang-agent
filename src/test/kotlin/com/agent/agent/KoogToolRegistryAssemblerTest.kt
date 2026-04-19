@@ -12,7 +12,9 @@ import com.agent.capability.ToolCapabilityAdapter
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 @Serializable
@@ -84,6 +86,25 @@ class KoogToolRegistryAssemblerTest {
         val result = tool.execute(CapabilityToolArgs(payload = "hello"))
 
         assertEquals("tool:tool.echo", result)
+    }
+
+    @Test
+    fun `should fail with capability bridge context when mcp registry creation fails`() = runTest {
+        val capabilitySet = CapabilitySet(
+            adapters = listOf(
+                McpCapabilityAdapter.sse(id = "mcp.playwright", serverUrl = "http://localhost:8931/sse"),
+            ),
+        )
+
+        val error = assertFailsWith<IllegalStateException> {
+            KoogToolRegistryAssembler(
+                createMcpRegistry = { error("connection refused") },
+            ).assemble(capabilitySet)
+        }
+
+        assertContains(error.message.orEmpty(), "Failed to create MCP tool registry")
+        assertContains(error.message.orEmpty(), "mcp.playwright")
+        assertContains(error.message.orEmpty(), "http://localhost:8931/sse")
     }
 
     private class MockMcpTool(

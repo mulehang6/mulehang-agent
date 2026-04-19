@@ -1,6 +1,7 @@
 package com.agent.agent
 
 import ai.koog.prompt.llm.LLMProvider
+import ai.koog.prompt.llm.LLMCapability
 import com.agent.provider.ProviderBinding
 import com.agent.provider.ProviderType
 import kotlin.test.Test
@@ -18,9 +19,9 @@ class KoogExecutorResolverTest {
         val binding = ProviderBinding(
             providerId = "provider-openai",
             providerType = ProviderType.OPENAI_COMPATIBLE,
-            baseUrl = "https://openrouter.ai/api/v1",
+            baseUrl = "https://api.example.com/v1",
             apiKey = "test-key",
-            modelId = "openai/gpt-4.1-mini",
+            modelId = "openai/gpt-oss-120b:free",
         )
 
         val resolved = KoogExecutorResolver().resolve(binding)
@@ -31,7 +32,43 @@ class KoogExecutorResolverTest {
             resolved.promptExecutor::class.qualifiedName,
         )
         assertEquals(LLMProvider.OpenAI, resolved.llmModel.provider)
-        assertEquals("openai/gpt-4.1-mini", resolved.llmModel.id)
+        assertEquals("openai/gpt-oss-120b:free", resolved.llmModel.id)
+        assertEquals(true, resolved.llmModel.supports(LLMCapability.OpenAIEndpoint.Completions))
+    }
+
+    @Test
+    fun `should preserve arbitrary openai compatible routed model ids with chat completions capability`() {
+        val binding = ProviderBinding(
+            providerId = "provider-compatible",
+            providerType = ProviderType.OPENAI_COMPATIBLE,
+            baseUrl = "https://openrouter.ai/api/v1",
+            apiKey = "test-key",
+            modelId = "nvidia/nemotron-nano-12b-v2-vl:free",
+        )
+
+        val resolved = KoogExecutorResolver().resolve(binding)
+
+        assertEquals(binding, resolved.binding)
+        assertEquals(LLMProvider.OpenAI, resolved.llmModel.provider)
+        assertEquals("nvidia/nemotron-nano-12b-v2-vl:free", resolved.llmModel.id)
+        assertEquals(true, resolved.llmModel.supports(LLMCapability.OpenAIEndpoint.Completions))
+    }
+
+    @Test
+    fun `should fail openai compatible binding when model id is blank`() {
+        val binding = ProviderBinding(
+            providerId = "provider-openai",
+            providerType = ProviderType.OPENAI_COMPATIBLE,
+            baseUrl = "https://api.example.com/v1",
+            apiKey = "test-key",
+            modelId = " ",
+        )
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            KoogExecutorResolver().resolve(binding)
+        }
+
+        assertContains(error.message.orEmpty(), "modelId")
     }
 
     @Test
@@ -73,7 +110,25 @@ class KoogExecutorResolverTest {
     }
 
     @Test
-    fun `should fail when provider specific custom endpoint is unsupported`() {
+    fun `should fail when anthropic custom endpoint is unsupported`() {
+        val binding = ProviderBinding(
+            providerId = "provider-anthropic",
+            providerType = ProviderType.ANTHROPIC_COMPATIBLE,
+            baseUrl = "https://custom-anthropic-endpoint.example.com",
+            apiKey = "anthropic-key",
+            modelId = "claude-sonnet-4-5",
+        )
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            KoogExecutorResolver().resolve(binding)
+        }
+
+        assertContains(error.message.orEmpty(), "Anthropic-compatible")
+        assertContains(error.message.orEmpty(), "Koog 0.8.0")
+    }
+
+    @Test
+    fun `should fail when gemini custom endpoint is unsupported`() {
         val binding = ProviderBinding(
             providerId = "provider-gemini",
             providerType = ProviderType.GEMINI_COMPATIBLE,

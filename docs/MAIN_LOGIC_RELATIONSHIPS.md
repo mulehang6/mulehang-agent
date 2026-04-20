@@ -417,6 +417,7 @@ classDiagram
         +McpTransport transport
         +execute(request) RuntimeResult
         +stdio(id, command) McpCapabilityAdapter
+        +sse(id, url) McpCapabilityAdapter
         +streamableHttp(id, url) McpCapabilityAdapter
     }
 
@@ -427,6 +428,10 @@ classDiagram
 
     class McpStdioTransport {
         +List command
+    }
+
+    class McpSseTransport {
+        +String url
     }
 
     class McpStreamableHttpTransport {
@@ -453,6 +458,7 @@ classDiagram
     CapabilityAdapter <|.. McpCapabilityAdapter
     CapabilityAdapter <|.. HttpCapabilityAdapter
     McpTransport <|.. McpStdioTransport
+    McpTransport <|.. McpSseTransport
     McpTransport <|.. McpStreamableHttpTransport
     McpCapabilityAdapter --> McpTransport
     CapabilitySet --> CapabilityAdapter
@@ -521,6 +527,7 @@ classDiagram
 - `McpTransport`
   - 表示 MCP server 当前支持的连接传输方式。
   - `Stdio(command)` 表示通过本地进程 stdin/stdout 连接 MCP server。
+  - `Sse(url)` 表示通过 SSE 连接本地或远程 MCP server。
   - `StreamableHttp(url)` 表示通过 Streamable HTTP 连接远端 MCP server。
 
 - `execute(request)`
@@ -528,6 +535,10 @@ classDiagram
 
 - `companion object.stdio(id, command)`
   - 创建基于 stdio 本地进程的最小 MCP adapter。
+  - 默认 handler 返回 `RuntimeResultAdapter.mcp()`。
+
+- `companion object.sse(id, url)`
+  - 创建基于 SSE 地址的最小 MCP adapter。
   - 默认 handler 返回 `RuntimeResultAdapter.mcp()`。
 
 - `companion object.streamableHttp(id, url)`
@@ -743,7 +754,7 @@ classDiagram
   - 基于 OpenAI provider 创建模型。
   - 额外加入 `LLMCapability.OpenAIEndpoint.Completions`，避免 Koog 原生 OpenAI 模型表推断失败。
 
-#### `OpenAiCompatibleExecutorFactory.kt`
+#### `ProviderCompatiblePromptExecutorFactory.kt`
 
 - `OpenAiCompatibleExecutorFactory`
   - 创建支持自定义 endpoint 的 OpenAI-compatible executor。

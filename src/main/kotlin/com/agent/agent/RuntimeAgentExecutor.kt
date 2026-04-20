@@ -1,7 +1,9 @@
 package com.agent.agent
 
 import com.agent.capability.CapabilitySet
+import com.agent.provider.OpenAIEndpointMode
 import com.agent.provider.ProviderBinding
+import com.agent.provider.ProviderType
 import com.agent.runtime.RuntimeAgentExecutionFailure
 import com.agent.runtime.RuntimeAgentRunRequest
 import com.agent.runtime.RuntimeCapabilityBridgeFailure
@@ -64,10 +66,44 @@ class RuntimeAgentExecutor(
         } catch (error: Throwable) {
             RuntimeFailed(
                 failure = RuntimeAgentExecutionFailure(
-                    message = error.message ?: "agent execution failed",
+                    message = binding.agentExecutionFailureMessage(error),
                     cause = error,
                 ),
             )
         }
+    }
+
+    /**
+     * 在 Responses API 明确不可用时，给出可操作的 chat/completions 切换提示。
+     */
+    private fun ProviderBinding.agentExecutionFailureMessage(error: Throwable): String {
+        val message = error.message ?: "agent execution failed"
+        if (usesOpenAIResponsesEndpoint() && message.looksLikeUnsupportedResponsesEndpoint()) {
+            return "OpenAI Responses API request failed. Switch this provider to chat/completions if it does not support Responses. Cause: $message"
+        }
+        return message
+    }
+
+    /**
+     * 判断当前 binding 是否会按 OpenAI Responses endpoint 执行。
+     */
+    private fun ProviderBinding.usesOpenAIResponsesEndpoint(): Boolean =
+        providerType in OPENAI_PROTOCOL_PROVIDER_TYPES &&
+            (options.openAIEndpointMode ?: OpenAIEndpointMode.RESPONSES) == OpenAIEndpointMode.RESPONSES
+
+    /**
+     * 保守识别 Responses endpoint 不存在或不支持的常见错误文本。
+     */
+    private fun String.looksLikeUnsupportedResponsesEndpoint(): Boolean {
+        val normalized = lowercase()
+        return "responses" in normalized &&
+            ("404" in normalized || "not found" in normalized || "unsupported" in normalized)
+    }
+
+    private companion object {
+        private val OPENAI_PROTOCOL_PROVIDER_TYPES = setOf(
+            ProviderType.OPENAI,
+            ProviderType.OPENAI_COMPATIBLE,
+        )
     }
 }

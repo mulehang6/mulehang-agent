@@ -9,6 +9,7 @@ data class ProviderBinding(
     val baseUrl: String,
     val apiKey: String,
     val modelId: String,
+    val options: ProviderBindingOptions = ProviderBindingOptions(),
 )
 
 /**
@@ -19,4 +20,11 @@ data class ProviderResolutionSnapshot(
     val providerType: ProviderType,
     val discoveredModels: List<DiscoveredModel>,
     val binding: ProviderBinding?,
+)
+
+/**
+ * provider binding 可选选项，目前只有OpenAI Endpoint 两种模式
+ */
+data class ProviderBindingOptions(
+    val openAIEndpointMode: OpenAIEndpointMode? = null
 )

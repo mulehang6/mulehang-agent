@@ -79,6 +79,10 @@ class CapabilityAdaptersTest {
             id = "mcp.playwright",
             url = "http://localhost:8931/mcp",
         )
+        val sseAdapter = McpCapabilityAdapter.sse(
+            id = "mcp.browser",
+            url = "http://localhost:8931/sse",
+        )
         val stdioAdapter = McpCapabilityAdapter.stdio(
             id = "mcp.filesystem",
             command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", "."),
@@ -90,6 +94,8 @@ class CapabilityAdaptersTest {
 
         assertEquals("echo", toolAdapter.toolName)
         assertEquals(McpTransport.StreamableHttp("http://localhost:8931/mcp"), mcpAdapter.transport)
+        assertEquals(McpTransport.Sse("http://localhost:8931/sse"), sseAdapter.transport)
+        assertEquals("sse:http://localhost:8931/sse", sseAdapter.transport.description)
         assertEquals(
             McpTransport.Stdio(listOf("npx", "-y", "@modelcontextprotocol/server-filesystem", ".")),
             stdioAdapter.transport,

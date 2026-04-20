@@ -1,8 +1,12 @@
+@file:Suppress("UnstableApiUsage")
+
 package com.agent.agent
 
 import com.agent.capability.CapabilitySet
 import com.agent.capability.ToolCapabilityAdapter
+import com.agent.provider.OpenAIEndpointMode
 import com.agent.provider.ProviderBinding
+import com.agent.provider.ProviderBindingOptions
 import com.agent.provider.ProviderType
 import com.agent.runtime.RuntimeAgentExecutionFailure
 import com.agent.runtime.RuntimeAgentRunRequest
@@ -15,6 +19,7 @@ import com.agent.runtime.RuntimeSuccess
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
@@ -72,11 +77,33 @@ class RuntimeAgentExecutorTest {
         assertIs<RuntimeAgentExecutionFailure>(agentFailure.failure)
     }
 
-    private fun openAiBinding() = ProviderBinding(
+    @Test
+    fun `should suggest chat completions when default responses endpoint execution is unsupported`() = runTest {
+        val result = RuntimeAgentExecutor(
+            assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+            runner = { _, _ -> throw RuntimeException("404 from /v1/responses") },
+        ).execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(openAIEndpointMode = OpenAIEndpointMode.RESPONSES),
+            capabilitySet = CapabilitySet(adapters = listOf(ToolCapabilityAdapter.echo(id = "tool.echo"))),
+        )
+
+        assertIs<RuntimeFailed>(result)
+        val failure = assertIs<RuntimeAgentExecutionFailure>(result.failure)
+        assertContains(failure.message, "Responses")
+        assertContains(failure.message, "chat/completions")
+    }
+
+    private fun openAiBinding(
+        openAIEndpointMode: OpenAIEndpointMode = OpenAIEndpointMode.RESPONSES,
+    ) = ProviderBinding(
         providerId = "provider-openai",
         providerType = ProviderType.OPENAI_COMPATIBLE,
         baseUrl = "https://openrouter.ai/api/v1",
         apiKey = "test-key",
         modelId = "openai/gpt-oss-120b:free",
+        options = ProviderBindingOptions(openAIEndpointMode = openAIEndpointMode),
     )
 }

@@ -44,6 +44,13 @@ class KoogToolRegistryAssembler(
                 )
             }
 
+            is McpTransport.Sse -> {
+                McpToolRegistryProvider.fromTransport(
+                    transport = McpToolRegistryProvider.defaultSseTransport(transport.url),
+                    serverInfo = McpServerInfo(command = transport.description),
+                )
+            }
+
             is McpTransport.StreamableHttp -> throw UnsupportedOperationException(
                 "Streamable HTTP MCP transport is not supported by Koog 0.8.0. " +
                     "Inject createMcpRegistry when a compatible transport implementation is available.",

@@ -16,7 +16,7 @@
   为 phase 03 增加 `RuntimeAgentRunRequest` 和三类结构化失败，保证 CLI/ACP 后续仍只消费 runtime 契约。
 - `src/main/kotlin/com/agent/agent/KoogExecutorResolver.kt`
   新增 provider 到 Koog executor/model 的唯一解析入口，隔离 OpenAI-compatible、Anthropic-compatible、Gemini-compatible 差异。
-- `src/main/kotlin/com/agent/agent/OpenAiCompatibleExecutorFactory.kt`
+- `src/main/kotlin/com/agent/agent/ProviderCompatiblePromptExecutorFactory.kt`
   仅负责 OpenAI-compatible `baseUrl` 自定义 client，避免把 endpoint 细节散落到 resolver。
 - `src/main/kotlin/com/agent/capability/CapabilityContract.kt`
   扩展 capability 元数据，使 tool、MCP、HTTP 三类适配器可以被 Koog registry assembler 消费。
@@ -140,7 +140,7 @@ Expected: PASS。
 
 **Files:**
 - Create: `src/main/kotlin/com/agent/agent/KoogExecutorResolver.kt`
-- Create: `src/main/kotlin/com/agent/agent/OpenAiCompatibleExecutorFactory.kt`
+- Create: `src/main/kotlin/com/agent/agent/ProviderCompatiblePromptExecutorFactory.kt`
 - Test: `src/test/kotlin/com/agent/agent/KoogExecutorResolverTest.kt`
 
 - [ ] **Step 1: 写失败测试，锁定三类 provider 的解析路径和限制**
@@ -292,7 +292,7 @@ class KoogToolRegistryAssemblerTest {
     fun `should keep mcp capabilities as dedicated Koog registry providers`() = runTest {
         val capabilitySet = CapabilitySet(
             adapters = listOf(
-                McpCapabilityAdapter.sse(id = "mcp.playwright", serverUrl = "http://localhost:8931/sse"),
+                McpCapabilityAdapter.sse(id = "mcp.playwright", url = "http://localhost:8931/sse"),
             ),
         )
 
@@ -339,7 +339,7 @@ class KoogToolRegistryAssembler {
         }
 
         val mcpRegistries = capabilitySet.mcpAdapters().map { adapter ->
-            McpToolRegistryProvider.fromSseUrl(adapter.serverUrl)
+            createMcpRegistry(adapter.transport)
         }
 
         return KoogToolingBundle(

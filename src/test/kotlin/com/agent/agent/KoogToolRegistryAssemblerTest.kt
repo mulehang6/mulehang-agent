@@ -80,6 +80,34 @@ class KoogToolRegistryAssemblerTest {
     }
 
     @Test
+    fun `should pass sse mcp transport into injected registry factory`() = runTest {
+        val capabilitySet = CapabilitySet(
+            adapters = listOf(
+                McpCapabilityAdapter.sse(id = "mcp.browser", url = "http://localhost:8931/sse"),
+            ),
+        )
+
+        val assembled = KoogToolRegistryAssembler(
+            createMcpRegistry = { transport: McpTransport ->
+                ToolRegistry {
+                    tool(MockMcpTool(transport.description))
+                }
+            },
+        ).assemble(capabilitySet)
+
+        assertEquals(listOf("mcp.browser"), assembled.descriptors.map { it.id })
+        assertEquals(1, assembled.mcpRegistries.size)
+        assertEquals(
+            listOf("mcp:sse:http://localhost:8931/sse"),
+            assembled.mcpRegistries.single().tools.map { it.descriptor.name },
+        )
+        assertEquals(
+            listOf("mcp:sse:http://localhost:8931/sse"),
+            assembled.toolRegistry.tools.map { it.descriptor.name },
+        )
+    }
+
+    @Test
     @Suppress("UNCHECKED_CAST")
     fun `should execute bridged koog tool through runtime adapter`() = runTest {
         val capabilitySet = CapabilitySet(

@@ -28,6 +28,20 @@ sealed interface McpTransport {
     }
 
     /**
+     * 表示通过 SSE 连接本地或远程 MCP server。
+     */
+    data class Sse(
+        val url: String,
+    ) : McpTransport {
+        init {
+            require(url.isNotBlank()) {
+                "MCP SSE url must not be blank."
+            }
+        }
+        override val description: String = "sse:$url"
+    }
+
+    /**
      * 表示通过 Streamable HTTP 连接远端 MCP server。
      */
     data class StreamableHttp(
@@ -68,6 +82,19 @@ class McpCapabilityAdapter(
         ): McpCapabilityAdapter = McpCapabilityAdapter(
             id = id,
             transport = McpTransport.Stdio(command),
+        ) {
+            RuntimeResultAdapter.mcp()
+        }
+
+        /**
+         * 创建一个基于 SSE 的最小 MCP adapter。
+         */
+        fun sse(
+            id: String,
+            url: String,
+        ): McpCapabilityAdapter = McpCapabilityAdapter(
+            id = id,
+            transport = McpTransport.Sse(url),
         ) {
             RuntimeResultAdapter.mcp()
         }

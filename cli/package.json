@@ -1,0 +1,20 @@
+{
+  "name": "mulehang-agent-cli",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "latest",
+    "@opentui/react": "latest",
+    "react": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "bun-types": "latest",
+    "typescript": "latest"
+  }
+}

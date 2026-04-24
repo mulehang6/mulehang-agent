@@ -67,12 +67,25 @@ export interface RuntimeCliResultMessage {
 /**
  * 表示 runtime 返回的结构化失败消息。
  */
+export interface RuntimeCliFailureDetails {
+  source?: string;
+  providerId?: string;
+  providerType?: string;
+  baseUrl?: string;
+  modelId?: string;
+  apiKeyPresent?: boolean;
+}
+
+/**
+ * 表示 runtime 返回的结构化失败消息。
+ */
 export interface RuntimeCliFailureMessage {
   type: "failure";
   sessionId?: string;
   requestId?: string;
   kind: string;
   message: string;
+  details?: RuntimeCliFailureDetails;
 }
 
 /**

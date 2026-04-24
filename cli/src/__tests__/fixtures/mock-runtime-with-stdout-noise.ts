@@ -5,7 +5,7 @@ export {};
 let buffer = "";
 
 /**
- * 按最小 NDJSON 协议模拟 runtime 子进程，供 CLI 子进程桥测试使用。
+ * 模拟 runtime 在标准输出里混入日志行，但仍会产出合法协议消息。
  */
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -25,25 +25,9 @@ process.stdin.on("data", (chunk) => {
 
     const request = JSON.parse(line) as { prompt: string };
     process.stdout.write(
-      `${JSON.stringify({
-        type: "status",
-        status: "session.started",
-        sessionId: "session-fixture",
-        requestId: "request-fixture",
-        mode: "demo",
-      })}\n`,
+      "kotlin-logging: initializing... active logger factory: Slf4jLoggerFactory\n",
     );
-    process.stdout.write(
-      `${JSON.stringify({
-        type: "event",
-        sessionId: "session-fixture",
-        requestId: "request-fixture",
-        event: {
-          message: "runtime.cli.demo",
-          payload: request.prompt,
-        },
-      })}\n`,
-    );
+    process.stdout.write("2026-04-24 INFO runtime booted\n");
     process.stdout.write(
       `${JSON.stringify({
         type: "result",

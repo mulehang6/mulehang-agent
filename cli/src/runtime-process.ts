@@ -20,6 +20,14 @@ export interface RuntimeLaunchSpec {
 }
 
 /**
+ * 表示安装 runtime host 分发所需的最小文件与进程操作。
+ */
+interface RuntimeHostInstallOps {
+  existsSync(path: string): boolean;
+  install(projectRoot: string): number | null;
+}
+
+/**
  * 负责把独立的 runtime 子进程桥接成可发送/接收消息的客户端。
  */
 export class RuntimeProcessClient {
@@ -124,6 +132,10 @@ export class RuntimeProcessClient {
         continue;
       }
 
+      if (!looksLikeProtocolMessage(line)) {
+        continue;
+      }
+
       try {
         const message = parseRuntimeCliOutbound(line);
         this.messageListeners.forEach((listener) => listener(message));
@@ -137,6 +149,13 @@ export class RuntimeProcessClient {
 }
 
 /**
+ * 只把形如单行 JSON 对象的 stdout 当作 runtime 协议消息处理。
+ */
+function looksLikeProtocolMessage(line: string): boolean {
+  return line.startsWith("{");
+}
+
+/**
  * 返回 CLI 所在仓库根目录的绝对路径。
  */
 export function resolveProjectRoot(): string {
@@ -147,7 +166,10 @@ export function resolveProjectRoot(): string {
 /**
  * 确保 runtime CLI host 的本地分发脚本已经生成。
  */
-export function ensureRuntimeHostInstalled(projectRoot: string): string {
+export function ensureRuntimeHostInstalled(
+  projectRoot: string,
+  ops: RuntimeHostInstallOps = defaultRuntimeHostInstallOps,
+): string {
   const scriptPath = join(
     projectRoot,
     "runtime",
@@ -157,25 +179,31 @@ export function ensureRuntimeHostInstalled(projectRoot: string): string {
     "runtime-cli-host.bat",
   );
 
-  if (existsSync(scriptPath)) {
-    return scriptPath;
-  }
+  const result = ops.install(projectRoot);
 
-  const result = spawnSync(
-    process.env.ComSpec ?? "cmd.exe",
-    ["/c", "gradlew.bat", ":runtime:installCliHostDist", "--quiet"],
-    {
-      cwd: projectRoot,
-      stdio: "inherit",
-    },
-  );
-
-  if (result.status !== 0 || !existsSync(scriptPath)) {
+  if (result !== 0 || !ops.existsSync(scriptPath)) {
     throw new Error("Failed to install runtime CLI host distribution.");
   }
 
   return scriptPath;
 }
+
+/**
+ * 提供默认的 runtime host 安装实现；始终走 Gradle 增量任务以避免复用过期分发产物。
+ */
+const defaultRuntimeHostInstallOps: RuntimeHostInstallOps = {
+  existsSync,
+  install(projectRoot) {
+    return spawnSync(
+      process.env.ComSpec ?? "cmd.exe",
+      ["/c", "gradlew.bat", ":runtime:installCliHostDist", "--quiet"],
+      {
+        cwd: projectRoot,
+        stdio: "inherit",
+      },
+    ).status;
+  },
+};
 
 /**
  * 生成默认的 runtime host 启动命令，供真实 TUI 会话直接复用。

@@ -50,6 +50,13 @@ describe("protocol", () => {
         requestId: "request-1",
         kind: "agent",
         message: "agent failed",
+        details: {
+          source: "runtime-default",
+          providerType: "OPENAI_COMPATIBLE",
+          baseUrl: "https://openrouter.ai/api/v1",
+          modelId: "openai/gpt-oss-120b:free",
+          apiKeyPresent: true,
+        },
       }),
     ];
 
@@ -85,6 +92,13 @@ describe("protocol", () => {
         requestId: "request-1",
         kind: "agent",
         message: "agent failed",
+        details: {
+          source: "runtime-default",
+          providerType: "OPENAI_COMPATIBLE",
+          baseUrl: "https://openrouter.ai/api/v1",
+          modelId: "openai/gpt-oss-120b:free",
+          apiKeyPresent: true,
+        },
       },
     ]);
   });

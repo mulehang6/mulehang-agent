@@ -64,7 +64,7 @@ fun Application.runtimeHttpModule(
                 response.code == 1,
                 response.data.sessionId,
                 response.data.requestId,
-                response.data.failure?.kind,
+                response.data.failureEvent()?.failureKind,
             )
             call.respond(status, response)
         }
@@ -79,8 +79,14 @@ private fun Result<RuntimeRunPayload>.status(): HttpStatusCode {
         return HttpStatusCode.OK
     }
 
-    return when (data.failure?.kind) {
+    return when (data.failureEvent()?.failureKind) {
         "provider" -> HttpStatusCode.BadRequest
         else -> HttpStatusCode.InternalServerError
     }
 }
+
+/**
+ * 返回运行结果中的结构化失败事件；成功结果返回 null。
+ */
+private fun RuntimeRunPayload.failureEvent(): RuntimeEventPayload? =
+    events.lastOrNull { it.failureKind != null || it.failureMessage != null }

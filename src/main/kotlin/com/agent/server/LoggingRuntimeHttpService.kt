@@ -57,10 +57,16 @@ class LoggingRuntimeHttpService(
             "AOP退出 runtime 接口：success=false sessionId={} requestId={} failureKind={} message={}",
             response.data.sessionId,
             response.data.requestId,
-            response.data.failure?.kind,
+            response.data.failureEvent()?.failureKind,
             response.message,
         )
     }
+
+    /**
+     * 返回运行结果中的结构化失败事件；成功结果返回 null。
+     */
+    private fun RuntimeRunPayload.failureEvent(): RuntimeEventPayload? =
+        events.lastOrNull { it.failureKind != null || it.failureMessage != null }
 
     private companion object {
         private val logger = LoggerFactory.getLogger(LoggingRuntimeHttpService::class.java)

@@ -67,6 +67,7 @@ data class ProviderBindingHttpRequest(
  */
 @Serializable
 data class RuntimeRunHttpRequest(
+    val sessionId: String? = null,
     val prompt: String,
     val provider: ProviderBindingHttpRequest,
 )
@@ -78,27 +79,20 @@ data class RuntimeRunHttpRequest(
 data class RuntimeEventPayload(
     val message: String,
     val payload: JsonElement? = null,
+    val failureKind: String? = null,// 失败时传入
+    val failureMessage: String? = null,// 失败时传入
 )
 
-/**
- * 表示一次 runtime 失败载荷。
- */
-@Serializable
-data class RuntimeFailurePayload(
-    val kind: String,
-    val message: String,
-)
 
 /**
  * 表示 `/runtime/run` 的最小结构化载荷。
  */
 @Serializable
 data class RuntimeRunPayload(
-    val sessionId: String,
+    val sessionId: String? = null,
     val requestId: String,
     val events: List<RuntimeEventPayload> = emptyList(),
     val output: JsonElement? = null,
-    val failure: RuntimeFailurePayload? = null,
 )
 
 /**

@@ -66,6 +66,7 @@ class RuntimeHttpModuleTest {
             contentType(ContentType.Application.Json)
             setBody(
                 RuntimeRunHttpRequest(
+                    sessionId = "session-1",
                     prompt = "hello",
                     provider = ProviderBindingHttpRequest(
                         providerId = "provider-openai",
@@ -103,10 +104,69 @@ class RuntimeHttpModuleTest {
                         data = RuntimeRunPayload(
                             sessionId = "session-2",
                             requestId = "request-2",
-                            failure = RuntimeFailurePayload(
-                                kind = "provider",
-                                message = "provider resolution failed",
+                            events = listOf(
+                                RuntimeEventPayload(
+                                    message = "runtime.run.failed",
+                                    failureKind = "provider",
+                                    failureMessage = "provider resolution failed",
+                                ),
                             ),
+                        ),
+                    ),
+                ),
+            )
+        }
+
+        val client = createJsonClient()
+        val response = client.post("/runtime/run") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RuntimeRunHttpRequest(
+                    sessionId = "session-2",
+                    prompt = "hello",
+                    provider = ProviderBindingHttpRequest(
+                        providerId = "provider-openai",
+                        providerType = "OPENAI_COMPATIBLE",
+                        baseUrl = "https://openrouter.ai/api/v1",
+                        apiKey = "test-key",
+                        modelId = "openai/gpt-oss-120b:free",
+                    ),
+                ),
+            )
+        }
+        val body = response.body<Result<RuntimeRunPayload>>()
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals(
+            Result.fail(
+                message = "provider resolution failed",
+                data = RuntimeRunPayload(
+                    sessionId = "session-2",
+                    requestId = "request-2",
+                    events = listOf(
+                        RuntimeEventPayload(
+                            message = "runtime.run.failed",
+                            failureKind = "provider",
+                            failureMessage = "provider resolution failed",
+                        ),
+                    ),
+                ),
+            ),
+            body,
+        )
+    }
+
+    @Test
+    fun `should return generated session id when request does not provide one`() = testApplication {
+        application {
+            runtimeHttpModule(
+                service = FakeRuntimeHttpService(
+                    response = Result.success(
+                        RuntimeRunPayload(
+                            sessionId = "generated-session-1",
+                            requestId = "request-3",
+                            events = listOf(RuntimeEventPayload(message = "agent.run.completed")),
+                            output = JsonPrimitive("done:first-turn"),
                         ),
                     ),
                 ),
@@ -131,21 +191,10 @@ class RuntimeHttpModuleTest {
         }
         val body = response.body<Result<RuntimeRunPayload>>()
 
-        assertEquals(HttpStatusCode.BadRequest, response.status)
-        assertEquals(
-            Result.fail(
-                message = "provider resolution failed",
-                data = RuntimeRunPayload(
-                    sessionId = "session-2",
-                    requestId = "request-2",
-                    failure = RuntimeFailurePayload(
-                        kind = "provider",
-                        message = "provider resolution failed",
-                    ),
-                ),
-            ),
-            body,
-        )
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("generated-session-1", body.data.sessionId)
+        assertEquals("request-3", body.data.requestId)
+        assertEquals("done:first-turn", (body.data.output as JsonPrimitive).content)
     }
 
     private fun ApplicationTestBuilder.createJsonClient() = createClient {

@@ -8,6 +8,7 @@ import com.agent.runtime.RuntimeAgentExecutionFailure
 import com.agent.runtime.RuntimeAgentRunRequest
 import com.agent.runtime.RuntimeCapabilityBridgeFailure
 import com.agent.runtime.RuntimeFailed
+import com.agent.runtime.RuntimeFailure
 import com.agent.runtime.RuntimeProviderResolutionFailure
 import com.agent.runtime.RuntimeRequestContext
 import com.agent.runtime.RuntimeSession
@@ -26,7 +27,7 @@ class DefaultRuntimeHttpService(
      * 使用显式传入的 provider binding 和 prompt 执行一次 runtime 调用。
      */
     override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> {
-        val sessionId = UUID.randomUUID().toString()
+        val sessionId = request.sessionId ?: UUID.randomUUID().toString()
         val requestId = UUID.randomUUID().toString()
         val binding = request.provider.toDomainBinding()
             ?: return Result.fail(
@@ -34,9 +35,12 @@ class DefaultRuntimeHttpService(
                 data = RuntimeRunPayload(
                     sessionId = sessionId,
                     requestId = requestId,
-                    failure = RuntimeFailurePayload(
-                        kind = "provider",
-                        message = "Unsupported provider type '${request.provider.providerType}'.",
+                    events = listOf(
+                        RuntimeEventPayload(
+                            message = "runtime.run.failed",
+                            failureKind = "provider",
+                            failureMessage = "Unsupported provider type '${request.provider.providerType}'.",
+                        ),
                     ),
                 ),
             )
@@ -64,11 +68,12 @@ class DefaultRuntimeHttpService(
                 data = RuntimeRunPayload(
                     sessionId = sessionId,
                     requestId = requestId,
-                    events = result.events.map { RuntimeEventPayload(message = it.message, payload = it.payload) },
-                    failure = RuntimeFailurePayload(
-                        kind = result.failure.toFailureKind(),
-                        message = result.failure.message,
-                    ),
+                    events = result.events.map { RuntimeEventPayload(message = it.message, payload = it.payload) } +
+                        RuntimeEventPayload(
+                            message = "runtime.run.failed",
+                            failureKind = result.failure.toFailureKind(),
+                            failureMessage = result.failure.message,
+                        ),
                 ),
             )
         }
@@ -92,7 +97,7 @@ class DefaultRuntimeHttpService(
 /**
  * 把 runtime 失败对象压平成 HTTP 宿主侧的稳定错误类型。
  */
-private fun com.agent.runtime.RuntimeFailure.toFailureKind(): String = when (this) {
+private fun RuntimeFailure.toFailureKind(): String = when (this) {
     is RuntimeProviderResolutionFailure -> "provider"
     is RuntimeCapabilityBridgeFailure -> "capability"
     is RuntimeAgentExecutionFailure -> "agent"

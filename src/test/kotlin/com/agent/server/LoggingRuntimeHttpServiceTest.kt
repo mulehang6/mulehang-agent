@@ -38,9 +38,12 @@ class LoggingRuntimeHttpServiceTest {
             data = RuntimeRunPayload(
                 sessionId = "session-2",
                 requestId = "request-2",
-                failure = RuntimeFailurePayload(
-                    kind = "agent",
-                    message = "agent failed",
+                events = listOf(
+                    RuntimeEventPayload(
+                        message = "runtime.run.failed",
+                        failureKind = "agent",
+                        failureMessage = "agent failed",
+                    ),
                 ),
             ),
         )

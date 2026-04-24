@@ -36,10 +36,9 @@ class DefaultRuntimeHttpService(
                     sessionId = sessionId,
                     requestId = requestId,
                     events = listOf(
-                        RuntimeEventPayload(
-                            message = "runtime.run.failed",
-                            failureKind = "provider",
-                            failureMessage = "Unsupported provider type '${request.provider.providerType}'.",
+                        runtimeFailureEvent(
+                            kind = "provider",
+                            message = "Unsupported provider type '${request.provider.providerType}'.",
                         ),
                     ),
                 ),
@@ -58,7 +57,7 @@ class DefaultRuntimeHttpService(
                 data = RuntimeRunPayload(
                     sessionId = sessionId,
                     requestId = requestId,
-                    events = result.events.map { RuntimeEventPayload(message = it.message, payload = it.payload) },
+                    events = result.events.map { it.toPayload() },
                     output = result.output,
                 ),
             )
@@ -68,11 +67,10 @@ class DefaultRuntimeHttpService(
                 data = RuntimeRunPayload(
                     sessionId = sessionId,
                     requestId = requestId,
-                    events = result.events.map { RuntimeEventPayload(message = it.message, payload = it.payload) } +
-                        RuntimeEventPayload(
-                            message = "runtime.run.failed",
-                            failureKind = result.failure.toFailureKind(),
-                            failureMessage = result.failure.message,
+                    events = result.events.map { it.toPayload() } +
+                        runtimeFailureEvent(
+                            kind = result.failure.toFailureKind(),
+                            message = result.failure.message,
                         ),
                 ),
             )
@@ -103,3 +101,23 @@ private fun RuntimeFailure.toFailureKind(): String = when (this) {
     is RuntimeAgentExecutionFailure -> "agent"
     else -> "runtime"
 }
+
+/**
+ * 把 runtime 普通事件转换为 HTTP 载荷事件。
+ */
+private fun com.agent.runtime.RuntimeEvent.toPayload(): RuntimeEventPayload = RuntimeEventPayload(
+    message = message,
+    payload = payload,
+)
+
+/**
+ * 构造统一的 runtime 失败事件载荷。
+ */
+private fun runtimeFailureEvent(
+    kind: String,
+    message: String,
+): RuntimeEventPayload = RuntimeEventPayload(
+    message = "runtime.run.failed",
+    failureKind = kind,
+    failureMessage = message,
+)

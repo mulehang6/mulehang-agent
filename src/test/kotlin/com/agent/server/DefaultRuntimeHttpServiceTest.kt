@@ -82,9 +82,29 @@ class DefaultRuntimeHttpServiceTest {
         val data = response.data
 
         assertEquals(1, response.code)
-        assertTrue(data.sessionId?.isNotBlank() == true)
+        assertTrue(!data.sessionId.isNullOrBlank())
         assertTrue(data.requestId.isNotBlank())
         assertEquals(JsonPrimitive("done:hello"), data.output)
+    }
+
+    @Test
+    fun `should append structured failure event when runtime execution fails`() = runTest {
+        val service = DefaultRuntimeHttpService(
+            runtimeAgentExecutor = RuntimeAgentExecutor(
+                assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+                runner = { _, _ -> throw RuntimeException("agent failed") },
+            ),
+        )
+
+        val response = service.run(validRequest())
+        val data = response.data
+        val failureEvent = data.events.last()
+
+        assertEquals(0, response.code)
+        assertEquals("session-1", data.sessionId)
+        assertEquals("runtime.run.failed", failureEvent.message)
+        assertEquals("agent", failureEvent.failureKind)
+        assertEquals("agent failed", failureEvent.failureMessage)
     }
 
     private fun validRequest(): RuntimeRunHttpRequest = RuntimeRunHttpRequest(

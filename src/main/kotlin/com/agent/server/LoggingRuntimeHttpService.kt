@@ -62,12 +62,6 @@ class LoggingRuntimeHttpService(
         )
     }
 
-    /**
-     * 返回运行结果中的结构化失败事件；成功结果返回 null。
-     */
-    private fun RuntimeRunPayload.failureEvent(): RuntimeEventPayload? =
-        events.lastOrNull { it.failureKind != null || it.failureMessage != null }
-
     private companion object {
         private val logger = LoggerFactory.getLogger(LoggingRuntimeHttpService::class.java)
     }

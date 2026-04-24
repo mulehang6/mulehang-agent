@@ -73,7 +73,7 @@ data class RuntimeRunHttpRequest(
 )
 
 /**
- * 表示一次 runtime 事件载荷。
+ * 表示一次 runtime 事件载荷；失败事件通过 failureKind/failureMessage 补充结构化信息。
  */
 @Serializable
 data class RuntimeEventPayload(
@@ -94,6 +94,12 @@ data class RuntimeRunPayload(
     val events: List<RuntimeEventPayload> = emptyList(),
     val output: JsonElement? = null,
 )
+
+/**
+ * 返回运行结果中的结构化失败事件；成功结果返回 null。
+ */
+internal fun RuntimeRunPayload.failureEvent(): RuntimeEventPayload? =
+    events.lastOrNull { it.failureKind != null || it.failureMessage != null }
 
 /**
  * 表示 HTTP 宿主对 runtime 执行链暴露的最小服务契约。

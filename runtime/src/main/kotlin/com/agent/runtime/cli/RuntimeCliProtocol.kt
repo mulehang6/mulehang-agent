@@ -103,4 +103,18 @@ data class RuntimeCliFailureMessage(
     val requestId: String? = null,
     val kind: String,
     val message: String,
+    val details: RuntimeCliFailureDetails? = null,
 ) : RuntimeCliOutboundMessage
+
+/**
+ * 表示 runtime 返回给 CLI 的失败诊断摘要。
+ */
+@Serializable
+data class RuntimeCliFailureDetails(
+    val source: String? = null,
+    val providerId: String? = null,
+    val providerType: String? = null,
+    val baseUrl: String? = null,
+    val modelId: String? = null,
+    val apiKeyPresent: Boolean? = null,
+)

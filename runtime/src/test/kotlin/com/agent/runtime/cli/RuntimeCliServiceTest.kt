@@ -3,6 +3,7 @@ package com.agent.runtime.cli
 import com.agent.runtime.agent.AgentAssembly
 import com.agent.runtime.agent.RuntimeAgentExecutor
 import com.agent.runtime.capability.CapabilitySet
+import com.agent.runtime.provider.ProviderBinding
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
@@ -16,8 +17,30 @@ import kotlin.test.assertIs
 class RuntimeCliServiceTest {
 
     @Test
-    fun `should stream demo messages when provider binding is omitted`() = runTest {
+    fun `should resolve default provider binding when request omits provider`() = runTest {
         val service = DefaultRuntimeCliService(
+            defaultBindingResolver = {
+                CliProviderResolution(
+                    binding = ProviderBinding(
+                        providerId = "provider-openai",
+                        providerType = com.agent.runtime.provider.ProviderType.OPENAI_COMPATIBLE,
+                        baseUrl = "https://openrouter.ai/api/v1",
+                        apiKey = "test-key",
+                        modelId = "openai/gpt-oss-120b:free",
+                    ),
+                    details = RuntimeCliFailureDetails(
+                        source = "runtime-default",
+                        providerType = "OPENAI_COMPATIBLE",
+                        baseUrl = "https://openrouter.ai/api/v1",
+                        modelId = "openai/gpt-oss-120b:free",
+                        apiKeyPresent = true,
+                    ),
+                )
+            },
+            runtimeAgentExecutor = RuntimeAgentExecutor(
+                assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+                runner = { _, prompt -> "done:$prompt" },
+            ),
             sessionIdFactory = { "session-1" },
             requestIdFactory = { "request-1" },
         )
@@ -30,14 +53,40 @@ class RuntimeCliServiceTest {
             listOf("session.started", "run.started"),
             messages.filterIsInstance<RuntimeCliStatusMessage>().map { it.status },
         )
-        assertEquals(
-            "runtime.cli.demo",
-            messages.filterIsInstance<RuntimeCliEventMessage>().single().event.message,
+        val result = assertIs<RuntimeCliResultMessage>(messages.last())
+        assertEquals("agent", result.mode)
+        assertEquals(JsonPrimitive("done:hello"), result.output)
+    }
+
+    @Test
+    fun `should emit provider failure when default provider binding is unavailable`() = runTest {
+        val service = DefaultRuntimeCliService(
+            defaultBindingResolver = {
+                CliProviderResolution(
+                    binding = null,
+                    details = RuntimeCliFailureDetails(
+                        source = "runtime-default",
+                        apiKeyPresent = false,
+                    ),
+                )
+            },
+            sessionIdFactory = { "session-1" },
+            requestIdFactory = { "request-1" },
         )
 
-        val result = assertIs<RuntimeCliResultMessage>(messages.last())
-        assertEquals("demo", result.mode)
-        assertEquals(JsonPrimitive("echo:hello"), result.output)
+        val messages = service.stream(
+            RuntimeCliRunRequest(prompt = "hello"),
+        ).toList()
+
+        assertEquals(
+            listOf("session.started"),
+            messages.filterIsInstance<RuntimeCliStatusMessage>().map { it.status },
+        )
+        val failure = assertIs<RuntimeCliFailureMessage>(messages.last())
+        assertEquals("provider", failure.kind)
+        assertEquals("Missing runtime provider configuration for CLI request.", failure.message)
+        assertEquals("runtime-default", failure.details?.source)
+        assertEquals(false, failure.details?.apiKeyPresent)
     }
 
     @Test
@@ -85,6 +134,11 @@ class RuntimeCliServiceTest {
         val failure = assertIs<RuntimeCliFailureMessage>(messages.last())
         assertEquals("capability", failure.kind)
         assertEquals("capability bridge failed", failure.message)
+        assertEquals("cli-request", failure.details?.source)
+        assertEquals("OPENAI_COMPATIBLE", failure.details?.providerType)
+        assertEquals("https://openrouter.ai/api/v1", failure.details?.baseUrl)
+        assertEquals("openai/gpt-oss-120b:free", failure.details?.modelId)
+        assertEquals(true, failure.details?.apiKeyPresent)
     }
 
     /**

@@ -4,9 +4,7 @@ package com.agent.runtime.agent
 
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLMCapability
-import com.agent.runtime.provider.OpenAIEndpointMode
 import com.agent.runtime.provider.ProviderBinding
-import com.agent.runtime.provider.ProviderBindingOptions
 import com.agent.runtime.provider.ProviderType
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -19,10 +17,10 @@ import kotlin.test.assertFailsWith
 class KoogExecutorResolverTest {
 
     @Test
-    fun `should resolve openai compatible binding with custom base url and arbitrary model id`() {
+    fun `should resolve openai responses binding with custom base url and arbitrary model id`() {
         val binding = ProviderBinding(
             providerId = "provider-openai",
-            providerType = ProviderType.OPENAI_COMPATIBLE,
+            providerType = ProviderType.OPENAI_RESPONSES,
             baseUrl = "https://api.example.com/v1",
             apiKey = "test-key",
             modelId = "openai/gpt-oss-120b:free",
@@ -42,10 +40,10 @@ class KoogExecutorResolverTest {
     }
 
     @Test
-    fun `should preserve arbitrary openai compatible routed model ids with responses capability by default`() {
+    fun `should preserve arbitrary openai responses routed model ids`() {
         val binding = ProviderBinding(
             providerId = "provider-compatible",
-            providerType = ProviderType.OPENAI_COMPATIBLE,
+            providerType = ProviderType.OPENAI_RESPONSES,
             baseUrl = "https://openrouter.ai/api/v1",
             apiKey = "test-key",
             modelId = "nvidia/nemotron-nano-12b-v2-vl:free",
@@ -61,14 +59,13 @@ class KoogExecutorResolverTest {
     }
 
     @Test
-    fun `should allow openai compatible binding to opt into chat completions endpoint`() {
+    fun `should resolve openai chat completions binding`() {
         val binding = ProviderBinding(
             providerId = "provider-compatible",
             providerType = ProviderType.OPENAI_COMPATIBLE,
             baseUrl = "https://openrouter.ai/api/v1",
             apiKey = "test-key",
             modelId = "nvidia/nemotron-nano-12b-v2-vl:free",
-            options = ProviderBindingOptions(openAIEndpointMode = OpenAIEndpointMode.CHAT_COMPLETIONS),
         )
 
         val resolved = KoogExecutorResolver().resolve(binding)
@@ -79,10 +76,10 @@ class KoogExecutorResolverTest {
     }
 
     @Test
-    fun `should fail openai compatible binding when model id is blank`() {
+    fun `should fail openai responses binding when model id is blank`() {
         val binding = ProviderBinding(
             providerId = "provider-openai",
-            providerType = ProviderType.OPENAI_COMPATIBLE,
+            providerType = ProviderType.OPENAI_RESPONSES,
             baseUrl = "https://api.example.com/v1",
             apiKey = "test-key",
             modelId = " ",
@@ -102,7 +99,7 @@ class KoogExecutorResolverTest {
         val anthropic = resolver.resolve(
             ProviderBinding(
                 providerId = "provider-anthropic",
-                providerType = ProviderType.ANTHROPIC_COMPATIBLE,
+                providerType = ProviderType.ANTHROPIC,
                 baseUrl = "https://api.anthropic.com",
                 apiKey = "anthropic-key",
                 modelId = "claude-sonnet-4-5",
@@ -111,7 +108,7 @@ class KoogExecutorResolverTest {
         val gemini = resolver.resolve(
             ProviderBinding(
                 providerId = "provider-gemini",
-                providerType = ProviderType.GEMINI_COMPATIBLE,
+                providerType = ProviderType.GEMINI,
                 baseUrl = "https://generativelanguage.googleapis.com",
                 apiKey = "gemini-key",
                 modelId = "gemini-2.5-flash",
@@ -137,7 +134,7 @@ class KoogExecutorResolverTest {
     fun `should resolve anthropic custom endpoint through koog client settings`() {
         val binding = ProviderBinding(
             providerId = "provider-anthropic",
-            providerType = ProviderType.ANTHROPIC_COMPATIBLE,
+            providerType = ProviderType.ANTHROPIC,
             baseUrl = "https://custom-anthropic-endpoint.example.com",
             apiKey = "anthropic-key",
             modelId = "claude-sonnet-4-5",
@@ -153,7 +150,7 @@ class KoogExecutorResolverTest {
     fun `should resolve gemini custom endpoint through koog client settings`() {
         val binding = ProviderBinding(
             providerId = "provider-gemini",
-            providerType = ProviderType.GEMINI_COMPATIBLE,
+            providerType = ProviderType.GEMINI,
             baseUrl = "https://custom-gemini-endpoint.example.com",
             apiKey = "gemini-key",
             modelId = "gemini-2.5-flash",

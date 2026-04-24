@@ -6,7 +6,6 @@ import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
-import com.agent.runtime.provider.OpenAIEndpointMode
 import com.agent.runtime.provider.ProviderBinding
 import com.agent.runtime.provider.ProviderType.*
 
@@ -30,7 +29,7 @@ class KoogExecutorResolver {
     fun resolve(binding: ProviderBinding): ResolvedKoogModelBinding {
         validateBinding(binding)
         return when (binding.providerType) {
-            OPENAI -> ResolvedKoogModelBinding(
+            OPENAI_RESPONSES -> ResolvedKoogModelBinding(
                 binding = binding,
                 promptExecutor = ProviderCompatiblePromptExecutorFactory.createOpenAICompatible(binding),
                 llmModel = createOpenAiCompatibleModel(binding),
@@ -42,7 +41,7 @@ class KoogExecutorResolver {
                 llmModel = createOpenAiCompatibleModel(binding),
             )
 
-            ANTHROPIC_COMPATIBLE -> ResolvedKoogModelBinding(
+            ANTHROPIC -> ResolvedKoogModelBinding(
                 binding = binding,
                 promptExecutor = ProviderCompatiblePromptExecutorFactory.createAnthropicCompatible(binding),
                 llmModel = createModel(
@@ -51,7 +50,7 @@ class KoogExecutorResolver {
                 ),
             )
 
-            GEMINI_COMPATIBLE -> ResolvedKoogModelBinding(
+            GEMINI -> ResolvedKoogModelBinding(
                 binding = binding,
                 promptExecutor = ProviderCompatiblePromptExecutorFactory.createGoogleCompatible(binding),
                 llmModel = createModel(
@@ -91,7 +90,7 @@ class KoogExecutorResolver {
     )
 
     /**
-     * 为 OpenAI-compatible 协议模型补充明确 endpoint 能力，避免 Koog 按原生 OpenAI 模型表推断失败。
+     * 为 OpenAI 协议模型补充明确 endpoint 能力，避免 Koog 按原生 OpenAI 模型表推断失败。
      */
     private fun createOpenAiCompatibleModel(binding: ProviderBinding): LLModel = createModel(
         provider = LLMProvider.OpenAI,
@@ -100,12 +99,13 @@ class KoogExecutorResolver {
     )
 
     /**
-     * 根据 binding 的 OpenAI endpoint 选项决定 Koog 应调用 Responses 还是 chat/completions。
+     * 根据 providerType 决定 Koog 应调用 Responses 还是 chat/completions。
      */
     private fun ProviderBinding.openAIEndpointCapability(): LLMCapability.OpenAIEndpoint =
-        when (options.openAIEndpointMode ?: OpenAIEndpointMode.RESPONSES) {
-            OpenAIEndpointMode.RESPONSES -> LLMCapability.OpenAIEndpoint.Responses
-            OpenAIEndpointMode.CHAT_COMPLETIONS -> LLMCapability.OpenAIEndpoint.Completions
+        when (providerType) {
+            OPENAI_RESPONSES -> LLMCapability.OpenAIEndpoint.Responses
+            OPENAI_COMPATIBLE -> LLMCapability.OpenAIEndpoint.Completions
+            else -> error("Provider '$providerId' is not an OpenAI protocol provider.")
         }
 
     private companion object {

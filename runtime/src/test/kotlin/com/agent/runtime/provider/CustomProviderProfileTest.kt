@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 class CustomProviderProfileTest {
 
     @Test
-    fun `should default provider type to openai compatible`() {
+    fun `should default provider type to openai chat completions`() {
         val profile = CustomProviderProfile(
             id = "provider-1",
             baseUrl = "https://api.example.com",
@@ -27,8 +27,8 @@ class CustomProviderProfileTest {
             apiKey = "test-key",
         )
 
-        val updatedProfile = profile.copy(providerType = ProviderType.ANTHROPIC_COMPATIBLE)
+        val updatedProfile = profile.copy(providerType = ProviderType.ANTHROPIC)
 
-        assertEquals(ProviderType.ANTHROPIC_COMPATIBLE, updatedProfile.providerType)
+        assertEquals(ProviderType.ANTHROPIC, updatedProfile.providerType)
     }
 }

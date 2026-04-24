@@ -69,7 +69,7 @@ class ProviderBindingResolverTest {
             apiKey = "test-key",
             providerType = ProviderType.OPENAI_COMPATIBLE,
         )
-        val updatedProfile = unchangedProfile.copy(providerType = ProviderType.ANTHROPIC_COMPATIBLE)
+        val updatedProfile = unchangedProfile.copy(providerType = ProviderType.ANTHROPIC)
         val resolver = ProviderBindingResolver()
 
         assertFalse(resolver.shouldRefresh(previousSnapshot = previousSnapshot, currentProfile = unchangedProfile))

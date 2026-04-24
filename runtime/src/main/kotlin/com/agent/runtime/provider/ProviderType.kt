@@ -5,14 +5,14 @@ package com.agent.runtime.provider
  */
 enum class ProviderType {
     /**
-     * Responses API
+     * OpenAI Responses API。
      */
-    OPENAI,
+    OPENAI_RESPONSES,
 
     /**
-     * chat completions API
+     * OpenAI chat/completions API。
      */
     OPENAI_COMPATIBLE,
-    ANTHROPIC_COMPATIBLE,
-    GEMINI_COMPATIBLE,
+    ANTHROPIC,
+    GEMINI,
 }

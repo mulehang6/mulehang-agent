@@ -10,8 +10,9 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 private const val OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY"
-private const val OPENROUTER_OPENAI_MODEL = "openai/gpt-oss-120b:free"
-private const val OPENROUTER_COMPATIBLE_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
+private const val OPENROUTER_COMPATIBLE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+private const val OPENAI_RESPONSES = "OPENAI_RESPONSES"
+private const val OPENAI_COMPATIBLE = "OPENAI_COMPATIBLE"
 
 /**
  * 通过 OpenRouter 真实发送 OpenAI-compatible 请求的集成测试。
@@ -25,7 +26,7 @@ class OpenRouterRuntimeHttpIntegrationTest {
         val response = DefaultRuntimeHttpService().run(
             request = requestFor(
                 providerId = "provider-openrouter-openai",
-                modelId = OPENROUTER_OPENAI_MODEL,
+                providerType = OPENAI_RESPONSES,
             ),
         )
 
@@ -38,7 +39,7 @@ class OpenRouterRuntimeHttpIntegrationTest {
         val response = DefaultRuntimeHttpService().run(
             request = requestFor(
                 providerId = "provider-openrouter-compatible",
-                modelId = OPENROUTER_COMPATIBLE_MODEL,
+                providerType = OPENAI_COMPATIBLE,
             ),
         )
 
@@ -48,15 +49,15 @@ class OpenRouterRuntimeHttpIntegrationTest {
 
     private fun requestFor(
         providerId: String,
-        modelId: String,
+        providerType: String,
     ): RuntimeRunHttpRequest = RuntimeRunHttpRequest(
         prompt = "请只回复 MULEHANG_OK，不要添加其他内容。",
         provider = ProviderBindingHttpRequest(
             providerId = providerId,
-            providerType = "OPENAI_COMPATIBLE",
+            providerType = providerType,
             baseUrl = OPENROUTER_BASE_URL,
             apiKey = openRouterApiKeyOrSkip(),
-            modelId = modelId,
+            modelId = OPENROUTER_COMPATIBLE_MODEL,
         ),
     )
 

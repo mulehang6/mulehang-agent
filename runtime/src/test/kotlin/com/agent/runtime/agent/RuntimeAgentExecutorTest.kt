@@ -4,9 +4,7 @@ package com.agent.runtime.agent
 
 import com.agent.runtime.capability.CapabilitySet
 import com.agent.runtime.capability.ToolCapabilityAdapter
-import com.agent.runtime.provider.OpenAIEndpointMode
 import com.agent.runtime.provider.ProviderBinding
-import com.agent.runtime.provider.ProviderBindingOptions
 import com.agent.runtime.provider.ProviderType
 import com.agent.runtime.core.RuntimeAgentExecutionFailure
 import com.agent.runtime.core.RuntimeAgentRunRequest
@@ -86,7 +84,7 @@ class RuntimeAgentExecutorTest {
             session = RuntimeSession(id = "session-1"),
             context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
             request = RuntimeAgentRunRequest(prompt = "hello"),
-            binding = openAiBinding(openAIEndpointMode = OpenAIEndpointMode.RESPONSES),
+            binding = openAiBinding(providerType = ProviderType.OPENAI_RESPONSES),
             capabilitySet = CapabilitySet(adapters = listOf(ToolCapabilityAdapter.echo(id = "tool.echo"))),
         )
 
@@ -97,13 +95,12 @@ class RuntimeAgentExecutorTest {
     }
 
     private fun openAiBinding(
-        openAIEndpointMode: OpenAIEndpointMode = OpenAIEndpointMode.RESPONSES,
+        providerType: ProviderType = ProviderType.OPENAI_COMPATIBLE,
     ) = ProviderBinding(
         providerId = "provider-openai",
-        providerType = ProviderType.OPENAI_COMPATIBLE,
+        providerType = providerType,
         baseUrl = "https://openrouter.ai/api/v1",
         apiKey = "test-key",
         modelId = "openai/gpt-oss-120b:free",
-        options = ProviderBindingOptions(openAIEndpointMode = openAIEndpointMode),
     )
 }

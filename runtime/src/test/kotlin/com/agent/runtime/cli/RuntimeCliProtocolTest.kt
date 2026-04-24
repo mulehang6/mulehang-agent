@@ -59,6 +59,13 @@ class RuntimeCliProtocolTest {
                 requestId = "request-1",
                 kind = "agent",
                 message = "agent failed",
+                details = RuntimeCliFailureDetails(
+                    source = "runtime-default",
+                    providerType = "OPENAI_COMPATIBLE",
+                    baseUrl = "https://openrouter.ai/api/v1",
+                    modelId = "openai/gpt-oss-120b:free",
+                    apiKeyPresent = true,
+                ),
             ),
         )
 

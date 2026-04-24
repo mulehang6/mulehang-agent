@@ -16,19 +16,19 @@ class ProviderProbeContractsTest {
             id = "provider-1",
             baseUrl = "https://api.example.com",
             apiKey = "test-key",
-            providerType = ProviderType.GEMINI_COMPATIBLE,
+            providerType = ProviderType.GEMINI,
         )
         val adapters = ConnectionProbeAdapters(
             adapters = listOf(
                 FakeProbeAdapter(ProviderType.OPENAI_COMPATIBLE),
-                FakeProbeAdapter(ProviderType.ANTHROPIC_COMPATIBLE),
-                FakeProbeAdapter(ProviderType.GEMINI_COMPATIBLE),
+                FakeProbeAdapter(ProviderType.ANTHROPIC),
+                FakeProbeAdapter(ProviderType.GEMINI),
             ),
         )
 
         val result = adapters.resolve(profile.providerType).probe(profile)
 
-        assertEquals(ProviderType.GEMINI_COMPATIBLE, result.providerType)
+        assertEquals(ProviderType.GEMINI, result.providerType)
         assertTrue(result.isReachable)
     }
 
@@ -38,20 +38,20 @@ class ProviderProbeContractsTest {
             id = "provider-2",
             baseUrl = "https://api.example.com",
             apiKey = "test-key",
-            providerType = ProviderType.ANTHROPIC_COMPATIBLE,
+            providerType = ProviderType.ANTHROPIC,
         )
         val adapters = ModelDiscoveryAdapters(
             adapters = listOf(
                 FakeDiscoveryAdapter(ProviderType.OPENAI_COMPATIBLE),
-                FakeDiscoveryAdapter(ProviderType.ANTHROPIC_COMPATIBLE),
-                FakeDiscoveryAdapter(ProviderType.GEMINI_COMPATIBLE),
+                FakeDiscoveryAdapter(ProviderType.ANTHROPIC),
+                FakeDiscoveryAdapter(ProviderType.GEMINI),
             ),
         )
 
         val result = adapters.resolve(profile.providerType).discover(profile)
 
-        assertEquals(ProviderType.ANTHROPIC_COMPATIBLE, result.providerType)
-        assertEquals(listOf(DiscoveredModel(id = "anthropic-compatible-model")), result.models)
+        assertEquals(ProviderType.ANTHROPIC, result.providerType)
+        assertEquals(listOf(DiscoveredModel(id = "anthropic-model")), result.models)
     }
 
     /**

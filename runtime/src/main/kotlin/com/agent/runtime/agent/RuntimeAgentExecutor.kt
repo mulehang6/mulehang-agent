@@ -1,7 +1,6 @@
 package com.agent.runtime.agent
 
 import com.agent.runtime.capability.CapabilitySet
-import com.agent.runtime.provider.OpenAIEndpointMode
 import com.agent.runtime.provider.ProviderBinding
 import com.agent.runtime.provider.ProviderType
 import com.agent.runtime.core.RuntimeAgentExecutionFailure
@@ -87,9 +86,7 @@ class RuntimeAgentExecutor(
     /**
      * 判断当前 binding 是否会按 OpenAI Responses endpoint 执行。
      */
-    private fun ProviderBinding.usesOpenAIResponsesEndpoint(): Boolean =
-        providerType in OPENAI_PROTOCOL_PROVIDER_TYPES &&
-            (options.openAIEndpointMode ?: OpenAIEndpointMode.RESPONSES) == OpenAIEndpointMode.RESPONSES
+    private fun ProviderBinding.usesOpenAIResponsesEndpoint(): Boolean = providerType == ProviderType.OPENAI_RESPONSES
 
     /**
      * 保守识别 Responses endpoint 不存在或不支持的常见错误文本。
@@ -98,12 +95,5 @@ class RuntimeAgentExecutor(
         val normalized = lowercase()
         return "responses" in normalized &&
             ("404" in normalized || "not found" in normalized || "unsupported" in normalized)
-    }
-
-    private companion object {
-        private val OPENAI_PROTOCOL_PROVIDER_TYPES = setOf(
-            ProviderType.OPENAI,
-            ProviderType.OPENAI_COMPATIBLE,
-        )
     }
 }

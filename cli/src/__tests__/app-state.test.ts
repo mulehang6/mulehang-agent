@@ -1,0 +1,119 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  appendUserPrompt,
+  applyRuntimeCliMessage,
+  closeCommandPalette,
+  createCommandItems,
+  createInitialAppState,
+  openCommandPalette,
+  selectNextCommand,
+  selectPreviousCommand,
+} from "../app-state";
+
+describe("app state", () => {
+  test("appends user prompts into transcript and switches to chat screen", () => {
+    const next = appendUserPrompt(createInitialAppState(), "hello");
+
+    expect(next.screen).toBe("chat");
+    expect(next.transcript).toEqual([
+      {
+        kind: "user",
+        text: "hello",
+      },
+    ]);
+  });
+
+  test("tracks runtime status event and result messages", () => {
+    let state = createInitialAppState();
+
+    state = applyRuntimeCliMessage(state, {
+      type: "status",
+      status: "run.started",
+      sessionId: "session-1",
+      requestId: "request-1",
+      mode: "agent",
+    });
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.run.started",
+        payload: "hello",
+      },
+    });
+    state = applyRuntimeCliMessage(state, {
+      type: "result",
+      sessionId: "session-1",
+      requestId: "request-1",
+      output: "done:hello",
+      mode: "agent",
+    });
+
+    expect(state.runtime.phase).toBe("completed");
+    expect(state.runtime.mode).toBe("agent");
+    expect(state.runtime.sessionId).toBe("session-1");
+    expect(state.transcript).toEqual([
+      {
+        kind: "result",
+        text: "done:hello",
+      },
+    ]);
+  });
+
+  test("opens command palette for slash commands and supports selection", () => {
+    const commands = createCommandItems([
+      {
+        name: "/help",
+        description: "Show command help",
+      },
+      {
+        name: "/clear",
+        description: "Clear transcript",
+      },
+      {
+        name: "/status",
+        description: "Show runtime status",
+      },
+    ]);
+
+    let state = openCommandPalette(createInitialAppState(), "/c", commands);
+
+    expect(state.commandPalette.isOpen).toBe(true);
+    expect(state.commandPalette.items.map((item) => item.name)).toEqual([
+      "/clear",
+    ]);
+
+    state = openCommandPalette(state, "/", commands);
+    state = selectNextCommand(state);
+    state = selectPreviousCommand(state);
+
+    expect(state.commandPalette.selectedIndex).toBe(0);
+
+    state = closeCommandPalette(state);
+    expect(state.commandPalette.isOpen).toBe(false);
+  });
+
+  test("shows only one-line failure summary in transcript", () => {
+    const state = applyRuntimeCliMessage(createInitialAppState(), {
+      type: "failure",
+      kind: "agent",
+      message: "OpenAILLMClient Status code: 404",
+      sessionId: "session-1",
+      requestId: "request-1",
+      details: {
+        source: "runtime-default",
+        providerType: "OPENAI_COMPATIBLE",
+        baseUrl: "https://openrouter.ai/api/v1",
+        modelId: "openai/gpt-oss-120b:free",
+        apiKeyPresent: true,
+      },
+    });
+
+    expect(state.transcript.at(-1)).toEqual({
+      kind: "failure",
+      text: "agent: OpenAILLMClient Status code: 404",
+    });
+  });
+});

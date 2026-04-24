@@ -37,6 +37,7 @@ bin/
 
 ### VS Code ###
 .vscode/
+node_modules/
 
 ### Mac OS ###
 .DS_Store
@@ -49,3 +50,4 @@ bin/
 my_chat_history/
 chat_history/
 /.claude/settings.local.json
+/cli/bun.lock

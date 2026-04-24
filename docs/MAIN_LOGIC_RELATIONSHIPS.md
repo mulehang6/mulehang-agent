@@ -212,9 +212,10 @@ classDiagram
 classDiagram
     class ProviderType {
         <<enum>>
+        OPENAI_RESPONSES
         OPENAI_COMPATIBLE
-        ANTHROPIC_COMPATIBLE
-        GEMINI_COMPATIBLE
+        ANTHROPIC
+        GEMINI
     }
 
     class CustomProviderProfile {
@@ -301,7 +302,7 @@ classDiagram
 
 - `ProviderType`
   - 表示仓库内 custom provider 支持的兼容协议类型。
-  - 当前有 `OPENAI_COMPATIBLE`、`ANTHROPIC_COMPATIBLE`、`GEMINI_COMPATIBLE`。
+  - 当前有 `OPENAI_RESPONSES`、`OPENAI_COMPATIBLE`、`ANTHROPIC`、`GEMINI`。
   - 后续 probe、discovery、binding、Koog executor 解析都以它作为分派依据。
 
 #### `CustomProviderProfile.kt`
@@ -733,11 +734,11 @@ classDiagram
   - `OPENAI_COMPATIBLE`：
     - 调用 `OpenAiCompatibleExecutorFactory.create(binding)`。
     - 调用 `createOpenAiCompatibleModel(binding.modelId)`。
-  - `ANTHROPIC_COMPATIBLE`：
+  - `ANTHROPIC`：
     - 要求 `baseUrl == https://api.anthropic.com`。
     - 使用 Koog `simpleAnthropicExecutor(binding.apiKey)`。
     - 使用 `LLMProvider.Anthropic` 创建模型。
-  - `GEMINI_COMPATIBLE`：
+  - `GEMINI`：
     - 要求 `baseUrl == https://generativelanguage.googleapis.com`。
     - 使用 Koog `simpleGoogleAIExecutor(binding.apiKey)`。
     - 使用 `LLMProvider.Google` 创建模型。

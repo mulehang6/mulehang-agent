@@ -41,8 +41,8 @@ CLI、ACP 和未来 client surface 仍然只消费 runtime，不直接拼装 Koo
 phase 03 完成时，必须满足：
 
 1. `OPENAI_COMPATIBLE`
-2. `ANTHROPIC_COMPATIBLE`
-3. `GEMINI_COMPATIBLE`
+2. `ANTHROPIC`
+3. `GEMINI`
 
 这三种 provider type 都能被解析为 Koog 可执行的 executor 与 model 组合。
 
@@ -174,8 +174,8 @@ phase 03 完成时，必须满足：
 `KoogExecutorResolver` 必须按 `providerType` 分三条路径解析：
 
 1. `OPENAI_COMPATIBLE`
-2. `ANTHROPIC_COMPATIBLE`
-3. `GEMINI_COMPATIBLE`
+2. `ANTHROPIC`
+3. `GEMINI`
 
 ### modelId 解析原则
 
@@ -247,8 +247,8 @@ runtime 不允许把它们全部折叠成单一通用异常。
 必须验证：
 
 1. `OPENAI_COMPATIBLE`
-2. `ANTHROPIC_COMPATIBLE`
-3. `GEMINI_COMPATIBLE`
+2. `ANTHROPIC`
+3. `GEMINI`
 
 都存在真实 Koog 解析路径。
 

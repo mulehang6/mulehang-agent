@@ -46,7 +46,7 @@ Expected: FAIL。
 定义：
 
 ```kotlin
-enum class ProviderType { OPENAI_COMPATIBLE, ANTHROPIC_COMPATIBLE, GEMINI_COMPATIBLE }
+enum class ProviderType { OPENAI_RESPONSES, OPENAI_COMPATIBLE, ANTHROPIC, GEMINI }
 data class CustomProviderProfile(
     val id: String,
     val baseUrl: String,

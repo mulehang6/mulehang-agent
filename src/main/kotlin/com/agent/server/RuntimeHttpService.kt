@@ -25,17 +25,19 @@ class DefaultRuntimeHttpService(
     /**
      * 使用显式传入的 provider binding 和 prompt 执行一次 runtime 调用。
      */
-    override suspend fun run(request: RuntimeRunHttpRequest): RuntimeRunHttpResponse {
+    override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> {
         val sessionId = UUID.randomUUID().toString()
         val requestId = UUID.randomUUID().toString()
         val binding = request.provider.toDomainBinding()
-            ?: return RuntimeRunHttpResponse(
-                success = false,
-                sessionId = sessionId,
-                requestId = requestId,
-                failure = RuntimeFailureHttpResponse(
-                    kind = "provider",
-                    message = "Unsupported provider type '${request.provider.providerType}'.",
+            ?: return Result.fail(
+                message = "Unsupported provider type '${request.provider.providerType}'.",
+                data = RuntimeRunPayload(
+                    sessionId = sessionId,
+                    requestId = requestId,
+                    failure = RuntimeFailurePayload(
+                        kind = "provider",
+                        message = "Unsupported provider type '${request.provider.providerType}'.",
+                    ),
                 ),
             )
 
@@ -48,22 +50,25 @@ class DefaultRuntimeHttpService(
                 capabilitySet = capabilitySetFactory(),
             )
         ) {
-            is RuntimeSuccess -> RuntimeRunHttpResponse(
-                success = true,
-                sessionId = sessionId,
-                requestId = requestId,
-                events = result.events.map { RuntimeEventHttpResponse(message = it.message, payload = it.payload) },
-                output = result.output,
+            is RuntimeSuccess -> Result.success(
+                data = RuntimeRunPayload(
+                    sessionId = sessionId,
+                    requestId = requestId,
+                    events = result.events.map { RuntimeEventPayload(message = it.message, payload = it.payload) },
+                    output = result.output,
+                ),
             )
 
-            is RuntimeFailed -> RuntimeRunHttpResponse(
-                success = false,
-                sessionId = sessionId,
-                requestId = requestId,
-                events = result.events.map { RuntimeEventHttpResponse(message = it.message, payload = it.payload) },
-                failure = RuntimeFailureHttpResponse(
-                    kind = result.failure.toFailureKind(),
-                    message = result.failure.message,
+            is RuntimeFailed -> Result.fail(
+                message = result.failure.message,
+                data = RuntimeRunPayload(
+                    sessionId = sessionId,
+                    requestId = requestId,
+                    events = result.events.map { RuntimeEventPayload(message = it.message, payload = it.payload) },
+                    failure = RuntimeFailurePayload(
+                        kind = result.failure.toFailureKind(),
+                        message = result.failure.message,
+                    ),
                 ),
             )
         }

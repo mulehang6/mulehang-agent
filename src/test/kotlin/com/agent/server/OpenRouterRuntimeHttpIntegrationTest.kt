@@ -5,7 +5,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import kotlin.test.Test
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
 private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -29,8 +29,8 @@ class OpenRouterRuntimeHttpIntegrationTest {
             ),
         )
 
-        assertTrue(response.success, response.failure?.message.orEmpty())
-        assertNotNull(response.output)
+        assertEquals(1, response.code, response.message)
+        assertNotNull(response.data.output)
     }
 
     @Test
@@ -42,8 +42,8 @@ class OpenRouterRuntimeHttpIntegrationTest {
             ),
         )
 
-        assertTrue(response.success, response.failure?.message.orEmpty())
-        assertNotNull(response.output)
+        assertEquals(1, response.code, response.message)
+        assertNotNull(response.data.output)
     }
 
     private fun requestFor(

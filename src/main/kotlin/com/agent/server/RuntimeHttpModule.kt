@@ -34,9 +34,11 @@ fun Application.runtimeHttpModule(
         get("/health") {
             runtimeHttpModuleLogger.info("收到存活检查请求：method=GET path=/health scope=http-host-only")
             call.respond(
-                HealthHttpResponse(
-                    healthy = true,
-                    service = "mulehang-agent",
+                Result.success(
+                    HealthPayload(
+                        healthy = true,
+                        service = "mulehang-agent",
+                    ),
                 ),
             )
             runtimeHttpModuleLogger.info(
@@ -59,10 +61,10 @@ fun Application.runtimeHttpModule(
             runtimeHttpModuleLogger.info(
                 "接口响应完成：method=POST path=/runtime/run status={} success={} sessionId={} requestId={} failureKind={}",
                 status.value,
-                response.success,
-                response.sessionId,
-                response.requestId,
-                response.failure?.kind,
+                response.code == 1,
+                response.data.sessionId,
+                response.data.requestId,
+                response.data.failure?.kind,
             )
             call.respond(status, response)
         }
@@ -72,12 +74,12 @@ fun Application.runtimeHttpModule(
 /**
  * 把 runtime HTTP 响应映射为最小 HTTP 状态码。
  */
-private fun RuntimeRunHttpResponse.status(): HttpStatusCode {
-    if (success) {
+private fun Result<RuntimeRunPayload>.status(): HttpStatusCode {
+    if (code == 1) {
         return HttpStatusCode.OK
     }
 
-    return when (failure?.kind) {
+    return when (data.failure?.kind) {
         "provider" -> HttpStatusCode.BadRequest
         else -> HttpStatusCode.InternalServerError
     }

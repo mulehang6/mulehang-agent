@@ -4,10 +4,48 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /**
- * 表示 HTTP 宿主的最小存活检查响应，只说明 HTTP 进程可响应，不代表 provider 或 runtime 可用。
+ * 表示统一的 HTTP 结果包装，使用 code/message/data 传递宿主接口的稳定语义。
  */
 @Serializable
-data class HealthHttpResponse(
+data class Result<T>(
+    val code: Int,
+    val message: String,
+    val data: T,
+) {
+
+    companion object {
+
+        /**
+         * 构造成功结果，code 固定为 1。
+         */
+        fun <T> success(
+            data: T,
+            message: String = "success",
+        ): Result<T> = Result(
+            code = 1,
+            message = message,
+            data = data,
+        )
+
+        /**
+         * 构造失败结果，code 固定为 0。
+         */
+        fun <T> fail(
+            message: String,
+            data: T,
+        ): Result<T> = Result(
+            code = 0,
+            message = message,
+            data = data,
+        )
+    }
+}
+
+/**
+ * 表示 HTTP 宿主的最小存活检查载荷，只说明 HTTP 进程可响应，不代表 provider 或 runtime 可用。
+ */
+@Serializable
+data class HealthPayload(
     val healthy: Boolean,
     val service: String,
 )
@@ -34,34 +72,33 @@ data class RuntimeRunHttpRequest(
 )
 
 /**
- * 表示一次 runtime 事件的 HTTP 视图。
+ * 表示一次 runtime 事件载荷。
  */
 @Serializable
-data class RuntimeEventHttpResponse(
+data class RuntimeEventPayload(
     val message: String,
     val payload: JsonElement? = null,
 )
 
 /**
- * 表示一次 runtime 失败的 HTTP 视图。
+ * 表示一次 runtime 失败载荷。
  */
 @Serializable
-data class RuntimeFailureHttpResponse(
+data class RuntimeFailurePayload(
     val kind: String,
     val message: String,
 )
 
 /**
- * 表示 `/runtime/run` 的最小结构化响应。
+ * 表示 `/runtime/run` 的最小结构化载荷。
  */
 @Serializable
-data class RuntimeRunHttpResponse(
-    val success: Boolean,
+data class RuntimeRunPayload(
     val sessionId: String,
     val requestId: String,
-    val events: List<RuntimeEventHttpResponse> = emptyList(),
+    val events: List<RuntimeEventPayload> = emptyList(),
     val output: JsonElement? = null,
-    val failure: RuntimeFailureHttpResponse? = null,
+    val failure: RuntimeFailurePayload? = null,
 )
 
 /**
@@ -72,5 +109,5 @@ interface RuntimeHttpService {
     /**
      * 执行一次 HTTP runtime 请求并返回结构化结果。
      */
-    suspend fun run(request: RuntimeRunHttpRequest): RuntimeRunHttpResponse
+    suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload>
 }

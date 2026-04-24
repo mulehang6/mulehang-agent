@@ -23,12 +23,13 @@ class DefaultRuntimeHttpServiceTest {
         )
 
         val response = service.run(validRequest())
+        val data = response.data
 
-        assertTrue(response.success)
-        assertTrue(response.sessionId.isNotBlank())
-        assertTrue(response.requestId.isNotBlank())
-        assertEquals(JsonPrimitive("done:hello"), response.output)
-        assertEquals(listOf("agent.run.started", "agent.run.completed"), response.events.map { it.message })
+        assertEquals(1, response.code)
+        assertTrue(data.sessionId.isNotBlank())
+        assertTrue(data.requestId.isNotBlank())
+        assertEquals(JsonPrimitive("done:hello"), data.output)
+        assertEquals(listOf("agent.run.started", "agent.run.completed"), data.events.map { it.message })
     }
 
     @Test
@@ -47,10 +48,12 @@ class DefaultRuntimeHttpServiceTest {
                 ),
             ),
         )
+        val data = response.data
 
-        assertEquals(false, response.success)
-        assertEquals("provider", response.failure?.kind)
-        assertEquals("Unsupported provider type 'UNSUPPORTED'.", response.failure?.message)
+        assertEquals(0, response.code)
+        assertEquals("Unsupported provider type 'UNSUPPORTED'.", response.message)
+        assertEquals("provider", data.failure?.kind)
+        assertEquals("Unsupported provider type 'UNSUPPORTED'.", data.failure?.message)
     }
 
     private fun validRequest(): RuntimeRunHttpRequest = RuntimeRunHttpRequest(

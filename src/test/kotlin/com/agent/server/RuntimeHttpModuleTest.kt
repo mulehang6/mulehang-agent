@@ -30,14 +30,17 @@ class RuntimeHttpModuleTest {
 
         val client = createJsonClient()
         val response = client.get("/health")
+        val body = response.body<Result<HealthPayload>>()
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals(
-            HealthHttpResponse(
-                healthy = true,
-                service = "mulehang-agent",
+            Result.success(
+                HealthPayload(
+                    healthy = true,
+                    service = "mulehang-agent",
+                ),
             ),
-            response.body(),
+            body,
         )
     }
 
@@ -46,59 +49,12 @@ class RuntimeHttpModuleTest {
         application {
             runtimeHttpModule(
                 service = FakeRuntimeHttpService(
-                    response = RuntimeRunHttpResponse(
-                        success = true,
-                        sessionId = "session-1",
-                        requestId = "request-1",
-                        events = listOf(RuntimeEventHttpResponse(message = "agent.run.completed")),
-                        output = JsonPrimitive("done:hello"),
-                    ),
-                ),
-            )
-        }
-
-        val client = createJsonClient()
-        val response = client.post("/runtime/run") {
-            contentType(ContentType.Application.Json)
-            setBody(
-                RuntimeRunHttpRequest(
-                    prompt = "hello",
-                    provider = ProviderBindingHttpRequest(
-                        providerId = "provider-openai",
-                        providerType = "OPENAI_COMPATIBLE",
-                        baseUrl = "https://openrouter.ai/api/v1",
-                        apiKey = "test-key",
-                        modelId = "openai/gpt-oss-120b:free",
-                    ),
-                ),
-            )
-        }
-
-        assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals(
-            RuntimeRunHttpResponse(
-                success = true,
-                sessionId = "session-1",
-                requestId = "request-1",
-                events = listOf(RuntimeEventHttpResponse(message = "agent.run.completed")),
-                output = JsonPrimitive("done:hello"),
-            ),
-            response.body(),
-        )
-    }
-
-    @Test
-    fun `should translate provider failures into bad request responses`() = testApplication {
-        application {
-            runtimeHttpModule(
-                service = FakeRuntimeHttpService(
-                    response = RuntimeRunHttpResponse(
-                        success = false,
-                        sessionId = "session-2",
-                        requestId = "request-2",
-                        failure = RuntimeFailureHttpResponse(
-                            kind = "provider",
-                            message = "provider resolution failed",
+                    response = Result.success(
+                        RuntimeRunPayload(
+                            sessionId = "session-1",
+                            requestId = "request-1",
+                            events = listOf(RuntimeEventPayload(message = "agent.run.completed")),
+                            output = JsonPrimitive("done:hello"),
                         ),
                     ),
                 ),
@@ -121,19 +77,74 @@ class RuntimeHttpModuleTest {
                 ),
             )
         }
+        val body = response.body<Result<RuntimeRunPayload>>()
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals(
+            Result.success(
+                RuntimeRunPayload(
+                    sessionId = "session-1",
+                    requestId = "request-1",
+                    events = listOf(RuntimeEventPayload(message = "agent.run.completed")),
+                    output = JsonPrimitive("done:hello"),
+                ),
+            ),
+            body,
+        )
+    }
+
+    @Test
+    fun `should translate provider failures into bad request responses`() = testApplication {
+        application {
+            runtimeHttpModule(
+                service = FakeRuntimeHttpService(
+                    response = Result.fail(
+                        message = "provider resolution failed",
+                        data = RuntimeRunPayload(
+                            sessionId = "session-2",
+                            requestId = "request-2",
+                            failure = RuntimeFailurePayload(
+                                kind = "provider",
+                                message = "provider resolution failed",
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+
+        val client = createJsonClient()
+        val response = client.post("/runtime/run") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RuntimeRunHttpRequest(
+                    prompt = "hello",
+                    provider = ProviderBindingHttpRequest(
+                        providerId = "provider-openai",
+                        providerType = "OPENAI_COMPATIBLE",
+                        baseUrl = "https://openrouter.ai/api/v1",
+                        apiKey = "test-key",
+                        modelId = "openai/gpt-oss-120b:free",
+                    ),
+                ),
+            )
+        }
+        val body = response.body<Result<RuntimeRunPayload>>()
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertEquals(
-            RuntimeRunHttpResponse(
-                success = false,
-                sessionId = "session-2",
-                requestId = "request-2",
-                failure = RuntimeFailureHttpResponse(
-                    kind = "provider",
-                    message = "provider resolution failed",
+            Result.fail(
+                message = "provider resolution failed",
+                data = RuntimeRunPayload(
+                    sessionId = "session-2",
+                    requestId = "request-2",
+                    failure = RuntimeFailurePayload(
+                        kind = "provider",
+                        message = "provider resolution failed",
+                    ),
                 ),
             ),
-            response.body(),
+            body,
         )
     }
 
@@ -144,12 +155,13 @@ class RuntimeHttpModuleTest {
     }
 
     private class FakeRuntimeHttpService(
-        private val response: RuntimeRunHttpResponse = RuntimeRunHttpResponse(
-            success = true,
-            sessionId = "session-default",
-            requestId = "request-default",
+        private val response: Result<RuntimeRunPayload> = Result.success(
+            RuntimeRunPayload(
+                sessionId = "session-default",
+                requestId = "request-default",
+            ),
         ),
     ) : RuntimeHttpService {
-        override suspend fun run(request: RuntimeRunHttpRequest): RuntimeRunHttpResponse = response
+        override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> = response
     }
 }

@@ -13,12 +13,13 @@ class LoggingRuntimeHttpServiceTest {
     @Test
     fun `should delegate runtime request and preserve success response`() = runTest {
         val request = validRequest()
-        val expected = RuntimeRunHttpResponse(
-            success = true,
-            sessionId = "session-1",
-            requestId = "request-1",
-            events = listOf(RuntimeEventHttpResponse(message = "agent.run.completed")),
-            output = JsonPrimitive("done"),
+        val expected: Result<RuntimeRunPayload> = Result.success(
+            RuntimeRunPayload(
+                sessionId = "session-1",
+                requestId = "request-1",
+                events = listOf(RuntimeEventPayload(message = "agent.run.completed")),
+                output = JsonPrimitive("done"),
+            ),
         )
         val delegate = RecordingRuntimeHttpService(expected)
         val service = LoggingRuntimeHttpService(delegate)
@@ -32,13 +33,15 @@ class LoggingRuntimeHttpServiceTest {
     @Test
     fun `should delegate runtime request and preserve failure response`() = runTest {
         val request = validRequest()
-        val expected = RuntimeRunHttpResponse(
-            success = false,
-            sessionId = "session-2",
-            requestId = "request-2",
-            failure = RuntimeFailureHttpResponse(
-                kind = "agent",
-                message = "agent failed",
+        val expected: Result<RuntimeRunPayload> = Result.fail(
+            message = "agent failed",
+            data = RuntimeRunPayload(
+                sessionId = "session-2",
+                requestId = "request-2",
+                failure = RuntimeFailurePayload(
+                    kind = "agent",
+                    message = "agent failed",
+                ),
             ),
         )
         val delegate = RecordingRuntimeHttpService(expected)
@@ -65,11 +68,11 @@ class LoggingRuntimeHttpServiceTest {
      * 记录被装饰服务收到的请求，并返回固定响应。
      */
     private class RecordingRuntimeHttpService(
-        private val response: RuntimeRunHttpResponse,
+        private val response: Result<RuntimeRunPayload>,
     ) : RuntimeHttpService {
         var receivedRequest: RuntimeRunHttpRequest? = null
 
-        override suspend fun run(request: RuntimeRunHttpRequest): RuntimeRunHttpResponse {
+        override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> {
             receivedRequest = request
             return response
         }

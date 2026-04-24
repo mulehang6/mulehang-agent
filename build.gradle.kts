@@ -17,6 +17,7 @@ dependencies {
     implementation("ai.koog:koog-agents:0.8.0")
     implementation("ai.koog:agents-features-acp:0.8.0")
     implementation("ai.koog:agents-mcp:0.8.0")
+    implementation("ch.qos.logback:logback-classic:1.5.18")
     implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-cio-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")

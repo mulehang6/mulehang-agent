@@ -12,7 +12,7 @@ class LoggingRuntimeHttpService(
     /**
      * 记录 runtime 请求进入、响应完成和异常；不会输出 apiKey 或 prompt 原文。
      */
-    override suspend fun run(request: RuntimeRunHttpRequest): RuntimeRunHttpResponse {
+    override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> {
         logger.info(
             "AOP进入 runtime 接口：providerId={} providerType={} baseUrl={} modelId={} promptLength={}",
             request.provider.providerId,
@@ -42,23 +42,23 @@ class LoggingRuntimeHttpService(
     /**
      * 按成功或失败结果记录统一出口日志。
      */
-    private fun logResponse(response: RuntimeRunHttpResponse) {
-        if (response.success) {
+    private fun logResponse(response: Result<RuntimeRunPayload>) {
+        if (response.code == 1) {
             logger.info(
                 "AOP退出 runtime 接口：success=true sessionId={} requestId={} eventCount={}",
-                response.sessionId,
-                response.requestId,
-                response.events.size,
+                response.data.sessionId,
+                response.data.requestId,
+                response.data.events.size,
             )
             return
         }
 
         logger.warn(
             "AOP退出 runtime 接口：success=false sessionId={} requestId={} failureKind={} message={}",
-            response.sessionId,
-            response.requestId,
-            response.failure?.kind,
-            response.failure?.message,
+            response.data.sessionId,
+            response.data.requestId,
+            response.data.failure?.kind,
+            response.message,
         )
     }
 

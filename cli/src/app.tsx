@@ -1,34 +1,81 @@
-import { useKeyboard, useRenderer, type InputProps } from "@opentui/react";
+import {
+  useKeyboard,
+  useRenderer,
+  useTerminalDimensions,
+  type InputProps,
+} from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
 
 import {
+  appendSystemMessage,
   appendUserPrompt,
   applyRuntimeCliMessage,
+  closeCommandPalette,
+  createCommandItems,
   createInitialAppState,
+  getSelectedCommand,
+  openCommandPalette,
+  selectNextCommand,
+  selectPreviousCommand,
   type AppState,
-  type TranscriptEntry,
 } from "./app-state";
 import {
-  type RuntimeCliProviderBinding,
-  type RuntimeCliRunRequest,
-} from "./protocol";
+  DEFAULT_COMMAND_ITEMS,
+  executeCommand,
+  formatRuntimeStatus,
+} from "./commands";
+import { registerCtrlCPress } from "./exit-guard";
+import { resolveChatLayout, resolveWelcomeLayout } from "./layout";
 import {
   createDefaultRuntimeLaunchSpec,
   RuntimeProcessClient,
 } from "./runtime-process";
+import { createRuntimeRunRequest } from "./runtime-request";
+import { ChatScreen } from "./screens/ChatScreen";
+import { WelcomeScreen } from "./screens/WelcomeScreen";
+
+const COMMAND_ITEMS = createCommandItems(DEFAULT_COMMAND_ITEMS);
+const EXIT_WINDOW_MS = 2_000;
 
 /**
- * 渲染最小可交互的 CLI/TUI，会话输入通过本地 runtime 子进程闭环返回。
+ * 渲染新的双屏 TUI：欢迎页和会话页共享同一条真实 runtime 调用链。
  */
 export function App() {
   const [state, setState] = useState<AppState>(() => createInitialAppState());
   const [draft, setDraft] = useState("");
+  const [lastCtrlCAt, setLastCtrlCAt] = useState<number | undefined>(undefined);
   const runtimeClientRef = useRef<RuntimeProcessClient | null>(null);
   const renderer = useRenderer();
+  const { height } = useTerminalDimensions();
 
   useKeyboard((key) => {
-    if (key.name === "escape") {
-      renderer.destroy();
+    if (key.ctrl && key.name === "c") {
+      const attempt = registerCtrlCPress(lastCtrlCAt, Date.now(), EXIT_WINDOW_MS);
+      setLastCtrlCAt(attempt.lastPressedAt);
+      if (attempt.shouldExit) {
+        renderer.destroy();
+      } else {
+        setState((previous) => appendSystemMessage(previous, attempt.message));
+      }
+      return;
+    }
+
+    if (key.name === "escape" && state.commandPalette.isOpen) {
+      setState((previous) => closeCommandPalette(previous));
+      return;
+    }
+
+    if (!state.commandPalette.isOpen) {
+      return;
+    }
+
+    if (key.name === "down") {
+      setState((previous) => selectNextCommand(previous));
+      return;
+    }
+
+    if (key.name === "up") {
+      setState((previous) => selectPreviousCommand(previous));
     }
   });
 
@@ -68,168 +115,95 @@ export function App() {
   }, []);
 
   /**
-   * 提交当前输入框内容，并把它转成一条 runtime 请求。
+   * 在用户输入变化时同步更新草稿和命令面板。
    */
-  const submitPrompt = ((nextPrompt: string) => {
-    const prompt = nextPrompt.trim();
-    if (!prompt || runtimeClientRef.current == null) {
+  function handleInput(value: string) {
+    setDraft(value);
+    setState((previous) =>
+      value.trim().startsWith("/")
+        ? openCommandPalette(previous, value, COMMAND_ITEMS)
+        : closeCommandPalette(previous),
+    );
+  }
+
+  /**
+   * 根据当前草稿内容发送真实请求，或执行一条本地 `/` 命令。
+   */
+  const submitPrompt = ((rawValue: string) => {
+    const prompt = rawValue.trim();
+    if (!prompt) {
       return;
     }
 
+    if (prompt.startsWith("/")) {
+      const selectedCommand =
+        getSelectedCommand(state)?.name ??
+        COMMAND_ITEMS.find((item) => item.name === prompt)?.name ??
+        prompt;
+
+      setDraft("");
+      setState((previous) =>
+        closeCommandPalette(
+          executeCommand(previous, selectedCommand, {
+            modeLabel: "Code",
+            agentLabel: "Runtime Agent",
+            modelLabel: "runtime default",
+            providerLabel: "runtime managed",
+          }),
+        ),
+      );
+      return;
+    }
+
+    if (runtimeClientRef.current == null) {
+      setState((previous) =>
+        appendSystemMessage(previous, "Runtime process is not ready yet."),
+      );
+      return;
+    }
+
+    const request = createRuntimeRunRequest(prompt);
     setDraft("");
-    setState((previous) => appendUserPrompt(previous, prompt));
-    runtimeClientRef.current.send(buildRunRequest(prompt));
+    setState((previous) => closeCommandPalette(appendUserPrompt(previous, prompt)));
+    runtimeClientRef.current.send(request);
   }) as NonNullable<InputProps["onSubmit"]>;
 
-  return (
-    <box
-      style={{
-        width: "100%",
-        height: "100%",
-        flexDirection: "column",
-        padding: 1,
-        gap: 1,
-        backgroundColor: "#08141b",
-      }}
-    >
-      <box
-        title="Status"
-        borderStyle="rounded"
-        style={{ padding: 1, flexDirection: "column", gap: 1 }}
-      >
-        <text fg="#9fd3c7">{buildStatusLine(state)}</text>
-        <text fg="#7b9aa8">
-          Demo mode is used when provider env vars are not set.
-        </text>
-      </box>
+  const footerText = "Code   Runtime Agent";
+  const modelLabel = "runtime default";
+  const providerLabel = "runtime managed";
+  const welcomeStatus = "Provider/model are resolved by runtime from .env or environment variables.";
+  const welcomeLayout = resolveWelcomeLayout(height);
+  const chatLayout = resolveChatLayout(height);
 
-      <box
-        title="Session"
-        borderStyle="rounded"
-        style={{ padding: 1, flexDirection: "column", gap: 1, flexGrow: 1 }}
-      >
-        {state.transcript.length === 0 ? (
-          <text fg="#6a8a96">Type a prompt and press Enter.</text>
-        ) : (
-          state.transcript.map((entry, index) => (
-            <text key={`${entry.kind}-${index}`} fg={colorForEntry(entry)}>
-              {prefixForEntry(entry)}
-              {entry.text}
-            </text>
-          ))
-        )}
-      </box>
-
-      <box
-        title="Input"
-        borderStyle="rounded"
-        style={{ padding: 1, flexDirection: "column", gap: 1 }}
-      >
-        <text fg="#6a8a96">Enter to send. Esc to quit.</text>
-        <input
-          value={draft}
-          focused
-          placeholder="Send a prompt to runtime..."
-          onInput={setDraft}
-          onSubmit={submitPrompt}
-        />
-      </box>
-    </box>
+  return state.screen === "welcome" ? (
+    <WelcomeScreen
+      draft={draft}
+      onInput={handleInput}
+      onSubmit={submitPrompt}
+      commandPalette={state.commandPalette}
+      statusText={welcomeStatus}
+      footerText={footerText}
+      layout={welcomeLayout}
+    />
+  ) : (
+    <ChatScreen
+      state={state}
+      draft={draft}
+      title={state.transcript.find((entry) => entry.kind === "user")?.text ?? "Conversation"}
+      providerLabel={providerLabel}
+      modelLabel={modelLabel}
+      hasProvider={true}
+      footerText={footerText}
+      layout={chatLayout}
+      onInput={handleInput}
+      onSubmit={submitPrompt}
+    />
   );
 }
 
 /**
- * 根据环境变量构造本次请求的 provider binding；缺省时返回 demo 模式。
+ * 输出一行当前 runtime 概要，供后续需要时直接插入命令或提示。
  */
-function readProviderFromEnv(): RuntimeCliProviderBinding | undefined {
-  const providerId = process.env.MULEHANG_PROVIDER_ID;
-  const providerType = process.env.MULEHANG_PROVIDER_TYPE;
-  const baseUrl = process.env.MULEHANG_PROVIDER_BASE_URL;
-  const apiKey = process.env.MULEHANG_PROVIDER_API_KEY;
-  const modelId = process.env.MULEHANG_PROVIDER_MODEL_ID;
-
-  if (
-    !providerId ||
-    !providerType ||
-    !baseUrl ||
-    !apiKey ||
-    !modelId
-  ) {
-    return undefined;
-  }
-
-  return {
-    providerId,
-    providerType,
-    baseUrl,
-    apiKey,
-    modelId,
-  };
-}
-
-/**
- * 为 runtime 子进程生成一条最小运行请求。
- */
-function buildRunRequest(prompt: string): RuntimeCliRunRequest {
-  const provider = readProviderFromEnv();
-
-  return provider == null
-    ? {
-        type: "run",
-        prompt,
-      }
-    : {
-        type: "run",
-        prompt,
-        provider,
-      };
-}
-
-/**
- * 把运行时摘要信息压平成可显示的状态行。
- */
-function buildStatusLine(state: AppState): string {
-  return [
-    `phase=${state.runtime.phase}`,
-    `mode=${state.runtime.mode}`,
-    `session=${state.runtime.sessionId ?? "-"}`,
-    `request=${state.runtime.requestId ?? "-"}`,
-    `detail=${state.runtime.detail ?? "-"}`,
-  ].join(" | ");
-}
-
-/**
- * 为不同消息类型选择一致的前缀，便于快速扫描会话流。
- */
-function prefixForEntry(entry: TranscriptEntry): string {
-  switch (entry.kind) {
-    case "user":
-      return "you> ";
-    case "status":
-      return "status> ";
-    case "event":
-      return "event> ";
-    case "result":
-      return "result> ";
-    case "failure":
-      return "error> ";
-  }
-}
-
-/**
- * 为不同消息类型提供最小但稳定的终端配色。
- */
-function colorForEntry(entry: TranscriptEntry): string {
-  switch (entry.kind) {
-    case "user":
-      return "#f7f4ea";
-    case "status":
-      return "#9fd3c7";
-    case "event":
-      return "#f4b860";
-    case "result":
-      return "#b7efc5";
-    case "failure":
-      return "#ff8b94";
-  }
+export function buildStatusLine(state: AppState): string {
+  return formatRuntimeStatus(state.runtime);
 }

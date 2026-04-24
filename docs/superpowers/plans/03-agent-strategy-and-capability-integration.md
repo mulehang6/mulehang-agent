@@ -168,21 +168,21 @@ class KoogExecutorResolverTest {
         val resolver = KoogExecutorResolver()
 
         val anthropic = resolver.resolve(
-            ProviderBinding("provider-anthropic", ProviderType.ANTHROPIC_COMPATIBLE, "https://api.anthropic.com", "k", "claude-3-7-sonnet-latest")
+            ProviderBinding("provider-anthropic", ProviderType.ANTHROPIC, "https://api.anthropic.com", "k", "claude-3-7-sonnet-latest")
         )
         val gemini = resolver.resolve(
-            ProviderBinding("provider-gemini", ProviderType.GEMINI_COMPATIBLE, "https://generativelanguage.googleapis.com", "k", "gemini-2.5-flash")
+            ProviderBinding("provider-gemini", ProviderType.GEMINI, "https://generativelanguage.googleapis.com", "k", "gemini-2.5-flash")
         )
 
-        assertEquals(ProviderType.ANTHROPIC_COMPATIBLE, anthropic.binding.providerType)
-        assertEquals(ProviderType.GEMINI_COMPATIBLE, gemini.binding.providerType)
+        assertEquals(ProviderType.ANTHROPIC, anthropic.binding.providerType)
+        assertEquals(ProviderType.GEMINI, gemini.binding.providerType)
     }
 
     @Test
     fun `should fail with provider resolution failure when Koog path is unsupported`() {
         val binding = ProviderBinding(
             providerId = "provider-gemini",
-            providerType = ProviderType.GEMINI_COMPATIBLE,
+            providerType = ProviderType.GEMINI,
             baseUrl = "https://custom-gemini-endpoint.example.com",
             apiKey = "test-key",
             modelId = "gemini-2.5-flash",
@@ -223,12 +223,12 @@ class KoogExecutorResolver {
             promptExecutor = OpenAiCompatibleExecutorFactory.create(binding),
             llmModel = LLModel(provider = LLMProvider.OpenAI, id = binding.modelId, capabilities = DEFAULT_TOOL_CAPABILITIES),
         )
-        ProviderType.ANTHROPIC_COMPATIBLE -> ResolvedKoogModelBinding(
+        ProviderType.ANTHROPIC -> ResolvedKoogModelBinding(
             binding = binding,
             promptExecutor = simpleAnthropicExecutor(binding.apiKey),
             llmModel = LLModel(provider = LLMProvider.Anthropic, id = binding.modelId, capabilities = DEFAULT_TOOL_CAPABILITIES),
         )
-        ProviderType.GEMINI_COMPATIBLE -> ResolvedKoogModelBinding(
+        ProviderType.GEMINI -> ResolvedKoogModelBinding(
             binding = binding,
             promptExecutor = simpleGeminiExecutor(binding.apiKey),
             llmModel = LLModel(provider = LLMProvider.Google, id = binding.modelId, capabilities = DEFAULT_TOOL_CAPABILITIES),
@@ -251,8 +251,8 @@ Expected: PASS，并覆盖：
 
 ```text
 OPENAI_COMPATIBLE
-ANTHROPIC_COMPATIBLE
-GEMINI_COMPATIBLE
+ANTHROPIC
+GEMINI
 自定义 baseUrl 的 OpenAI-compatible 路径
 受限 provider endpoint 的结构化失败
 ```

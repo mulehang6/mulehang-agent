@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## 项目结构与模块组织
-本仓库是基于 Kotlin/JVM 的 Gradle 项目。生产代码位于 `src/main/kotlin`；测试代码位于 `src/test/kotlin`，现有测试主要分布在 `src/test/kotlin/mulehang` 与 `src/test/kotlin/agent`。资源文件位于 `src/main/resources` 与 `src/test/resources`。设计文档与实施计划统一放在 `docs/superpowers/specs` 和 `docs/superpowers/plans`。总设计文档与总 implementation plan 用日期命名；阶段文档按 `01-...` 到 `07-...` 命名。`vendor/kilocode` 通过 git submodule 引入，不参与当前项目构建，主要用于对照阅读和局部方案参考。
+本仓库是基于 Kotlin/JVM 的 Gradle 多模块项目。当前核心代码已经收敛到 `runtime` 模块：生产代码位于 `runtime/src/main/kotlin`，测试代码位于 `runtime/src/test/kotlin`，资源文件位于 `runtime/src/main/resources`。根目录的 `build.gradle.kts` 与 `settings.gradle.kts` 负责聚合与模块声明。设计文档与实施计划统一放在 `docs/superpowers/specs` 和 `docs/superpowers/plans`。总设计文档与总 implementation plan 用日期命名；阶段文档按 `01-...` 到 `07-...` 命名。`vendor/kilocode` 通过 git submodule 引入，不参与当前项目构建，主要用于对照阅读和局部方案参考。
 
 ## 构建、测试与本地开发命令
 在 PowerShell 中使用以下命令：

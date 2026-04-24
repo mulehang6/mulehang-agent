@@ -1,5 +1,7 @@
 # mulehang-agent
 
+> note: 本分支为软件项目管理(大三下)专属分支，不建议在此分支中直接开发。
+
 一个基于 Kotlin/JVM 与 JetBrains Koog 的 agent 实验与重建仓库。
 
 当前仓库采用 `runtime-first` 的 superpowers 工作流：

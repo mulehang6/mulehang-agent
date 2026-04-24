@@ -34,15 +34,18 @@
 
 ```text
 .
-├─ src/main/kotlin        # Kotlin 生产代码
-├─ src/test/kotlin        # Kotlin 测试代码
+├─ runtime/
+│  ├─ src/main/kotlin     # 当前 runtime、provider、capability、agent、server 主代码
+│  ├─ src/test/kotlin     # 当前 runtime 模块测试
+│  └─ build.gradle.kts    # runtime 模块构建与运行入口
 ├─ docs/
 │  └─ superpowers/
 │     ├─ specs/           # 总设计与阶段 spec
 │     └─ plans/           # 总 implementation plan 与阶段 plan
 ├─ vendor/kilocode        # 参考实现 submodule
 ├─ mulehang-agent.json.example
-└─ build.gradle.kts
+├─ build.gradle.kts       # 根工程聚合配置
+└─ settings.gradle.kts
 ```
 
 ## 文档入口

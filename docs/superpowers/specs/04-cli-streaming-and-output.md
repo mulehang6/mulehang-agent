@@ -17,6 +17,8 @@
 
 CLI 是第一主入口，但它只负责入口与呈现。
 
+CLI 在工程结构上应作为独立 `cli` Gradle 模块存在，并通过模块依赖消费 `runtime` 暴露的契约与执行能力。
+
 CLI 不负责：
 
 1. provider 探测逻辑
@@ -30,6 +32,7 @@ CLI 只消费：
 1. `RuntimeEvent`
 2. `RuntimeResult`
 3. `RuntimeFailure`
+4. `runtime` 模块对外暴露的稳定调用入口
 
 CLI 不应该知道底层到底走的是：
 
@@ -52,6 +55,16 @@ CLI 不应该知道底层到底走的是：
 1. 不在这一阶段引入 ACP
 2. 不提前设计桌面端或 Web UI
 3. 不在 CLI 内部重建第二套 runtime
+4. 不把 CLI 代码直接合并进 `runtime` 模块
+
+## 模块边界
+
+本阶段默认采用以下工程边界：
+
+1. `runtime` 模块继续承载 runtime、provider、capability、agent 和当前宿主集成
+2. `cli` 模块承载命令解析、流式输出、structured output 呈现和用户可见错误
+3. `cli` 通过 `implementation(project(":runtime"))` 依赖 `runtime`
+4. `cli` 不直接依赖 provider 底层实现或 capability adapter 细节，只依赖 runtime 暴露的契约与入口
 
 ## 验证标准
 

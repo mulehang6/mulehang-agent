@@ -1,7 +1,9 @@
 # Repository Guidelines
 
 ## 项目结构与模块组织
-本仓库是基于 Kotlin/JVM 的 Gradle 多模块项目。当前核心代码已经收敛到 `runtime` 模块：生产代码位于 `runtime/src/main/kotlin`，测试代码位于 `runtime/src/test/kotlin`，资源文件位于 `runtime/src/main/resources`。根目录的 `build.gradle.kts` 与 `settings.gradle.kts` 负责聚合与模块声明。设计文档与实施计划统一放在 `docs/superpowers/specs` 和 `docs/superpowers/plans`。总设计文档与总 implementation plan 用日期命名；阶段文档按 `01-...` 到 `07-...` 命名。`vendor/kilocode` 通过 git submodule 引入，不参与当前项目构建，主要用于对照阅读和局部方案参考。
+本仓库包含 Kotlin/JVM runtime 与独立 Bun/OpenTUI CLI。`runtime` 是 Gradle 子模块：生产代码位于 `runtime/src/main/kotlin`，测试代码位于 `runtime/src/test/kotlin`，资源文件位于 `runtime/src/main/resources`。`cli` 不是 Gradle 子模块，终端界面代码位于 `cli/src`，测试位于 `cli/src/__tests__`，依赖和脚本由 `cli/package.json` 管理。
+
+根目录的 `build.gradle.kts` 与 `settings.gradle.kts` 负责 runtime 聚合与模块声明。设计文档与实施计划统一放在 `docs/superpowers/specs` 和 `docs/superpowers/plans`。总设计文档与总 implementation plan 用日期命名；阶段文档按 `01-...` 到 `07-...` 命名。`vendor/kilocode` 通过 git submodule 引入，不参与当前项目构建，主要用于对照阅读和局部方案参考。
 
 ## 构建、测试与本地开发命令
 在 PowerShell 中使用以下命令：
@@ -24,11 +26,26 @@
 
 清理构建产物，用于排查缓存或构建异常。不要在协作文档中要求启动开发服务器，本仓库以构建和测试验证为主。
 
+```powershell
+.\gradlew.bat :runtime:installCliHostDist
+```
+
+生成 CLI 调用 runtime stdio host 所需的本地分发脚本与依赖。
+
+```powershell
+Push-Location .\cli
+bun test
+bun run typecheck
+Pop-Location
+```
+
+运行 CLI 单元测试与 TypeScript 类型检查。不要把 `bun run dev` 写入常规验证流程，也不要主动启动交互式开发进程。
+
 ## 编码风格与命名约定
-遵循 Kotlin 官方风格，使用 4 空格缩进，不使用制表符。类名和对象名使用 `PascalCase`，函数与变量使用 `camelCase`，常量使用 `UPPER_SNAKE_CASE`。测试名称可使用反引号包裹行为描述，例如 ``fun `should retry with fallback runner`()``。保持文件职责单一。生产代码中的类、对象、数据类和方法应补充简短 KDoc，说明职责、输入输出或关键副作用；测试代码至少补类级注释，只有在测试意图不直观时才为单个测试方法补说明。
+Kotlin 遵循官方风格，使用 4 空格缩进，不使用制表符。类名和对象名使用 `PascalCase`，函数与变量使用 `camelCase`，常量使用 `UPPER_SNAKE_CASE`。TypeScript/TSX 侧沿用现有 React hook + 函数组件风格，文件名按职责使用 `kebab-case` 或组件 `PascalCase`，共享状态和协议类型优先放在 `cli/src/app-state.ts`、`cli/src/protocol.ts` 等边界清晰的文件中。测试名称可使用反引号包裹行为描述，例如 ``fun `should retry with fallback runner`()``。保持文件职责单一。生产 Kotlin 代码中的类、对象、数据类和方法应补充简短 KDoc，说明职责、输入输出或关键副作用；测试代码至少补类级注释，只有在测试意图不直观时才为单个测试方法补说明。
 
 ## 测试规范
-测试栈为 `kotlin.test` + JUnit 5，`build.gradle.kts` 已启用 `useJUnitPlatform()`。新增功能或缺陷修复时，应补充对应单元测试，优先覆盖错误分支、回退流程和边界条件。测试文件名建议与被测对象对应，例如 `MySimpleAgentTest.kt`。
+runtime 测试栈为 `kotlin.test` + JUnit 5，`runtime/build.gradle.kts` 已启用 `useJUnitPlatform()`。CLI 测试使用 `bun test`，测试文件放在 `cli/src/__tests__`。新增功能或缺陷修复时，应补充对应单元测试，优先覆盖错误分支、回退流程、协议解析和边界条件。测试文件名建议与被测对象对应，例如 `MySimpleAgentTest.kt` 或 `runtime-process.test.ts`。
 
 ## 提交与 Pull Request 规范
 - 现有提交历史同时包含简洁主题和 Conventional Commits 风格，例如 `fix(git): ...`、`refactor(agent): ...`。建议统一采用 `<type>(<scope>): <summary>`，例如 `feat(agent): 添加流式回退指导`。PR 应说明变更目的、核心实现与验证方式；如果输出行为有变化，附上示例输入输出。使用中文

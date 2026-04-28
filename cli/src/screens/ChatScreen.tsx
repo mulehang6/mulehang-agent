@@ -7,7 +7,7 @@ import { TranscriptView } from "../components/TranscriptView";
 import type { ChatLayout } from "../layout";
 
 /**
- * 渲染参考图二风格的会话页。
+ * 渲染参考kilo风格的会话页。
  */
 export function ChatScreen(props: {
   state: AppState;

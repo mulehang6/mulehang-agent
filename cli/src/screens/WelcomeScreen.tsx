@@ -12,8 +12,10 @@ export function WelcomeScreen(props: {
   commandPalette: CommandPaletteState;
   onInput: (value: string) => void;
   onSubmit: NonNullable<InputProps["onSubmit"]>;
-  statusText: string;
-  footerText: string;
+  composerFooterText: string;
+  composerHelperText: string;
+  workspaceText: string;
+  versionText: string;
   layout: WelcomeLayout;
 }) {
   return (
@@ -56,8 +58,8 @@ export function WelcomeScreen(props: {
             onSubmit={props.onSubmit}
             commandPalette={props.commandPalette}
             compact={false}
-            footerText=""
-            helperText=""
+            footerText={props.composerFooterText}
+            helperText={props.composerHelperText}
           />
         </box>
 
@@ -92,9 +94,9 @@ export function WelcomeScreen(props: {
             gap: 2,
           }}
         >
-          <text fg="#8f8f8f">{props.statusText}</text>
+          <text fg="#8f8f8f">{props.workspaceText}</text>
           <box style={{ flexGrow: 1 }} />
-          <text fg="#8f8f8f">{props.footerText}</text>
+          <text fg="#8f8f8f">{props.versionText}</text>
         </box>
       </box>
     </>

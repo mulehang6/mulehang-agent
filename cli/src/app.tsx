@@ -33,6 +33,7 @@ import {
 import { createRuntimeRunRequest } from "./runtime-request";
 import { ChatScreen } from "./screens/ChatScreen";
 import { WelcomeScreen } from "./screens/WelcomeScreen";
+import { createWelcomeMetadata, readCurrentGitBranch } from "./welcome-metadata";
 
 const COMMAND_ITEMS = createCommandItems(DEFAULT_COMMAND_ITEMS);
 const EXIT_WINDOW_MS = 2_000;
@@ -47,6 +48,7 @@ export function App() {
   const runtimeClientRef = useRef<RuntimeProcessClient | null>(null);
   const renderer = useRenderer();
   const { height } = useTerminalDimensions();
+  const [gitBranch] = useState(() => readCurrentGitBranch());
 
   useKeyboard((key) => {
     if (key.ctrl && key.name === "c") {
@@ -168,10 +170,17 @@ export function App() {
     runtimeClientRef.current.send(request);
   }) as NonNullable<InputProps["onSubmit"]>;
 
-  const footerText = "Code   Runtime Agent";
+  const modeLabel = "Code";
+  const agentLabel = "Runtime Agent";
   const modelLabel = "runtime default";
   const providerLabel = "runtime managed";
-  const welcomeStatus = "Provider/model are resolved by runtime from .env or environment variables.";
+  const chatFooterText = `${modeLabel}   ${agentLabel}`;
+  const welcomeMetadata = createWelcomeMetadata({
+    gitBranch,
+    modeLabel,
+    modelLabel,
+    providerLabel,
+  });
   const welcomeLayout = resolveWelcomeLayout(height);
   const chatLayout = resolveChatLayout(height);
 
@@ -181,8 +190,10 @@ export function App() {
       onInput={handleInput}
       onSubmit={submitPrompt}
       commandPalette={state.commandPalette}
-      statusText={welcomeStatus}
-      footerText={footerText}
+      composerFooterText={welcomeMetadata.composerFooterText}
+      composerHelperText={welcomeMetadata.composerHelperText}
+      workspaceText={welcomeMetadata.workspaceText}
+      versionText={welcomeMetadata.versionText}
       layout={welcomeLayout}
     />
   ) : (
@@ -193,7 +204,7 @@ export function App() {
       providerLabel={providerLabel}
       modelLabel={modelLabel}
       hasProvider={true}
-      footerText={footerText}
+      footerText={chatFooterText}
       layout={chatLayout}
       onInput={handleInput}
       onSubmit={submitPrompt}

@@ -67,6 +67,8 @@ data class RuntimeCliStatusMessage(
 @Serializable
 data class RuntimeCliEventPayload(
     val message: String,
+    val channel: String? = null,
+    val delta: String? = null,
     val payload: JsonElement? = null,
 )
 

@@ -17,6 +17,7 @@ import {
   openCommandPalette,
   selectNextCommand,
   selectPreviousCommand,
+  toggleTranscriptEntryExpanded,
   type AppState,
 } from "./app-state";
 import {
@@ -131,8 +132,8 @@ export function App() {
   /**
    * 根据当前草稿内容发送真实请求，或执行一条本地 `/` 命令。
    */
-  const submitPrompt = ((rawValue: string) => {
-    const prompt = rawValue.trim();
+  const submitPrompt = ((rawValue?: string) => {
+    const prompt = resolveSubmittedPrompt(rawValue, draft);
     if (!prompt) {
       return;
     }
@@ -167,8 +168,24 @@ export function App() {
     const request = createRuntimeRunRequest(prompt);
     setDraft("");
     setState((previous) => closeCommandPalette(appendUserPrompt(previous, prompt)));
-    runtimeClientRef.current.send(request);
+    try {
+      runtimeClientRef.current.send(request);
+    } catch (error) {
+      setState((previous) =>
+        appendSystemMessage(
+          previous,
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+    }
   }) as NonNullable<InputProps["onSubmit"]>;
+
+  /**
+   * 切换 transcript 中可折叠区块的展开状态。
+   */
+  function handleTranscriptToggle(entryIndex: number) {
+    setState((previous) => toggleTranscriptEntryExpanded(previous, entryIndex));
+  }
 
   const modeLabel = "Code";
   const agentLabel = "Runtime Agent";
@@ -208,6 +225,7 @@ export function App() {
       layout={chatLayout}
       onInput={handleInput}
       onSubmit={submitPrompt}
+      onToggleTranscriptEntry={handleTranscriptToggle}
     />
   );
 }
@@ -217,4 +235,11 @@ export function App() {
  */
 export function buildStatusLine(state: AppState): string {
   return formatRuntimeStatus(state.runtime);
+}
+
+/**
+ * 解析 OpenTUI submit 事件对应的提交文本；React binding 的 onSubmit 不保证传入 value。
+ */
+export function resolveSubmittedPrompt(rawValue: unknown, draft: string): string {
+  return (typeof rawValue === "string" ? rawValue : draft).trim();
 }

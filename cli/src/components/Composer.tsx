@@ -16,8 +16,8 @@ export function Composer(props: {
   onInput: (value: string) => void;
   onSubmit: NonNullable<InputProps["onSubmit"]>;
 }) {
-  const boxPadding = props.compact ? 0 : 1;
-  const minComposerHeight = props.compact ? 2 : 3;
+  const boxPadding = 1;
+  const minComposerHeight = 3;
   const showFooter = Boolean(props.footerText || props.helperText);
 
   return (

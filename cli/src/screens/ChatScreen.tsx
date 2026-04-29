@@ -20,6 +20,7 @@ export function ChatScreen(props: {
   layout: ChatLayout;
   onInput: (value: string) => void;
   onSubmit: NonNullable<InputProps["onSubmit"]>;
+  onToggleTranscriptEntry: (entryIndex: number) => void;
 }) {
   return (
     <box
@@ -39,7 +40,10 @@ export function ChatScreen(props: {
           gap: props.layout.gap,
         }}
       >
-        <TranscriptView entries={props.state.transcript} />
+        <TranscriptView
+          entries={props.state.transcript}
+          onToggleEntry={props.onToggleTranscriptEntry}
+        />
 
         <Composer
           draft={props.draft}

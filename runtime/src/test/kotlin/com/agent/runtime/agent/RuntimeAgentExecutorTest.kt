@@ -14,7 +14,10 @@ import com.agent.runtime.core.RuntimeProviderResolutionFailure
 import com.agent.runtime.core.RuntimeRequestContext
 import com.agent.runtime.core.RuntimeSession
 import com.agent.runtime.core.RuntimeSuccess
+import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.flowOf
+import ai.koog.prompt.streaming.StreamFrame
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -94,13 +97,96 @@ class RuntimeAgentExecutorTest {
         assertContains(failure.message, "chat/completions")
     }
 
+    @Test
+    fun `should translate streaming text and reasoning frames into runtime events`() = runTest {
+        val result = RuntimeAgentExecutor(
+            assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+            streamRunner = { _, _ ->
+                flowOf(
+                    StreamFrame.ReasoningDelta(text = "thinking "),
+                    StreamFrame.TextDelta("hello "),
+                    StreamFrame.TextDelta("world"),
+                )
+            },
+        ).execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(),
+            capabilitySet = CapabilitySet(adapters = listOf(ToolCapabilityAdapter.echo(id = "tool.echo"))),
+        )
+
+        assertIs<RuntimeSuccess>(result)
+        assertEquals(JsonPrimitive("hello world"), result.output)
+        assertEquals(
+            listOf("status", "thinking", "text", "text", "status"),
+            result.events.map { it.channel ?: "status" },
+        )
+        assertEquals("thinking ", result.events[1].delta)
+        assertEquals("hello ", result.events[2].delta)
+        assertEquals("world", result.events[3].delta)
+    }
+
+    @Test
+    fun `should use DeepSeek thinking compatibility stream when chat completions reasoning is hidden from Koog`() = runTest {
+        val result = RuntimeAgentExecutor(
+            assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+            compatibilityStreamRunner = object : CompatibilityStreamRunner {
+                override fun supports(binding: ProviderBinding, hasTools: Boolean): Boolean = true
+
+                override fun stream(binding: ProviderBinding, userPrompt: String) = flowOf(
+                    StreamFrame.ReasoningDelta(text = "inspect "),
+                    StreamFrame.TextDelta("answer"),
+                )
+            },
+        ).execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(
+                baseUrl = "https://api.deepseek.com",
+                modelId = "deepseek-v4-flash",
+                enableThinking = true,
+            ),
+            capabilitySet = CapabilitySet(adapters = emptyList()),
+        )
+
+        assertIs<RuntimeSuccess>(result)
+        assertEquals(JsonPrimitive("answer"), result.output)
+        assertEquals(
+            listOf("status", "thinking", "text", "status"),
+            result.events.map { it.channel ?: "status" },
+        )
+        assertEquals("inspect ", result.events[1].delta)
+        assertEquals("answer", result.events[2].delta)
+    }
+
+    @Test
+    fun `should inject deepseek thinking payload into prompt params when enabled`() {
+        val prompt = buildRuntimePrompt(
+            userPrompt = "hello",
+            binding = openAiBinding(
+                baseUrl = "https://api.deepseek.com",
+                modelId = "deepseek-v4-flash",
+                enableThinking = true,
+            ),
+        )
+
+        val params = assertIs<OpenAIChatParams>(prompt.params)
+        assertEquals("{\"type\":\"enabled\"}", params.additionalProperties?.get("thinking")?.toString())
+    }
+
     private fun openAiBinding(
         providerType: ProviderType = ProviderType.OPENAI_COMPATIBLE,
+        baseUrl: String = "https://openrouter.ai/api/v1",
+        modelId: String = "openai/gpt-oss-120b:free",
+        enableThinking: Boolean = false,
     ) = ProviderBinding(
         providerId = "provider-openai",
         providerType = providerType,
-        baseUrl = "https://openrouter.ai/api/v1",
+        baseUrl = baseUrl,
         apiKey = "test-key",
-        modelId = "openai/gpt-oss-120b:free",
+        modelId = modelId,
+        enableThinking = enableThinking,
     )
 }

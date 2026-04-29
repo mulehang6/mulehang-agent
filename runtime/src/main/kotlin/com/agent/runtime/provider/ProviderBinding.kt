@@ -9,6 +9,7 @@ data class ProviderBinding(
     val baseUrl: String,
     val apiKey: String,
     val modelId: String,
+    val enableThinking: Boolean = false,
 )
 
 /**

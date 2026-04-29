@@ -1,5 +1,6 @@
 import {
   formatRuntimeCliValue,
+  type RuntimeCliEventPayload,
   type RuntimeCliOutboundMessage,
 } from "./protocol";
 
@@ -12,8 +13,18 @@ export type AppScreen = "welcome" | "chat";
  * 表示 TUI 会话区里的一条可见消息。
  */
 export interface TranscriptEntry {
-  kind: "user" | "status" | "event" | "result" | "failure" | "system";
+  kind:
+    | "user"
+    | "assistant"
+    | "status"
+    | "event"
+    | "thinking"
+    | "result"
+    | "failure"
+    | "system";
   text: string;
+  title?: string;
+  expanded?: boolean;
 }
 
 /**
@@ -128,6 +139,31 @@ export function clearTranscript(state: AppState): AppState {
   return {
     ...state,
     transcript: [],
+  };
+}
+
+/**
+ * 切换一条可折叠 transcript entry 的展开状态。
+ */
+export function toggleTranscriptEntryExpanded(
+  state: AppState,
+  entryIndex: number,
+): AppState {
+  const entry = state.transcript[entryIndex];
+  if (entry == null || entry.expanded == null) {
+    return state;
+  }
+
+  return {
+    ...state,
+    transcript: state.transcript.map((item, index) =>
+      index === entryIndex
+        ? {
+            ...item,
+            expanded: !item.expanded,
+          }
+        : item,
+    ),
   };
 }
 
@@ -247,6 +283,10 @@ export function applyRuntimeCliMessage(
       return {
         ...state,
         screen: "chat",
+        transcript: applyRuntimeEventToTranscript(
+          state.transcript,
+          message.event,
+        ),
         runtime: {
           ...state.runtime,
           sessionId: message.sessionId,
@@ -255,6 +295,20 @@ export function applyRuntimeCliMessage(
         },
       };
     case "result":
+      if (isDuplicateFinalOutput(state.transcript, message.output)) {
+        return {
+          ...state,
+          screen: "chat",
+          runtime: {
+            phase: "completed",
+            mode: message.mode,
+            sessionId: message.sessionId,
+            requestId: message.requestId,
+            detail: "completed",
+          },
+        };
+      }
+
       return {
         ...state,
         screen: "chat",
@@ -293,6 +347,76 @@ export function applyRuntimeCliMessage(
         },
       };
   }
+}
+
+/**
+ * 把 runtime event 的可见文本归并到 transcript，thinking delta 会合并到同一个默认展开区块。
+ */
+function applyRuntimeEventToTranscript(
+  transcript: TranscriptEntry[],
+  event: RuntimeCliEventPayload,
+): TranscriptEntry[] {
+  const text = formatRuntimeCliValue(event.delta ?? event.payload);
+  if (text.length === 0) {
+    return transcript;
+  }
+
+  if (event.channel === "thinking") {
+    const lastEntry = transcript.at(-1);
+    if (lastEntry?.kind === "thinking") {
+      return [
+        ...transcript.slice(0, -1),
+        {
+          ...lastEntry,
+          text: `${lastEntry.text}${text}`,
+        },
+      ];
+    }
+
+    return [
+      ...transcript,
+      {
+        kind: "thinking",
+        title: "Thinking",
+        expanded: true,
+        text,
+      },
+    ];
+  }
+
+  if (event.channel === "text") {
+    const lastEntry = transcript.at(-1);
+    if (lastEntry?.kind === "assistant") {
+      return [
+        ...transcript.slice(0, -1),
+        {
+          ...lastEntry,
+          text: `${lastEntry.text}${text}`,
+        },
+      ];
+    }
+
+    return [
+      ...transcript,
+      {
+        kind: "assistant",
+        text,
+      },
+    ];
+  }
+
+  return transcript;
+}
+
+/**
+ * 判断最终结果是否已经通过普通文本 delta 完整展示过。
+ */
+function isDuplicateFinalOutput(
+  transcript: TranscriptEntry[],
+  output: unknown,
+): boolean {
+  const text = formatRuntimeCliValue(output);
+  return text.length > 0 && transcript.at(-1)?.kind === "assistant" && transcript.at(-1)?.text === text;
 }
 
 /**

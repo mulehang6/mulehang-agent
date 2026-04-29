@@ -77,4 +77,27 @@ class RuntimeCliProtocolTest {
             assertEquals(message, decoded)
         }
     }
+
+    @Test
+    fun `should encode thinking delta as first class streaming event fields`() {
+        val inboundJson = """
+            {
+              "type": "event",
+              "sessionId": "session-1",
+              "requestId": "request-1",
+              "event": {
+                "message": "agent.reasoning.delta",
+                "channel": "thinking",
+                "delta": "I need to inspect the available context first."
+              }
+            }
+        """.trimIndent()
+
+        val decoded = RuntimeCliJson.decodeFromString(RuntimeCliOutboundMessage.serializer(), inboundJson)
+        val encoded = RuntimeCliJson.encodeToString(RuntimeCliOutboundMessage.serializer(), decoded)
+
+        assertTrue(encoded.contains("\"message\":\"agent.reasoning.delta\""))
+        assertTrue(encoded.contains("\"channel\":\"thinking\""))
+        assertTrue(encoded.contains("\"delta\":\"I need to inspect the available context first.\""))
+    }
 }

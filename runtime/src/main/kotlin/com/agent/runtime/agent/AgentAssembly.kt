@@ -3,11 +3,15 @@ package com.agent.runtime.agent
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.prompt.executor.model.PromptExecutor
+import ai.koog.prompt.llm.LLModel
 /**
  * 表示当前阶段装配出的真实 Koog agent 及其仓库侧元数据。
  */
 data class AssembledAgent(
     val binding: com.agent.runtime.provider.ProviderBinding,
+    val promptExecutor: PromptExecutor,
+    val llmModel: LLModel,
     val strategy: AIAgentGraphStrategy<String, String>,
     val agent: AIAgent<String, String>,
     val toolRegistry: ToolRegistry,
@@ -42,6 +46,8 @@ class AgentAssembly(
 
         return AssembledAgent(
             binding = binding,
+            promptExecutor = resolvedBinding.promptExecutor,
+            llmModel = resolvedBinding.llmModel,
             strategy = strategy,
             agent = agent,
             toolRegistry = tooling.toolRegistry,

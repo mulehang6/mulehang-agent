@@ -74,6 +74,22 @@ CLI 不应该知道底层到底走的是：
 2. 状态区可见当前模型、上下文和运行状态
 3. streaming 输出在界面上连续追加，而不是每轮整屏重绘式刷日志
 
+### Thinking / Reasoning 流式输出
+
+对于支持 thinking / reasoning delta 的模型，runtime 必须把 thinking 文本作为一等流式输出传给 CLI，而不是只写入日志、只更新状态栏，或等最终结果出来后再一次性补齐。
+
+协议层不把 thinking 绑定到某个 provider 的私有字段，而是统一映射为 runtime event：
+
+1. 普通回答增量使用 `channel = "text"`
+2. thinking / reasoning 增量使用 `channel = "thinking"`
+3. tool 调用提示使用 `channel = "tool"`
+4. 一般运行状态提示使用 `channel = "status"`
+5. 最终结构化结果仍然通过 `result` 消息返回
+
+TUI 必须把 `thinking` channel 的文本连续追加到会话区中。第一版呈现为一个可折叠的 `thinking` 区块，并且默认展开；后续用户折叠后，新到达的 thinking delta 仍然追加到同一块内容中，但不应强制重新展开用户已经折叠的区块。
+
+当底层模型不提供 thinking / reasoning delta 时，runtime 不需要伪造 thinking 内容；此时只显示普通 `text` 流和最终结果。
+
 ## 非目标
 
 本阶段明确不做以下事情：
@@ -104,6 +120,23 @@ CLI 不应该知道底层到底走的是：
 4. `runtime -> cli` 的结构化失败
 
 第一版协议优先使用 `stdin/stdout` 文本流承载，并保持逐条事件可流式消费。
+
+流式事件必须能区分普通回答文本、thinking/reasoning 文本、工具状态和一般状态提示，避免 CLI 只能看到不可分类的 `event.message`。推荐的最小事件载荷为：
+
+```json
+{
+  "type": "event",
+  "sessionId": "session-1",
+  "requestId": "request-1",
+  "event": {
+    "message": "agent.reasoning.delta",
+    "channel": "thinking",
+    "delta": "I need to inspect the available context first."
+  }
+}
+```
+
+其中 `message` 保持机器可读事件名，`channel` 决定 TUI 展示区域，`delta` 承载可连续追加的文本片段，`payload` 继续用于非文本结构化载荷。
 
 为了先打通链路，第一版允许在未提供 provider binding 时走 `demo` 模式：
 

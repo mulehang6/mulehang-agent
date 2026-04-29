@@ -40,6 +40,8 @@ export interface RuntimeCliStatusMessage {
  */
 export interface RuntimeCliEventPayload {
   message: string;
+  channel?: "text" | "thinking" | "tool" | "status";
+  delta?: string;
   payload?: unknown;
 }
 

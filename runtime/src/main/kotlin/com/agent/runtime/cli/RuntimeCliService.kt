@@ -1,6 +1,8 @@
 package com.agent.runtime.cli
 
+import com.agent.runtime.agent.RuntimeAgentEventUpdate
 import com.agent.runtime.agent.RuntimeAgentExecutor
+import com.agent.runtime.agent.RuntimeAgentResultUpdate
 import com.agent.runtime.capability.CapabilitySet
 import com.agent.runtime.core.RuntimeAgentExecutionFailure
 import com.agent.runtime.core.RuntimeAgentRunRequest
@@ -74,54 +76,42 @@ class DefaultRuntimeCliService(
             ),
         )
 
-        when (
-            val result = runtimeAgentExecutor.execute(
-                session = RuntimeSession(id = sessionId),
-                context = RuntimeRequestContext(sessionId = sessionId, requestId = requestId),
-                request = RuntimeAgentRunRequest(prompt = request.prompt),
-                binding = binding,
-                capabilitySet = capabilitySetFactory(),
-            )
-        ) {
-            is RuntimeSuccess -> {
-                result.events.forEach { event ->
-                    emit(
-                        RuntimeCliEventMessage(
-                            sessionId = sessionId,
-                            requestId = requestId,
-                            event = event.toPayload(),
-                        ),
-                    )
-                }
-                emit(
-                    RuntimeCliResultMessage(
+        runtimeAgentExecutor.stream(
+            session = RuntimeSession(id = sessionId),
+            context = RuntimeRequestContext(sessionId = sessionId, requestId = requestId),
+            request = RuntimeAgentRunRequest(prompt = request.prompt),
+            binding = binding,
+            capabilitySet = capabilitySetFactory(),
+        ).collect { update ->
+            when (update) {
+                is RuntimeAgentEventUpdate -> emit(
+                    RuntimeCliEventMessage(
                         sessionId = sessionId,
                         requestId = requestId,
-                        output = result.output,
-                        mode = AGENT_MODE,
+                        event = update.event.toPayload(),
                     ),
                 )
-            }
 
-            is RuntimeFailed -> {
-                result.events.forEach { event ->
-                    emit(
-                        RuntimeCliEventMessage(
+                is RuntimeAgentResultUpdate -> when (val result = update.result) {
+                    is RuntimeSuccess -> emit(
+                        RuntimeCliResultMessage(
                             sessionId = sessionId,
                             requestId = requestId,
-                            event = event.toPayload(),
+                            output = result.output,
+                            mode = AGENT_MODE,
+                        ),
+                    )
+
+                    is RuntimeFailed -> emit(
+                        RuntimeCliFailureMessage(
+                            sessionId = sessionId,
+                            requestId = requestId,
+                            kind = result.failure.toFailureKind(),
+                            message = result.failure.message,
+                            details = binding.toFailureDetails(source = bindingResolution.details.source),
                         ),
                     )
                 }
-                emit(
-                    RuntimeCliFailureMessage(
-                        sessionId = sessionId,
-                        requestId = requestId,
-                        kind = result.failure.toFailureKind(),
-                        message = result.failure.message,
-                        details = binding.toFailureDetails(source = bindingResolution.details.source),
-                    ),
-                )
             }
         }
     }
@@ -164,6 +154,8 @@ class DefaultRuntimeCliService(
      */
     private fun RuntimeEvent.toPayload(): RuntimeCliEventPayload = RuntimeCliEventPayload(
         message = message,
+        channel = channel,
+        delta = delta,
         payload = payload,
     )
 
@@ -233,6 +225,7 @@ private fun resolveDefaultBinding(): CliProviderResolution {
             baseUrl = baseUrl,
             apiKey = apiKey,
             modelId = modelId,
+            enableThinking = values[PROVIDER_ENABLE_THINKING_ENV]?.trim()?.lowercase() == "true",
         ),
         details = details,
     )
@@ -264,4 +257,5 @@ private const val PROVIDER_TYPE_ENV = "MULEHANG_PROVIDER_TYPE"
 private const val PROVIDER_BASE_URL_ENV = "MULEHANG_PROVIDER_BASE_URL"
 private const val PROVIDER_API_KEY_ENV = "MULEHANG_PROVIDER_API_KEY"
 private const val PROVIDER_MODEL_ID_ENV = "MULEHANG_PROVIDER_MODEL_ID"
+private const val PROVIDER_ENABLE_THINKING_ENV = "MULEHANG_PROVIDER_ENABLE_THINKING"
 private const val DEFAULT_SOURCE = "runtime-default"

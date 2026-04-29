@@ -4,6 +4,8 @@ import com.agent.runtime.agent.AgentAssembly
 import com.agent.runtime.agent.RuntimeAgentExecutor
 import com.agent.runtime.capability.CapabilitySet
 import com.agent.runtime.provider.ProviderBinding
+import ai.koog.prompt.streaming.StreamFrame
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
@@ -115,6 +117,35 @@ class RuntimeCliServiceTest {
         val result = assertIs<RuntimeCliResultMessage>(messages.last())
         assertEquals("agent", result.mode)
         assertEquals(JsonPrimitive("done:hello"), result.output)
+    }
+
+    @Test
+    fun `should emit agent deltas before streaming runner completes`() = runTest {
+        val messages = mutableListOf<RuntimeCliOutboundMessage>()
+        var observedAfterFirstFrame = 0
+        val service = DefaultRuntimeCliService(
+            runtimeAgentExecutor = RuntimeAgentExecutor(
+                assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+                streamRunner = { _, _ ->
+                    flow {
+                        emit(StreamFrame.ReasoningDelta(text = "thinking"))
+                        observedAfterFirstFrame = messages.size
+                        emit(StreamFrame.TextDelta("answer"))
+                    }
+                },
+            ),
+            capabilitySetFactory = { CapabilitySet(adapters = emptyList()) },
+            sessionIdFactory = { "session-1" },
+            requestIdFactory = { "request-1" },
+        )
+
+        service.stream(validRequest()).collect { message ->
+            messages.add(message)
+        }
+
+        assertEquals(4, observedAfterFirstFrame)
+        assertEquals("thinking", (messages[3] as RuntimeCliEventMessage).event.channel)
+        assertEquals("agent.reasoning.delta", (messages[3] as RuntimeCliEventMessage).event.message)
     }
 
     @Test

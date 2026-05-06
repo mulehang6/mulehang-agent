@@ -20,6 +20,13 @@ export interface RuntimeLaunchSpec {
 }
 
 /**
+ * 表示 CLI 运行时桥接层的可选诊断输出能力。
+ */
+export interface RuntimeProcessClientOptions {
+  writeDiagnostic?: (chunk: string) => void;
+}
+
+/**
  * 表示安装 runtime host 分发所需的最小文件与进程操作。
  */
 interface RuntimeHostInstallOps {
@@ -38,7 +45,10 @@ export class RuntimeProcessClient {
   private child?: ChildProcessWithoutNullStreams;
   private stdoutBuffer = "";
 
-  constructor(private readonly launchSpec: RuntimeLaunchSpec) {}
+  constructor(
+    private readonly launchSpec: RuntimeLaunchSpec,
+    private readonly options: RuntimeProcessClientOptions = {},
+  ) {}
 
   /**
    * 启动 runtime 子进程，并开始监听标准输出事件流。
@@ -60,7 +70,7 @@ export class RuntimeProcessClient {
 
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      this.errorListeners.forEach((listener) => listener(chunk.trim()));
+      this.writeDiagnostic(chunk);
     });
 
     this.child = child;
@@ -145,6 +155,18 @@ export class RuntimeProcessClient {
         );
       }
     }
+  }
+
+  /**
+   * 把 runtime 子进程的诊断输出透传到当前终端，且不污染协议错误通道。
+   */
+  private writeDiagnostic(chunk: string): void {
+    if (this.options.writeDiagnostic != null) {
+      this.options.writeDiagnostic(chunk);
+      return;
+    }
+
+    process.stderr.write(chunk);
   }
 }
 

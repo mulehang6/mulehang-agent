@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { TranscriptView } from "../components/TranscriptView";
 
 describe("transcript view", () => {
-  test("keeps sticky scrolling for long replies and anchors short conversations above the composer", () => {
+  test("keeps sticky scrolling for long replies without forcing empty filler space", () => {
     const element = TranscriptView({
       entries: [{ kind: "result", text: "hello" }],
     }) as {
@@ -35,8 +35,8 @@ describe("transcript view", () => {
       height: "100%",
       flexDirection: "column",
     });
-    expect(element.props.children?.props?.style?.justifyContent).toBe("flex-end");
-    expect(element.props.children?.props?.style?.minHeight).toBe("100%");
+    expect(element.props.children?.props?.style?.justifyContent).toBeUndefined();
+    expect(element.props.children?.props?.style?.minHeight).toBeUndefined();
   });
 
   test("renders thinking entries as light expanded toggle regions", () => {
@@ -57,7 +57,7 @@ describe("transcript view", () => {
           props?: {
             children?: Array<{
               props?: {
-                onMouseDown?: () => void;
+                onMouseUp?: () => void;
                 children?: Array<{
                   props?: { fg?: string; children?: string | string[] };
                 }>;
@@ -76,7 +76,7 @@ describe("transcript view", () => {
     expect(title?.props?.children).toEqual(["v", " ", "Thinking"]);
     expect(content?.props?.fg).toBe("#9aaab0");
 
-    thinkingBlock?.props?.onMouseDown?.();
+    thinkingBlock?.props?.onMouseUp?.();
     expect(onToggleEntry).toHaveBeenCalledWith(0);
   });
 });

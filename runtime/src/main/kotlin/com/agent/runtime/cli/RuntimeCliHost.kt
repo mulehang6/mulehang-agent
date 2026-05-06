@@ -7,9 +7,22 @@ import kotlinx.coroutines.runBlocking
  * 提供 runtime 的本地 `stdio` 宿主入口，供独立 CLI 子进程拉起。
  */
 fun main() = runBlocking {
+    configureCliHostLogging()
     RuntimeCliHostSession(
         service = DefaultRuntimeCliService(),
     ).run()
+}
+
+/**
+ * 把 stdio host 的日志切换到独立配置，确保诊断输出写入 stderr 而不污染协议 stdout。
+ */
+internal fun configureCliHostLogging(
+    classLoader: ClassLoader = RuntimeCliHostSession::class.java.classLoader,
+) {
+    val resource = checkNotNull(classLoader.getResource(CLI_HOST_LOGBACK_RESOURCE)) {
+        "找不到 $CLI_HOST_LOGBACK_RESOURCE 资源。"
+    }
+    System.setProperty(LOGBACK_CONFIGURATION_FILE_PROPERTY, resource.toString())
 }
 
 /**
@@ -77,3 +90,6 @@ class RuntimeCliHostSession(
         }
     }
 }
+
+internal const val LOGBACK_CONFIGURATION_FILE_PROPERTY: String = "logback.configurationFile"
+private const val CLI_HOST_LOGBACK_RESOURCE: String = "logback-cli-host.xml"

@@ -1,7 +1,9 @@
 package com.agent.runtime.cli
 
 import com.agent.runtime.agent.AgentAssembly
+import com.agent.runtime.agent.RuntimeConversationMemory
 import com.agent.runtime.agent.RuntimeAgentExecutor
+import com.agent.runtime.agent.buildRecordingAssembledAgent
 import com.agent.runtime.capability.CapabilitySet
 import com.agent.runtime.provider.ProviderBinding
 import ai.koog.prompt.streaming.StreamFrame
@@ -172,12 +174,41 @@ class RuntimeCliServiceTest {
         assertEquals(true, failure.details?.apiKeyPresent)
     }
 
+    @Test
+    fun `should continue conversation across cli requests with the same session id`() = runTest {
+        val recording = buildRecordingAssembledAgent { prompt ->
+            val previousUserMessages = prompt.messages
+                .filter { it.role == ai.koog.prompt.message.Message.Role.User }
+                .dropLast(1)
+                .map { it.content }
+            if ("hello" in previousUserMessages) "you said hello" else "no memory"
+        }
+        val service = DefaultRuntimeCliService(
+            runtimeAgentExecutor = RuntimeAgentExecutor(
+                assembleAgent = { _, _ -> recording.assembledAgent },
+                conversationMemory = RuntimeConversationMemory(),
+            ),
+            capabilitySetFactory = { CapabilitySet(adapters = emptyList()) },
+            sessionIdFactory = { "session-1" },
+            requestIdFactory = { "request-1" },
+        )
+
+        service.stream(validRequest(prompt = "hello", sessionId = "session-7")).toList()
+        val messages = service.stream(validRequest(prompt = "what did I say?", sessionId = "session-7")).toList()
+
+        val result = assertIs<RuntimeCliResultMessage>(messages.last())
+        assertEquals(JsonPrimitive("you said hello"), result.output)
+    }
+
     /**
      * 构造一条可直接进入现有 runtime agent 执行链的最小请求。
      */
-    private fun validRequest(): RuntimeCliRunRequest = RuntimeCliRunRequest(
-        sessionId = "session-1",
-        prompt = "hello",
+    private fun validRequest(
+        prompt: String = "hello",
+        sessionId: String = "session-1",
+    ): RuntimeCliRunRequest = RuntimeCliRunRequest(
+        sessionId = sessionId,
+        prompt = prompt,
         provider = RuntimeCliProviderBinding(
             providerId = "provider-openai",
             providerType = "OPENAI_COMPATIBLE",

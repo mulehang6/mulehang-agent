@@ -27,6 +27,7 @@ import com.agent.runtime.provider.ProviderBinding
 import com.agent.runtime.provider.ProviderType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import ai.koog.prompt.message.Message
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
@@ -52,24 +53,20 @@ data class RuntimeAgentResultUpdate(
  * 负责把 runtime 的 agent.run 请求翻译到真实 Koog agent 或 Koog streaming 执行。
  */
 class RuntimeAgentExecutor(
-    private val assembleAgent: suspend (ProviderBinding, CapabilitySet) -> AssembledAgent = { binding, capabilitySet ->
-        AgentAssembly().assemble(binding, capabilitySet)
-    },
+    private val conversationMemory: RuntimeConversationMemory = RuntimeConversationMemory(),
+    private val assembleAgent: suspend (ProviderBinding, CapabilitySet) -> AssembledAgent =
+        AgentAssembly(conversationMemory = conversationMemory)::assemble,
     private val runner: (suspend (AssembledAgent, String) -> String)? = null,
     private val streamRunner: ((AssembledAgent, String) -> Flow<StreamFrame>)? = null,
     private val compatibilityStreamRunner: CompatibilityStreamRunner = DeepSeekThinkingCompatibilityStreamRunner(),
 ) {
 
-    private val koogStreamRunner: (AssembledAgent, String) -> Flow<StreamFrame> = { assembled, userPrompt ->
+    private val koogStreamRunner: (AssembledAgent, Prompt) -> Flow<StreamFrame> = { assembled, runtimePrompt ->
         assembled.promptExecutor.executeStreaming(
-            prompt = buildRuntimePrompt(userPrompt, assembled.binding),
+            prompt = runtimePrompt,
             model = assembled.llmModel,
             tools = assembled.toolRegistry.tools.map { it.descriptor },
         )
-    }
-
-    private val fallbackNonStreamingRunner: suspend (AssembledAgent, String) -> String = { assembled, prompt ->
-        assembled.agent.run(prompt)
     }
 
     /**
@@ -130,20 +127,70 @@ class RuntimeAgentExecutor(
                 return@flow
             }
 
+            if (streamRunner != null) {
+                val textOutput = StringBuilder()
+                var sawTextDelta = false
+                emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId))))
+                streamRunner(assembledAgent, request.prompt).collect { frame ->
+                    when (frame) {
+                        is StreamFrame.TextDelta -> {
+                            sawTextDelta = true
+                            textOutput.append(frame.text)
+                            emitTextDelta(frame.text)
+                        }
+
+                        is StreamFrame.TextComplete -> {
+                            if (!sawTextDelta) {
+                                textOutput.append(frame.text)
+                                emitTextDelta(frame.text)
+                            }
+                        }
+
+                        is StreamFrame.ReasoningDelta -> {
+                            val delta = frame.text ?: frame.summary
+                            if (delta != null) {
+                                emitReasoningDelta(delta)
+                            }
+                        }
+
+                        is StreamFrame.ToolCallDelta -> {
+                            val delta = frame.content ?: frame.name ?: frame.id
+                            if (delta != null) {
+                                emitToolDelta("agent.tool.delta", delta)
+                            }
+                        }
+
+                        is StreamFrame.ToolCallComplete -> emitToolDelta("agent.tool.completed", frame.name)
+
+                        is StreamFrame.End,
+                        is StreamFrame.ReasoningComplete,
+                        -> Unit
+                    }
+                }
+                emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.completed", payload = JsonPrimitive(session.id))))
+                emit(RuntimeAgentResultUpdate(RuntimeSuccess(output = JsonPrimitive(textOutput.toString()))))
+                return@flow
+            }
+
+            val promptHistory = conversationMemory.loadHistory(session.id)
+            val runtimePrompt = buildRuntimePrompt(
+                userPrompt = request.prompt,
+                binding = binding,
+                history = promptHistory,
+            )
             val textOutput = StringBuilder()
             var sawTextDelta = false
 
             emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId))))
             try {
                 val selectedStreamRunner = when {
-                    streamRunner != null -> streamRunner
                     compatibilityStreamRunner.supports(
                         binding = assembledAgent.binding,
                         hasTools = assembledAgent.toolRegistry.tools.isNotEmpty(),
                     ) -> { _, prompt -> compatibilityStreamRunner.stream(assembledAgent.binding, prompt) }
                     else -> koogStreamRunner
                 }
-                selectedStreamRunner(assembledAgent, request.prompt).collect { frame ->
+                selectedStreamRunner(assembledAgent, runtimePrompt).collect { frame ->
                     when (frame) {
                         is StreamFrame.TextDelta -> {
                             sawTextDelta = true
@@ -183,11 +230,20 @@ class RuntimeAgentExecutor(
                 if (!error.looksLikeUnsupportedStreamingReasoning()) {
                     throw error
                 }
-                val fallbackOutput = (runner ?: fallbackNonStreamingRunner)(assembledAgent, request.prompt)
+                val fallbackOutput = fallbackNonStreamingRunner(
+                    assembledAgent = assembledAgent,
+                    prompt = request.prompt,
+                    sessionId = session.id,
+                )
                 textOutput.clear()
                 textOutput.append(fallbackOutput)
                 emitTextDelta(fallbackOutput)
             }
+            conversationMemory.appendTurn(
+                sessionId = session.id,
+                userPrompt = request.prompt,
+                assistantResponse = textOutput.toString(),
+            )
             emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.completed", payload = JsonPrimitive(session.id))))
             emit(RuntimeAgentResultUpdate(RuntimeSuccess(output = JsonPrimitive(textOutput.toString()))))
         } catch (error: IllegalArgumentException) {
@@ -225,6 +281,15 @@ class RuntimeAgentExecutor(
             )
         }
     }
+
+    /**
+     * 使用真正安装了 ChatMemory feature 的 Koog agent 执行非 streaming 回退。
+     */
+    private suspend fun fallbackNonStreamingRunner(
+        assembledAgent: AssembledAgent,
+        prompt: String,
+        sessionId: String,
+    ): String = assembledAgent.agent.run(prompt, sessionId)
 
     /**
      * 保留单元测试和非 streaming runner 的旧执行路径。
@@ -334,9 +399,11 @@ class RuntimeAgentExecutor(
 internal fun buildRuntimePrompt(
     userPrompt: String,
     binding: ProviderBinding,
+    history: List<Message> = emptyList(),
 ): Prompt {
     val basePrompt = prompt("runtime-agent") {
         system(DEFAULT_AGENT_SYSTEM_PROMPT)
+        messages(history)
         user(userPrompt)
     }
 

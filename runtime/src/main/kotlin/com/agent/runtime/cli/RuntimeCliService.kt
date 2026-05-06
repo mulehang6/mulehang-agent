@@ -160,7 +160,7 @@ class DefaultRuntimeCliService(
     )
 
     /**
-     * 把 runtime 失败对象压平为 CLI 协议层的稳定失败类别。
+     * 把 runtime 失败对象映射为 CLI 协议层的稳定失败类别。
      */
     private fun RuntimeFailure.toFailureKind(): String = when (this) {
         is RuntimeProviderResolutionFailure -> "provider"

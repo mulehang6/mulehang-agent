@@ -15,6 +15,7 @@ import com.agent.runtime.core.RuntimeRequestContext
 import com.agent.runtime.core.RuntimeSession
 import com.agent.runtime.core.RuntimeSuccess
 import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
+import ai.koog.prompt.message.Message
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.flow.flowOf
 import ai.koog.prompt.streaming.StreamFrame
@@ -23,6 +24,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * 验证 runtime 到 agent.run 的结果翻译与错误分层。
@@ -134,7 +136,7 @@ class RuntimeAgentExecutorTest {
             compatibilityStreamRunner = object : CompatibilityStreamRunner {
                 override fun supports(binding: ProviderBinding, hasTools: Boolean): Boolean = true
 
-                override fun stream(binding: ProviderBinding, userPrompt: String) = flowOf(
+                override fun stream(binding: ProviderBinding, prompt: ai.koog.prompt.dsl.Prompt) = flowOf(
                     StreamFrame.ReasoningDelta(text = "inspect "),
                     StreamFrame.TextDelta("answer"),
                 )
@@ -159,6 +161,69 @@ class RuntimeAgentExecutorTest {
         )
         assertEquals("inspect ", result.events[1].delta)
         assertEquals("answer", result.events[2].delta)
+    }
+
+    @Test
+    fun `should load previous conversation history into next streaming prompt for same session`() = runTest {
+        val recording = buildRecordingAssembledAgent { prompt ->
+            val previousUserMessages = prompt.messages
+                .filter { it.role == Message.Role.User }
+                .dropLast(1)
+                .map { it.content }
+            if ("hello" in previousUserMessages) "you said hello" else "no memory"
+        }
+        val executor = RuntimeAgentExecutor(
+            assembleAgent = { _, _ -> recording.assembledAgent },
+        )
+
+        executor.execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(),
+            capabilitySet = CapabilitySet(adapters = emptyList()),
+        )
+        val secondResult = executor.execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-2"),
+            request = RuntimeAgentRunRequest(prompt = "what did I say?"),
+            binding = openAiBinding(),
+            capabilitySet = CapabilitySet(adapters = emptyList()),
+        )
+
+        assertIs<RuntimeSuccess>(secondResult)
+        assertEquals(JsonPrimitive("you said hello"), secondResult.output)
+        val secondPromptMessages = recording.promptExecutor.capturedPrompts.last().messages
+        assertTrue(secondPromptMessages.any { it.role == Message.Role.User && it.content == "hello" })
+        assertTrue(secondPromptMessages.any { it.role == Message.Role.Assistant && it.content == "no memory" })
+        assertTrue(secondPromptMessages.any { it.role == Message.Role.User && it.content == "what did I say?" })
+    }
+
+    @Test
+    fun `should trim stored conversation history to configured window size`() = runTest {
+        val recording = buildRecordingAssembledAgent { prompt ->
+            prompt.messages.last { it.role == Message.Role.User }.content.uppercase()
+        }
+        val executor = RuntimeAgentExecutor(
+            assembleAgent = { _, _ -> recording.assembledAgent },
+            conversationMemory = RuntimeConversationMemory(windowSize = 4),
+        )
+
+        listOf("turn-1", "turn-2", "turn-3", "turn-4").forEachIndexed { index, prompt ->
+            executor.execute(
+                session = RuntimeSession(id = "session-1"),
+                context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-${index + 1}"),
+                request = RuntimeAgentRunRequest(prompt = prompt),
+                binding = openAiBinding(),
+                capabilitySet = CapabilitySet(adapters = emptyList()),
+            )
+        }
+
+        val latestPrompt = recording.promptExecutor.capturedPrompts.last()
+        val userMessages = latestPrompt.messages.filter { it.role == Message.Role.User }.map { it.content }
+        val assistantMessages = latestPrompt.messages.filter { it.role == Message.Role.Assistant }.map { it.content }
+        assertEquals(listOf("turn-2", "turn-3", "turn-4"), userMessages)
+        assertEquals(listOf("TURN-2", "TURN-3"), assistantMessages)
     }
 
     @Test

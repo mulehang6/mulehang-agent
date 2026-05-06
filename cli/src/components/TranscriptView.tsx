@@ -21,7 +21,7 @@ export function TranscriptView(props: {
       stickyStart="bottom"
       style={{ flexGrow: 1, minHeight: 0, height: "100%", flexDirection: "column" }}
     >
-      <box style={{ flexDirection: "column", gap: 1, minHeight: "100%", justifyContent: "flex-end" }}>
+      <box style={{ flexDirection: "column", gap: 1 }}>
         {props.entries.map((entry, index) =>
           entry.kind === "user" ? (
             <box
@@ -47,7 +47,7 @@ export function TranscriptView(props: {
                 padding: 1,
                 marginBottom: 1,
               }}
-              onMouseDown={() => props.onToggleEntry?.(index)}
+              onMouseUp={() => props.onToggleEntry?.(index)}
             >
               <text fg="#8aa0a8">
                 {entry.expanded === false ? ">" : "v"} {entry.title ?? "Thinking"}

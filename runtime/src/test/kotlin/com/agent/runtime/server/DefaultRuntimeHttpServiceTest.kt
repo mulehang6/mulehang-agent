@@ -1,7 +1,9 @@
 package com.agent.runtime.server
 
 import com.agent.runtime.agent.AgentAssembly
+import com.agent.runtime.agent.RuntimeConversationMemory
 import com.agent.runtime.agent.RuntimeAgentExecutor
+import com.agent.runtime.agent.buildRecordingAssembledAgent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
@@ -107,9 +109,36 @@ class DefaultRuntimeHttpServiceTest {
         assertEquals("agent failed", failureEvent.failureMessage)
     }
 
-    private fun validRequest(): RuntimeRunHttpRequest = RuntimeRunHttpRequest(
-        sessionId = "session-1",
-        prompt = "hello",
+    @Test
+    fun `should continue conversation across http requests with the same session id`() = runTest {
+        val recording = buildRecordingAssembledAgent { prompt ->
+            val previousUserMessages = prompt.messages
+                .filter { it.role == ai.koog.prompt.message.Message.Role.User }
+                .dropLast(1)
+                .map { it.content }
+            if ("hello" in previousUserMessages) "you said hello" else "no memory"
+        }
+        val service = DefaultRuntimeHttpService(
+            runtimeAgentExecutor = RuntimeAgentExecutor(
+                assembleAgent = { _, _ -> recording.assembledAgent },
+                conversationMemory = RuntimeConversationMemory(),
+            ),
+        )
+
+        service.run(validRequest(prompt = "hello", sessionId = "session-7"))
+        val response = service.run(validRequest(prompt = "what did I say?", sessionId = "session-7"))
+        val data = response.data
+
+        assertEquals(1, response.code)
+        assertEquals(JsonPrimitive("you said hello"), data.output)
+    }
+
+    private fun validRequest(
+        prompt: String = "hello",
+        sessionId: String = "session-1",
+    ): RuntimeRunHttpRequest = RuntimeRunHttpRequest(
+        sessionId = sessionId,
+        prompt = prompt,
         provider = ProviderBindingHttpRequest(
             providerId = "provider-openai",
             providerType = "OPENAI_COMPATIBLE",

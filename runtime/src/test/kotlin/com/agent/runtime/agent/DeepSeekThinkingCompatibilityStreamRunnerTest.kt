@@ -18,7 +18,7 @@ class DeepSeekThinkingCompatibilityStreamRunnerTest {
     fun `should translate DeepSeek reasoning_content stream payloads into Koog frames`() = runTest {
         val runner = DeepSeekThinkingCompatibilityStreamRunner(
             transport = object : DeepSeekThinkingTransport {
-                override fun openEventStream(binding: ProviderBinding, userPrompt: String) = flowOf(
+                override fun openEventStream(binding: ProviderBinding, prompt: ai.koog.prompt.dsl.Prompt) = flowOf(
                     """{"choices":[{"delta":{"reasoning_content":"step "}}]}""",
                     """{"choices":[{"delta":{"reasoning_content":"one"}}]}""",
                     """{"choices":[{"delta":{"content":"done"}}]}""",
@@ -27,7 +27,10 @@ class DeepSeekThinkingCompatibilityStreamRunnerTest {
             },
         )
 
-        val frames = runner.stream(binding = deepSeekBinding(), userPrompt = "hello").toList()
+        val frames = runner.stream(
+            binding = deepSeekBinding(),
+            prompt = buildRuntimePrompt(userPrompt = "hello", binding = deepSeekBinding()),
+        ).toList()
 
         assertEquals(
             listOf(
@@ -43,7 +46,7 @@ class DeepSeekThinkingCompatibilityStreamRunnerTest {
     fun `should only enable compatibility runner for DeepSeek thinking requests without tools`() {
         val runner = DeepSeekThinkingCompatibilityStreamRunner(
             transport = object : DeepSeekThinkingTransport {
-                override fun openEventStream(binding: ProviderBinding, userPrompt: String) = flowOf("[DONE]")
+                override fun openEventStream(binding: ProviderBinding, prompt: ai.koog.prompt.dsl.Prompt) = flowOf("[DONE]")
             },
         )
 

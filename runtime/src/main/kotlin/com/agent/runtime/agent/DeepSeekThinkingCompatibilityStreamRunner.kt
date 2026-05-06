@@ -1,5 +1,7 @@
 package com.agent.runtime.agent
 
+import ai.koog.prompt.dsl.Prompt
+import ai.koog.prompt.message.Message
 import ai.koog.prompt.streaming.StreamFrame
 import com.agent.runtime.provider.ProviderBinding
 import com.agent.runtime.provider.ProviderType
@@ -30,7 +32,7 @@ interface CompatibilityStreamRunner {
     /**
      * 直接产出兼容后的标准 [StreamFrame]。
      */
-    fun stream(binding: ProviderBinding, userPrompt: String): Flow<StreamFrame>
+    fun stream(binding: ProviderBinding, prompt: Prompt): Flow<StreamFrame>
 }
 
 /**
@@ -40,7 +42,7 @@ interface DeepSeekThinkingTransport {
     /**
      * 打开一次原始 SSE 事件流；每个元素都是一条 `data:` 载荷或 `DONE` 结束标记。
      */
-    fun openEventStream(binding: ProviderBinding, userPrompt: String): Flow<String>
+    fun openEventStream(binding: ProviderBinding, prompt: Prompt): Flow<String>
 }
 
 /**
@@ -63,8 +65,8 @@ class DeepSeekThinkingCompatibilityStreamRunner(
     /**
      * 把 DeepSeek 原始 SSE 增量恢复成标准 reasoning/text stream frame。
      */
-    override fun stream(binding: ProviderBinding, userPrompt: String): Flow<StreamFrame> = flow {
-        transport.openEventStream(binding, userPrompt).collect { payload ->
+    override fun stream(binding: ProviderBinding, prompt: Prompt): Flow<StreamFrame> = flow {
+        transport.openEventStream(binding, prompt).collect { payload ->
             emitChunkFrames(payload)
         }
     }
@@ -102,7 +104,7 @@ class HttpDeepSeekThinkingTransport(
     /**
      * 发起一轮最小 chat/completions 请求，并逐条吐出 SSE `data:` 载荷。
      */
-    override fun openEventStream(binding: ProviderBinding, userPrompt: String): Flow<String> = flow {
+    override fun openEventStream(binding: ProviderBinding, prompt: Prompt): Flow<String> = flow {
         val request = HttpRequest.newBuilder(buildDeepSeekChatCompletionsUri(binding.baseUrl))
             .timeout(Duration.ofMinutes(10))
             .header("Authorization", "Bearer ${binding.apiKey}")
@@ -114,10 +116,7 @@ class HttpDeepSeekThinkingTransport(
                         DeepSeekChatCompletionRequest.serializer(),
                         DeepSeekChatCompletionRequest(
                             model = binding.modelId,
-                            messages = listOf(
-                                DeepSeekChatMessage(role = "system", content = DEFAULT_AGENT_SYSTEM_PROMPT),
-                                DeepSeekChatMessage(role = "user", content = userPrompt),
-                            ),
+                            messages = prompt.messages.mapNotNull(::toDeepSeekChatMessage),
                             stream = true,
                             streamOptions = DeepSeekStreamOptions(includeUsage = true),
                             thinking = DeepSeekThinkingMode(type = "enabled"),
@@ -178,6 +177,22 @@ class HttpDeepSeekThinkingTransport(
         val normalized = baseUrl.trimEnd('/')
         val suffix = if (normalized.endsWith("/v1")) "/chat/completions" else "/v1/chat/completions"
         return URI.create(normalized + suffix)
+    }
+
+    private fun toDeepSeekChatMessage(message: Message): DeepSeekChatMessage? {
+        if (message.content.isBlank()) {
+            return null
+        }
+        val role = when (message.role) {
+            Message.Role.System -> "system"
+            Message.Role.User -> "user"
+            Message.Role.Assistant,
+            Message.Role.Reasoning,
+            -> "assistant"
+
+            Message.Role.Tool -> "tool"
+        }
+        return DeepSeekChatMessage(role = role, content = message.content)
     }
 
     private companion object {

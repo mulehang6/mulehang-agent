@@ -165,7 +165,7 @@ export function App() {
       return;
     }
 
-    const request = createRuntimeRunRequest(prompt);
+    const request = createRuntimeRunRequest(prompt, state.runtime.sessionId);
     setDraft("");
     setState((previous) => closeCommandPalette(appendUserPrompt(previous, prompt)));
     try {

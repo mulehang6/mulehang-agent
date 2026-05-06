@@ -99,10 +99,10 @@ runtime 侧使用 JDK 21 与 Gradle Wrapper；CLI 侧使用 Bun、TypeScript、R
 清理构建产物。
 
 ```powershell
-.\gradlew.bat :runtime:installCliHostDist
+.\gradlew.bat :runtime:installDist
 ```
 
-生成 CLI 调用 runtime stdio host 所需的本地分发脚本与依赖。
+生成共享本地 runtime HTTP server 所需的本地分发脚本与依赖；CLI 当前会在首次连接时自动确保这条分发链路可用。
 
 在 PowerShell 中验证 CLI：
 

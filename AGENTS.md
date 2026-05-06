@@ -27,10 +27,10 @@
 清理构建产物，用于排查缓存或构建异常。不要在协作文档中要求启动开发服务器，本仓库以构建和测试验证为主。
 
 ```powershell
-.\gradlew.bat :runtime:installCliHostDist
+.\gradlew.bat :runtime:installDist
 ```
 
-生成 CLI 调用 runtime stdio host 所需的本地分发脚本与依赖。
+生成共享本地 runtime HTTP server 所需的本地分发脚本与依赖；CLI 当前会在需要时自动调用这条链路。
 
 ```powershell
 Push-Location .\cli
@@ -42,10 +42,10 @@ Pop-Location
 运行 CLI 单元测试与 TypeScript 类型检查。不要把 `bun run dev` 写入常规验证流程，也不要主动启动交互式开发进程。
 
 ## 编码风格与命名约定
-Kotlin 遵循官方风格，使用 4 空格缩进，不使用制表符。类名和对象名使用 `PascalCase`，函数与变量使用 `camelCase`，常量使用 `UPPER_SNAKE_CASE`。TypeScript/TSX 侧沿用现有 React hook + 函数组件风格，文件名按职责使用 `kebab-case` 或组件 `PascalCase`，共享状态和协议类型优先放在 `cli/src/app-state.ts`、`cli/src/protocol.ts` 等边界清晰的文件中。测试名称可使用反引号包裹行为描述，例如 ``fun `should retry with fallback runner`()``。保持文件职责单一。生产 Kotlin 代码中的类、对象、数据类和方法应补充简短 KDoc，说明职责、输入输出或关键副作用；测试代码至少补类级注释，只有在测试意图不直观时才为单个测试方法补说明。
+Kotlin 遵循官方风格，使用 4 空格缩进，不使用制表符。类名和对象名使用 `PascalCase`，函数与变量使用 `camelCase`，常量使用 `UPPER_SNAKE_CASE`。TypeScript/TSX 侧沿用现有 React hook + 函数组件风格，文件名按职责使用 `kebab-case` 或组件 `PascalCase`，共享状态和协议类型优先放在 `cli/src/app-state.ts`、`cli/src/runtime-events.ts`、`cli/src/runtime-server-manager.ts` 等边界清晰的文件中。测试名称可使用反引号包裹行为描述，例如 ``fun `should retry with fallback runner`()``。保持文件职责单一。生产 Kotlin 代码中的类、对象、数据类和方法应补充简短 KDoc，说明职责、输入输出或关键副作用；测试代码至少补类级注释，只有在测试意图不直观时才为单个测试方法补说明。
 
 ## 测试规范
-runtime 测试栈为 `kotlin.test` + JUnit 5，`runtime/build.gradle.kts` 已启用 `useJUnitPlatform()`。CLI 测试使用 `bun test`，测试文件放在 `cli/src/__tests__`。新增功能或缺陷修复时，应补充对应单元测试，优先覆盖错误分支、回退流程、协议解析和边界条件。测试文件名建议与被测对象对应，例如 `MySimpleAgentTest.kt` 或 `runtime-process.test.ts`。
+runtime 测试栈为 `kotlin.test` + JUnit 5，`runtime/build.gradle.kts` 已启用 `useJUnitPlatform()`。CLI 测试使用 `bun test`，测试文件放在 `cli/src/__tests__`。新增功能或缺陷修复时，应补充对应单元测试，优先覆盖错误分支、回退流程、协议解析和边界条件。测试文件名建议与被测对象对应，例如 `MySimpleAgentTest.kt` 或 `runtime-http-client.test.ts`。
 
 ## 提交与 Pull Request 规范
 - 现有提交历史同时包含简洁主题和 Conventional Commits 风格，例如 `fix(git): ...`、`refactor(agent): ...`。建议统一采用 `<type>(<scope>): <summary>`，例如 `feat(agent): 添加流式回退指导`。PR 应说明变更目的、核心实现与验证方式；如果输出行为有变化，附上示例输入输出。使用中文

@@ -16,55 +16,64 @@ export function TranscriptView(props: {
   }
 
   return (
-    <scrollbox
-      stickyScroll
-      stickyStart="bottom"
-      style={{ flexGrow: 1, minHeight: 0, height: "100%", flexDirection: "column" }}
+    <box
+      style={{
+        flexGrow: 1,
+        minHeight: 0,
+        flexDirection: "column",
+        justifyContent: "flex-end",
+      }}
     >
-      <box style={{ flexDirection: "column", gap: 1 }}>
-        {props.entries.map((entry, index) =>
-          entry.kind === "user" ? (
-            <box
-              key={`${entry.kind}-${index}`}
-              style={{
-                backgroundColor: "#2b2b2b",
-                padding: 1,
-                marginBottom: 1,
-              }}
-            >
-              <text fg="#f5f5f5">{entry.text}</text>
-            </box>
-          ) : entry.kind === "assistant" ? (
-            <text key={`${entry.kind}-${index}`} fg="#f5f5f5">
-              {entry.text}
-            </text>
-          ) : entry.kind === "thinking" ? (
-            <box
-              key={`${entry.kind}-${index}`}
-              style={{
-                flexDirection: "column",
-                borderColor: "#3f5057",
-                padding: 1,
-                marginBottom: 1,
-              }}
-              onMouseUp={() => props.onToggleEntry?.(index)}
-            >
-              <text fg="#8aa0a8">
-                {entry.expanded === false ? ">" : "v"} {entry.title ?? "Thinking"}
+      <scrollbox
+        stickyScroll
+        stickyStart="bottom"
+        style={{ flexShrink: 1, minHeight: 0, flexDirection: "column" }}
+      >
+        <box style={{ flexDirection: "column", gap: 1 }}>
+          {props.entries.map((entry, index) =>
+            entry.kind === "user" ? (
+              <box
+                key={`${entry.kind}-${index}`}
+                style={{
+                  backgroundColor: "#2b2b2b",
+                  padding: 1,
+                  marginBottom: 1,
+                }}
+              >
+                <text fg="#f5f5f5">{entry.text}</text>
+              </box>
+            ) : entry.kind === "assistant" ? (
+              <text key={`${entry.kind}-${index}`} fg="#f5f5f5">
+                {entry.text}
               </text>
-              {entry.expanded === false ? null : (
-                <text fg="#9aaab0">{entry.text}</text>
-              )}
-            </box>
-          ) : (
-            <text key={`${entry.kind}-${index}`} fg={colorForEntry(entry.kind)}>
-              {prefixForEntry(entry.kind)}
-              {entry.text}
-            </text>
-          ),
-        )}
-      </box>
-    </scrollbox>
+            ) : entry.kind === "thinking" ? (
+              <box
+                key={`${entry.kind}-${index}`}
+                style={{
+                  flexDirection: "column",
+                  borderColor: "#3f5057",
+                  padding: 1,
+                  marginBottom: 1,
+                }}
+                onMouseUp={() => props.onToggleEntry?.(index)}
+              >
+                <text fg="#8aa0a8">
+                  {entry.expanded === false ? ">" : "v"} {entry.title ?? "Thinking"}
+                </text>
+                {entry.expanded === false ? null : (
+                  <text fg="#9aaab0">{entry.text}</text>
+                )}
+              </box>
+            ) : (
+              <text key={`${entry.kind}-${index}`} fg={colorForEntry(entry.kind)}>
+                {prefixForEntry(entry.kind)}
+                {entry.text}
+              </text>
+            ),
+          )}
+        </box>
+      </scrollbox>
+    </box>
   );
 }
 

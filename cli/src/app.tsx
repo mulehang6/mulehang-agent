@@ -28,10 +28,13 @@ import {
 import { registerCtrlCPress } from "./exit-guard";
 import { resolveChatLayout, resolveWelcomeLayout } from "./layout";
 import {
-  createDefaultRuntimeLaunchSpec,
-  RuntimeProcessClient,
-} from "./runtime-process";
+  RuntimeHttpClient,
+} from "./runtime-http-client";
 import { createRuntimeRunRequest } from "./runtime-request";
+import {
+  createDefaultRuntimeServerManagerOptions,
+  RuntimeServerManager,
+} from "./runtime-server-manager";
 import { ChatScreen } from "./screens/ChatScreen";
 import { WelcomeScreen } from "./screens/WelcomeScreen";
 import { createWelcomeMetadata, readCurrentGitBranch } from "./welcome-metadata";
@@ -46,7 +49,7 @@ export function App() {
   const [state, setState] = useState<AppState>(() => createInitialAppState());
   const [draft, setDraft] = useState("");
   const [lastCtrlCAt, setLastCtrlCAt] = useState<number | undefined>(undefined);
-  const runtimeClientRef = useRef<RuntimeProcessClient | null>(null);
+  const runtimeClientRef = useRef<RuntimeHttpClient | null>(null);
   const renderer = useRenderer();
   const { height } = useTerminalDimensions();
   const [gitBranch] = useState(() => readCurrentGitBranch());
@@ -83,7 +86,9 @@ export function App() {
   });
 
   useEffect(() => {
-    const client = new RuntimeProcessClient(createDefaultRuntimeLaunchSpec());
+    const client = new RuntimeHttpClient(
+      new RuntimeServerManager(createDefaultRuntimeServerManagerOptions()),
+    );
     runtimeClientRef.current = client;
 
     const offMessage = client.onMessage((message) => {
@@ -103,7 +108,7 @@ export function App() {
       setState((previous) =>
         applyRuntimeCliMessage(previous, {
           type: "failure",
-          kind: "runtime",
+          kind: "server",
           message: error instanceof Error ? error.message : String(error),
         }),
       );
@@ -168,16 +173,14 @@ export function App() {
     const request = createRuntimeRunRequest(prompt, state.runtime.sessionId);
     setDraft("");
     setState((previous) => closeCommandPalette(appendUserPrompt(previous, prompt)));
-    try {
-      runtimeClientRef.current.send(request);
-    } catch (error) {
+    void runtimeClientRef.current.send(request).catch((error) => {
       setState((previous) =>
         appendSystemMessage(
           previous,
           error instanceof Error ? error.message : String(error),
         ),
       );
-    }
+    });
   }) as NonNullable<InputProps["onSubmit"]>;
 
   /**

@@ -1,8 +1,8 @@
 import {
-  formatRuntimeCliValue,
-  type RuntimeCliEventPayload,
-  type RuntimeCliOutboundMessage,
-} from "./protocol";
+  formatRuntimeValue,
+  type RuntimeEventPayload,
+  type RuntimeMessage,
+} from "./runtime-events";
 
 /**
  * 表示 TUI 当前处于欢迎页还是会话页。
@@ -263,7 +263,7 @@ export function getSelectedCommand(state: AppState): CommandItem | undefined {
  */
 export function applyRuntimeCliMessage(
   state: AppState,
-  message: RuntimeCliOutboundMessage,
+  message: RuntimeMessage,
 ): AppState {
   switch (message.type) {
     case "status":
@@ -316,7 +316,7 @@ export function applyRuntimeCliMessage(
           ...state.transcript,
           {
             kind: "result",
-            text: formatRuntimeCliValue(message.output),
+            text: formatRuntimeValue(message.output),
           },
         ],
         runtime: {
@@ -354,9 +354,9 @@ export function applyRuntimeCliMessage(
  */
 function applyRuntimeEventToTranscript(
   transcript: TranscriptEntry[],
-  event: RuntimeCliEventPayload,
+  event: RuntimeEventPayload,
 ): TranscriptEntry[] {
-  const text = formatRuntimeCliValue(event.delta ?? event.payload);
+  const text = formatRuntimeValue(event.delta ?? event.payload);
   if (text.length === 0) {
     return transcript;
   }
@@ -415,7 +415,7 @@ function isDuplicateFinalOutput(
   transcript: TranscriptEntry[],
   output: unknown,
 ): boolean {
-  const text = formatRuntimeCliValue(output);
+  const text = formatRuntimeValue(output);
   return text.length > 0 && transcript.at(-1)?.kind === "assistant" && transcript.at(-1)?.text === text;
 }
 

@@ -1,5 +1,3 @@
-import org.gradle.api.tasks.Sync
-
 plugins {
     application
     kotlin("jvm")
@@ -38,49 +36,4 @@ tasks.test {
 
 application {
     mainClass = "com.agent.runtime.server.RuntimeHttpServerKt"
-}
-
-val cliHostMainClass = "com.agent.runtime.cli.RuntimeCliHostKt"
-
-tasks.register<Sync>("installCliHostDist") {
-    group = "application"
-    description = "Installs start scripts for the runtime stdio CLI host."
-    dependsOn(tasks.named("jar"))
-    into(layout.buildDirectory.dir("cli-host"))
-    from(tasks.named("jar")) {
-        into("lib")
-    }
-    from(configurations.runtimeClasspath) {
-        into("lib")
-    }
-    doLast {
-        val binDir = layout.buildDirectory.dir("cli-host/bin").get().asFile
-        if (!binDir.exists()) {
-            binDir.mkdirs()
-        }
-
-        val windowsScript = binDir.resolve("runtime-cli-host.bat")
-        windowsScript.writeText(
-            """
-            @echo off
-            set DIRNAME=%~dp0
-            set APP_HOME=%DIRNAME%..
-            for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
-            if defined JAVA_HOME (
-              set "JAVA_EXE=%JAVA_HOME%\bin\java.exe"
-            ) else (
-              set "JAVA_EXE=java.exe"
-            )
-            "%JAVA_EXE%" %JAVA_OPTS% %RUNTIME_CLI_HOST_OPTS% -cp "%APP_HOME%\lib\*" $cliHostMainClass %*
-            """.trimIndent(),
-        )
-    }
-}
-
-tasks.register<JavaExec>("runCliHost") {
-    group = "application"
-    description = "Runs the runtime stdio CLI host."
-    classpath = sourceSets.main.get().runtimeClasspath
-    mainClass.set(cliHostMainClass)
-    standardInput = System.`in`
 }

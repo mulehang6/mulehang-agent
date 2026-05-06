@@ -74,7 +74,6 @@ export function formatRuntimeStatus(runtime: RuntimeSummaryState): string {
     `phase=${runtime.phase}`,
     `mode=${runtime.mode}`,
     `session=${runtime.sessionId ?? "-"}`,
-    `request=${runtime.requestId ?? "-"}`,
     `detail=${runtime.detail ?? "-"}`,
   ].join(" | ");
 }

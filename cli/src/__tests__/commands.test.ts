@@ -30,7 +30,7 @@ describe("commands", () => {
 
     expect(next.transcript.at(-1)).toEqual({
       kind: "system",
-      text: "Status: phase=idle | mode=agent | session=- | request=- | detail=waiting for input",
+      text: "Status: phase=idle | mode=agent | session=- | detail=waiting for input",
     });
   });
 

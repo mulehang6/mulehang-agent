@@ -1,5 +1,7 @@
 package com.agent.runtime.server
 
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
@@ -56,6 +58,35 @@ class LoggingRuntimeHttpServiceTest {
         assertEquals(expected, response)
     }
 
+    @Test
+    fun `should delegate runtime stream and preserve emitted events`() = runTest {
+        val request = validRequest()
+        val expected = listOf(
+            RuntimeSseEvent(
+                event = "status",
+                sessionId = "session-1",
+                requestId = "request-1",
+                message = "run.started",
+            ),
+            RuntimeSseEvent(
+                event = "run.completed",
+                sessionId = "session-1",
+                requestId = "request-1",
+                output = JsonPrimitive("done"),
+            ),
+        )
+        val delegate = RecordingRuntimeHttpService(
+            response = Result.success(RuntimeRunPayload(requestId = "request-1")),
+            streamResponse = expected,
+        )
+        val service = LoggingRuntimeHttpService(delegate)
+
+        val response = service.stream(request).toList()
+
+        assertEquals(request, delegate.receivedStreamRequest)
+        assertEquals(expected, response)
+    }
+
     private fun validRequest(): RuntimeRunHttpRequest = RuntimeRunHttpRequest(
         prompt = "hello",
         provider = ProviderBindingHttpRequest(
@@ -72,12 +103,19 @@ class LoggingRuntimeHttpServiceTest {
      */
     private class RecordingRuntimeHttpService(
         private val response: Result<RuntimeRunPayload>,
+        private val streamResponse: List<RuntimeSseEvent> = emptyList(),
     ) : RuntimeHttpService {
         var receivedRequest: RuntimeRunHttpRequest? = null
+        var receivedStreamRequest: RuntimeRunHttpRequest? = null
 
         override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> {
             receivedRequest = request
             return response
+        }
+
+        override fun stream(request: RuntimeRunHttpRequest) = flow {
+            receivedStreamRequest = request
+            streamResponse.forEach { emit(it) }
         }
     }
 }

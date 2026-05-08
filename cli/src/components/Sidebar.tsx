@@ -33,7 +33,6 @@ export function Sidebar(props: {
       {props.mode === "full" ? (
         <>
           <text fg="#9a9a9a">session: {props.runtime.sessionId ?? "-"}</text>
-          <text fg="#9a9a9a">request: {props.runtime.requestId ?? "-"}</text>
           <text fg="#9a9a9a">detail: {props.runtime.detail ?? "-"}</text>
         </>
       ) : null}

@@ -7,7 +7,7 @@ import { TranscriptView } from "../components/TranscriptView";
 import type { ChatLayout } from "../layout";
 
 /**
- * 渲染参考图二风格的会话页。
+ * 渲染参考kilo风格的会话页。
  */
 export function ChatScreen(props: {
   state: AppState;
@@ -20,6 +20,7 @@ export function ChatScreen(props: {
   layout: ChatLayout;
   onInput: (value: string) => void;
   onSubmit: NonNullable<InputProps["onSubmit"]>;
+  onToggleTranscriptEntry: (entryIndex: number) => void;
 }) {
   return (
     <box
@@ -39,7 +40,10 @@ export function ChatScreen(props: {
           gap: props.layout.gap,
         }}
       >
-        <TranscriptView entries={props.state.transcript} />
+        <TranscriptView
+          entries={props.state.transcript}
+          onToggleEntry={props.onToggleTranscriptEntry}
+        />
 
         <Composer
           draft={props.draft}

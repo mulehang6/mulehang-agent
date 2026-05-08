@@ -1,5 +1,6 @@
 package com.agent.runtime.server
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -48,6 +49,7 @@ data class Result<T>(
 data class HealthPayload(
     val healthy: Boolean,
     val service: String,
+    val protocolVersion: String,
 )
 
 /**
@@ -69,7 +71,7 @@ data class ProviderBindingHttpRequest(
 data class RuntimeRunHttpRequest(
     val sessionId: String? = null,
     val prompt: String,
-    val provider: ProviderBindingHttpRequest,
+    val provider: ProviderBindingHttpRequest? = null,
 )
 
 /**
@@ -110,4 +112,9 @@ interface RuntimeHttpService {
      * 执行一次 HTTP runtime 请求并返回结构化结果。
      */
     suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload>
+
+    /**
+     * 以 SSE 事件流形式暴露一次 runtime 执行。
+     */
+    fun stream(request: RuntimeRunHttpRequest): Flow<RuntimeSseEvent>
 }

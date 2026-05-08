@@ -9,6 +9,7 @@ import {
   openCommandPalette,
   selectNextCommand,
   selectPreviousCommand,
+  toggleTranscriptEntryExpanded,
 } from "../app-state";
 
 describe("app state", () => {
@@ -115,5 +116,113 @@ describe("app state", () => {
       kind: "failure",
       text: "agent: OpenAILLMClient Status code: 404",
     });
+  });
+
+  test("groups thinking deltas into one expanded transcript block", () => {
+    let state = createInitialAppState();
+
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.reasoning.delta",
+        channel: "thinking",
+        delta: "I need to inspect ",
+      },
+    });
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.reasoning.delta",
+        channel: "thinking",
+        delta: "the available context first.",
+      },
+    });
+
+    expect(state.transcript).toEqual([
+      {
+        kind: "thinking",
+        title: "Thinking",
+        expanded: true,
+        text: "I need to inspect the available context first.",
+      },
+    ]);
+  });
+
+  test("groups text deltas into one assistant transcript block and skips duplicate final output", () => {
+    let state = createInitialAppState();
+
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.text.delta",
+        channel: "text",
+        delta: "hello ",
+      },
+    });
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.text.delta",
+        channel: "text",
+        delta: "world",
+      },
+    });
+    state = applyRuntimeCliMessage(state, {
+      type: "result",
+      sessionId: "session-1",
+      requestId: "request-1",
+      output: "hello world",
+      mode: "agent",
+    });
+
+    expect(state.transcript).toEqual([
+      {
+        kind: "assistant",
+        text: "hello world",
+      },
+    ]);
+  });
+
+  test("keeps appended thinking deltas collapsed when user collapsed the block", () => {
+    let state = createInitialAppState();
+
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.reasoning.delta",
+        channel: "thinking",
+        delta: "First thought. ",
+      },
+    });
+    state = toggleTranscriptEntryExpanded(state, 0);
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.reasoning.delta",
+        channel: "thinking",
+        delta: "Second thought.",
+      },
+    });
+
+    expect(state.transcript).toEqual([
+      {
+        kind: "thinking",
+        title: "Thinking",
+        expanded: false,
+        text: "First thought. Second thought.",
+      },
+    ]);
   });
 });

@@ -1,12 +1,15 @@
 package com.agent.runtime.server
 
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
@@ -14,20 +17,29 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 private val runtimeHttpModuleLogger = LoggerFactory.getLogger("com.agent.runtime.server.RuntimeHttpModule")
+private val runtimeHttpModuleJson = Json {
+    ignoreUnknownKeys = true
+    prettyPrint = true
+}
+private val runtimeSseJson = Json {
+    ignoreUnknownKeys = true
+}
 
 /**
  * 安装最小 runtime HTTP 宿主模块。
  */
 fun Application.runtimeHttpModule(
     service: RuntimeHttpService = LoggingRuntimeHttpService(DefaultRuntimeHttpService()),
+    metadata: RuntimeServerMetadata = RuntimeServerMetadata(
+        service = "mulehang-agent",
+        protocolVersion = "2026-05-06",
+        serverVersion = "dev",
+        authMode = "disabled",
+    ),
+    auth: RuntimeServerAuth = RuntimeServerAuth.disabledForTests(),
 ) {
     install(ContentNegotiation) {
-        json(
-            Json {
-                ignoreUnknownKeys = true
-                prettyPrint = true
-            },
-        )
+        json(runtimeHttpModuleJson)
     }
 
     routing {
@@ -37,7 +49,8 @@ fun Application.runtimeHttpModule(
                 Result.success(
                     HealthPayload(
                         healthy = true,
-                        service = "mulehang-agent",
+                        service = metadata.service,
+                        protocolVersion = metadata.protocolVersion,
                     ),
                 ),
             )
@@ -46,14 +59,23 @@ fun Application.runtimeHttpModule(
             )
         }
 
+        get("/meta") {
+            call.respond(Result.success(metadata))
+        }
+
         post("/runtime/run") {
+            if (!auth.isAuthorized(call.request.bearerToken())) {
+                call.respond(HttpStatusCode.Unauthorized, unauthorizedRunResponse())
+                return@post
+            }
             val request = call.receive<RuntimeRunHttpRequest>()
+            val provider = request.provider
             runtimeHttpModuleLogger.info(
                 "收到接口请求：method=POST path=/runtime/run providerId={} providerType={} baseUrl={} modelId={} promptLength={}",
-                request.provider.providerId,
-                request.provider.providerType,
-                request.provider.baseUrl,
-                request.provider.modelId,
+                provider?.providerId ?: "runtime-default",
+                provider?.providerType ?: "runtime-default",
+                provider?.baseUrl ?: "runtime-default",
+                provider?.modelId ?: "runtime-default",
                 request.prompt.length,
             )
             val response = service.run(request)
@@ -67,6 +89,22 @@ fun Application.runtimeHttpModule(
                 response.data.failureEvent()?.failureKind,
             )
             call.respond(status, response)
+        }
+
+        post("/runtime/run/stream") {
+            if (!auth.isAuthorized(call.request.bearerToken())) {
+                call.respond(HttpStatusCode.Unauthorized, unauthorizedRunResponse())
+                return@post
+            }
+            val request = call.receive<RuntimeRunHttpRequest>()
+            call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
+            call.respondTextWriter(contentType = ContentType.Text.EventStream) {
+                service.stream(request).collect { event ->
+                    write("event: ${event.event}\n")
+                    write("data: ${runtimeSseJson.encodeToString(RuntimeSseEvent.serializer(), event)}\n\n")
+                    flush()
+                }
+            }
         }
     }
 }
@@ -84,3 +122,29 @@ private fun Result<RuntimeRunPayload>.status(): HttpStatusCode {
         else -> HttpStatusCode.InternalServerError
     }
 }
+
+/**
+ * 从 Authorization 头中解析 Bearer token；非 Bearer 认证一律视为未提供。
+ */
+private fun io.ktor.server.request.ApplicationRequest.bearerToken(): String? =
+    headers[HttpHeaders.Authorization]
+        ?.removePrefix("Bearer ")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+
+/**
+ * 构造未认证请求的稳定错误体。
+ */
+private fun unauthorizedRunResponse(): Result<RuntimeRunPayload> = Result.fail(
+    message = "Unauthorized.",
+    data = RuntimeRunPayload(
+        requestId = "unauthorized",
+        events = listOf(
+            RuntimeEventPayload(
+                message = "runtime.run.failed",
+                failureKind = "auth",
+                failureMessage = "Unauthorized.",
+            ),
+        ),
+    ),
+)

@@ -2,57 +2,48 @@
 
 ## 目标
 
-把 CLI 做成第一主入口，并让它稳定消费 runtime 的统一输出。
+把 CLI 稳定确立为第一主入口，并让它通过 shared local runtime HTTP server 消费统一的流式输出。
 
-当前阶段的 CLI 不再指普通一次性命令行，而是以接近 Kilo 的交互式 CLI / TUI 为目标。
+当前阶段的 CLI 不是一次性命令包装，而是接近 Kilo 风格的交互式 CLI / TUI：
 
-本阶段重点包括：
-
-1. CLI 输入解析
-2. runtime 调用发起
-3. streaming 输出
-4. structured output 呈现
-5. 状态提示
-6. 用户可理解的错误展示
+1. 输入 prompt 或本地 `/` 命令
+2. 连接或拉起共享本地 `RuntimeHttpServer`
+3. 通过 HTTP + SSE 发起请求并消费事件流
+4. 把 thinking、text、result、failure 映射成用户可理解的终端界面
 
 ## 范围
 
-CLI 是第一主入口，但它只负责入口与呈现。
+本阶段聚焦以下能力：
 
-CLI 在工程结构上应作为独立模块存在。当前优先方案是：
+1. CLI 输入解析与提交
+2. shared local server 发现、复用与必要时拉起
+3. HTTP 请求与 SSE 流式事件消费
+4. structured output 呈现
+5. 状态提示与错误展示
+6. 会话级 transcript 维护
 
-1. `runtime` 模块继续使用 Kotlin/JVM
-2. `cli` 模块使用 TypeScript + Bun + OpenTUI
-3. `cli` 通过本地 `stdio` 协议消费 `runtime` 暴露的能力，而不是直接依赖 JVM 内部类
+CLI 依然只是入口与呈现层，不负责 provider 探测、capability 实现和 ACP 桥接。
 
-当前第一版最小闭环已经明确为：
+## 工程形态
 
-1. 启动 `cli`
-2. `cli` 启动本地 `runtime` 子进程
-3. `cli` 通过 `stdin` 发送一条用户输入
-4. `runtime` 通过 `stdout` 连续返回 `status`、`event`、`result` 或 `failure`
-5. TUI 把这些消息稳定显示到会话区和状态区
+当前主链采用以下边界：
 
-CLI 不负责：
+1. `runtime` 模块继续使用 Kotlin/JVM，正式入口是本地 `RuntimeHttpServer`
+2. `cli` 模块使用 TypeScript + Bun + OpenTUI/React 承载交互式 TUI
+3. `cli` 不直接依赖 JVM 内部类，只依赖 shared local server 暴露的 HTTP/SSE 契约
+4. `cli` 通过状态文件、`/meta` 探针和本地 token 认证发现或复用共享 server
+5. 必要时 `cli` 自动触发 `:runtime:installDist`，确保本地 runtime 分发脚本已生成
 
-1. provider 探测逻辑
-2. capability 实现细节
-3. ACP 协议桥接
-
-样式技术边界也需要明确：
-
-1. 当前 `cli` 是终端 TUI，OpenTUI 渲染不使用 Tailwind CSS
-2. 如果后续补充浏览器调试面板、文档站或 Web client surface，可默认采用 Tailwind CSS 4 最新稳定版
-3. 浏览器前端样式方案不应成为当前 CLI/TUI 落地的前置条件
+这里的关键变化是：`stdio` 子进程桥接不再是 CLI 正式主链，只保留为历史设计背景，不再写入当前阶段架构要求。
 
 ## 关键边界
 
-CLI 只消费：
+CLI 只消费这些稳定边界：
 
-1. `runtime` 暴露的稳定协议
-2. 事件流
-3. 结构化结果
-4. 错误与状态反馈
+1. `POST /runtime/run/stream`
+2. `POST /runtime/run`
+3. `GET /meta`
+4. 统一的状态、事件、结果、失败语义
 
 CLI 不应该知道底层到底走的是：
 
@@ -60,62 +51,72 @@ CLI 不应该知道底层到底走的是：
 2. MCP
 3. direct HTTP internal API
 
-## 输出模型
+这些差异都留在 runtime、capability 和 agent 装配层内部。
 
-本阶段需要统一至少三类可见输出：
+## 流式输出模型
 
-1. 流式事件
-2. 结构化结果
-3. 错误与状态提示
+本阶段至少要稳定处理以下事件：
 
-如果实现为 TUI，还应额外满足：
+1. `status`
+2. `thinking.delta`
+3. `text.delta`
+4. `run.completed`
+5. `run.failed`
+
+推荐语义如下：
+
+1. `status` 用于会话开始、状态切换和可见提示
+2. `thinking.delta` 连续追加到可折叠的 thinking 区块
+3. `text.delta` 连续追加到 assistant 回复区块
+4. `run.completed` 输出最终结构化结果，并把状态切到完成
+5. `run.failed` 输出一行失败摘要，并把状态切到失败
+
+thinking 区块默认展开；如果用户已经折叠，后续 delta 仍然追加到同一块内容，但不强制重新展开。
+
+## Shared Local Server 要求
+
+shared local runtime server 必须满足：
+
+1. 不与单个 CLI 窗口绑定生命周期
+2. 可通过状态文件复用已有实例
+3. 可通过 `/meta` 快速健康检查
+4. 默认启用本地 token 认证
+5. 对 CLI 暴露稳定的协议版本
+
+CLI 负责发现和复用；runtime 负责真正执行请求。
+
+## 输出与界面要求
+
+如果实现为 TUI，本阶段至少满足：
 
 1. 会话区与输入区分离
-2. 状态区可见当前模型、上下文和运行状态
-3. streaming 输出在界面上连续追加，而不是每轮整屏重绘式刷日志
+2. 状态区可见当前模式、会话状态和基础元信息
+3. streaming 输出连续追加，而不是把日志整屏刷出
+4. 失败信息以用户可读摘要展示，而不是直接暴露堆栈
+5. `/` 命令与普通 prompt 共用同一套输入体验
 
 ## 非目标
 
 本阶段明确不做以下事情：
 
 1. 不在这一阶段引入 ACP
-2. 不提前设计桌面端或 Web UI
-3. 不在 CLI 内部重建第二套 runtime
-4. 不把 CLI 代码直接合并进 `runtime` 模块
-5. 不让 OpenTUI 前端直接依赖 Kotlin 内部实现
+2. 不回到 `stdio` 单行 JSON 主链
+3. 不让 CLI 直接依赖 Kotlin runtime 内部类
+4. 不在 CLI 内部重建第二套 provider / capability / agent 逻辑
+5. 不把浏览器 UI 设计约束带进终端 TUI
 
-## 模块边界
+## 前端技术边界
 
-本阶段默认采用以下工程边界：
-
-1. `runtime` 模块继续承载 runtime、provider、capability、agent 和当前宿主集成
-2. `cli` 模块承载命令解析、交互式 TUI、流式输出、structured output 呈现和用户可见错误
-3. `cli` 采用 TypeScript + Bun + OpenTUI
-4. `cli` 通过本地 `stdio` 协议与 `runtime` 进程通信
-5. `cli` 不直接依赖 provider 底层实现或 capability adapter 细节，只依赖 runtime 暴露的协议与入口
-
-## 协议边界
-
-为了支撑交互式 TUI，本阶段应优先定义一套最小本地协议：
-
-1. `cli -> runtime` 的用户输入请求
-2. `runtime -> cli` 的流式事件
-3. `runtime -> cli` 的最终结果
-4. `runtime -> cli` 的结构化失败
-
-第一版协议优先使用 `stdin/stdout` 文本流承载，并保持逐条事件可流式消费。
-
-为了先打通链路，第一版允许在未提供 provider binding 时走 `demo` 模式：
-
-1. `runtime` 返回可预测的 `status -> event -> result` 消息序列
-2. 先验证协议、子进程桥和 TUI 展示链路
-3. 后续再把真实 provider/agent streaming 映射接到同一协议上
+1. 当前第一主入口是终端 TUI，渲染层依赖 OpenTUI，不采用浏览器 CSS 方案
+2. 如果后续新增 Web UI、浏览器 companion、官网或其他浏览器前端，默认采用 Tailwind CSS 4 最新稳定版
+3. Tailwind CSS 的引入不应反向影响当前 `cli` 与 `runtime` 的 local HTTP/SSE 边界
 
 ## 验证标准
 
 完成本阶段后，应满足：
 
-1. CLI 可以作为第一主入口稳定触发完整调用流
-2. streaming 与 structured output 有统一用户可见表现
-3. 错误展示与状态提示不依赖底层 capability 类型
-4. 在没有真实 provider 配置时，最小 demo 闭环也能独立运行
+1. CLI 可以稳定发现或启动 shared local runtime server
+2. CLI 可以通过 HTTP + SSE 触发完整调用流
+3. thinking、text、result、failure 都有统一且可见的终端呈现
+4. runtime 与 CLI 的边界以 shared local server 契约为准，而不是 `stdio` 文本流
+5. `bun test`、`bun run typecheck` 与 `:runtime:test` 能作为该阶段主验证命令

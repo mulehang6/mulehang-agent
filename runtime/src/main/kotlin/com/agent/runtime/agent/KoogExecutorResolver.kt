@@ -95,8 +95,12 @@ class KoogExecutorResolver {
     private fun createOpenAiCompatibleModel(binding: ProviderBinding): LLModel = createModel(
         provider = LLMProvider.OpenAI,
         modelId = binding.modelId,
-        capabilities = DEFAULT_MODEL_CAPABILITIES + binding.openAIEndpointCapability(),
+        capabilities = DEFAULT_MODEL_CAPABILITIES + binding.openAIEndpointCapability() + binding.thinkingCapabilities(),
     )
+
+    /** 当 binding 声明支持 thinking 时追加 [LLMCapability.Thinking]。 */
+    private fun ProviderBinding.thinkingCapabilities(): List<LLMCapability> =
+        if (enableThinking) listOf(LLMCapability.Thinking) else emptyList()
 
     /**
      * 根据 providerType 决定 Koog 应调用 Responses 还是 chat/completions。

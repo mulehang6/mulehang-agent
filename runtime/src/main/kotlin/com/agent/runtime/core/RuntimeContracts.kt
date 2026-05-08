@@ -48,6 +48,8 @@ data class RuntimeAgentRunRequest(
  */
 sealed interface RuntimeEvent {
     val message: String
+    val channel: String?
+    val delta: String?
     val payload: JsonElement?
 }
 
@@ -56,6 +58,8 @@ sealed interface RuntimeEvent {
  */
 data class RuntimeInfoEvent(
     override val message: String,
+    override val channel: String? = null,
+    override val delta: String? = null,
     override val payload: JsonElement? = null,
 ) : RuntimeEvent
 

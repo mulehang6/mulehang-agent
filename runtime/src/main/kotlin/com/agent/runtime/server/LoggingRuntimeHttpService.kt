@@ -1,5 +1,6 @@
 package com.agent.runtime.server
 
+import kotlinx.coroutines.flow.Flow
 import org.slf4j.LoggerFactory
 
 /**
@@ -13,12 +14,13 @@ class LoggingRuntimeHttpService(
      * 记录 runtime 请求进入、响应完成和异常；不会输出 apiKey 或 prompt 原文。
      */
     override suspend fun run(request: RuntimeRunHttpRequest): Result<RuntimeRunPayload> {
+        val provider = request.provider
         logger.info(
             "AOP进入 runtime 接口：providerId={} providerType={} baseUrl={} modelId={} promptLength={}",
-            request.provider.providerId,
-            request.provider.providerType,
-            request.provider.baseUrl,
-            request.provider.modelId,
+            provider?.providerId ?: "runtime-default",
+            provider?.providerType ?: "runtime-default",
+            provider?.baseUrl ?: "runtime-default",
+            provider?.modelId ?: "runtime-default",
             request.prompt.length,
         )
 
@@ -29,14 +31,30 @@ class LoggingRuntimeHttpService(
         } catch (error: Throwable) {
             logger.error(
                 "AOP捕获 runtime 接口异常：providerId={} providerType={} modelId={} error={}",
-                request.provider.providerId,
-                request.provider.providerType,
-                request.provider.modelId,
+                provider?.providerId ?: "runtime-default",
+                provider?.providerType ?: "runtime-default",
+                provider?.modelId ?: "runtime-default",
                 error.message,
                 error,
             )
             throw error
         }
+    }
+
+    /**
+     * 记录 runtime SSE 请求进入和结束，但不改变被包装服务的事件语义。
+     */
+    override fun stream(request: RuntimeRunHttpRequest): Flow<RuntimeSseEvent> {
+        val provider = request.provider
+        logger.info(
+            "AOP进入 runtime SSE 接口：providerId={} providerType={} baseUrl={} modelId={} promptLength={}",
+            provider?.providerId ?: "runtime-default",
+            provider?.providerType ?: "runtime-default",
+            provider?.baseUrl ?: "runtime-default",
+            provider?.modelId ?: "runtime-default",
+            request.prompt.length,
+        )
+        return delegate.stream(request)
     }
 
     /**

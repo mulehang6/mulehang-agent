@@ -2,175 +2,50 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 CLI 做成第一主入口，并以 TypeScript/Bun/OpenTUI 的交互式 TUI 形式稳定消费 runtime 的统一输出；优先完成可独立运行的最小闭环。
+**Goal:** 把 CLI 做成第一主入口，并以 TypeScript/Bun/OpenTUI 的交互式 TUI 形式通过 shared local runtime HTTP server 稳定消费 runtime 的统一输出。
 
-**Architecture:** 先新增独立 `cli` 模块，使用 TypeScript + Bun + OpenTUI/React 承载 TUI；再在 `runtime` 与 `cli` 之间定义最小 `stdio` 协议，让 CLI 通过启动本地 runtime 进程并消费事件流完成交互。第一版允许在没有 provider 配置时走 `demo` 模式，先验证协议、子进程桥和展示链路。CLI 不直接依赖 Kotlin 内部类，只依赖本地协议。
+**Architecture:** `runtime` 以 `RuntimeHttpServer` 作为正式入口，负责 `/meta`、`/runtime/run` 和 `/runtime/run/stream`。`cli` 通过 `RuntimeServerManager` 发现或拉起 shared local server，再用 `RuntimeHttpClient` 通过 HTTP + SSE 发起请求、消费事件，并更新 TUI 状态。`stdio` 子进程桥接不再是当前主线。
 
-**Tech Stack:** Kotlin/JVM runtime, TypeScript, Bun, OpenTUI, React bindings, Gradle, kotlin.test, JUnit 5. 如果后续新增浏览器前端，再默认采用 Tailwind CSS 4 最新稳定版；当前终端 TUI 不引入 Tailwind。
+**Tech Stack:** Kotlin/JVM runtime, Ktor server, TypeScript, Bun, OpenTUI, React bindings, Gradle, kotlin.test, JUnit 5。
 
 ---
 
-## Current First-Pass Update
+## Current Baseline
 
-当前第一批最小实现已经按以下边界落地：
+当前阶段应以 shared local server 主链为准：
 
-1. `runtime` 新增了 `RuntimeCliProtocol`、`DefaultRuntimeCliService`、`RuntimeCliHost`
-2. `runtime` 通过 `installCliHostDist` 生成本地 `stdio` 宿主启动脚本
-3. `cli` 已初始化 Bun/OpenTUI 模块，并包含协议层、子进程桥和最小状态驱动 TUI
-4. 在没有 provider 配置时，`cli -> runtime` 会走 `demo` 模式返回稳定的 `status/event/result` 序列
+1. `runtime` 对外暴露本地 HTTP/SSE 协议
+2. `cli` 通过状态文件 + `/meta` 探针复用共享 server
+3. `cli` 通过 HTTP POST 和 SSE 消费事件流
+4. `runtime-process.ts`、`protocol.ts`、`RuntimeCliHost` 仅属于已删除的历史方案
 
-因此，后续任务应以“在现有最小闭环上继续扩展真实 streaming 与 richer TUI”为准，而不是回退到重新搭空骨架。
+后续工作不应再扩展 `stdio` 主链，而应继续收敛 shared local server、事件映射和文档一致性。
 
-### Task 1: 建立独立的 CLI 模块与运行边界
-
-**Files:**
-- Modify: `settings.gradle.kts`
-- Create: `cli/package.json`
-- Create: `cli/tsconfig.json`
-- Create: `cli/src/index.tsx`
-
-- [ ] **Step 1: 保留 Gradle 只管理 Kotlin `runtime`**
-
-确认 `settings.gradle.kts` 仍然只包含：
-
-```kotlin
-include(":runtime")
-```
-
-- [ ] **Step 2: 初始化独立 `cli` 前端模块**
-
-创建最小 `package.json`，至少包含：
-
-```json
-{
-  "name": "mulehang-agent-cli",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "bun run src/index.tsx"
-  },
-  "dependencies": {
-    "@opentui/core": "latest",
-    "@opentui/react": "latest",
-    "react": "latest"
-  }
-}
-```
-
-- [ ] **Step 3: 添加最小 TypeScript 配置**
-
-创建 `tsconfig.json`，至少包含：
-
-```json
-{
-  "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "jsxImportSource": "@opentui/react",
-    "strict": true,
-    "skipLibCheck": true
-  }
-}
-```
-
-- [ ] **Step 4: 添加最小 OpenTUI 入口**
-
-创建：
-
-```ts
-import { createCliRenderer } from "@opentui/core"
-import { createRoot } from "@opentui/react"
-import { jsx as _jsx } from "@opentui/react/jsx-runtime"
-
-function App() {
-  return _jsx("text", { children: "Hello, mulehang-agent CLI" })
-}
-
-const renderer = await createCliRenderer({ exitOnCtrlC: true })
-createRoot(renderer).render(_jsx(App, {}))
-```
-
-- [ ] **Step 5: 运行前端依赖安装与最小启动验证**
-
-Run:
-
-```powershell
-bun install
-bun run src/index.tsx
-```
-
-Expected: 能看到最小 OpenTUI 输出，并可通过 `Ctrl+C` 退出。
-
-### Task 2: 定义 `runtime <-> cli` 的最小 `stdio` 协议
+## Task 1: 升级 shared local runtime server 宿主
 
 **Files:**
-- Create: `runtime/src/main/kotlin/com/agent/runtime/cli/RuntimeCliProtocol.kt`
-- Create: `runtime/src/test/kotlin/com/agent/runtime/cli/RuntimeCliProtocolTest.kt`
-- Create: `docs/superpowers/specs/2026-04-24-cli-stdio-protocol-notes.md`
+- Modify: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpServer.kt`
+- Modify: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpModule.kt`
+- Create: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpServerConfiguration.kt`
+- Create: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeServerMetadata.kt`
+- Create: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeServerAuth.kt`
+- Test: `runtime/src/test/kotlin/com/agent/runtime/server/RuntimeHttpServerConfigurationTest.kt`
+- Test: `runtime/src/test/kotlin/com/agent/runtime/server/RuntimeHttpModuleTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 先写配置与 `/meta` 探针测试**
 
-验证 runtime 侧协议至少能表达：
+覆盖：
 
-1. 用户输入请求
-2. 流式事件
-3. 最终结果
-4. 失败响应
+1. host / port / token 读取
+2. metadata 返回 `service`、`protocolVersion`、`serverVersion`、`authMode`
+3. token 开启时的认证行为
 
-- [ ] **Step 2: 运行测试确认失败**
-
-Run:
-
-```powershell
-.\gradlew.bat test --tests com.agent.runtime.cli.RuntimeCliProtocolTest
-```
-
-Expected: FAIL。
-
-- [ ] **Step 3: 写最小实现**
-
-定义：
-
-```kotlin
-sealed interface RuntimeCliInboundMessage
-sealed interface RuntimeCliOutboundMessage
-```
-
-- [ ] **Step 4: 运行测试确认通过**
+- [ ] **Step 2: 运行定向测试确认先失败**
 
 Run:
 
 ```powershell
-.\gradlew.bat test --tests com.agent.runtime.cli.RuntimeCliProtocolTest
-```
-
-Expected: PASS。
-
-### Task 3: 让 CLI 能启动本地 runtime 进程并消费事件流
-
-**Files:**
-- Create: `cli/src/runtime-process.ts`
-- Create: `cli/src/protocol.ts`
-- Create: `cli/src/app.tsx`
-- Create: `cli/src/__tests__/runtime-process.test.ts`
-
-- [ ] **Step 1: 写失败测试**
-
-验证 CLI 能：
-
-1. 启动本地 runtime 子进程
-2. 向 `stdin` 写入请求
-3. 从 `stdout` 连续读取事件
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run:
-
-```powershell
-bun test
+.\gradlew.bat :runtime:test --tests com.agent.runtime.server.RuntimeHttpServerConfigurationTest --tests com.agent.runtime.server.RuntimeHttpModuleTest
 ```
 
 Expected: FAIL。
@@ -179,57 +54,255 @@ Expected: FAIL。
 
 实现：
 
-```ts
-export class RuntimeProcessClient {}
-```
+1. `RuntimeHttpServerConfiguration`
+2. `RuntimeServerMetadata`
+3. `RuntimeServerAuth`
+4. `/meta` 路由
 
-- [ ] **Step 4: 运行测试确认通过**
+- [ ] **Step 4: 重新运行定向测试**
 
 Run:
 
 ```powershell
-bun test
+.\gradlew.bat :runtime:test --tests com.agent.runtime.server.RuntimeHttpServerConfigurationTest --tests com.agent.runtime.server.RuntimeHttpModuleTest
 ```
 
 Expected: PASS。
 
-### Task 4: 用 OpenTUI/React 实现第一版交互式 TUI
+## Task 2: 为 runtime HTTP server 增加 SSE 事件流
 
 **Files:**
-- Modify: `cli/src/app.tsx`
-- Create: `cli/src/components/ChatPane.tsx`
-- Create: `cli/src/components/InputBar.tsx`
-- Create: `cli/src/components/StatusPane.tsx`
+- Modify: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpContract.kt`
+- Modify: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpService.kt`
+- Modify: `runtime/src/main/kotlin/com/agent/runtime/server/LoggingRuntimeHttpService.kt`
+- Create: `runtime/src/main/kotlin/com/agent/runtime/server/RuntimeSseEvent.kt`
+- Test: `runtime/src/test/kotlin/com/agent/runtime/server/DefaultRuntimeHttpServiceTest.kt`
+- Test: `runtime/src/test/kotlin/com/agent/runtime/server/LoggingRuntimeHttpServiceTest.kt`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 先写 SSE 事件测试**
 
-验证第一版界面至少包含：
+至少覆盖：
 
-1. 消息/事件区
-2. 输入区
-3. 状态区
+1. `status`
+2. `thinking.delta`
+3. `text.delta`
+4. `run.completed`
+5. `run.failed`
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: 运行定向测试确认先失败**
 
 Run:
 
 ```powershell
-bun test
+.\gradlew.bat :runtime:test --tests com.agent.runtime.server.DefaultRuntimeHttpServiceTest --tests com.agent.runtime.server.LoggingRuntimeHttpServiceTest
 ```
 
 Expected: FAIL。
 
 - [ ] **Step 3: 写最小实现**
 
-把 `RuntimeEvent`、`RuntimeResult`、`RuntimeFailure` 统一渲染到 TUI。
+要求：
 
-- [ ] **Step 4: 运行阶段测试**
+1. `/runtime/run/stream` 返回 `text/event-stream`
+2. 事件名和 JSON 数据都可被 CLI 增量消费
+3. 失败路径也返回结构化事件
+
+- [ ] **Step 4: 重新运行定向测试**
 
 Run:
 
 ```powershell
-bun test
-.\gradlew.bat build
+.\gradlew.bat :runtime:test --tests com.agent.runtime.server.DefaultRuntimeHttpServiceTest --tests com.agent.runtime.server.LoggingRuntimeHttpServiceTest
 ```
 
-Expected: PASS，且 Kotlin `runtime` 构建不被 CLI 前端破坏。
+Expected: PASS。
+
+## Task 3: 为 CLI 接入 shared local server manager 与 HTTP client
+
+**Files:**
+- Create: `cli/src/runtime-server-manager.ts`
+- Create: `cli/src/runtime-http-client.ts`
+- Create: `cli/src/runtime-events.ts`
+- Modify: `cli/src/runtime-request.ts`
+- Test: `cli/src/__tests__/runtime-server-manager.test.ts`
+- Test: `cli/src/__tests__/runtime-http-client.test.ts`
+- Test: `cli/src/__tests__/runtime-request.test.ts`
+
+- [ ] **Step 1: 先写 CLI 侧失败测试**
+
+覆盖：
+
+1. 复用已有健康 server
+2. 无健康 server 时拉起新实例并写状态文件
+3. HTTP 请求头携带本地 token
+4. SSE 帧被增量映射为 CLI 可消费消息
+
+- [ ] **Step 2: 运行定向测试确认先失败**
+
+Run:
+
+```powershell
+Push-Location .\cli
+bun test src\__tests__\runtime-server-manager.test.ts src\__tests__\runtime-http-client.test.ts src\__tests__\runtime-request.test.ts
+Pop-Location
+```
+
+Expected: FAIL。
+
+- [ ] **Step 3: 写最小实现**
+
+实现：
+
+1. `RuntimeServerManager`
+2. `RuntimeHttpClient`
+3. `RuntimeMessage` / value formatting
+4. 最小 `RuntimeRunRequest`
+
+- [ ] **Step 4: 重新运行定向测试与 typecheck**
+
+Run:
+
+```powershell
+Push-Location .\cli
+bun test src\__tests__\runtime-server-manager.test.ts src\__tests__\runtime-http-client.test.ts src\__tests__\runtime-request.test.ts
+bun run typecheck
+Pop-Location
+```
+
+Expected: PASS。
+
+## Task 4: 用 shared local server client 接管 OpenTUI 会话流
+
+**Files:**
+- Modify: `cli/src/app.tsx`
+- Modify: `cli/src/app-state.ts`
+- Test: `cli/src/__tests__/app-state.test.ts`
+- Test: `cli/src/__tests__/app.test.ts`
+
+- [ ] **Step 1: 先写状态映射与提交链路测试**
+
+至少覆盖：
+
+1. `run.started` 更新状态
+2. thinking delta 归并到可折叠 transcript block
+3. text delta 归并到 assistant transcript
+4. duplicate final output 不重复追加
+5. submit 时走 `RuntimeHttpClient.send()`
+
+- [ ] **Step 2: 运行定向测试确认先失败**
+
+Run:
+
+```powershell
+Push-Location .\cli
+bun test src\__tests__\app-state.test.ts src\__tests__\app.test.ts
+Pop-Location
+```
+
+Expected: FAIL。
+
+- [ ] **Step 3: 写最小实现**
+
+要求：
+
+1. 启动时创建 `RuntimeServerManager` + `RuntimeHttpClient`
+2. 请求通过 `createRuntimeRunRequest()` 构造
+3. SSE 映射后的消息进入 `app-state`
+4. 用户可见错误通过 transcript/system message 暴露
+
+- [ ] **Step 4: 重新运行 CLI 全量验证**
+
+Run:
+
+```powershell
+Push-Location .\cli
+bun test
+bun run typecheck
+Pop-Location
+```
+
+Expected: PASS。
+
+## Task 5: 删除旧 stdio 主链并同步文档
+
+**Files:**
+- Delete: `runtime/src/main/kotlin/com/agent/runtime/cli/RuntimeCliHost.kt`
+- Delete: `runtime/src/main/kotlin/com/agent/runtime/cli/RuntimeCliProtocol.kt`
+- Delete: `runtime/src/main/kotlin/com/agent/runtime/cli/RuntimeCliService.kt`
+- Delete: `cli/src/runtime-process.ts`
+- Delete: `cli/src/protocol.ts`
+- Modify: `runtime/build.gradle.kts`
+- Modify: `AGENTS.md`
+- Modify: `docs/superpowers/specs/2026-04-16-koog-agent-architecture-design.md`
+- Modify: `docs/superpowers/specs/04-cli-streaming-and-output.md`
+- Modify: `docs/superpowers/plans/04-cli-streaming-and-output.md`
+- Modify: `docs/CLI_LOGIC_RELATIONSHIPS.md`
+- Modify: `docs/MAIN_LOGIC_RELATIONSHIPS.md`
+- Test: `runtime/src/test/kotlin/com/agent/runtime/server/LoggingBackendConfigurationTest.kt`
+
+- [ ] **Step 1: 先写删除主链后的回归检查**
+
+至少确认：
+
+1. `logback-cli-host.xml` 不再存在
+2. 文档主叙事不再把 `stdio` 作为 CLI 正式主链
+3. `runtime/build.gradle.kts` 只保留 runtime HTTP server 分发入口
+
+- [ ] **Step 2: 删除旧入口并同步文档**
+
+同步后的文档必须明确：
+
+1. CLI 连接 shared local runtime HTTP server
+2. 正式协议是 HTTP + SSE
+3. `:runtime:installDist` 生成的是 runtime server 分发，而不是 `cli host`
+4. `stdio` 只保留为历史背景，不再作为当前架构说明
+
+- [ ] **Step 3: 运行全量验证**
+
+Run:
+
+```powershell
+.\gradlew.bat :runtime:test
+Push-Location .\cli
+bun test
+bun run typecheck
+Pop-Location
+```
+
+Expected: PASS。
+
+- [ ] **Step 4: 对修改文件运行问题检查**
+
+至少检查：
+
+```text
+runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpServer.kt
+runtime/src/main/kotlin/com/agent/runtime/server/RuntimeHttpModule.kt
+cli/src/app.tsx
+docs/superpowers/specs/04-cli-streaming-and-output.md
+docs/superpowers/specs/2026-04-16-koog-agent-architecture-design.md
+docs/superpowers/plans/04-cli-streaming-and-output.md
+docs/CLI_LOGIC_RELATIONSHIPS.md
+docs/MAIN_LOGIC_RELATIONSHIPS.md
+AGENTS.md
+```
+
+Expected: no errors；warning 需要人工判断是否可接受。
+
+## Self-Review
+
+- Spec coverage:
+  - shared local server + metadata + auth：Task 1
+  - HTTP + SSE：Task 2
+  - CLI server manager + client：Task 3
+  - OpenTUI 状态映射：Task 4
+  - 删除旧 `stdio` 主链与文档同步：Task 5
+- Placeholder scan:
+  - 没有 `TODO`、`TBD` 或“后续补充”占位语
+  - 所有任务都给出实际文件路径与验证命令
+- Type consistency:
+  - shared local server
+  - HTTP + SSE
+  - `RuntimeServerManager`
+  - `RuntimeHttpClient`
+  - `RuntimeMessage`

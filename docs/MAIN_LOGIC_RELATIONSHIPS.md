@@ -1,13 +1,14 @@
 # main 源码包、文件、类与方法逻辑关系
 
-本文只覆盖 `src/main/kotlin`，不解释 `src/test`。
+本文主体覆盖 `runtime/src/main/kotlin`，不解释 `src/test`。独立 Bun/OpenTUI CLI 的逐文件学习文档见 [`CLI_LOGIC_RELATIONSHIPS.md`](./CLI_LOGIC_RELATIONSHIPS.md)。
 
 ## 总体关系
 
-当前主线可以分成两条执行路径：
+当前主线可以分成三条执行路径：
 
 1. 设计上的 runtime 路由主轴：`RuntimeRequestDispatcher.dispatch()` -> `RuntimeCapabilityRouter.route()` -> `AgentCapabilityRouter.route()` -> `RuntimeAgentExecutor.execute()`。
-2. 当前 HTTP 可调用主轴：`POST /runtime/run` -> `DefaultRuntimeHttpService.run()` -> `RuntimeAgentExecutor.execute()` -> `AgentAssembly.assemble()` -> Koog `AIAgent.run()`。
+2. 当前 HTTP 可调用主轴：`POST /runtime/run` 或 `POST /runtime/run/stream` -> `DefaultRuntimeHttpService.run()/stream()` -> `RuntimeAgentExecutor.execute()` -> `AgentAssembly.assemble()` -> Koog `AIAgent.run()`。
+3. 当前 CLI 可调用主轴：`cli/src/index.tsx` -> `App` -> `RuntimeServerManager` -> 本地共享 `RuntimeHttpServer` -> HTTP + SSE -> `DefaultRuntimeHttpService.stream()` -> `RuntimeAgentExecutor.execute()`。
 
 ```mermaid
 flowchart TD
@@ -30,10 +31,17 @@ flowchart TD
     AgentAssembly --> KoogAgent["Koog AIAgent"]
     RuntimeAgentExecutor --> KoogAgent
     KoogAgent --> RuntimeResult["RuntimeSuccess / RuntimeFailed"]
+
+    CliEntry["cli/src/index.tsx"] --> CliApp["App"]
+    CliApp --> RuntimeServerManager["RuntimeServerManager"]
+    CliApp --> RuntimeHttpClient["RuntimeHttpClient"]
+    RuntimeServerManager --> RuntimeHttpServer["Shared RuntimeHttpServer"]
+    RuntimeHttpClient --> RuntimeHttpModule
 ```
 
 核心依赖方向是：
 
+- `cli` 通过 shared local server manager 发现或启动本地 `RuntimeHttpServer`，再以 HTTP + SSE 调用 runtime，详细文件、组件和协议关系见 [`CLI_LOGIC_RELATIONSHIPS.md`](./CLI_LOGIC_RELATIONSHIPS.md)。
 - `provider` 产出 `ProviderBinding`。
 - `capability` 产出 `CapabilitySet`，并能被桥接为 Koog `ToolRegistry`。
 - `agent` 消费 `ProviderBinding` 和 `CapabilitySet`，装配并运行 Koog `AIAgent`。
@@ -1157,3 +1165,4 @@ sequenceDiagram
 - `capability` 包已经抽象出 tool/MCP/HTTP 三类 adapter，但 `DefaultRuntimeHttpService` 默认使用空 `CapabilitySet`。
 - `KoogExecutorResolver` 对 OpenAI-compatible 支持自定义 baseUrl；Anthropic/Gemini 当前只允许默认 baseUrl。
 - `RuntimeAgentExecutor` 的异常映射依赖异常类型：参数/校验问题进入 provider failure，状态/桥接问题进入 capability failure，其他进入 agent failure。
+- `cli` 当前通过 `RuntimeServerManager` 发现或拉起 shared local `RuntimeHttpServer`，必要时先通过 `:runtime:installDist` 准备 `runtime/build/install/runtime` 分发布局，再直接用 `java -classpath runtime/build/install/runtime/lib/* com.agent.runtime.server.RuntimeHttpServerKt` 启动；随后使用 HTTP + SSE 与 runtime 通信。CLI 每个文件的入门说明维护在 [`CLI_LOGIC_RELATIONSHIPS.md`](./CLI_LOGIC_RELATIONSHIPS.md)。

@@ -14,12 +14,17 @@ import com.agent.runtime.core.RuntimeProviderResolutionFailure
 import com.agent.runtime.core.RuntimeRequestContext
 import com.agent.runtime.core.RuntimeSession
 import com.agent.runtime.core.RuntimeSuccess
+import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
+import ai.koog.prompt.message.Message
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.flowOf
+import ai.koog.prompt.streaming.StreamFrame
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * 验证 runtime 到 agent.run 的结果翻译与错误分层。
@@ -94,13 +99,159 @@ class RuntimeAgentExecutorTest {
         assertContains(failure.message, "chat/completions")
     }
 
+    @Test
+    fun `should translate streaming text and reasoning frames into runtime events`() = runTest {
+        val result = RuntimeAgentExecutor(
+            assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+            streamRunner = { _, _ ->
+                flowOf(
+                    StreamFrame.ReasoningDelta(text = "thinking "),
+                    StreamFrame.TextDelta("hello "),
+                    StreamFrame.TextDelta("world"),
+                )
+            },
+        ).execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(),
+            capabilitySet = CapabilitySet(adapters = listOf(ToolCapabilityAdapter.echo(id = "tool.echo"))),
+        )
+
+        assertIs<RuntimeSuccess>(result)
+        assertEquals(JsonPrimitive("hello world"), result.output)
+        assertEquals(
+            listOf("status", "thinking", "text", "text", "status"),
+            result.events.map { it.channel ?: "status" },
+        )
+        assertEquals("thinking ", result.events[1].delta)
+        assertEquals("hello ", result.events[2].delta)
+        assertEquals("world", result.events[3].delta)
+    }
+
+    @Test
+    fun `should use DeepSeek thinking compatibility stream when chat completions reasoning is hidden from Koog`() = runTest {
+        val result = RuntimeAgentExecutor(
+            assembleAgent = { binding, capabilities -> AgentAssembly().assemble(binding, capabilities) },
+            compatibilityStreamRunner = object : CompatibilityStreamRunner {
+                override fun supports(binding: ProviderBinding, hasTools: Boolean): Boolean = true
+
+                override fun stream(binding: ProviderBinding, prompt: ai.koog.prompt.dsl.Prompt) = flowOf(
+                    StreamFrame.ReasoningDelta(text = "inspect "),
+                    StreamFrame.TextDelta("answer"),
+                )
+            },
+        ).execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(
+                baseUrl = "https://api.deepseek.com",
+                modelId = "deepseek-v4-flash",
+                enableThinking = true,
+            ),
+            capabilitySet = CapabilitySet(adapters = emptyList()),
+        )
+
+        assertIs<RuntimeSuccess>(result)
+        assertEquals(JsonPrimitive("answer"), result.output)
+        assertEquals(
+            listOf("status", "thinking", "text", "status"),
+            result.events.map { it.channel ?: "status" },
+        )
+        assertEquals("inspect ", result.events[1].delta)
+        assertEquals("answer", result.events[2].delta)
+    }
+
+    @Test
+    fun `should load previous conversation history into next streaming prompt for same session`() = runTest {
+        val recording = buildRecordingAssembledAgent { prompt ->
+            val previousUserMessages = prompt.messages
+                .filter { it.role == Message.Role.User }
+                .dropLast(1)
+                .map { it.content }
+            if ("hello" in previousUserMessages) "you said hello" else "no memory"
+        }
+        val executor = RuntimeAgentExecutor(
+            assembleAgent = { _, _ -> recording.assembledAgent },
+        )
+
+        executor.execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-1"),
+            request = RuntimeAgentRunRequest(prompt = "hello"),
+            binding = openAiBinding(),
+            capabilitySet = CapabilitySet(adapters = emptyList()),
+        )
+        val secondResult = executor.execute(
+            session = RuntimeSession(id = "session-1"),
+            context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-2"),
+            request = RuntimeAgentRunRequest(prompt = "what did I say?"),
+            binding = openAiBinding(),
+            capabilitySet = CapabilitySet(adapters = emptyList()),
+        )
+
+        assertIs<RuntimeSuccess>(secondResult)
+        assertEquals(JsonPrimitive("you said hello"), secondResult.output)
+        val secondPromptMessages = recording.promptExecutor.capturedPrompts.last().messages
+        assertTrue(secondPromptMessages.any { it.role == Message.Role.User && it.content == "hello" })
+        assertTrue(secondPromptMessages.any { it.role == Message.Role.Assistant && it.content == "no memory" })
+        assertTrue(secondPromptMessages.any { it.role == Message.Role.User && it.content == "what did I say?" })
+    }
+
+    @Test
+    fun `should trim stored conversation history to configured window size`() = runTest {
+        val recording = buildRecordingAssembledAgent { prompt ->
+            prompt.messages.last { it.role == Message.Role.User }.content.uppercase()
+        }
+        val executor = RuntimeAgentExecutor(
+            assembleAgent = { _, _ -> recording.assembledAgent },
+            conversationMemory = RuntimeConversationMemory(windowSize = 4),
+        )
+
+        listOf("turn-1", "turn-2", "turn-3", "turn-4").forEachIndexed { index, prompt ->
+            executor.execute(
+                session = RuntimeSession(id = "session-1"),
+                context = RuntimeRequestContext(sessionId = "session-1", requestId = "request-${index + 1}"),
+                request = RuntimeAgentRunRequest(prompt = prompt),
+                binding = openAiBinding(),
+                capabilitySet = CapabilitySet(adapters = emptyList()),
+            )
+        }
+
+        val latestPrompt = recording.promptExecutor.capturedPrompts.last()
+        val userMessages = latestPrompt.messages.filter { it.role == Message.Role.User }.map { it.content }
+        val assistantMessages = latestPrompt.messages.filter { it.role == Message.Role.Assistant }.map { it.content }
+        assertEquals(listOf("turn-2", "turn-3", "turn-4"), userMessages)
+        assertEquals(listOf("TURN-2", "TURN-3"), assistantMessages)
+    }
+
+    @Test
+    fun `should inject deepseek thinking payload into prompt params when enabled`() {
+        val prompt = buildRuntimePrompt(
+            userPrompt = "hello",
+            binding = openAiBinding(
+                baseUrl = "https://api.deepseek.com",
+                modelId = "deepseek-v4-flash",
+                enableThinking = true,
+            ),
+        )
+
+        val params = assertIs<OpenAIChatParams>(prompt.params)
+        assertEquals("{\"type\":\"enabled\"}", params.additionalProperties?.get("thinking")?.toString())
+    }
+
     private fun openAiBinding(
         providerType: ProviderType = ProviderType.OPENAI_COMPATIBLE,
+        baseUrl: String = "https://openrouter.ai/api/v1",
+        modelId: String = "openai/gpt-oss-120b:free",
+        enableThinking: Boolean = false,
     ) = ProviderBinding(
         providerId = "provider-openai",
         providerType = providerType,
-        baseUrl = "https://openrouter.ai/api/v1",
+        baseUrl = baseUrl,
         apiKey = "test-key",
-        modelId = "openai/gpt-oss-120b:free",
+        modelId = modelId,
+        enableThinking = enableThinking,
     )
 }

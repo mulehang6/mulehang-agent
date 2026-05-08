@@ -17,6 +17,7 @@ import {
   openCommandPalette,
   selectNextCommand,
   selectPreviousCommand,
+  toggleTranscriptEntryExpanded,
   type AppState,
 } from "./app-state";
 import {
@@ -27,12 +28,16 @@ import {
 import { registerCtrlCPress } from "./exit-guard";
 import { resolveChatLayout, resolveWelcomeLayout } from "./layout";
 import {
-  createDefaultRuntimeLaunchSpec,
-  RuntimeProcessClient,
-} from "./runtime-process";
+  RuntimeHttpClient,
+} from "./runtime-http-client";
 import { createRuntimeRunRequest } from "./runtime-request";
+import {
+  createDefaultRuntimeServerManagerOptions,
+  RuntimeServerManager,
+} from "./runtime-server-manager";
 import { ChatScreen } from "./screens/ChatScreen";
 import { WelcomeScreen } from "./screens/WelcomeScreen";
+import { createWelcomeMetadata, readCurrentGitBranch } from "./welcome-metadata";
 
 const COMMAND_ITEMS = createCommandItems(DEFAULT_COMMAND_ITEMS);
 const EXIT_WINDOW_MS = 2_000;
@@ -44,9 +49,10 @@ export function App() {
   const [state, setState] = useState<AppState>(() => createInitialAppState());
   const [draft, setDraft] = useState("");
   const [lastCtrlCAt, setLastCtrlCAt] = useState<number | undefined>(undefined);
-  const runtimeClientRef = useRef<RuntimeProcessClient | null>(null);
+  const runtimeClientRef = useRef<RuntimeHttpClient | null>(null);
   const renderer = useRenderer();
   const { height } = useTerminalDimensions();
+  const [gitBranch] = useState(() => readCurrentGitBranch());
 
   useKeyboard((key) => {
     if (key.ctrl && key.name === "c") {
@@ -80,7 +86,9 @@ export function App() {
   });
 
   useEffect(() => {
-    const client = new RuntimeProcessClient(createDefaultRuntimeLaunchSpec());
+    const client = new RuntimeHttpClient(
+      new RuntimeServerManager(createDefaultRuntimeServerManagerOptions()),
+    );
     runtimeClientRef.current = client;
 
     const offMessage = client.onMessage((message) => {
@@ -100,7 +108,7 @@ export function App() {
       setState((previous) =>
         applyRuntimeCliMessage(previous, {
           type: "failure",
-          kind: "runtime",
+          kind: "server",
           message: error instanceof Error ? error.message : String(error),
         }),
       );
@@ -129,8 +137,8 @@ export function App() {
   /**
    * 根据当前草稿内容发送真实请求，或执行一条本地 `/` 命令。
    */
-  const submitPrompt = ((rawValue: string) => {
-    const prompt = rawValue.trim();
+  const submitPrompt = ((rawValue?: string) => {
+    const prompt = resolveSubmittedPrompt(rawValue, draft);
     if (!prompt) {
       return;
     }
@@ -162,16 +170,37 @@ export function App() {
       return;
     }
 
-    const request = createRuntimeRunRequest(prompt);
+    const request = createRuntimeRunRequest(prompt, state.runtime.sessionId);
     setDraft("");
     setState((previous) => closeCommandPalette(appendUserPrompt(previous, prompt)));
-    runtimeClientRef.current.send(request);
+    void runtimeClientRef.current.send(request).catch((error) => {
+      setState((previous) =>
+        appendSystemMessage(
+          previous,
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
+    });
   }) as NonNullable<InputProps["onSubmit"]>;
 
-  const footerText = "Code   Runtime Agent";
+  /**
+   * 切换 transcript 中可折叠区块的展开状态。
+   */
+  function handleTranscriptToggle(entryIndex: number) {
+    setState((previous) => toggleTranscriptEntryExpanded(previous, entryIndex));
+  }
+
+  const modeLabel = "Code";
+  const agentLabel = "Runtime Agent";
   const modelLabel = "runtime default";
   const providerLabel = "runtime managed";
-  const welcomeStatus = "Provider/model are resolved by runtime from .env or environment variables.";
+  const chatFooterText = `${modeLabel}   ${agentLabel}`;
+  const welcomeMetadata = createWelcomeMetadata({
+    gitBranch,
+    modeLabel,
+    modelLabel,
+    providerLabel,
+  });
   const welcomeLayout = resolveWelcomeLayout(height);
   const chatLayout = resolveChatLayout(height);
 
@@ -181,8 +210,10 @@ export function App() {
       onInput={handleInput}
       onSubmit={submitPrompt}
       commandPalette={state.commandPalette}
-      statusText={welcomeStatus}
-      footerText={footerText}
+      composerFooterText={welcomeMetadata.composerFooterText}
+      composerHelperText={welcomeMetadata.composerHelperText}
+      workspaceText={welcomeMetadata.workspaceText}
+      versionText={welcomeMetadata.versionText}
       layout={welcomeLayout}
     />
   ) : (
@@ -193,10 +224,11 @@ export function App() {
       providerLabel={providerLabel}
       modelLabel={modelLabel}
       hasProvider={true}
-      footerText={footerText}
+      footerText={chatFooterText}
       layout={chatLayout}
       onInput={handleInput}
       onSubmit={submitPrompt}
+      onToggleTranscriptEntry={handleTranscriptToggle}
     />
   );
 }
@@ -206,4 +238,11 @@ export function App() {
  */
 export function buildStatusLine(state: AppState): string {
   return formatRuntimeStatus(state.runtime);
+}
+
+/**
+ * 解析 OpenTUI submit 事件对应的提交文本；React binding 的 onSubmit 不保证传入 value。
+ */
+export function resolveSubmittedPrompt(rawValue: unknown, draft: string): string {
+  return (typeof rawValue === "string" ? rawValue : draft).trim();
 }

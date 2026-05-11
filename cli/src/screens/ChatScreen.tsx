@@ -42,6 +42,10 @@ export function ChatScreen(props: {
       >
         <TranscriptView
           entries={props.state.transcript}
+          isStreamingOutput={
+            props.state.runtime.phase === "starting" ||
+            props.state.runtime.phase === "running"
+          }
           onToggleEntry={props.onToggleTranscriptEntry}
         />
 

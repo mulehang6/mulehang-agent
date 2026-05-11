@@ -123,4 +123,80 @@ describe("transcript view", () => {
     thinkingBlock?.props?.onMouseUp?.();
     expect(onToggleEntry).toHaveBeenCalledWith(0);
   });
+
+  test("renders assistant entries with markdown and enables streaming on the latest assistant block", () => {
+    const element = TranscriptView({
+      entries: [
+        {
+          kind: "assistant",
+          text: "## Summary\n\n- first item",
+        },
+      ],
+      isStreamingOutput: true,
+    }) as {
+      props: {
+        children?: {
+          props?: {
+            children?: {
+              props?: {
+                children?: Array<{
+                  type?: string;
+                  props?: {
+                    content?: string;
+                    streaming?: boolean;
+                  };
+                }>;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    const markdownBlock =
+      element.props.children?.props?.children?.props?.children?.[0];
+
+    expect(markdownBlock?.type).toBe("markdown");
+    expect(markdownBlock?.props?.content).toBe("## Summary\n\n- first item");
+    expect(markdownBlock?.props?.streaming).toBe(true);
+  });
+
+  test("renders result entries with markdown and keeps final output non-streaming", () => {
+    const element = TranscriptView({
+      entries: [
+        {
+          kind: "result",
+          text: "| name | value |\n| --- | --- |\n| foo | bar |",
+        },
+      ],
+      isStreamingOutput: true,
+    }) as {
+      props: {
+        children?: {
+          props?: {
+            children?: {
+              props?: {
+                children?: Array<{
+                  type?: string;
+                  props?: {
+                    content?: string;
+                    streaming?: boolean;
+                  };
+                }>;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    const markdownBlock =
+      element.props.children?.props?.children?.props?.children?.[0];
+
+    expect(markdownBlock?.type).toBe("markdown");
+    expect(markdownBlock?.props?.content).toBe(
+      "| name | value |\n| --- | --- |\n| foo | bar |",
+    );
+    expect(markdownBlock?.props?.streaming).toBe(false);
+  });
 });

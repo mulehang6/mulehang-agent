@@ -1,3 +1,5 @@
+import { RGBA, SyntaxStyle } from "@opentui/core";
+
 import type { TranscriptEntry } from "../app-state";
 
 /**
@@ -5,6 +7,7 @@ import type { TranscriptEntry } from "../app-state";
  */
 export function TranscriptView(props: {
   entries: TranscriptEntry[];
+  isStreamingOutput?: boolean;
   onToggleEntry?: (entryIndex: number) => void;
 }) {
   if (props.entries.length === 0) {
@@ -14,6 +17,8 @@ export function TranscriptView(props: {
       </box>
     );
   }
+
+  const latestAssistantIndex = findLatestAssistantIndex(props.entries);
 
   return (
     <box
@@ -54,10 +59,18 @@ export function TranscriptView(props: {
               >
                 <text fg="#f5f5f5">{entry.text}</text>
               </box>
-            ) : entry.kind === "assistant" ? (
-              <text key={`${entry.kind}-${index}`} fg="#f5f5f5">
-                {entry.text}
-              </text>
+            ) : entry.kind === "assistant" || entry.kind === "result" ? (
+              <markdown
+                key={`${entry.kind}-${index}`}
+                content={entry.text}
+                syntaxStyle={TRANSCRIPT_MARKDOWN_STYLE}
+                streaming={
+                  entry.kind === "assistant" &&
+                  props.isStreamingOutput === true &&
+                  index === latestAssistantIndex
+                }
+                style={{ width: "100%" }}
+              />
             ) : entry.kind === "thinking" ? (
               <box
                 key={`${entry.kind}-${index}`}
@@ -88,6 +101,31 @@ export function TranscriptView(props: {
     </box>
   );
 }
+
+/**
+ * 读取当前 transcript 中最后一条 assistant 消息的位置。
+ */
+function findLatestAssistantIndex(entries: TranscriptEntry[]): number {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index]?.kind === "assistant") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+const TRANSCRIPT_MARKDOWN_STYLE = SyntaxStyle.fromStyles({
+  default: { fg: RGBA.fromHex("#f5f5f5") },
+  strong: { fg: RGBA.fromHex("#ffffff"), bold: true },
+  em: { fg: RGBA.fromHex("#d4d4d4"), italic: true },
+  "markup.heading": { fg: RGBA.fromHex("#7dcfff"), bold: true },
+  "markup.list": { fg: RGBA.fromHex("#c0caf5") },
+  "markup.quote": { fg: RGBA.fromHex("#9ece6a"), italic: true },
+  "markup.raw": { fg: RGBA.fromHex("#e0af68") },
+  link: { fg: RGBA.fromHex("#73daca"), underline: true },
+  code: { fg: RGBA.fromHex("#e0af68") },
+});
 
 function prefixForEntry(kind: TranscriptEntry["kind"]): string {
   switch (kind) {

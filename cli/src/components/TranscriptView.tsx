@@ -27,7 +27,19 @@ export function TranscriptView(props: {
       <scrollbox
         stickyScroll
         stickyStart="bottom"
-        style={{ flexShrink: 1, minHeight: 0, flexDirection: "column" }}
+        style={{
+          flexShrink: 1,
+          minHeight: 0,
+          flexDirection: "column",
+          verticalScrollbarOptions: {
+            visible: false,
+            width: 0,
+          },
+          horizontalScrollbarOptions: {
+            visible: false,
+            height: 0,
+          },
+        }}
       >
         <box style={{ flexDirection: "column", gap: 1 }}>
           {props.entries.map((entry, index) =>

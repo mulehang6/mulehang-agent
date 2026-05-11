@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { TranscriptView } from "../components/TranscriptView";
 
 describe("transcript view", () => {
-  test("keeps transcript content at natural height while the scroll region sits above the composer", () => {
+  test("keeps scroll support but hides visible scrollbars", () => {
     const element = TranscriptView({
       entries: [{ kind: "result", text: "hello" }],
     }) as {
@@ -22,14 +22,22 @@ describe("transcript view", () => {
             style?: {
               flexShrink?: number;
               minHeight?: number;
+              gap?: number;
               flexDirection?: string;
+              verticalScrollbarOptions?: {
+                visible?: boolean;
+                width?: number;
+              };
+              horizontalScrollbarOptions?: {
+                visible?: boolean;
+                height?: number;
+              };
             };
             children?: {
               props?: {
                 style?: {
-                  justifyContent?: string;
-                  minHeight?: string;
                   gap?: number;
+                  flexDirection?: string;
                 };
               };
             };
@@ -55,12 +63,18 @@ describe("transcript view", () => {
       flexShrink: 1,
       minHeight: 0,
       flexDirection: "column",
+      verticalScrollbarOptions: {
+        visible: false,
+        width: 0,
+      },
+      horizontalScrollbarOptions: {
+        visible: false,
+        height: 0,
+      },
     });
     expect(content?.props?.style).toMatchObject({
       gap: 1,
     });
-    expect(content?.props?.style?.justifyContent).toBeUndefined();
-    expect(content?.props?.style?.minHeight).toBeUndefined();
   });
 
   test("renders thinking entries as light expanded toggle regions", () => {

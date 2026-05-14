@@ -76,7 +76,6 @@ export function TranscriptView(props: {
                 key={`${entry.kind}-${index}`}
                 style={{
                   flexDirection: "column",
-                  borderColor: "#3f5057",
                   padding: 1,
                   marginBottom: 1,
                 }}
@@ -94,7 +93,6 @@ export function TranscriptView(props: {
                 key={`${entry.kind}-${index}`}
                 style={{
                   flexDirection: "column",
-                  borderColor: "#27566b",
                   padding: 1,
                   marginBottom: 1,
                 }}

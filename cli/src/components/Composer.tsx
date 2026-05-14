@@ -43,7 +43,7 @@ export function Composer(props: {
         style={{
           backgroundColor: "#2d2d31",
           flexDirection: "column",
-          paddingLeft: boxPadding,
+          paddingLeft: 3,
           paddingRight: boxPadding,
           paddingTop: boxPadding,
           paddingBottom: boxPadding,

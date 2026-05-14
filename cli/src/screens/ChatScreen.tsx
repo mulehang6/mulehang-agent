@@ -51,7 +51,7 @@ export function ChatScreen(props: {
 
         <Composer
           draft={props.draft}
-          placeholder="Send a prompt to runtime..."
+          placeholder=""
           onInput={props.onInput}
           onSubmit={props.onSubmit}
           commandPalette={props.state.commandPalette}

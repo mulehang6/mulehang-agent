@@ -75,7 +75,7 @@ export function WelcomeScreen(props: {
           }}
         >
           {props.layout.showTip ? (
-            <text fg="#f7d154">● Tip Start a message with / to open the command palette.</text>
+            <text fg="#f7d154">● Tip: Start a message with / to open the command panel</text>
           ) : null}
         </box>
 

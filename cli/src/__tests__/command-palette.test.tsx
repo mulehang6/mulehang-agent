@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { CommandPalette } from "../components/CommandPalette";
+import { CommandPanel } from "../components/CommandPanel";
 
 describe("command palette", () => {
   test("renders the selected command with strong contrast and a marker", () => {
-    const element = CommandPalette({
+    const element = CommandPanel({
       items: [
         { name: "/status", description: "Show runtime status" },
         { name: "/model", description: "Show provider and model" },

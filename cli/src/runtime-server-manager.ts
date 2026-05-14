@@ -27,6 +27,9 @@ export interface RuntimeServerConnection {
   authMode: string;
   service: string;
   runtimeInstallationId: string;
+  providerLabel?: string;
+  modelLabel?: string;
+  reasoningEffort?: string;
 }
 
 /**
@@ -58,6 +61,9 @@ export interface RuntimeServerMetadata {
   protocolVersion: string;
   serverVersion: string;
   authMode: string;
+  providerLabel?: string;
+  modelLabel?: string;
+  reasoningEffort?: string;
 }
 
 /**

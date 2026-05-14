@@ -16,4 +16,7 @@ data class RuntimeSseEvent(
     val delta: String? = null,
     val output: JsonElement? = null,
     val failureKind: String? = null,
+    val providerLabel: String? = null,
+    val modelLabel: String? = null,
+    val reasoningEffort: String? = null,
 )

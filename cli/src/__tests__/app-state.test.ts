@@ -63,6 +63,22 @@ describe("app state", () => {
     ]);
   });
 
+  test("updates runtime display metadata from run metadata messages without touching transcript", () => {
+    const state = applyRuntimeCliMessage(createInitialAppState(), {
+      type: "metadata",
+      sessionId: "session-1",
+      requestId: "request-1",
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5",
+      reasoningEffort: "medium",
+    });
+
+    expect(state.runtime.providerLabel).toBe("OpenAI");
+    expect(state.runtime.modelLabel).toBe("gpt-5");
+    expect(state.runtime.reasoningEffort).toBe("medium");
+    expect(state.transcript).toEqual([]);
+  });
+
   test("opens command palette for slash commands and supports selection", () => {
     const commands = createCommandItems([
       {

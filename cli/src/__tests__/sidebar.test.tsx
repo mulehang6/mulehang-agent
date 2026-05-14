@@ -12,6 +12,8 @@ describe("sidebar", () => {
         sessionId: "session-1",
         requestId: "request-1",
         detail: "completed",
+        providerLabel: "runtime managed",
+        modelLabel: "runtime default",
       },
       providerLabel: "runtime managed",
       modelLabel: "runtime default",

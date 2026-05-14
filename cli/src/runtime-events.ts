@@ -10,6 +10,18 @@ export interface RuntimeStatusMessage {
 }
 
 /**
+ * 表示 runtime 返回的展示元信息消息。
+ */
+export interface RuntimeMetadataMessage {
+  type: "metadata";
+  sessionId: string;
+  requestId: string;
+  providerLabel: string;
+  modelLabel: string;
+  reasoningEffort?: string;
+}
+
+/**
  * 表示 runtime 返回的事件载荷。
  */
 export interface RuntimeEventPayload {
@@ -69,6 +81,7 @@ export interface RuntimeFailureMessage {
  */
 export type RuntimeMessage =
   | RuntimeStatusMessage
+  | RuntimeMetadataMessage
   | RuntimeEventMessage
   | RuntimeResultMessage
   | RuntimeFailureMessage;

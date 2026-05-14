@@ -17,8 +17,22 @@ describe("welcome metadata", () => {
         providerLabel: "DeepSeek",
       }),
     ).toEqual({
-      footerText: "Code",
-      helperText: "DeepSeek Reasoner   DeepSeek",
+      footerText: "Code   DeepSeek DeepSeek Reasoner",
+      helperText: "",
+    });
+  });
+
+  test("appends reasoning effort only when the runtime exposes one", () => {
+    expect(
+      buildComposerMetadata({
+        modeLabel: "Code",
+        modelLabel: "gpt-5",
+        providerLabel: "OpenAI",
+        reasoningEffort: "medium",
+      }),
+    ).toEqual({
+      footerText: "Code   OpenAI gpt-5 medium",
+      helperText: "",
     });
   });
 
@@ -59,8 +73,8 @@ describe("welcome metadata", () => {
     ).toEqual({
       workspaceText: "D:\\repo:main",
       versionText: APP_VERSION,
-      composerFooterText: "Code",
-      composerHelperText: "runtime default   runtime managed",
+      composerFooterText: "Code   runtime managed runtime default",
+      composerHelperText: "",
     });
   });
 });

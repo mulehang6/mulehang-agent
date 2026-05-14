@@ -20,6 +20,7 @@ export interface WelcomeMetadataInput {
   modeLabel: string;
   modelLabel: string;
   providerLabel: string;
+  reasoningEffort?: string;
 }
 
 /** 把 mode、model、provider 拆成 Composer 左右两段，贴近 kilo 的输入框元信息布局。 */
@@ -27,10 +28,22 @@ export function buildComposerMetadata(input: {
   modeLabel: string;
   modelLabel: string;
   providerLabel: string;
+  reasoningEffort?: string;
 }): { footerText: string; helperText: string } {
+  const runtimeIdentity = [
+    input.providerLabel,
+    input.modelLabel,
+    input.reasoningEffort,
+  ]
+    .filter((part) => part != null && part.length > 0)
+    .join(" ");
+
   return {
-    footerText: input.modeLabel,
-    helperText: `${input.modelLabel}   ${input.providerLabel}`,
+    footerText:
+      runtimeIdentity.length > 0
+        ? `${input.modeLabel}   ${runtimeIdentity}`
+        : input.modeLabel,
+    helperText: "",
   };
 }
 

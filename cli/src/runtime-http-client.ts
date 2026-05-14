@@ -25,6 +25,9 @@ interface RuntimeSseEvent {
   delta?: string;
   output?: unknown;
   failureKind?: string;
+  providerLabel?: string;
+  modelLabel?: string;
+  reasoningEffort?: string;
 }
 
 /**
@@ -43,8 +46,8 @@ export class RuntimeHttpClient {
   /**
    * 预热共享 runtime server；调用方可在 UI 启动阶段先完成连接准备。
    */
-  async start(): Promise<void> {
-    await this.serverLocator.getServer();
+  async start(): Promise<RuntimeServerConnection> {
+    return await this.serverLocator.getServer();
   }
 
   /**
@@ -199,6 +202,23 @@ function mapSseEventToRuntimeMessage(event: RuntimeSseEvent): RuntimeMessage | u
           channel: event.channel,
           delta: event.delta,
         },
+      };
+    case "run.metadata":
+      if (
+        event.sessionId == null ||
+        event.requestId == null ||
+        event.providerLabel == null ||
+        event.modelLabel == null
+      ) {
+        return undefined;
+      }
+      return {
+        type: "metadata",
+        sessionId: event.sessionId,
+        requestId: event.requestId,
+        providerLabel: event.providerLabel,
+        modelLabel: event.modelLabel,
+        reasoningEffort: event.reasoningEffort,
       };
     case "run.completed":
       if (event.sessionId == null || event.requestId == null) {

@@ -36,6 +36,9 @@ export interface RuntimeSummaryState {
   sessionId?: string;
   requestId?: string;
   detail?: string;
+  providerLabel: string;
+  modelLabel: string;
+  reasoningEffort?: string;
 }
 
 /**
@@ -77,6 +80,8 @@ export function createInitialAppState(): AppState {
       phase: "idle",
       mode: "agent",
       detail: "waiting for input",
+      providerLabel: "runtime managed",
+      modelLabel: "runtime default",
     },
     commandPalette: {
       isOpen: false,
@@ -294,12 +299,25 @@ export function applyRuntimeCliMessage(
           detail: message.event.message,
         },
       };
+    case "metadata":
+      return {
+        ...state,
+        runtime: {
+          ...state.runtime,
+          sessionId: message.sessionId,
+          requestId: message.requestId,
+          providerLabel: message.providerLabel,
+          modelLabel: message.modelLabel,
+          reasoningEffort: message.reasoningEffort,
+        },
+      };
     case "result":
       if (isDuplicateFinalOutput(state.transcript, message.output)) {
         return {
           ...state,
           screen: "chat",
           runtime: {
+            ...state.runtime,
             phase: "completed",
             mode: message.mode,
             sessionId: message.sessionId,
@@ -320,6 +338,7 @@ export function applyRuntimeCliMessage(
           },
         ],
         runtime: {
+          ...state.runtime,
           phase: "completed",
           mode: message.mode,
           sessionId: message.sessionId,

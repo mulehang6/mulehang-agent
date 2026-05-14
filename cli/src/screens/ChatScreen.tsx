@@ -57,7 +57,9 @@ export function ChatScreen(props: {
           commandPalette={props.state.commandPalette}
           compact={props.layout.density !== "spacious"}
           footerText={props.footerText}
-          helperText={props.layout.showHelperText ? "tab agents   ctrl+p commands" : ""}
+          helperText=""
+          belowLeftText={props.layout.showHelperText ? "tab agents" : ""}
+          belowRightText={props.layout.showHelperText ? "ctrl+p commands" : ""}
         />
       </box>
 

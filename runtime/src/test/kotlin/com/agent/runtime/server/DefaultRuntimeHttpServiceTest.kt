@@ -184,8 +184,11 @@ class DefaultRuntimeHttpServiceTest {
 
         val stream = service.stream(validRequest()).toList()
 
-        assertEquals(listOf("status", "run.completed"), stream.map { it.event })
+        assertEquals(listOf("status", "run.metadata", "run.completed"), stream.map { it.event })
         assertEquals("session-1", stream.first().sessionId)
+        assertEquals("provider-openai", stream[1].providerLabel)
+        assertEquals("openai/gpt-oss-120b:free", stream[1].modelLabel)
+        assertEquals(null, stream[1].reasoningEffort)
         assertEquals(JsonPrimitive("done:hello"), stream.last().output)
     }
 
@@ -219,17 +222,17 @@ class DefaultRuntimeHttpServiceTest {
                 yield()
             }
 
-            assertEquals(listOf("status", "text.delta"), received.map { it.event })
+            assertEquals(listOf("status", "run.metadata", "text.delta"), received.map { it.event })
 
             allowCompletion.complete(Unit)
             collecting.join()
 
             assertEquals(
-                listOf("status", "text.delta", "text.delta", "run.completed"),
+                listOf("status", "run.metadata", "text.delta", "text.delta", "run.completed"),
                 received.map { it.event },
             )
-            assertEquals("hello ", received[1].delta)
-            assertEquals("world", received[2].delta)
+            assertEquals("hello ", received[2].delta)
+            assertEquals("world", received[3].delta)
         } finally {
             if (!allowCompletion.isCompleted) {
                 allowCompletion.complete(Unit)

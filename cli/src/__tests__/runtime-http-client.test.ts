@@ -17,6 +17,9 @@ describe("runtime http client", () => {
         "event: status",
         'data: {"event":"status","sessionId":"session-1","requestId":"request-1","message":"run.started"}',
         "",
+        "event: run.metadata",
+        'data: {"event":"run.metadata","sessionId":"session-1","requestId":"request-1","providerLabel":"OpenAI","modelLabel":"gpt-5","reasoningEffort":"medium"}',
+        "",
         "event: thinking.delta",
         'data: {"event":"thinking.delta","sessionId":"session-1","requestId":"request-1","channel":"thinking","message":"agent.reasoning.delta","delta":"first thought"}',
         "",
@@ -52,6 +55,14 @@ describe("runtime http client", () => {
         sessionId: "session-1",
         requestId: "request-1",
         mode: "agent",
+      },
+      {
+        type: "metadata",
+        sessionId: "session-1",
+        requestId: "request-1",
+        providerLabel: "OpenAI",
+        modelLabel: "gpt-5",
+        reasoningEffort: "medium",
       },
       {
         type: "event",
@@ -91,6 +102,20 @@ describe("runtime http client", () => {
       body: JSON.stringify(createRequest()),
       signal: expect.any(AbortSignal),
     });
+  });
+
+  test("returns shared runtime server metadata during startup warmup", async () => {
+    const connection = {
+      ...createConnection(),
+      providerLabel: "OpenAI",
+      modelLabel: "gpt-5",
+      reasoningEffort: "medium",
+    };
+    const client = new RuntimeHttpClient({
+      getServer: mock(async () => connection),
+    });
+
+    return expect(client.start()).resolves.toEqual(connection);
   });
 
   test("consumes SSE streams incrementally instead of waiting for the full body", async () => {

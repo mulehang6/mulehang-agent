@@ -104,15 +104,27 @@ export function App() {
       );
     });
 
-    void client.start().catch((error) => {
-      setState((previous) =>
-        applyRuntimeCliMessage(previous, {
-          type: "failure",
-          kind: "server",
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    });
+    void client.start()
+      .then((server) => {
+        setState((previous) => ({
+          ...previous,
+          runtime: {
+            ...previous.runtime,
+            providerLabel: server.providerLabel ?? previous.runtime.providerLabel,
+            modelLabel: server.modelLabel ?? previous.runtime.modelLabel,
+            reasoningEffort: server.reasoningEffort ?? previous.runtime.reasoningEffort,
+          },
+        }));
+      })
+      .catch((error) => {
+        setState((previous) =>
+          applyRuntimeCliMessage(previous, {
+            type: "failure",
+            kind: "server",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      });
 
     return () => {
       offMessage();
@@ -155,8 +167,8 @@ export function App() {
           executeCommand(previous, selectedCommand, {
             modeLabel: "Code",
             agentLabel: "Runtime Agent",
-            modelLabel: "runtime default",
-            providerLabel: "runtime managed",
+            modelLabel: previous.runtime.modelLabel,
+            providerLabel: previous.runtime.providerLabel,
           }),
         ),
       );
@@ -191,15 +203,20 @@ export function App() {
   }
 
   const modeLabel = "Code";
-  const agentLabel = "Runtime Agent";
-  const modelLabel = "runtime default";
-  const providerLabel = "runtime managed";
-  const chatFooterText = `${modeLabel}   ${agentLabel}`;
+  const modelLabel = state.runtime.modelLabel;
+  const providerLabel = state.runtime.providerLabel;
+  const chatFooterText = buildChatFooterText({
+    modeLabel,
+    providerLabel,
+    modelLabel,
+    reasoningEffort: state.runtime.reasoningEffort,
+  });
   const welcomeMetadata = createWelcomeMetadata({
     gitBranch,
     modeLabel,
     modelLabel,
     providerLabel,
+    reasoningEffort: state.runtime.reasoningEffort,
   });
   const welcomeLayout = resolveWelcomeLayout(height);
   const chatLayout = resolveChatLayout(height);
@@ -245,4 +262,26 @@ export function buildStatusLine(state: AppState): string {
  */
 export function resolveSubmittedPrompt(rawValue: unknown, draft: string): string {
   return (typeof rawValue === "string" ? rawValue : draft).trim();
+}
+
+/**
+ * 组装聊天页输入框内的左侧元信息；仅在存在明确思考等级时追加该字段。
+ */
+export function buildChatFooterText(input: {
+  modeLabel: string;
+  providerLabel: string;
+  modelLabel: string;
+  reasoningEffort?: string;
+}): string {
+  const runtimeIdentity = [
+    input.providerLabel,
+    input.modelLabel,
+    input.reasoningEffort,
+  ]
+    .filter((part) => part != null && part.length > 0)
+    .join(" ");
+
+  return runtimeIdentity.length > 0
+    ? `${input.modeLabel}   ${runtimeIdentity}`
+    : input.modeLabel;
 }

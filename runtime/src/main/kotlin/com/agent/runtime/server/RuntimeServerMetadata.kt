@@ -11,4 +11,7 @@ data class RuntimeServerMetadata(
     val protocolVersion: String,
     val serverVersion: String,
     val authMode: String,
+    val providerLabel: String? = null,
+    val modelLabel: String? = null,
+    val reasoningEffort: String? = null,
 )

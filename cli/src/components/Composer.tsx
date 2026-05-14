@@ -1,7 +1,7 @@
 import type { InputProps } from "@opentui/react";
 
 import type { CommandPaletteState } from "../app-state";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPanel } from "./CommandPanel";
 
 /**
  * 渲染底部输入栏和命令面板。
@@ -11,6 +11,8 @@ export function Composer(props: {
   placeholder: string;
   footerText: string;
   helperText: string;
+  belowLeftText?: string;
+  belowRightText?: string;
   compact: boolean;
   commandPalette: CommandPaletteState;
   onInput: (value: string) => void;
@@ -19,6 +21,7 @@ export function Composer(props: {
   const boxPadding = 1;
   const minComposerHeight = 3;
   const showFooter = Boolean(props.footerText || props.helperText);
+  const showBelowHints = Boolean(props.belowLeftText || props.belowRightText);
 
   return (
     <box
@@ -30,7 +33,7 @@ export function Composer(props: {
       }}
     >
       {props.commandPalette.isOpen ? (
-        <CommandPalette
+        <CommandPanel
           items={props.commandPalette.items}
           selectedIndex={props.commandPalette.selectedIndex}
         />
@@ -64,6 +67,13 @@ export function Composer(props: {
           </box>
         ) : null}
       </box>
+
+      {showBelowHints ? (
+        <box style={{ flexDirection: "row", justifyContent: "space-between", minHeight: 1 }}>
+          <text fg="#d0d0d0">{props.belowLeftText ?? ""}</text>
+          <text fg="#d0d0d0">{props.belowRightText ?? ""}</text>
+        </box>
+      ) : null}
     </box>
   );
 }

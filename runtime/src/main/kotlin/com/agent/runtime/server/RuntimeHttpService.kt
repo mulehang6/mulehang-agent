@@ -118,6 +118,7 @@ class DefaultRuntimeHttpService(
                 message = "run.started",
             ),
         )
+        emit(binding.toMetadataSseEvent(sessionId = sessionId, requestId = requestId))
 
         runtimeAgentExecutor.stream(
             session = RuntimeSession(id = sessionId),
@@ -264,3 +265,32 @@ private fun runtimeFailureEvent(
     failureKind = kind,
     failureMessage = message,
 )
+
+/**
+ * 把当前 provider binding 压平成一条供 CLI 展示输入框元信息的 SSE 事件。
+ */
+private fun ProviderBinding.toMetadataSseEvent(
+    sessionId: String,
+    requestId: String,
+): RuntimeSseEvent = RuntimeSseEvent(
+    event = "run.metadata",
+    sessionId = sessionId,
+    requestId = requestId,
+    providerLabel = providerId,
+    modelLabel = modelId,
+    reasoningEffort = reasoningEffortLabelOrNull(),
+)
+
+/**
+ * 推导当前 provider 在 CLI 中可展示的思考等级；只有明确分级时才返回文本。
+ */
+private fun ProviderBinding.reasoningEffortLabelOrNull(): String? {
+    if (!enableThinking) {
+        return null
+    }
+
+    return when (providerType) {
+        ProviderType.OPENAI_RESPONSES -> "medium"
+        else -> null
+    }
+}

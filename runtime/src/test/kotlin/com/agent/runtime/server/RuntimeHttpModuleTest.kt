@@ -14,6 +14,8 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.JsonPrimitive
+import com.agent.runtime.provider.ProviderBinding
+import com.agent.runtime.provider.ProviderType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -57,6 +59,19 @@ class RuntimeHttpModuleTest {
             runtimeHttpModule(
                 service = FakeRuntimeHttpService(),
                 metadata = testMetadata(),
+                defaultBindingResolver = {
+                    RuntimeHttpProviderResolution(
+                        binding = ProviderBinding(
+                            providerId = "provider-openai",
+                            providerType = ProviderType.OPENAI_RESPONSES,
+                            baseUrl = "https://api.openai.com/v1",
+                            apiKey = "test-key",
+                            modelId = "gpt-5",
+                            enableThinking = true,
+                        ),
+                        failureMessage = "",
+                    )
+                },
                 auth = RuntimeServerAuth.disabledForTests(),
             )
         }
@@ -66,7 +81,16 @@ class RuntimeHttpModuleTest {
         val body = response.body<Result<RuntimeServerMetadata>>()
 
         assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals(Result.success(testMetadata()), body)
+        assertEquals(
+            Result.success(
+                testMetadata().copy(
+                    providerLabel = "provider-openai",
+                    modelLabel = "gpt-5",
+                    reasoningEffort = "medium",
+                ),
+            ),
+            body,
+        )
     }
 
     @Test

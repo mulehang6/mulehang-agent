@@ -60,6 +60,8 @@ export function WelcomeScreen(props: {
             compact={false}
             footerText={props.composerFooterText}
             helperText={props.composerHelperText}
+            belowLeftText="tab agents"
+            belowRightText="ctrl+p commands"
           />
         </box>
 

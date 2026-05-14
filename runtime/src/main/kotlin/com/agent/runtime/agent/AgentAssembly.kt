@@ -2,6 +2,7 @@ package com.agent.runtime.agent
 
 import ai.koog.agents.chatMemory.feature.ChatMemory
 import ai.koog.agents.core.agent.AIAgent
+import ai.koog.agents.core.agent.GraphAIAgent
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.prompt.executor.model.PromptExecutor
@@ -30,6 +31,7 @@ class AgentAssembly(
     private val executorResolver: KoogExecutorResolver = KoogExecutorResolver(),
     private val toolRegistryAssembler: KoogToolRegistryAssembler = KoogToolRegistryAssembler(),
     private val conversationMemory: RuntimeConversationMemory = RuntimeConversationMemory(),
+    private val installFeatures: GraphAIAgent.FeatureContext.() -> Unit = {},
 ) {
 
     /**
@@ -46,9 +48,10 @@ class AgentAssembly(
             promptExecutor = resolvedBinding.promptExecutor,
             strategy = strategy,
             llmModel = resolvedBinding.llmModel,
-            systemPrompt = "You are a helpful assistant.",
+            systemPrompt = buildAgentSystemPrompt(capabilitySet),
             toolRegistry = tooling.toolRegistry,
         ) {
+            installFeatures()
             install(ChatMemory.Feature) {
                 conversationMemory.applyTo(this)
             }

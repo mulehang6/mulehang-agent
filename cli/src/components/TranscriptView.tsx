@@ -89,6 +89,32 @@ export function TranscriptView(props: {
                   <text fg="#9aaab0">{entry.text}</text>
                 )}
               </box>
+            ) : entry.kind === "tool" ? (
+              <box
+                key={`${entry.kind}-${index}`}
+                style={{
+                  flexDirection: "column",
+                  borderColor: "#27566b",
+                  padding: 1,
+                  marginBottom: 1,
+                }}
+                onMouseUp={() => props.onToggleEntry?.(index)}
+              >
+                <text fg="#7dcfff">{formatToolHeader(entry)}</text>
+                {entry.expanded === false ? null : (
+                  <box style={{ flexDirection: "column", marginTop: 1 }}>
+                    {entry.input === undefined ? null : (
+                      <text fg="#8aa0a8">{`Input\n${formatToolDetail(entry.input)}`}</text>
+                    )}
+                    {entry.output === undefined ? null : (
+                      <text fg="#9ece6a">{`Output\n${formatToolDetail(entry.output)}`}</text>
+                    )}
+                    {entry.error == null ? null : (
+                      <text fg="#ff8b94">{`Error\n${entry.error}`}</text>
+                    )}
+                  </box>
+                )}
+              </box>
             ) : (
               <text key={`${entry.kind}-${index}`} fg={colorForEntry(entry.kind)}>
                 {prefixForEntry(entry.kind)}
@@ -135,6 +161,8 @@ function prefixForEntry(kind: TranscriptEntry["kind"]): string {
       return "";
     case "event":
       return "";
+    case "tool":
+      return "";
     case "thinking":
       return "";
     case "result":
@@ -156,6 +184,8 @@ function colorForEntry(kind: TranscriptEntry["kind"]): string {
       return "#f5f5f5";
     case "event":
       return "#1d9bf0";
+    case "tool":
+      return "#7dcfff";
     case "thinking":
       return "#9aaab0";
     case "result":
@@ -167,4 +197,28 @@ function colorForEntry(kind: TranscriptEntry["kind"]): string {
     case "user":
       return "#f5f5f5";
   }
+}
+
+/**
+ * 把工具详情值格式化为适合在终端折叠块中展示的文本。
+ */
+function formatToolDetail(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+/**
+ * 生成工具折叠块的单行标题，贴近 kilo 的 title/subtitle/args 组织方式。
+ */
+function formatToolHeader(entry: TranscriptEntry): string {
+  const parts = [`${entry.expanded === false ? ">" : "v"} ${entry.title ?? "Called tool"}`];
+  if (entry.subtitle != null) {
+    parts.push(entry.subtitle);
+  }
+  for (const arg of entry.args ?? []) {
+    parts.push(`[${arg}]`);
+  }
+  return parts.join(" ");
 }

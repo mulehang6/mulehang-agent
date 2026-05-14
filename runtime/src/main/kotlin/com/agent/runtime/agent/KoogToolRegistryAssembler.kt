@@ -3,6 +3,10 @@ package com.agent.runtime.agent
 import ai.koog.agents.core.tools.SimpleTool
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.annotations.LLMDescription
+import ai.koog.agents.ext.tool.file.EditFileTool
+import ai.koog.agents.ext.tool.file.ListDirectoryTool
+import ai.koog.agents.ext.tool.file.ReadFileTool
+import ai.koog.agents.ext.tool.file.WriteFileTool
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.agents.mcp.defaultStdioTransport
 import ai.koog.agents.mcp.metadata.McpServerInfo
@@ -13,6 +17,7 @@ import com.agent.runtime.capability.HttpCapabilityAdapter
 import com.agent.runtime.capability.McpCapabilityAdapter
 import com.agent.runtime.capability.McpTransport
 import com.agent.runtime.capability.ToolCapabilityAdapter
+import java.nio.file.Path
 import com.agent.runtime.core.RuntimeCapabilityRequest
 import com.agent.runtime.core.RuntimeResult
 import com.agent.runtime.core.RuntimeSuccess
@@ -66,10 +71,21 @@ class KoogToolRegistryAssembler(
         val primaryIds = buildList {
             addAll(capabilitySet.toolAdapters().map { it.descriptor.id })
             addAll(capabilitySet.httpAdapters().map { it.descriptor.id })
+            addAll(capabilitySet.builtInFileTools().map { it.descriptor.id })
         }
         val primaryRegistry = ToolRegistry {
             capabilitySet.toolAdapters().forEach { tool(LocalToolBridge(it)) }
             capabilitySet.httpAdapters().forEach { tool(HttpToolBridge(it)) }
+            capabilitySet.builtInFileTools().forEach { builtIn ->
+                val root = Path.of(builtIn.workspaceRoot)
+                when (builtIn.descriptor.id) {
+                    "__list_directory__" -> tool(ListDirectoryTool(WorkspaceScopedFileSystemProvider.readOnly(root)))
+                    "__read_file__" -> tool(ReadFileTool(WorkspaceScopedFileSystemProvider.readOnly(root)))
+                    "__write_file__" -> tool(WriteFileTool(WorkspaceScopedFileSystemProvider.readWrite(root)))
+                    // Koog 0.8.0 的 EditFileTool 实际 descriptor name 是 `edit_file`。
+                    "edit_file" -> tool(EditFileTool(WorkspaceScopedFileSystemProvider.readWrite(root)))
+                }
+            }
         }
         val mcpRegistries = capabilitySet.mcpAdapters().map { adapter ->
             createMcpRegistrySafely(adapter)

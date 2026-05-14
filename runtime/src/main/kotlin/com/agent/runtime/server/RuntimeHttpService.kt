@@ -3,6 +3,7 @@ package com.agent.runtime.server
 import com.agent.runtime.agent.RuntimeAgentEventUpdate
 import com.agent.runtime.agent.RuntimeAgentExecutor
 import com.agent.runtime.agent.RuntimeAgentResultUpdate
+import com.agent.runtime.capability.BuiltInFileToolCapability
 import com.agent.runtime.capability.CapabilitySet
 import com.agent.runtime.provider.ProviderBinding
 import com.agent.runtime.provider.ProviderType
@@ -16,6 +17,7 @@ import com.agent.runtime.core.RuntimeProviderResolutionFailure
 import com.agent.runtime.core.RuntimeRequestContext
 import com.agent.runtime.core.RuntimeSession
 import com.agent.runtime.core.RuntimeSuccess
+import java.nio.file.Path
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -28,7 +30,7 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class DefaultRuntimeHttpService(
     private val runtimeAgentExecutor: RuntimeAgentExecutor = RuntimeAgentExecutor(),
-    private val capabilitySetFactory: () -> CapabilitySet = { CapabilitySet(adapters = emptyList()) },
+    private val capabilitySetFactory: () -> CapabilitySet = { defaultRuntimeCapabilitySet() },
     private val defaultBindingResolver: () -> RuntimeHttpProviderResolution = { resolveDefaultHttpProviderBinding() },
 ) : RuntimeHttpService {
 
@@ -186,6 +188,24 @@ class DefaultRuntimeHttpService(
 }
 
 /**
+ * 为当前 runtime 默认启用工作区受限的 Koog 内建文件工具。
+ */
+internal fun defaultRuntimeCapabilitySet(
+    workspaceRoot: Path = Path.of("").toAbsolutePath().normalize(),
+): CapabilitySet {
+    val root = workspaceRoot.toString()
+    return CapabilitySet(
+        adapters = emptyList(),
+        builtInFileTools = listOf(
+            BuiltInFileToolCapability.listDirectory(root),
+            BuiltInFileToolCapability.readFile(root),
+            BuiltInFileToolCapability.writeFile(root),
+            BuiltInFileToolCapability.editFile(root),
+        ),
+    )
+}
+
+/**
  * 把 runtime 失败对象压平成 HTTP 宿主侧的稳定错误类型。
  */
 private fun RuntimeFailure.toFailureKind(): String = when (this) {
@@ -217,6 +237,7 @@ private fun RuntimeEvent.toSseOrNull(
         channel = channel,
         message = message,
         delta = delta ?: payload.toDeltaText(),
+        payload = payload,
     )
 
     "text" -> RuntimeSseEvent(
@@ -226,15 +247,17 @@ private fun RuntimeEvent.toSseOrNull(
         channel = channel,
         message = message,
         delta = delta ?: payload.toDeltaText(),
+        payload = payload,
     )
 
     "tool" -> RuntimeSseEvent(
-        event = "tool.delta",
+        event = "tool.call",
         sessionId = sessionId,
         requestId = requestId,
         channel = channel,
         message = message,
         delta = delta ?: payload.toDeltaText(),
+        payload = payload,
     )
 
     "status" -> RuntimeSseEvent(
@@ -244,6 +267,7 @@ private fun RuntimeEvent.toSseOrNull(
         channel = channel,
         message = message,
         delta = delta ?: payload.toDeltaText(),
+        payload = payload,
     )
 
     else -> null

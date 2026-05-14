@@ -65,7 +65,11 @@ class McpCapabilityAdapter(
     val transport: McpTransport,
     private val handler: suspend (CapabilityRequest) -> RuntimeResult,
 ) : CapabilityAdapter {
-    override val descriptor: CapabilityDescriptor = CapabilityDescriptor(id = id, kind = "mcp")
+    override val descriptor: CapabilityDescriptor = CapabilityDescriptor(
+        id = id,
+        kind = "mcp",
+        riskLevel = ToolRiskLevel.HIGH,
+    )
 
     /**
      * 执行一次 MCP 能力调用。

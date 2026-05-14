@@ -1,7 +1,9 @@
 import {
   formatRuntimeValue,
+  isRuntimeToolCallPayload,
   type RuntimeEventPayload,
   type RuntimeMessage,
+  type RuntimeToolCallPayload,
 } from "./runtime-events";
 
 /**
@@ -18,13 +20,22 @@ export interface TranscriptEntry {
     | "assistant"
     | "status"
     | "event"
+    | "tool"
     | "thinking"
     | "result"
     | "failure"
     | "system";
   text: string;
   title?: string;
+  subtitle?: string;
+  args?: string[];
   expanded?: boolean;
+  toolCallId?: string;
+  toolName?: string;
+  status?: RuntimeToolCallPayload["status"];
+  input?: unknown;
+  output?: unknown;
+  error?: string;
 }
 
 /**
@@ -144,6 +155,13 @@ export function clearTranscript(state: AppState): AppState {
   return {
     ...state,
     transcript: [],
+    runtime: {
+      ...state.runtime,
+      phase: "idle",
+      sessionId: undefined,
+      requestId: undefined,
+      detail: "waiting for input",
+    },
   };
 }
 
@@ -424,7 +442,117 @@ function applyRuntimeEventToTranscript(
     ];
   }
 
+  if (event.channel === "tool") {
+    const toolCall = isRuntimeToolCallPayload(event.payload)
+      ? event.payload
+      : undefined;
+    if (toolCall != null) {
+      return upsertToolTranscriptEntry(transcript, toolCall);
+    }
+
+    return text.length === 0
+      ? transcript
+      : [
+          ...transcript,
+          {
+            kind: "event",
+            text,
+          },
+        ];
+  }
+
   return transcript;
+}
+
+/**
+ * 把同一个 tool call 的多次生命周期事件归并成一个可折叠块。
+ */
+function upsertToolTranscriptEntry(
+  transcript: TranscriptEntry[],
+  toolCall: RuntimeToolCallPayload,
+): TranscriptEntry[] {
+  const existingIndex = transcript.findIndex(
+    (entry) => entry.kind === "tool" && entry.toolCallId === toolCall.toolCallId,
+  );
+  const input = asRecord(toolCall.input);
+  const nextEntry: TranscriptEntry = {
+    kind: "tool",
+    text: "",
+    title: `Called ${toolCall.toolName}`,
+    subtitle: toolSubtitle(input),
+    args: toolArgs(input),
+    expanded:
+      existingIndex >= 0
+        ? (transcript[existingIndex]?.expanded ?? false)
+        : false,
+    toolCallId: toolCall.toolCallId,
+    toolName: toolCall.toolName,
+    status: toolCall.status,
+    input: toolCall.input,
+    output: toolCall.output,
+    error: toolCall.error,
+  };
+
+  if (existingIndex < 0) {
+    return [...transcript, nextEntry];
+  }
+
+  return transcript.map((entry, index) =>
+    index === existingIndex
+      ? {
+          ...entry,
+          ...nextEntry,
+        }
+      : entry,
+  );
+}
+
+/**
+ * 提取 kilo GenericTool 同步使用的副标题字段。
+ */
+function toolSubtitle(input: Record<string, unknown> | undefined): string | undefined {
+  if (input == null) {
+    return undefined;
+  }
+  const keys = ["description", "query", "url", "filePath", "path", "pattern", "name"];
+  return keys
+    .map((key) => input[key])
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+/**
+ * 提取 kilo GenericTool 同步使用的参数标签字段。
+ */
+function toolArgs(input: Record<string, unknown> | undefined): string[] {
+  if (input == null) {
+    return [];
+  }
+  const skip = new Set(["description", "query", "url", "filePath", "path", "pattern", "name"]);
+  return Object.entries(input)
+    .filter(([key]) => !skip.has(key))
+    .flatMap(([key, value]) => {
+      if (typeof value === "string") {
+        return [`${key}=${value}`];
+      }
+      if (typeof value === "number") {
+        return [`${key}=${value}`];
+      }
+      if (typeof value === "boolean") {
+        return [`${key}=${value}`];
+      }
+      return [];
+    })
+    .slice(0, 3);
+}
+
+/**
+ * 把动态输入限制为普通对象，避免数组和原始值误参与工具标签推导。
+ */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
 }
 
 /**

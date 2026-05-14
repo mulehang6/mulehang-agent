@@ -6,7 +6,6 @@ import ai.koog.agents.chatMemory.feature.ChatMemoryPreProcessor
 import ai.koog.agents.chatMemory.feature.InMemoryChatHistoryProvider
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.RequestMetaInfo
-import ai.koog.prompt.message.ResponseMetaInfo
 import kotlin.time.Clock
 
 /**
@@ -38,23 +37,19 @@ class RuntimeConversationMemory(
     suspend fun loadHistory(sessionId: String): List<Message> = preprocess(chatHistoryProvider.load(sessionId))
 
     /**
-     * 追加一次用户/助手对话轮次，并按当前窗口大小落盘。
+     * 追加一次用户消息及其对应的助手消息序列，允许把 reasoning 一并写入 history。
      */
     suspend fun appendTurn(
         sessionId: String,
         userPrompt: String,
-        assistantResponse: String,
+        assistantMessages: List<Message>,
     ) {
         val updatedMessages = loadHistory(sessionId) + listOf(
             Message.User(
                 content = userPrompt,
                 metaInfo = RequestMetaInfo.create(Clock.System),
             ),
-            Message.Assistant(
-                content = assistantResponse,
-                metaInfo = ResponseMetaInfo.create(Clock.System),
-            ),
-        )
+        ) + assistantMessages
         chatHistoryProvider.store(sessionId, preprocess(updatedMessages))
     }
 

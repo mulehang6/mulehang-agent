@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   appendUserPrompt,
   applyRuntimeCliMessage,
+  clearTranscript,
   closeCommandPalette,
   createCommandItems,
   createInitialAppState,
@@ -134,6 +135,30 @@ describe("app state", () => {
     });
   });
 
+  test("clears transcript and resets runtime session context", () => {
+    const state = clearTranscript({
+      ...createInitialAppState(),
+      screen: "chat",
+      transcript: [
+        { kind: "user", text: "hello" },
+        { kind: "assistant", text: "world" },
+      ],
+      runtime: {
+        ...createInitialAppState().runtime,
+        phase: "running",
+        sessionId: "session-1",
+        requestId: "request-1",
+        detail: "agent.run.started",
+      },
+    });
+
+    expect(state.transcript).toEqual([]);
+    expect(state.runtime.phase).toBe("idle");
+    expect(state.runtime.sessionId).toBeUndefined();
+    expect(state.runtime.requestId).toBeUndefined();
+    expect(state.runtime.detail).toBe("waiting for input");
+  });
+
   test("groups thinking deltas into one expanded transcript block", () => {
     let state = createInitialAppState();
 
@@ -238,6 +263,67 @@ describe("app state", () => {
         title: "Thinking",
         expanded: false,
         text: "First thought. Second thought.",
+      },
+    ]);
+  });
+
+  test("groups structured tool events into one collapsible tool transcript block", () => {
+    let state = createInitialAppState();
+
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.tool.started",
+        channel: "tool",
+        payload: {
+          toolCallId: "tool-call-1",
+          toolName: "__read_file__",
+          status: "running",
+          input: {
+            filePath: "docs/spec.md",
+            encoding: "utf-8",
+          },
+        },
+      },
+    });
+    state = applyRuntimeCliMessage(state, {
+      type: "event",
+      sessionId: "session-1",
+      requestId: "request-1",
+      event: {
+        message: "agent.tool.completed",
+        channel: "tool",
+        payload: {
+          toolCallId: "tool-call-1",
+          toolName: "__read_file__",
+          status: "completed",
+          input: {
+            filePath: "docs/spec.md",
+            encoding: "utf-8",
+          },
+          output: "spec body",
+        },
+      },
+    });
+
+    expect(state.transcript).toEqual([
+      {
+        kind: "tool",
+        text: "",
+        title: "Called __read_file__",
+        subtitle: "docs/spec.md",
+        args: ["encoding=utf-8"],
+        expanded: false,
+        toolCallId: "tool-call-1",
+        toolName: "__read_file__",
+        status: "completed",
+        input: {
+          filePath: "docs/spec.md",
+          encoding: "utf-8",
+        },
+        output: "spec body",
       },
     ]);
   });

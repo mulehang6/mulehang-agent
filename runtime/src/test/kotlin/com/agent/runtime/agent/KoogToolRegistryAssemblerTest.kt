@@ -5,6 +5,7 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.SimpleTool
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.serialization.typeToken
+import com.agent.runtime.capability.BuiltInFileToolCapability
 import com.agent.runtime.capability.CapabilitySet
 import com.agent.runtime.capability.HttpCapabilityAdapter
 import com.agent.runtime.capability.McpCapabilityAdapter
@@ -28,6 +29,50 @@ private data class MockMcpToolArgs(
  * 验证 capability set 到 Koog registry bundle 的桥接形状。
  */
 class KoogToolRegistryAssemblerTest {
+
+    @Test
+    fun `should register all built in file tools into primary koog registry with workspace root restriction`() = runTest {
+        val root = "D:\\JetBrains\\projects\\idea_projects\\mulehang-agent"
+        val capabilitySet = CapabilitySet(
+            adapters = emptyList(),
+            builtInFileTools = listOf(
+                BuiltInFileToolCapability.listDirectory(root),
+                BuiltInFileToolCapability.readFile(root),
+                BuiltInFileToolCapability.writeFile(root),
+                BuiltInFileToolCapability.editFile(root),
+            ),
+        )
+
+        val assembled = KoogToolRegistryAssembler().assemble(capabilitySet)
+
+        assertEquals(
+            listOf("__list_directory__", "__read_file__", "__write_file__", "edit_file"),
+            assembled.primaryRegistry.tools.map { it.descriptor.name },
+        )
+        assertEquals(
+            listOf("__list_directory__", "__read_file__", "__write_file__", "edit_file"),
+            assembled.primaryCapabilityIds,
+        )
+    }
+
+    @Test
+    fun `should register only low risk built in file tools when write tools are absent`() = runTest {
+        val root = "D:\\JetBrains\\projects\\idea_projects\\mulehang-agent"
+        val capabilitySet = CapabilitySet(
+            adapters = emptyList(),
+            builtInFileTools = listOf(
+                BuiltInFileToolCapability.listDirectory(root),
+                BuiltInFileToolCapability.readFile(root),
+            ),
+        )
+
+        val assembled = KoogToolRegistryAssembler().assemble(capabilitySet)
+
+        assertEquals(
+            listOf("__list_directory__", "__read_file__"),
+            assembled.primaryRegistry.tools.map { it.descriptor.name },
+        )
+    }
 
     @Test
     fun `should assemble tool and http capabilities into primary koog registry bundle`() = runTest {

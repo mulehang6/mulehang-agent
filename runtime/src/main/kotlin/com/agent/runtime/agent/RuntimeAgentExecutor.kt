@@ -1,5 +1,6 @@
 package com.agent.runtime.agent
 
+import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.prompt.dsl.Prompt
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.clients.anthropic.AnthropicParams
@@ -23,12 +24,18 @@ import com.agent.runtime.core.RuntimeRequestContext
 import com.agent.runtime.core.RuntimeResult
 import com.agent.runtime.core.RuntimeSession
 import com.agent.runtime.core.RuntimeSuccess
+import com.agent.runtime.core.RuntimeToolCallPayload
 import com.agent.runtime.provider.ProviderBinding
 import com.agent.runtime.provider.ProviderType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import ai.koog.prompt.message.Message
+import ai.koog.serialization.JSONElement
+import ai.koog.serialization.kotlinx.toKotlinxJsonElement
+import ai.koog.serialization.kotlinx.toKotlinxJsonObject
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 
 /**
  * 表示 agent 执行过程中可被 runtime CLI 逐条消费的更新。
@@ -56,18 +63,57 @@ class RuntimeAgentExecutor(
     private val conversationMemory: RuntimeConversationMemory = RuntimeConversationMemory(),
     private val assembleAgent: suspend (ProviderBinding, CapabilitySet) -> AssembledAgent =
         AgentAssembly(conversationMemory = conversationMemory)::assemble,
+    private val assembleStreamingAgent: suspend (ProviderBinding, CapabilitySet, suspend (RuntimeEvent) -> Unit) -> AssembledAgent =
+        { binding, capabilitySet, emitRuntimeEvent ->
+            var sawStreamingTextDelta = false
+            AgentAssembly(
+                conversationMemory = conversationMemory,
+                installFeatures = {
+                    handleEvents {
+                        onLLMStreamingFrameReceived { eventContext ->
+                            val frame = eventContext.streamFrame
+                            val runtimeEvent = frame.toRuntimeEventOrNull(
+                                includeTextComplete = !sawStreamingTextDelta,
+                            )
+                            if (runtimeEvent != null) {
+                                emitRuntimeEvent(runtimeEvent)
+                            }
+                            when (frame) {
+                                is StreamFrame.TextDelta -> sawStreamingTextDelta = true
+                                is StreamFrame.TextComplete,
+                                is StreamFrame.End -> sawStreamingTextDelta = false
+                                else -> Unit
+                            }
+                        }
+                        onToolCallStarting { eventContext ->
+                            emitRuntimeEvent(eventContext.toRuntimeToolEvent(status = "running", message = "agent.tool.started"))
+                        }
+                        onToolCallCompleted { eventContext ->
+                            emitRuntimeEvent(
+                                eventContext.toRuntimeToolEvent(
+                                    status = "completed",
+                                    message = "agent.tool.completed",
+                                    output = eventContext.toolResult,
+                                ),
+                            )
+                        }
+                        onToolCallFailed { eventContext ->
+                            emitRuntimeEvent(
+                                eventContext.toRuntimeToolEvent(
+                                    status = "error",
+                                    message = "agent.tool.failed",
+                                    error = eventContext.message,
+                                ),
+                            )
+                        }
+                    }
+                },
+            ).assemble(binding, capabilitySet)
+        },
     private val runner: (suspend (AssembledAgent, String) -> String)? = null,
     private val streamRunner: ((AssembledAgent, String) -> Flow<StreamFrame>)? = null,
     private val compatibilityStreamRunner: CompatibilityStreamRunner = DeepSeekThinkingCompatibilityStreamRunner(),
 ) {
-
-    private val koogStreamRunner: (AssembledAgent, Prompt) -> Flow<StreamFrame> = { assembled, runtimePrompt ->
-        assembled.promptExecutor.executeStreaming(
-            prompt = runtimePrompt,
-            model = assembled.llmModel,
-            tools = assembled.toolRegistry.tools.map { it.descriptor },
-        )
-    }
 
     /**
      * 执行一次 runtime agent 请求，并把 streaming 更新聚合为统一 runtime result。
@@ -110,8 +156,8 @@ class RuntimeAgentExecutor(
         capabilitySet: CapabilitySet,
     ): Flow<RuntimeAgentExecutionUpdate> = flow {
         try {
-            val assembledAgent = assembleAgent(binding, capabilitySet)
             if (runner != null && streamRunner == null) {
+                val assembledAgent = assembleAgent(binding, capabilitySet)
                 val result = executeLegacyRunner(
                     session = session,
                     context = context,
@@ -128,124 +174,83 @@ class RuntimeAgentExecutor(
             }
 
             if (streamRunner != null) {
+                val assembledAgent = assembleAgent(binding, capabilitySet)
                 val textOutput = StringBuilder()
-                var sawTextDelta = false
+                val reasoningOutput = StringBuilder()
                 emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId))))
                 streamRunner(assembledAgent, request.prompt).collect { frame ->
-                    when (frame) {
-                        is StreamFrame.TextDelta -> {
-                            sawTextDelta = true
-                            textOutput.append(frame.text)
-                            emitTextDelta(frame.text)
-                        }
-
-                        is StreamFrame.TextComplete -> {
-                            if (!sawTextDelta) {
-                                textOutput.append(frame.text)
-                                emitTextDelta(frame.text)
-                            }
-                        }
-
-                        is StreamFrame.ReasoningDelta -> {
-                            val delta = frame.text ?: frame.summary
-                            if (delta != null) {
-                                emitReasoningDelta(delta)
-                            }
-                        }
-
-                        is StreamFrame.ToolCallDelta -> {
-                            val delta = frame.content ?: frame.name ?: frame.id
-                            if (delta != null) {
-                                emitToolDelta("agent.tool.delta", delta)
-                            }
-                        }
-
-                        is StreamFrame.ToolCallComplete -> emitToolDelta("agent.tool.completed", frame.name)
-
-                        is StreamFrame.End,
-                        is StreamFrame.ReasoningComplete,
-                        -> Unit
-                    }
+                    applyStreamFrame(frame, textOutput, reasoningOutput)
                 }
+                persistTurnIfNeeded(
+                    sessionId = session.id,
+                    userPrompt = request.prompt,
+                    assistantResponse = textOutput.toString(),
+                    reasoningResponse = reasoningOutput.toString().takeIf { it.isNotEmpty() },
+                )
                 emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.completed", payload = JsonPrimitive(session.id))))
                 emit(RuntimeAgentResultUpdate(RuntimeSuccess(output = JsonPrimitive(textOutput.toString()))))
                 return@flow
             }
 
-            val promptHistory = conversationMemory.loadHistory(session.id)
-            val runtimePrompt = buildRuntimePrompt(
-                userPrompt = request.prompt,
-                binding = binding,
-                history = promptHistory,
-            )
-            val textOutput = StringBuilder()
-            var sawTextDelta = false
-
-            emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId))))
-            try {
-                val selectedStreamRunner = when {
-                    compatibilityStreamRunner.supports(
-                        binding = assembledAgent.binding,
-                        hasTools = assembledAgent.toolRegistry.tools.isNotEmpty(),
-                    ) -> { _, prompt -> compatibilityStreamRunner.stream(assembledAgent.binding, prompt) }
-                    else -> koogStreamRunner
-                }
-                selectedStreamRunner(assembledAgent, runtimePrompt).collect { frame ->
-                    when (frame) {
-                        is StreamFrame.TextDelta -> {
-                            sawTextDelta = true
-                            textOutput.append(frame.text)
-                            emitTextDelta(frame.text)
-                        }
-
-                        is StreamFrame.TextComplete -> {
-                            if (!sawTextDelta) {
-                                textOutput.append(frame.text)
-                                emitTextDelta(frame.text)
-                            }
-                        }
-
-                        is StreamFrame.ReasoningDelta -> {
-                            val delta = frame.text ?: frame.summary
-                            if (delta != null) {
-                                emitReasoningDelta(delta)
-                            }
-                        }
-
-                        is StreamFrame.ToolCallDelta -> {
-                            val delta = frame.content ?: frame.name ?: frame.id
-                            if (delta != null) {
-                                emitToolDelta("agent.tool.delta", delta)
-                            }
-                        }
-
-                        is StreamFrame.ToolCallComplete -> emitToolDelta("agent.tool.completed", frame.name)
-
-                        is StreamFrame.End,
-                        is StreamFrame.ReasoningComplete,
-                        -> Unit
-                    }
-                }
-            } catch (error: Throwable) {
-                if (!error.looksLikeUnsupportedStreamingReasoning()) {
-                    throw error
-                }
-                val fallbackOutput = fallbackNonStreamingRunner(
-                    assembledAgent = assembledAgent,
-                    prompt = request.prompt,
-                    sessionId = session.id,
+            val provisionalAgent = assembleAgent(binding, capabilitySet)
+            val hasTools = provisionalAgent.toolRegistry.tools.isNotEmpty()
+            if (!hasTools) {
+                val runtimePrompt = buildRuntimePrompt(
+                    userPrompt = request.prompt,
+                    binding = binding,
+                    history = conversationMemory.loadHistory(session.id),
+                    capabilitySet = capabilitySet,
                 )
-                textOutput.clear()
-                textOutput.append(fallbackOutput)
-                emitTextDelta(fallbackOutput)
+                val textOutput = StringBuilder()
+                val reasoningOutput = StringBuilder()
+                emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId))))
+                try {
+                    val stream = if (compatibilityStreamRunner.supports(binding = provisionalAgent.binding, hasTools = false)) {
+                        compatibilityStreamRunner.stream(binding = provisionalAgent.binding, prompt = runtimePrompt)
+                    } else {
+                        provisionalAgent.promptExecutor.executeStreaming(
+                            prompt = runtimePrompt,
+                            model = provisionalAgent.llmModel,
+                            tools = provisionalAgent.toolRegistry.tools.map { it.descriptor },
+                        )
+                    }
+                    stream.collect { frame ->
+                        applyStreamFrame(frame, textOutput, reasoningOutput)
+                    }
+                } catch (error: Throwable) {
+                    if (!error.looksLikeUnsupportedStreamingReasoning()) {
+                        throw error
+                    }
+                    val fallbackOutput = fallbackNonStreamingRunner(
+                        assembledAgent = provisionalAgent,
+                        prompt = request.prompt,
+                        sessionId = session.id,
+                    )
+                    textOutput.clear()
+                    textOutput.append(fallbackOutput)
+                    emitTextDelta(fallbackOutput)
+                }
+                persistTurnIfNeeded(
+                    sessionId = session.id,
+                    userPrompt = request.prompt,
+                    assistantResponse = textOutput.toString(),
+                    reasoningResponse = reasoningOutput.toString().takeIf { it.isNotEmpty() },
+                )
+                emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.completed", payload = JsonPrimitive(session.id))))
+                emit(RuntimeAgentResultUpdate(RuntimeSuccess(output = JsonPrimitive(textOutput.toString()))))
+                return@flow
             }
-            conversationMemory.appendTurn(
-                sessionId = session.id,
-                userPrompt = request.prompt,
-                assistantResponse = textOutput.toString(),
-            )
+
+            val assembledAgent = assembleStreamingAgent(
+                binding,
+                capabilitySet,
+            ) { event ->
+                emit(RuntimeAgentEventUpdate(event))
+            }
+            emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId))))
+            val output = assembledAgent.agent.run(request.prompt, session.id)
             emit(RuntimeAgentEventUpdate(RuntimeInfoEvent(message = "agent.run.completed", payload = JsonPrimitive(session.id))))
-            emit(RuntimeAgentResultUpdate(RuntimeSuccess(output = JsonPrimitive(textOutput.toString()))))
+            emit(RuntimeAgentResultUpdate(RuntimeSuccess(output = JsonPrimitive(output))))
         } catch (error: IllegalArgumentException) {
             emit(
                 RuntimeAgentResultUpdate(
@@ -302,6 +307,11 @@ class RuntimeAgentExecutor(
         runner: suspend (AssembledAgent, String) -> String,
     ): RuntimeResult {
         val output = runner(assembledAgent, prompt)
+        persistTurnIfNeeded(
+            sessionId = session.id,
+            userPrompt = prompt,
+            assistantResponse = output,
+        )
         return RuntimeSuccess(
             events = listOf(
                 RuntimeInfoEvent(message = "agent.run.started", payload = JsonPrimitive(context.requestId)),
@@ -309,6 +319,48 @@ class RuntimeAgentExecutor(
             ),
             output = JsonPrimitive(output),
         )
+    }
+
+    /**
+     * 以幂等方式把一次成功对话轮次落入共享 memory，避免与底层 feature 的自动持久化重复。
+     */
+    private suspend fun persistTurnIfNeeded(
+        sessionId: String,
+        userPrompt: String,
+        assistantResponse: String,
+        reasoningResponse: String? = null,
+    ) {
+        val history = conversationMemory.loadHistory(sessionId)
+        val latestUserIndex = history.indexOfLast { it is Message.User }
+        val latestUser = history.getOrNull(latestUserIndex) as? Message.User
+        val turnMessages = history.drop((latestUserIndex + 1).coerceAtLeast(0))
+        val latestAssistantForTurn = turnMessages.lastOrNull { it is Message.Assistant } as? Message.Assistant
+        val latestReasoningForTurn = turnMessages.lastOrNull { it is Message.Reasoning } as? Message.Reasoning
+        val turnAlreadyPersisted = latestUser?.content == userPrompt &&
+            latestReasoningForTurn?.content == reasoningResponse &&
+            latestAssistantForTurn?.content == assistantResponse
+        if (!turnAlreadyPersisted) {
+            conversationMemory.appendTurn(
+                sessionId = sessionId,
+                userPrompt = userPrompt,
+                assistantMessages = buildList {
+                    reasoningResponse?.let { reasoning ->
+                        add(
+                            Message.Reasoning(
+                                content = reasoning,
+                                metaInfo = ai.koog.prompt.message.ResponseMetaInfo.create(kotlin.time.Clock.System),
+                            ),
+                        )
+                    }
+                    add(
+                        Message.Assistant(
+                            content = assistantResponse,
+                            metaInfo = ai.koog.prompt.message.ResponseMetaInfo.create(kotlin.time.Clock.System),
+                        ),
+                    )
+                },
+            )
+        }
     }
 
     /**
@@ -327,6 +379,38 @@ class RuntimeAgentExecutor(
     }
 
     /**
+     * 根据 streaming frame 同步更新文本缓冲并向外转发可见事件。
+     */
+    private suspend fun kotlinx.coroutines.flow.FlowCollector<RuntimeAgentExecutionUpdate>.applyStreamFrame(
+        frame: StreamFrame,
+        textOutput: StringBuilder,
+        reasoningOutput: StringBuilder,
+    ) {
+        when (frame) {
+            is StreamFrame.TextDelta -> {
+                textOutput.append(frame.text)
+                emitTextDelta(frame.text)
+            }
+            is StreamFrame.TextComplete -> if (textOutput.isEmpty()) {
+                textOutput.append(frame.text)
+                emitTextDelta(frame.text)
+            }
+            is StreamFrame.ReasoningDelta -> {
+                val delta = frame.text ?: frame.summary
+                if (delta != null) {
+                    reasoningOutput.append(delta)
+                    emitReasoningDelta(delta)
+                }
+            }
+            is StreamFrame.ToolCallDelta,
+            is StreamFrame.ToolCallComplete,
+            is StreamFrame.End,
+            is StreamFrame.ReasoningComplete,
+            -> Unit
+        }
+    }
+
+    /**
      * 发出模型 reasoning/thinking 增量。
      */
     private suspend fun kotlinx.coroutines.flow.FlowCollector<RuntimeAgentExecutionUpdate>.emitReasoningDelta(delta: String) {
@@ -335,24 +419,6 @@ class RuntimeAgentExecutor(
                 RuntimeInfoEvent(
                     message = "agent.reasoning.delta",
                     channel = "thinking",
-                    delta = delta,
-                ),
-            ),
-        )
-    }
-
-    /**
-     * 发出工具调用相关增量。
-     */
-    private suspend fun kotlinx.coroutines.flow.FlowCollector<RuntimeAgentExecutionUpdate>.emitToolDelta(
-        message: String,
-        delta: String,
-    ) {
-        emit(
-            RuntimeAgentEventUpdate(
-                RuntimeInfoEvent(
-                    message = message,
-                    channel = "tool",
                     delta = delta,
                 ),
             ),
@@ -394,15 +460,69 @@ class RuntimeAgentExecutor(
 }
 
 /**
+ * 把 Koog tool lifecycle 上下文翻译为 runtime 可消费的结构化工具事件。
+ */
+internal fun ai.koog.agents.core.feature.handler.tool.ToolCallEventContext.toRuntimeToolEvent(
+    status: String,
+    message: String,
+    output: JSONElement? = null,
+    error: String? = null,
+): RuntimeEvent = RuntimeInfoEvent(
+    message = message,
+    channel = "tool",
+    delta = toolName,
+    payload = Json.encodeToJsonElement(
+        RuntimeToolCallPayload(
+            toolCallId = toolCallId ?: eventId,
+            toolName = toolName,
+            status = status,
+            input = toolArgs.toKotlinxJsonObject(),
+            output = output?.toKotlinxJsonElement(),
+            error = error,
+        ),
+    ),
+)
+
+/**
+ * 把 Koog streaming frame 转换为 runtime 可见事件；工具执行状态走专门的 lifecycle 事件。
+ */
+private fun StreamFrame.toRuntimeEventOrNull(includeTextComplete: Boolean = true): RuntimeEvent? = when (this) {
+    is StreamFrame.TextDelta -> RuntimeInfoEvent(
+        message = "agent.text.delta",
+        channel = "text",
+        delta = text,
+    )
+    is StreamFrame.TextComplete -> if (includeTextComplete) {
+        RuntimeInfoEvent(
+            message = "agent.text.delta",
+            channel = "text",
+            delta = text,
+        )
+    } else {
+        null
+    }
+    is StreamFrame.ReasoningDelta -> {
+        val value = text ?: summary ?: return null
+        RuntimeInfoEvent(
+            message = "agent.reasoning.delta",
+            channel = "thinking",
+            delta = value,
+        )
+    }
+    else -> null
+}
+
+/**
  * 构造 runtime 的单轮 prompt；当 provider 显式开启 thinking 时，同时附带 provider 级参数。
  */
 internal fun buildRuntimePrompt(
     userPrompt: String,
     binding: ProviderBinding,
     history: List<Message> = emptyList(),
+    capabilitySet: CapabilitySet = CapabilitySet(adapters = emptyList()),
 ): Prompt {
     val basePrompt = prompt("runtime-agent") {
-        system(DEFAULT_AGENT_SYSTEM_PROMPT)
+        system(buildAgentSystemPrompt(capabilitySet))
         messages(history)
         user(userPrompt)
     }
@@ -414,7 +534,7 @@ internal fun buildRuntimePrompt(
 /**
  * 把仓库侧的 thinking 开关翻译为各 provider 真正理解的请求参数。
  */
-private fun ProviderBinding.toThinkingParams(): LLMParams? {
+internal fun ProviderBinding.toThinkingParams(): LLMParams? {
     if (!enableThinking) {
         return null
     }
@@ -455,6 +575,54 @@ internal fun ProviderBinding.usesDeepSeekThinkingMode(): Boolean {
 }
 
 /**
- * 统一复用当前 runtime agent 的系统提示，避免兼容层和 Koog 主链路出现语义漂移。
+ * 构造包含能力目录的系统提示，确保模型知道自己有哪些工具以及边界。
  */
-internal const val DEFAULT_AGENT_SYSTEM_PROMPT = "You are a helpful assistant."
+internal fun buildAgentSystemPrompt(capabilitySet: CapabilitySet): String {
+    val toolCatalog = buildList {
+        capabilitySet.toolAdapters().forEach { adapter ->
+            add("- ${adapter.descriptor.id} [${adapter.descriptor.kind}/${adapter.descriptor.riskLevel}]: ${adapter.description}")
+        }
+        capabilitySet.httpAdapters().forEach { adapter ->
+            add("- ${adapter.descriptor.id} [${adapter.descriptor.kind}/${adapter.descriptor.riskLevel}]: ${adapter.method} ${adapter.path}. ${adapter.description}")
+        }
+        capabilitySet.mcpAdapters().forEach { adapter ->
+            add("- ${adapter.descriptor.id} [${adapter.descriptor.kind}/${adapter.descriptor.riskLevel}]: MCP tool bridge over ${adapter.transport.description}.")
+        }
+        capabilitySet.builtInFileTools().forEach { tool ->
+            val description = when (tool.descriptor.id) {
+                "__list_directory__" -> "List directories and files inside the workspace root."
+                "__read_file__" -> "Read text files inside the workspace root."
+                "__write_file__" -> "Write or overwrite text files inside the workspace root."
+                "edit_file" -> "Apply targeted edits to existing files inside the workspace root."
+                else -> "Access the workspace-scoped file system."
+            }
+            add("- ${tool.descriptor.id} [${tool.descriptor.kind}/${tool.descriptor.riskLevel}]: $description Workspace root: ${tool.workspaceRoot}")
+        }
+    }
+    if (toolCatalog.isEmpty()) {
+        return "$DEFAULT_AGENT_SYSTEM_PROMPT You currently have no external tools available. Answer directly and do not claim tool access you do not have."
+    }
+
+    return buildString {
+        append(DEFAULT_AGENT_SYSTEM_PROMPT)
+        append(
+            " Answer the user's actual request first. Default to answering directly without tools. " +
+                "Do not proactively list tools, policies, or capabilities unless the user asked for them. " +
+                "Do not call workspace tools for greetings, small talk, exact-format replies, translation, or when the user explicitly asks not to inspect the project. " +
+                "Only inspect the workspace when the answer depends on repository facts, local files, implementation details, or the user asks you to read, edit, search, build, test, or otherwise operate on the project. " +
+                "If a repository-specific question cannot be answered because the user explicitly prohibited inspection, say that limitation and answer only from existing context. " +
+                "Use tools only when the request actually requires repository inspection, external information, file access, or side effects. " +
+                "The tool catalog is informational; do not call a tool just because it is listed. " +
+                "If the user asks what tools you have, answer from the catalog below and do not invent extra tools.\n\n"
+        )
+        append("Available tools:\n")
+        append(toolCatalog.joinToString(separator = "\n"))
+        append("\n\nRisk levels: LOW = read-only or no persistent side effects; MID = modifies workspace contents; HIGH = external or stronger side effects.")
+    }
+}
+
+/**
+ * 统一复用当前 runtime agent 的基础系统提示，避免兼容层和 Koog 主链路出现语义漂移。
+ */
+internal const val DEFAULT_AGENT_SYSTEM_PROMPT =
+    "You are a helpful assistant. Reply in the same language as the user's latest message unless the user asks for another language."

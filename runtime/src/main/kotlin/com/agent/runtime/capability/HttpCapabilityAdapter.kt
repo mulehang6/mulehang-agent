@@ -13,7 +13,11 @@ class HttpCapabilityAdapter(
     val description: String,
     private val handler: suspend (CapabilityRequest) -> RuntimeResult,
 ) : CapabilityAdapter {
-    override val descriptor: CapabilityDescriptor = CapabilityDescriptor(id = id, kind = "http")
+    override val descriptor: CapabilityDescriptor = CapabilityDescriptor(
+        id = id,
+        kind = "http",
+        riskLevel = ToolRiskLevel.HIGH,
+    )
 
     /**
      * 执行一次 HTTP 能力调用。

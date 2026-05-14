@@ -199,4 +199,59 @@ describe("transcript view", () => {
     );
     expect(markdownBlock?.props?.streaming).toBe(false);
   });
+
+  test("renders tool entries as collapsible cards with subtitle and args", () => {
+    const onToggleEntry = mock();
+    const element = TranscriptView({
+      entries: [
+        {
+          kind: "tool",
+          text: "",
+          title: "Called __read_file__",
+          subtitle: "docs/spec.md",
+          args: ["encoding=utf-8"],
+          expanded: false,
+          toolCallId: "tool-call-1",
+          toolName: "__read_file__",
+          status: "completed",
+          input: {
+            filePath: "docs/spec.md",
+          },
+          output: "spec body",
+        },
+      ],
+      onToggleEntry,
+    }) as {
+      props: {
+        children?: {
+          props?: {
+            children?: {
+              props?: {
+                children?: Array<{
+                  props?: {
+                    onMouseUp?: () => void;
+                    children?: Array<{
+                      props?: { fg?: string; children?: string | string[] };
+                    }>;
+                  };
+                }>;
+              };
+            };
+          };
+        };
+      };
+    };
+
+    const toolBlock =
+      element.props.children?.props?.children?.props?.children?.[0];
+    const header = toolBlock?.props?.children?.[0];
+
+    expect(header?.props?.fg).toBe("#7dcfff");
+    expect(header?.props?.children).toBe(
+      "> Called __read_file__ docs/spec.md [encoding=utf-8]",
+    );
+
+    toolBlock?.props?.onMouseUp?.();
+    expect(onToggleEntry).toHaveBeenCalledWith(0);
+  });
 });

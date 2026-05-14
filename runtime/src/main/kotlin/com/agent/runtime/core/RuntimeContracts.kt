@@ -1,5 +1,6 @@
 package com.agent.runtime.core
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -62,6 +63,19 @@ data class RuntimeInfoEvent(
     override val delta: String? = null,
     override val payload: JsonElement? = null,
 ) : RuntimeEvent
+
+/**
+ * 表示一条可被客户端归并展示的工具调用生命周期载荷。
+ */
+@Serializable
+data class RuntimeToolCallPayload(
+    val toolCallId: String,
+    val toolName: String,
+    val status: String,
+    val input: JsonElement? = null,
+    val output: JsonElement? = null,
+    val error: String? = null,
+)
 
 /**
  * 表示 runtime 失败原因的统一契约。

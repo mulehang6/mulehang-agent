@@ -1,14 +1,15 @@
 package com.agent.runtime.server
 
-import com.agent.runtime.agent.AgentAssembly
-import com.agent.runtime.agent.RuntimeConversationMemory
-import com.agent.runtime.agent.RuntimeAgentExecutor
-import com.agent.runtime.agent.buildRecordingAssembledAgent
 import ai.koog.prompt.streaming.StreamFrame
+import com.agent.runtime.agent.AgentAssembly
+import com.agent.runtime.agent.RuntimeAgentExecutor
+import com.agent.runtime.agent.RuntimeConversationMemory
+import com.agent.runtime.agent.buildRecordingAssembledAgent
+import com.agent.runtime.capability.ToolRiskLevel
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
@@ -39,6 +40,34 @@ class DefaultRuntimeHttpServiceTest {
         assertTrue(data.requestId.isNotBlank())
         assertEquals(JsonPrimitive("done:hello"), data.output)
         assertEquals(listOf("agent.run.started", "agent.run.completed"), data.events.map { it.message })
+    }
+
+    @Test
+    fun `should enable built in file tools in default runtime capability set`() = runTest {
+        var capturedCapabilityIds = emptyList<String>()
+        var capturedRiskById = emptyMap<String, ToolRiskLevel>()
+        val service = DefaultRuntimeHttpService(
+            runtimeAgentExecutor = RuntimeAgentExecutor(
+                assembleAgent = { binding, capabilities ->
+                    capturedCapabilityIds = capabilities.descriptors().map { it.id }
+                    capturedRiskById = capabilities.descriptors().associate { it.id to it.riskLevel }
+                    AgentAssembly().assemble(binding, capabilities)
+                },
+                runner = { _, prompt -> "done:$prompt" },
+            ),
+        )
+
+        val response = service.run(validRequest())
+
+        assertEquals(1, response.code)
+        assertTrue("__list_directory__" in capturedCapabilityIds)
+        assertTrue("__read_file__" in capturedCapabilityIds)
+        assertTrue("__write_file__" in capturedCapabilityIds)
+        assertTrue("edit_file" in capturedCapabilityIds)
+        assertEquals(ToolRiskLevel.LOW, capturedRiskById["__list_directory__"])
+        assertEquals(ToolRiskLevel.LOW, capturedRiskById["__read_file__"])
+        assertEquals(ToolRiskLevel.MID, capturedRiskById["__write_file__"])
+        assertEquals(ToolRiskLevel.MID, capturedRiskById["edit_file"])
     }
 
     @Test
@@ -151,17 +180,21 @@ class DefaultRuntimeHttpServiceTest {
 
     @Test
     fun `should continue conversation across http requests with the same session id`() = runTest {
-        val recording = buildRecordingAssembledAgent { prompt ->
-            val previousUserMessages = prompt.messages
-                .filter { it.role == ai.koog.prompt.message.Message.Role.User }
-                .dropLast(1)
-                .map { it.content }
-            if ("hello" in previousUserMessages) "you said hello" else "no memory"
-        }
+        val conversationMemory = RuntimeConversationMemory()
+        val recordings = mutableListOf<com.agent.runtime.agent.RecordingAssembledAgent>()
         val service = DefaultRuntimeHttpService(
             runtimeAgentExecutor = RuntimeAgentExecutor(
-                assembleAgent = { _, _ -> recording.assembledAgent },
-                conversationMemory = RuntimeConversationMemory(),
+                assembleAgent = { _, _ ->
+                    buildRecordingAssembledAgent(conversationMemory = conversationMemory) { prompt ->
+                        val previousUserMessages = prompt.messages
+                            .filter { it.role == ai.koog.prompt.message.Message.Role.User }
+                            .dropLast(1)
+                            .map { it.content }
+                        if ("hello" in previousUserMessages) "you said hello" else "no memory"
+                    }.also { recordings += it }.assembledAgent
+                },
+                assembleStreamingAgent = { _, _, _ -> recordings.last().assembledAgent },
+                conversationMemory = conversationMemory,
             ),
         )
 
@@ -184,8 +217,11 @@ class DefaultRuntimeHttpServiceTest {
 
         val stream = service.stream(validRequest()).toList()
 
-        assertEquals(listOf("status", "run.completed"), stream.map { it.event })
+        assertEquals(listOf("status", "run.metadata", "run.completed"), stream.map { it.event })
         assertEquals("session-1", stream.first().sessionId)
+        assertEquals("provider-openai", stream[1].providerLabel)
+        assertEquals("openai/gpt-oss-120b:free", stream[1].modelLabel)
+        assertEquals(null, stream[1].reasoningEffort)
         assertEquals(JsonPrimitive("done:hello"), stream.last().output)
     }
 
@@ -219,17 +255,17 @@ class DefaultRuntimeHttpServiceTest {
                 yield()
             }
 
-            assertEquals(listOf("status", "text.delta"), received.map { it.event })
+            assertEquals(listOf("status", "run.metadata", "text.delta"), received.map { it.event })
 
             allowCompletion.complete(Unit)
             collecting.join()
 
             assertEquals(
-                listOf("status", "text.delta", "text.delta", "run.completed"),
+                listOf("status", "run.metadata", "text.delta", "text.delta", "run.completed"),
                 received.map { it.event },
             )
-            assertEquals("hello ", received[1].delta)
-            assertEquals("world", received[2].delta)
+            assertEquals("hello ", received[2].delta)
+            assertEquals("world", received[3].delta)
         } finally {
             if (!allowCompletion.isCompleted) {
                 allowCompletion.complete(Unit)

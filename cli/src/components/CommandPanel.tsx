@@ -3,7 +3,7 @@ import type { CommandItem } from "../app-state";
 /**
  * 在输入框上方显示 `/` 命令候选项。
  */
-export function CommandPalette(props: {
+export function CommandPanel(props: {
   items: CommandItem[];
   selectedIndex: number;
 }) {

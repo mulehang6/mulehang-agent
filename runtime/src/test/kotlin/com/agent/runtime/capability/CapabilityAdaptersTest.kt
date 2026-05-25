@@ -43,9 +43,9 @@ class CapabilityAdaptersTest {
 
         assertEquals(
             listOf(
-                CapabilityDescriptor(id = "tool.echo", kind = "tool"),
-                CapabilityDescriptor(id = "mcp.list", kind = "mcp"),
-                CapabilityDescriptor(id = "http.internal", kind = "http"),
+                CapabilityDescriptor(id = "tool.echo", kind = "tool", riskLevel = ToolRiskLevel.MID),
+                CapabilityDescriptor(id = "mcp.list", kind = "mcp", riskLevel = ToolRiskLevel.HIGH),
+                CapabilityDescriptor(id = "http.internal", kind = "http", riskLevel = ToolRiskLevel.HIGH),
             ),
             capabilitySet.descriptors(),
         )
@@ -69,6 +69,30 @@ class CapabilityAdaptersTest {
                 capabilityId = "http.internal",
                 request = RuntimeCapabilityRequest(capabilityId = "http.internal"),
             ),
+        )
+    }
+
+    @Test
+    fun `should expose built in file tool declarations with exact low and mid risks`() {
+        val root = "D:\\JetBrains\\projects\\idea_projects\\mulehang-agent"
+        val capabilitySet = CapabilitySet(
+            adapters = emptyList(),
+            builtInFileTools = listOf(
+                BuiltInFileToolCapability.listDirectory(root),
+                BuiltInFileToolCapability.readFile(root),
+                BuiltInFileToolCapability.writeFile(root),
+                BuiltInFileToolCapability.editFile(root),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                CapabilityDescriptor(id = "__list_directory__", kind = "filesystem", riskLevel = ToolRiskLevel.LOW),
+                CapabilityDescriptor(id = "__read_file__", kind = "filesystem", riskLevel = ToolRiskLevel.LOW),
+                CapabilityDescriptor(id = "__write_file__", kind = "filesystem", riskLevel = ToolRiskLevel.MID),
+                CapabilityDescriptor(id = "edit_file", kind = "filesystem", riskLevel = ToolRiskLevel.MID),
+            ),
+            capabilitySet.descriptors(),
         )
     }
 

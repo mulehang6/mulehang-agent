@@ -111,7 +111,7 @@ export function resolveChatLayout(height: number): ChatLayout {
       return {
         density,
         padding: 1,
-        gap: 0,
+        gap: 1,
         showHelperText: false,
         sidebarMode: "compact",
       };
@@ -119,7 +119,7 @@ export function resolveChatLayout(height: number): ChatLayout {
       return {
         density,
         padding: 2,
-        gap: 1,
+        gap: 2,
         showHelperText: true,
         sidebarMode: "full",
       };

@@ -36,6 +36,7 @@ fun Application.runtimeHttpModule(
         serverVersion = "dev",
         authMode = "disabled",
     ),
+    defaultBindingResolver: () -> RuntimeHttpProviderResolution = { resolveDefaultHttpProviderBinding() },
     auth: RuntimeServerAuth = RuntimeServerAuth.disabledForTests(),
 ) {
     install(ContentNegotiation) {
@@ -60,7 +61,7 @@ fun Application.runtimeHttpModule(
         }
 
         get("/meta") {
-            call.respond(Result.success(metadata))
+            call.respond(Result.success(metadata.withDefaultBinding(defaultBindingResolver().binding)))
         }
 
         post("/runtime/run") {
@@ -106,6 +107,30 @@ fun Application.runtimeHttpModule(
                 }
             }
         }
+    }
+}
+
+/**
+ * 把默认 provider binding 摘要合并到共享 server metadata，供 CLI 欢迎页首屏展示。
+ */
+private fun RuntimeServerMetadata.withDefaultBinding(binding: com.agent.runtime.provider.ProviderBinding?): RuntimeServerMetadata =
+    copy(
+        providerLabel = binding?.providerId,
+        modelLabel = binding?.modelId,
+        reasoningEffort = binding?.metaReasoningEffortLabelOrNull(),
+    )
+
+/**
+ * 推导 metadata 中可展示的思考等级；仅在 runtime 已知明确等级时返回文本。
+ */
+private fun com.agent.runtime.provider.ProviderBinding.metaReasoningEffortLabelOrNull(): String? {
+    if (!enableThinking) {
+        return null
+    }
+
+    return when (providerType) {
+        com.agent.runtime.provider.ProviderType.OPENAI_RESPONSES -> "medium"
+        else -> null
     }
 }
 

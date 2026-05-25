@@ -8,13 +8,17 @@ import com.agent.runtime.core.RuntimeResult
  */
 class CapabilitySet(
     adapters: List<CapabilityAdapter>,
+    builtInFileTools: List<BuiltInFileToolCapability> = emptyList(),
 ) {
     private val adaptersById: Map<String, CapabilityAdapter> = adapters.associateBy { it.descriptor.id }
+    private val builtInFileToolsById: Map<String, BuiltInFileToolCapability> =
+        builtInFileTools.associateBy { it.descriptor.id }
 
     /**
      * 返回当前集合内所有能力描述信息。
      */
-    fun descriptors(): List<CapabilityDescriptor> = adaptersById.values.map { it.descriptor }
+    fun descriptors(): List<CapabilityDescriptor> =
+        adaptersById.values.map { it.descriptor } + builtInFileToolsById.values.map { it.descriptor }
 
     /**
      * 返回当前集合中的 tool adapters。
@@ -30,6 +34,11 @@ class CapabilitySet(
      * 返回当前集合中的 HTTP adapters。
      */
     fun httpAdapters(): List<HttpCapabilityAdapter> = adaptersById.values.filterIsInstance<HttpCapabilityAdapter>()
+
+    /**
+     * 返回当前集合中的 built-in 文件工具声明。
+     */
+    fun builtInFileTools(): List<BuiltInFileToolCapability> = builtInFileToolsById.values.toList()
 
     /**
      * 根据能力标识执行一次统一能力调用。

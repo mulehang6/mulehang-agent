@@ -16,11 +16,21 @@ interface CapabilityAdapter {
 }
 
 /**
+ * 表示工具或能力的风险等级。
+ */
+enum class ToolRiskLevel {
+    LOW,
+    MID,
+    HIGH,
+}
+
+/**
  * 表示对外暴露的能力描述信息。
  */
 data class CapabilityDescriptor(
     val id: String,
     val kind: String,
+    val riskLevel: ToolRiskLevel,
 )
 
 /**

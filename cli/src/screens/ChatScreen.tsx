@@ -42,18 +42,24 @@ export function ChatScreen(props: {
       >
         <TranscriptView
           entries={props.state.transcript}
+          isStreamingOutput={
+            props.state.runtime.phase === "starting" ||
+            props.state.runtime.phase === "running"
+          }
           onToggleEntry={props.onToggleTranscriptEntry}
         />
 
         <Composer
           draft={props.draft}
-          placeholder="Send a prompt to runtime..."
+          placeholder=""
           onInput={props.onInput}
           onSubmit={props.onSubmit}
           commandPalette={props.state.commandPalette}
           compact={props.layout.density !== "spacious"}
           footerText={props.footerText}
-          helperText={props.layout.showHelperText ? "tab agents   ctrl+p commands" : ""}
+          helperText=""
+          belowLeftText={props.layout.showHelperText ? "tab agents" : ""}
+          belowRightText={props.layout.showHelperText ? "ctrl+p commands" : ""}
         />
       </box>
 

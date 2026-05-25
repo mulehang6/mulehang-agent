@@ -17,15 +17,15 @@ class CapabilityContractTest {
     @Test
     fun `should unify tool mcp and http capabilities through one contract`() = runTest {
         val toolAdapter = FakeCapabilityAdapter(
-            descriptor = CapabilityDescriptor(id = "tool.echo", kind = "tool"),
+            descriptor = CapabilityDescriptor(id = "tool.echo", kind = "tool", riskLevel = ToolRiskLevel.MID),
             result = RuntimeSuccess(events = listOf(RuntimeInfoEvent(message = "tool"))),
         )
         val mcpAdapter = FakeCapabilityAdapter(
-            descriptor = CapabilityDescriptor(id = "mcp.list", kind = "mcp"),
+            descriptor = CapabilityDescriptor(id = "mcp.list", kind = "mcp", riskLevel = ToolRiskLevel.HIGH),
             result = RuntimeSuccess(events = listOf(RuntimeInfoEvent(message = "mcp"))),
         )
         val httpAdapter = FakeCapabilityAdapter(
-            descriptor = CapabilityDescriptor(id = "http.internal", kind = "http"),
+            descriptor = CapabilityDescriptor(id = "http.internal", kind = "http", riskLevel = ToolRiskLevel.HIGH),
             result = RuntimeSuccess(events = listOf(RuntimeInfoEvent(message = "http"))),
         )
         val capabilitySet = CapabilitySet(adapters = listOf(toolAdapter, mcpAdapter, httpAdapter))

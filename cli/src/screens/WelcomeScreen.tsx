@@ -60,6 +60,8 @@ export function WelcomeScreen(props: {
             compact={false}
             footerText={props.composerFooterText}
             helperText={props.composerHelperText}
+            belowLeftText="tab agents"
+            belowRightText="ctrl+p commands"
           />
         </box>
 
@@ -75,7 +77,7 @@ export function WelcomeScreen(props: {
           }}
         >
           {props.layout.showTip ? (
-            <text fg="#f7d154">● Tip Start a message with / to open the command palette.</text>
+            <text fg="#f7d154">● Tip: Start a message with / to open the command panel</text>
           ) : null}
         </box>
 

@@ -260,7 +260,7 @@ CLI 的 HTTP/SSE 传输层。
 1. `WelcomeScreen`：欢迎页
 2. `ChatScreen`：会话页
 3. `TranscriptView`：显示 transcript，包括 thinking 折叠块
-4. `Composer` / `CommandPalette` / `Sidebar`：输入与辅助 UI
+4. `Composer` / `CommandPanel` / `Sidebar`：输入与辅助 UI
 
 这些组件不直接接触 runtime transport；它们只消费 `app-state` 已经规整好的数据。
 

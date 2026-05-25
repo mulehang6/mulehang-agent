@@ -12,7 +12,11 @@ class ToolCapabilityAdapter(
     val description: String,
     private val handler: suspend (CapabilityRequest) -> RuntimeResult,
 ) : CapabilityAdapter {
-    override val descriptor: CapabilityDescriptor = CapabilityDescriptor(id = id, kind = "tool")
+    override val descriptor: CapabilityDescriptor = CapabilityDescriptor(
+        id = id,
+        kind = "tool",
+        riskLevel = ToolRiskLevel.MID,
+    )
 
     /**
      * 执行一次 tool 能力调用。

@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
+
 import type { RuntimeSummaryState } from "../app-state";
 
 /**
- * 渲染会话页右侧状态栏。
+ * 渲染贴近 kilo 信息架构的会话页右侧状态栏。
  */
 export function Sidebar(props: {
   title: string;
@@ -14,51 +16,111 @@ export function Sidebar(props: {
   return (
     <box
       style={{
-        width: 32,
+        width: 42,
+        height: "100%",
         flexDirection: "column",
-        padding: props.mode === "compact" ? 1 : 2,
-        gap: props.mode === "compact" ? 0 : 1,
         backgroundColor: "#262626",
+        paddingTop: 1,
+        paddingBottom: 1,
+        paddingLeft: 2,
+        paddingRight: 2,
       }}
     >
-      <text fg="#f0f0f0">
-        {props.title}
-      </text>
+      <scrollbox
+        flexGrow={1}
+        style={{
+          verticalScrollbarOptions: {
+            width: 1,
+          },
+        }}
+      >
+        <box
+          style={{
+            flexDirection: "column",
+            flexShrink: 0,
+            gap: 1,
+            paddingRight: 1,
+          }}
+        >
+          <box style={{ paddingRight: 1 }}>
+            <text fg="#f0f0f0">{props.title}</text>
+          </box>
 
-      <text fg="#f0f0f0">
-        Context
-      </text>
-      <text fg="#9a9a9a">mode: {props.runtime.mode}</text>
-      <text fg="#9a9a9a">phase: {props.runtime.phase}</text>
-      {props.mode === "full" ? (
-        <>
-          <text fg="#9a9a9a">session: {props.runtime.sessionId ?? "-"}</text>
-          <text fg="#9a9a9a">detail: {props.runtime.detail ?? "-"}</text>
-        </>
-      ) : null}
+          <SidebarSection title="Context">
+            <SidebarMetricRow label="Total Used" value={formatMissingMetric()} />
+            <SidebarMetricRow label="Context Used" value={formatMissingMetric()} />
+            <SidebarMetricRow label="Cost" value={formatMissingMetric()} />
+          </SidebarSection>
 
-      <text fg="#f0f0f0">
-        Provider
-      </text>
-      <text fg={props.hasProvider ? "#9fd3c7" : "#ff8b94"}>
-        {props.hasProvider ? "Configured" : "Missing"}
-      </text>
-      <text fg="#9a9a9a">{props.providerLabel}</text>
-      <text fg="#9a9a9a">{props.modelLabel}</text>
+          <SidebarSection title="Token Usage">
+            <SidebarMetricRow label="Input" value={formatMissingMetric()} />
+            <SidebarMetricRow label="Output" value={formatMissingMetric()} />
+            <SidebarMetricRow label="Cached" value={formatMissingMetric()} />
+          </SidebarSection>
 
-      {props.mode === "full" ? (
-        <>
-          <text fg="#f0f0f0">
-            MCP
-          </text>
-          <text fg="#9a9a9a">CLI host only</text>
+          <SidebarSection title="MCP">
+            <SidebarMetricRow label="Available" value={formatAvailableMcp(props.mode)} />
+          </SidebarSection>
+        </box>
+      </scrollbox>
 
-          <text fg="#f0f0f0">
-            LSP
-          </text>
-          <text fg="#9a9a9a">Not connected</text>
-        </>
-      ) : null}
+      <box
+        style={{
+          flexShrink: 0,
+          paddingTop: 1,
+        }}
+      >
+        <text fg="#9a9a9a">Mulehang Agent</text>
+      </box>
     </box>
   );
+}
+
+/**
+ * 渲染一个侧栏 section，包括标题和内部行。
+ */
+function SidebarSection(props: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <box style={{ flexDirection: "column" }}>
+      <text fg="#f0f0f0">{props.title}</text>
+      {props.children}
+    </box>
+  );
+}
+
+/**
+ * 渲染 kilo 风格的单行指标，左右对齐标签和值。
+ */
+function SidebarMetricRow(props: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <box
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+      }}
+    >
+      <text fg="#9a9a9a">{props.label}</text>
+      <text fg="#f0f0f0">{props.value}</text>
+    </box>
+  );
+}
+
+/**
+ * 为尚未接通的运行时指标返回统一占位值。
+ */
+function formatMissingMetric(): string {
+  return "-";
+}
+
+/**
+ * 为可用 MCP 数量返回当前阶段的展示文案。
+ */
+function formatAvailableMcp(mode: "full" | "compact"): string {
+  return mode === "compact" ? "-" : "CLI host only";
 }

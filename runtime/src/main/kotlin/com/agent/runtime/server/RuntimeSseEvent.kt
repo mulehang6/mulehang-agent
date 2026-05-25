@@ -14,6 +14,10 @@ data class RuntimeSseEvent(
     val channel: String? = null,
     val message: String? = null,
     val delta: String? = null,
+    val payload: JsonElement? = null,
     val output: JsonElement? = null,
     val failureKind: String? = null,
+    val providerLabel: String? = null,
+    val modelLabel: String? = null,
+    val reasoningEffort: String? = null,
 )

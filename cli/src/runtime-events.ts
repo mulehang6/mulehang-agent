@@ -10,6 +10,35 @@ export interface RuntimeStatusMessage {
 }
 
 /**
+ * 表示 runtime 返回的展示元信息消息。
+ */
+export interface RuntimeMetadataMessage {
+  type: "metadata";
+  sessionId: string;
+  requestId: string;
+  providerLabel: string;
+  modelLabel: string;
+  reasoningEffort?: string;
+}
+
+/**
+ * 表示 runtime 返回的事件载荷。
+ */
+export type RuntimeToolCallStatus = "running" | "completed" | "error";
+
+/**
+ * 表示一条结构化工具调用生命周期载荷。
+ */
+export interface RuntimeToolCallPayload {
+  toolCallId: string;
+  toolName: string;
+  status: RuntimeToolCallStatus;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+}
+
+/**
  * 表示 runtime 返回的事件载荷。
  */
 export interface RuntimeEventPayload {
@@ -69,9 +98,29 @@ export interface RuntimeFailureMessage {
  */
 export type RuntimeMessage =
   | RuntimeStatusMessage
+  | RuntimeMetadataMessage
   | RuntimeEventMessage
   | RuntimeResultMessage
   | RuntimeFailureMessage;
+
+/**
+ * 判断动态 payload 是否为结构化工具调用对象。
+ */
+export function isRuntimeToolCallPayload(
+  value: unknown,
+): value is RuntimeToolCallPayload {
+  if (value == null || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.toolCallId === "string" &&
+    typeof candidate.toolName === "string" &&
+    (candidate.status === "running" ||
+      candidate.status === "completed" ||
+      candidate.status === "error")
+  );
+}
 
 /**
  * 把动态载荷压平成可直接展示的字符串。

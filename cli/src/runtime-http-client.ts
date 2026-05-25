@@ -23,8 +23,12 @@ interface RuntimeSseEvent {
   channel?: "text" | "thinking" | "tool" | "status";
   message?: string;
   delta?: string;
+  payload?: unknown;
   output?: unknown;
   failureKind?: string;
+  providerLabel?: string;
+  modelLabel?: string;
+  reasoningEffort?: string;
 }
 
 /**
@@ -43,8 +47,8 @@ export class RuntimeHttpClient {
   /**
    * 预热共享 runtime server；调用方可在 UI 启动阶段先完成连接准备。
    */
-  async start(): Promise<void> {
-    await this.serverLocator.getServer();
+  async start(): Promise<RuntimeServerConnection> {
+    return await this.serverLocator.getServer();
   }
 
   /**
@@ -89,10 +93,14 @@ export class RuntimeHttpClient {
       });
 
       if (!response.ok) {
-        throw new Error(await extractHttpFailure(response));
+        return this.throwWithNotifiedError(
+          new Error(await extractHttpFailure(response)),
+        );
       }
       if (response.body == null) {
-        throw new Error("Runtime HTTP stream did not return a readable body.");
+        return this.throwWithNotifiedError(
+          new Error("Runtime HTTP stream did not return a readable body."),
+        );
       }
 
       await consumeSseStream(response.body, (event) => {
@@ -103,9 +111,7 @@ export class RuntimeHttpClient {
         this.messageListeners.forEach((listener) => listener(message));
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.errorListeners.forEach((listener) => listener(message));
-      throw error;
+      return this.throwWithNotifiedError(error);
     } finally {
       this.activeControllers.delete(controller);
     }
@@ -117,6 +123,16 @@ export class RuntimeHttpClient {
   dispose(): void {
     this.activeControllers.forEach((controller) => controller.abort());
     this.activeControllers.clear();
+  }
+
+  /**
+   * 统一向外广播错误，再把错误重新抛给调用方。
+   */
+  private throwWithNotifiedError(error: unknown): never {
+    const normalized =
+      error instanceof Error ? error : new Error(String(error));
+    this.errorListeners.forEach((listener) => listener(normalized.message));
+    throw normalized;
   }
 }
 
@@ -187,6 +203,8 @@ function mapSseEventToRuntimeMessage(event: RuntimeSseEvent): RuntimeMessage | u
       };
     case "thinking.delta":
     case "text.delta":
+    case "tool.delta":
+    case "tool.call":
       if (event.sessionId == null || event.requestId == null) {
         return undefined;
       }
@@ -198,7 +216,25 @@ function mapSseEventToRuntimeMessage(event: RuntimeSseEvent): RuntimeMessage | u
           message: event.message ?? event.event,
           channel: event.channel,
           delta: event.delta,
+          payload: event.payload,
         },
+      };
+    case "run.metadata":
+      if (
+        event.sessionId == null ||
+        event.requestId == null ||
+        event.providerLabel == null ||
+        event.modelLabel == null
+      ) {
+        return undefined;
+      }
+      return {
+        type: "metadata",
+        sessionId: event.sessionId,
+        requestId: event.requestId,
+        providerLabel: event.providerLabel,
+        modelLabel: event.modelLabel,
+        reasoningEffort: event.reasoningEffort,
       };
     case "run.completed":
       if (event.sessionId == null || event.requestId == null) {

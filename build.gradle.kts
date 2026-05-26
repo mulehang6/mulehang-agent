@@ -7,3 +7,10 @@ plugins {
 
 group = "com.agent"
 version = "0.1.0"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}

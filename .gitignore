@@ -37,17 +37,12 @@ bin/
 
 ### VS Code ###
 .vscode/
-node_modules/
 
 ### Mac OS ###
 .DS_Store
 
 ### 环境变量 ###
 /.env
-/mulehang-agent.json
-
-### 本地聊天记录 ###
-my_chat_history/
-chat_history/
-/.claude/settings.local.json
-/cli/bun.lock
+/mulehang/settings.json
+/.mulehang/
+/.ai/mcp/

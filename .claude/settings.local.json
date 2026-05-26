@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__idea__get_file_text_by_path",
+      "mcp__idea__list_directory_tree",
+      "Bash(Get-ChildItem -Force)",
+      "mcp__idea__find_files_by_name_keyword",
+      "mcp__idea__get_project_modules",
+      "mcp__idea__get_all_open_file_paths",
+      "mcp__idea__read_file",
+      "mcp__idea__search_in_files_by_text",
+      "Bash(git -C \"D:\\\\JetBrains\\\\projects\\\\idea_projects\\\\mulehang-agent\" log --oneline -8)",
+      "Bash(git -C \"D:\\\\JetBrains\\\\projects\\\\idea_projects\\\\mulehang-agent\" status --short)",
+      "mcp__idea__get_repositories",
+      "mcp__idea__find_files_by_glob",
+      "mcp__idea__search_symbol",
+      "mcp__idea__get_file_problems"
+    ]
+  }
+}

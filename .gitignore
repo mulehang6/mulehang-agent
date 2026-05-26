@@ -45,4 +45,5 @@ bin/
 /.env
 /mulehang/settings.json
 /.mulehang/
+/logs/
 /.ai/mcp/

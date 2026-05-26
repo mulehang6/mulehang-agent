@@ -16,7 +16,7 @@ class DesktopSettingsRepository(
     /**
      * 加载最终 profile 列表。
      */
-    fun loadResolvedProfiles(): List<ResolvedAgentProfile> {
+    fun loadResolvedProfiles(): List<ConfigProfile> {
         TODO("Implement layered settings loading from user/project JSON and environment overrides.")
     }
 

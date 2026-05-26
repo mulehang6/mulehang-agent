@@ -61,7 +61,7 @@
 - `shared/src/commonMain/kotlin/com/agent/shared/config/ProviderType.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/AgentProfile.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/SettingsDocument.kt`
-- `shared/src/commonMain/kotlin/com/agent/shared/config/ResolvedAgentProfile.kt`
+- `shared/src/commonMain/kotlin/com/agent/shared/config/ConfigProfile.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/ConfigLayer.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/SettingsMerger.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/ProfileSelectionResolver.kt`
@@ -430,7 +430,7 @@ Expected: `shared` 测试任务可发现但尚无测试；`composeApp:compileKot
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/config/ProviderType.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/config/AgentProfile.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/config/SettingsDocument.kt`
-- Create: `shared/src/commonMain/kotlin/com/agent/shared/config/ResolvedAgentProfile.kt`
+- Create: `shared/src/commonMain/kotlin/com/agent/shared/config/ConfigProfile.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/config/ConfigLayer.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/state/ChatMessage.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/state/ExecutionState.kt`
@@ -1010,7 +1010,7 @@ import com.agent.shared.agent.AgentGateway
 import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ProviderType
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -1077,7 +1077,7 @@ sealed interface AgentStreamEvent {
 ```kotlin
 package com.agent.shared.agent
 
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -1092,7 +1092,7 @@ interface AgentGateway {
 package com.agent.shared.application
 
 import com.agent.shared.agent.AgentGateway
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 
 /**
  * 发送消息用例。
@@ -1119,7 +1119,7 @@ import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.llms.all.simpleOpenAIExecutor
 import ai.koog.prompt.params.LLMParams
 import com.agent.shared.config.ProviderType
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -1182,7 +1182,7 @@ Expected: PASS。
 ```kotlin
 package com.agent.shared.application
 
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 
 /**
  * UI 初始装配所需的快照。
@@ -1216,7 +1216,7 @@ class LoadAppSessionUseCase(
 ```kotlin
 package com.agent.shared.application
 
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 
 /**
  * 屏蔽配置与 UI 状态持久化实现细节。
@@ -1437,7 +1437,7 @@ package com.agent.shared.application
 
 import com.agent.shared.config.DesktopPathResolver
 import com.agent.shared.config.DesktopSettingsRepository
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.config.ConfigProfile
 import com.agent.shared.state.DesktopUiStateStore
 import java.nio.file.Paths
 

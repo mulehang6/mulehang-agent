@@ -9,9 +9,9 @@ object ProfileSelectionResolver {
      * 选择当前可用的活动 profile。
      */
     fun selectActiveProfile(
-        profiles: List<ResolvedAgentProfile>,
+        profiles: List<ConfigProfile>,
         rememberedProfileId: String?,
-    ): ResolvedAgentProfile? {
+    ): ConfigProfile? {
         TODO("Implement profile restoration and fallback selection.")
     }
 }

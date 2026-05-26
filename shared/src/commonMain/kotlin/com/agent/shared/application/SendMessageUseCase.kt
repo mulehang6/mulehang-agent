@@ -1,7 +1,11 @@
 package com.agent.shared.application
 
 import com.agent.shared.agent.AgentGateway
-import com.agent.shared.config.ResolvedAgentProfile
+import com.agent.shared.agent.AgentStreamEvent
+import com.agent.shared.config.ConfigProfile
+import com.agent.shared.exceptions.IllegalConfigExceptions
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 发送消息用例骨架。
@@ -9,9 +13,25 @@ import com.agent.shared.config.ResolvedAgentProfile
 class SendMessageUseCase(
     private val agentGateway: AgentGateway,
 ) {
+
+    companion object {
+        private val log = KotlinLogging.logger { }
+    }
+
     /**
      * 执行一次消息发送。
      */
-    operator fun invoke(prompt: String, profile: ResolvedAgentProfile) =
-        agentGateway.run(prompt, profile)
+    operator fun invoke(prompt: String, profile: ConfigProfile): Flow<AgentStreamEvent> {
+        if (prompt.isBlank()) {
+            log.warn({ "提示词为空" })
+            throw IllegalArgumentException("提示词不能为空")
+        }
+
+        if (profile.id.isBlank()) {
+            log.warn({ "profile id 为空" })
+            throw IllegalConfigExceptions({ "profile id 不能为空" })
+        }
+        return agentGateway.run(prompt, profile)
+    }
+
 }

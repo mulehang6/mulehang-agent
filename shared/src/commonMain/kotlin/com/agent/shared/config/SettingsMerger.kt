@@ -12,7 +12,7 @@ object SettingsMerger {
         user: SettingsDocument?,
         project: SettingsDocument?,
         environment: Map<String, String>,
-    ): List<ResolvedAgentProfile> {
+    ): List<ConfigProfile> {
         TODO("Implement layered settings merge: env > project > user > defaults.")
     }
 }

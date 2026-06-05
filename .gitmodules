@@ -1,0 +1,3 @@
+[submodule "vendor/paicli"]
+	path = vendor/paicli
+	url = https://gitcode.com/javabetter/paicli.git

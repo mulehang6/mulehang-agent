@@ -1,0 +1,65 @@
+@startuml
+title mulehang-agent 发送消息时序图
+
+skinparam shadowing false
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+actor "用户" as user
+participant "ChatScreen" as chatScreen
+participant "ChatWindowState" as chatWindowState
+participant "SendMessageUseCase" as sendMessageUseCase
+participant "AgentGateway" as agentGateway
+participant "KoogAgentGateway" as koogAgentGateway
+participant "MulehangPromptExecutor" as promptExecutor
+participant "AIAgent" as aiAgent
+
+user -> chatScreen : 输入消息并点击 Send
+chatScreen -> chatWindowState : send(message)
+
+note right of chatWindowState
+当前代码里 send(message) 仍是 TODO。
+这里画的是设计上的目标主链路。
+end note
+
+chatWindowState -> sendMessageUseCase : invoke(prompt, activeProfile)
+sendMessageUseCase -> sendMessageUseCase : 校验 prompt / profile
+sendMessageUseCase -> agentGateway : run(prompt, profile)
+agentGateway -> koogAgentGateway : 分派到具体实现
+
+koogAgentGateway -> promptExecutor : buildPromptExecutor(config)
+promptExecutor --> koogAgentGateway : MultiLLMPromptExecutor
+koogAgentGateway -> aiAgent : 创建 AIAgent
+
+koogAgentGateway --> sendMessageUseCase : Flow<Started>
+
+group 后续目标
+  koogAgentGateway -> aiAgent : 发送 prompt
+  aiAgent --> koogAgentGateway : 增量/最终结果
+  koogAgentGateway --> sendMessageUseCase : Flow<Delta>
+  koogAgentGateway --> sendMessageUseCase : Flow<Completed>
+end
+
+alt 执行异常
+  koogAgentGateway --> sendMessageUseCase : Flow<Failed>
+end
+
+sendMessageUseCase --> chatWindowState : 返回事件流
+chatWindowState --> chatScreen : 更新消息列表与执行状态
+chatScreen --> user : 渲染 Started / Delta / Completed / Failed
+
+legend right
+当前已实现：
+1. SendMessageUseCase 参数校验
+2. AgentGateway 抽象边界
+3. KoogAgentGateway 内部创建 AIAgent / PromptExecutor
+
+尚未完成：
+1. ChatWindowState 对事件流的消费
+2. 实际 prompt 发送
+3. Delta / Completed 的产出与回写
+endlegend
+
+@enduml

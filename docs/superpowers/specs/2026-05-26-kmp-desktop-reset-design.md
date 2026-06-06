@@ -6,6 +6,8 @@
 
 本次调整不再沿用旧主线，也不再继续保留 `vendor/kilocode` 作为当前分支的工作基础。新的目标是把仓库重置为一个面向 Windows 桌面应用的 Kotlin 项目，以 Koog 1.0.0、Kotlin Multiplatform 和 Compose Multiplatform Desktop 为核心技术栈。
 
+这里的清理目标特指旧主线依赖的 `vendor/kilocode`。这份设计不把 `vendor/` 目录本身定义为永久禁区；如果后续因为参考、镜像或并行实验再次引入其他独立项目，只要它们不重新成为仓库主线依赖，就不违背本设计。
+
 ## 目标
 
 本轮重置的目标如下：
@@ -48,6 +50,8 @@ settings.gradle.kts
 gradle.properties
 mulehang/settings.json.example
 ```
+
+上面的主线结构不要求 `vendor/` 必须不存在；它只说明当前产品主线围绕 `composeApp/` 与 `shared/` 两个模块展开，而不是建立在 `vendor/kilocode` 之上。
 
 ### composeApp
 

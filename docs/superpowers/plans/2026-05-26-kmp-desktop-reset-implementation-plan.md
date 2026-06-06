@@ -6,7 +6,7 @@
 
 **Architecture:** 仓库收敛为 `composeApp/` 与 `shared/` 两个模块。`composeApp/` 只负责 Desktop UI 与窗口生命周期；`shared/` 负责配置模型、双层配置加载、按项目记忆的 profile 选择状态、Koog 1.0.0 最小执行入口以及面向 UI 的发送消息用例。UI 只消费仓库自己的状态与事件模型，不直接依赖 Koog 原始对象。
 
-**Tech Stack:** Kotlin 2.3.10, Compose Multiplatform 1.11.0, Kotlin Multiplatform, Koog 1.0.0, kotlinx.serialization, kotlinx.coroutines, kotlin.test, JUnit 5
+**Tech Stack:** Kotlin 2.4.0, Compose Multiplatform 1.11.1, Kotlin Multiplatform, Koog 1.0.0, kotlinx.serialization, kotlinx.coroutines, kotlin.test, JUnit 5
 
 ---
 
@@ -96,6 +96,8 @@
 
 本计划不包含 `git commit` 步骤。仓库规则要求只有在用户明确允许时才提交。
 
+本计划中的 `vendor` 清理目标仅限旧主线依赖的 `vendor/kilocode`。如果后续重新引入其他独立的 `vendor/*` 项目作为参考、镜像或隔离实验，这不构成对本计划的回滚；关键约束仍然是仓库主线不能再次建立在 `vendor/kilocode` 或同类外置主模块之上。
+
 ## Task 1: 清理旧主线并改写仓库入口文档
 
 **Files:**
@@ -118,7 +120,7 @@ Get-ChildItem .\docs\superpowers\specs
 Get-ChildItem .\docs\superpowers\plans
 ```
 
-Expected: 能看到 `runtime/`、`cli/`、`vendor/`、旧 `specs/plans` 文档，以及新的 `2026-05-26-kmp-desktop-reset-design.md`。
+Expected: 能看到 `runtime/`、`cli/`、`vendor/kilocode`、旧 `specs/plans` 文档，以及新的 `2026-05-26-kmp-desktop-reset-design.md`。
 
 - [ ] **Step 2: 删除旧目录和旧文档，只保留新的 reset design 与新的 implementation plan**
 
@@ -247,7 +249,7 @@ Get-ChildItem .\docs\superpowers\specs
 Get-ChildItem .\docs\superpowers\plans
 ```
 
-Expected: 根目录不再有 `runtime/`、`cli/`、`vendor/`；`docs/superpowers/specs` 与 `docs/superpowers/plans` 只剩新的 reset design 与新的 implementation plan。
+Expected: 根目录不再有 `runtime/`、`cli/`、`vendor/kilocode`；`docs/superpowers/specs` 与 `docs/superpowers/plans` 只剩新的 reset design 与新的 implementation plan。后续如果存在其他 `vendor/*` 目录，不属于这一步的失败条件。
 
 ## Task 2: 重建根 Gradle 和 KMP/Compose Desktop 模块骨架
 
@@ -288,10 +290,10 @@ include(":composeApp")
 
 ```kotlin
 plugins {
-    kotlin("multiplatform") version "2.3.10" apply false
-    kotlin("plugin.serialization") version "2.3.10" apply false
-    id("org.jetbrains.compose") version "1.11.0" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.3.10" apply false
+    kotlin("multiplatform") version "2.4.0" apply false
+    kotlin("plugin.serialization") version "2.4.0" apply false
+    id("org.jetbrains.compose") version "1.11.1" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.0" apply false
 }
 
 group = "com.agent"

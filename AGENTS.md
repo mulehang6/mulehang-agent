@@ -3,6 +3,8 @@
 ## 项目结构与模块组织
 本仓库采用 Kotlin Multiplatform 与 Compose Multiplatform Desktop。`shared` 承载配置模型、状态模型、Koog 接入和应用用例；`composeApp` 负责 Windows Desktop UI 与窗口生命周期。设计文档与实施计划统一放在 `docs/superpowers/specs` 和 `docs/superpowers/plans`。
 
+当前产品主线只建立在 `shared/` 与 `composeApp/` 之上。`vendor/kilocode` 已被移出主线，但 `vendor/` 目录本身不是禁区；后续如果存在其他 `vendor/*` 项目，可将其视为参考。
+
 ## 构建、测试与本地开发命令
 在 PowerShell 中使用以下命令：
 

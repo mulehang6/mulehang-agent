@@ -43,7 +43,6 @@ bin/
 
 ### 环境变量 ###
 /.env
-/mulehang/settings.json
-/.mulehang/
+/.mulehang/settings.json
 /logs/
 /.ai/mcp/

@@ -9,7 +9,10 @@ import com.agent.shared.exceptions.IllegalConfigExceptions
 
 
 
-fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor {
+/**
+ * 按配置创建 Koog prompt executor。
+ */
+internal fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor {
     when (config.providerType) {
         // TODO 区分responses和chat/completions
         ProviderType.OPENAI_CHAT_COMPLETIONS,
@@ -28,7 +31,7 @@ fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor {
             // TODO 目前版本无GoogleLLMClient
             /*val googleLLMClient = GoogleLLMClient(config.apiKey)
             return MultiLLMPromptExecutor(googleLLMClient)*/
-            throw IllegalConfigExceptions({ "暂不支持此类型，不关我的事，Koog没这个类型 🤔" })
+            throw IllegalConfigExceptions { "暂不支持此类型，不关我的事，Koog没这个类型 🤔" }
         }
     }
 }

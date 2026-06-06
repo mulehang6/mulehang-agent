@@ -51,3 +51,4 @@ my_chat_history/
 chat_history/
 /.claude/settings.local.json
 /cli/bun.lock
+/.ai/mcp/

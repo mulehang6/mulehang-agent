@@ -1,0 +1,447 @@
+html {
+  background: #fafaf9;
+}
+
+body {
+  width: 720pt;
+  height: 405pt;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  background: #fafaf9;
+  color: #0c0a09;
+  font-family: "Microsoft YaHei", Arial, Helvetica, sans-serif;
+}
+
+.slide {
+  box-sizing: border-box;
+  width: 720pt;
+  height: 405pt;
+  padding: 24pt 30pt 22pt 30pt;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.cover-slide {
+  background: #f8f6f1;
+}
+
+.section-number {
+  position: absolute;
+  right: 30pt;
+  top: 22pt;
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 11pt;
+  letter-spacing: 0.14em;
+  color: #7c6a2d;
+}
+
+.section-rule {
+  width: 94pt;
+  height: 2pt;
+  background: #ca8a04;
+  margin-bottom: 12pt;
+}
+
+.title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7pt;
+  margin-bottom: 14pt;
+}
+
+h1,
+h2,
+h3,
+p,
+li {
+  margin: 0;
+}
+
+h1 {
+  font-size: 23pt;
+  line-height: 1.12;
+  color: #14110f;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 18pt;
+  line-height: 1.12;
+  color: #14110f;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 10.2pt;
+  line-height: 1.2;
+  color: #7c6a2d;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+p {
+  font-size: 10pt;
+  line-height: 1.45;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding-left: 17pt;
+}
+
+li {
+  font-size: 9.9pt;
+  line-height: 1.42;
+  margin: 0 0 5pt 0;
+}
+
+.eyebrow {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 9pt;
+  letter-spacing: 0.14em;
+  color: #7c6a2d;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  max-width: 620pt;
+  color: #57534e;
+  font-size: 10.6pt;
+  line-height: 1.4;
+}
+
+.cover-grid {
+  display: flex;
+  gap: 24pt;
+  flex: 1;
+}
+
+.cover-main {
+  width: 63%;
+  display: flex;
+  flex-direction: column;
+  gap: 12pt;
+}
+
+.cover-side {
+  width: 37%;
+  display: flex;
+  flex-direction: column;
+  gap: 8pt;
+  padding-top: 8pt;
+}
+
+.cover-name {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 36pt;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  color: #14110f;
+}
+
+.cover-kicker {
+  max-width: 360pt;
+  font-size: 12pt;
+  line-height: 1.42;
+  color: #3f3f46;
+}
+
+.statement {
+  padding: 14pt 0 0 0;
+  border-top: 1.5pt solid #d6d3d1;
+}
+
+.statement p {
+  font-size: 12.8pt;
+  line-height: 1.42;
+  color: #1c1917;
+}
+
+.statement b {
+  color: #7c6a2d;
+}
+
+.keyword-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6pt 10pt;
+  padding-top: 6pt;
+}
+
+.keyword {
+  padding: 5pt 0;
+  border-bottom: 1pt solid #d6d3d1;
+}
+
+.keyword p {
+  font-size: 8.9pt;
+  line-height: 1.2;
+  color: #44403c;
+}
+
+.metrics-row {
+  display: flex;
+  gap: 16pt;
+  margin-top: 6pt;
+}
+
+.metric-block {
+  width: 46%;
+  padding-top: 10pt;
+  border-top: 2pt solid #14110f;
+}
+
+.metric-block h2 {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 19pt;
+  margin-bottom: 3pt;
+}
+
+.metric-block p {
+  font-size: 9.2pt;
+  color: #57534e;
+}
+
+.side-panel {
+  padding: 10pt 0 8pt 0;
+  border-top: 1pt solid #d6d3d1;
+}
+
+.side-label {
+  font-size: 8.5pt;
+  letter-spacing: 0.14em;
+  color: #7c6a2d;
+  text-transform: uppercase;
+  margin-bottom: 5pt;
+}
+
+.side-panel p {
+  font-size: 10pt;
+  line-height: 1.38;
+}
+
+.member-list p {
+  line-height: 1.34;
+}
+
+.two-col {
+  display: flex;
+  gap: 18pt;
+  flex: 1;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 10pt;
+}
+
+.col-42 {
+  width: 42%;
+}
+
+.col-58 {
+  width: 58%;
+}
+
+.col-55 {
+  width: 55%;
+}
+
+.col-45 {
+  width: 45%;
+}
+
+.block {
+  padding: 10pt 0 0 0;
+  border-top: 1.4pt solid #14110f;
+}
+
+.soft-block {
+  padding: 10pt 12pt;
+  background: #f3f1ec;
+  border-left: 3pt solid #ca8a04;
+}
+
+.dark-band {
+  padding: 12pt 14pt;
+  background: #1c1917;
+}
+
+.dark-band h3,
+.dark-band p,
+.dark-band li {
+  color: #f8f6f1;
+}
+
+.quote-line {
+  padding-left: 16pt;
+  border-left: 3pt solid #ca8a04;
+}
+
+.quote-line p {
+  font-size: 13pt;
+  line-height: 1.4;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10pt;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10pt;
+}
+
+.mini-card {
+  padding: 10pt 10pt 8pt 10pt;
+  background: #f5f5f4;
+  border-top: 2pt solid #ca8a04;
+}
+
+.mini-card h3 {
+  margin-bottom: 4pt;
+}
+
+.mini-card p {
+  font-size: 9.2pt;
+  line-height: 1.35;
+  color: #44403c;
+}
+
+.timeline {
+  display: flex;
+  gap: 8pt;
+  margin-top: 8pt;
+}
+
+.timeline-step {
+  flex: 1;
+  padding: 8pt 7pt;
+  border-top: 2pt solid #14110f;
+  background: #f8f6f1;
+}
+
+.timeline-step .num {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 13pt;
+  color: #7c6a2d;
+  margin-bottom: 3pt;
+}
+
+.timeline-step .head {
+  font-size: 8.9pt;
+  line-height: 1.25;
+  color: #14110f;
+  font-weight: 700;
+  margin-bottom: 3pt;
+}
+
+.timeline-step p {
+  font-size: 8pt;
+  line-height: 1.28;
+  color: #57534e;
+}
+
+.diagram-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 8pt;
+}
+
+.diagram-node {
+  flex: 1;
+  padding: 10pt 9pt;
+  background: #f5f5f4;
+  border-top: 2pt solid #14110f;
+  min-height: 56pt;
+}
+
+.diagram-node.dark {
+  background: #1c1917;
+  border-top: 2pt solid #ca8a04;
+}
+
+.diagram-node.dark h3,
+.diagram-node.dark p {
+  color: #f8f6f1;
+}
+
+.diagram-node p {
+  font-size: 8.8pt;
+  line-height: 1.3;
+  color: #44403c;
+}
+
+.arrow {
+  width: 14pt;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.arrow p {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 14pt;
+  color: #7c6a2d;
+}
+
+.stat-line {
+  display: flex;
+  gap: 12pt;
+  margin-top: 3pt;
+}
+
+.stat-item {
+  flex: 1;
+  padding-top: 9pt;
+  border-top: 1pt solid #d6d3d1;
+}
+
+.stat-item .big {
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 22pt;
+  color: #14110f;
+}
+
+.stat-item .small {
+  font-size: 8.9pt;
+  line-height: 1.3;
+  color: #57534e;
+}
+
+.footer-note {
+  margin-top: auto;
+  padding-top: 8pt;
+}
+
+.footer-note p {
+  font-size: 8.3pt;
+  color: #78716c;
+}
+
+.video-shell {
+  flex: 1;
+  margin-top: 10pt;
+  padding: 14pt;
+  background: #f6f4ef;
+  border: 1.5pt solid #d6d3d1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-shell p {
+  text-align: center;
+  font-size: 14pt;
+  line-height: 1.5;
+  color: #57534e;
+}

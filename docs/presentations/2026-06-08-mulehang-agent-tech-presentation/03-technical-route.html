@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>总体技术路线</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>03 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">Scope</p>
+      <h1>当前实现范围</h1>
+      <p class="subtitle">当前实现范围收敛在一条清晰链路：请求进入 runtime，Koog 调用文件工具，对工作区进行简单探索，再把结果流式返回到 CLI。</p>
+    </div>
+    <div class="timeline">
+      <div class="timeline-step">
+        <p class="num">01</p>
+        <p class="head">Runtime Request</p>
+        <p>CLI 通过 `/runtime/run/stream` 发起一次运行请求。</p>
+      </div>
+      <div class="timeline-step">
+        <p class="num">02</p>
+        <p class="head">Koog Agent</p>
+        <p>RuntimeAgentExecutor 调用组装后的 Koog agent 执行 prompt。</p>
+      </div>
+      <div class="timeline-step">
+        <p class="num">03</p>
+        <p class="head">Built-in Tools</p>
+        <p>KoogToolRegistryAssembler 注册目录查看和文件读写工具。</p>
+      </div>
+      <div class="timeline-step">
+        <p class="num">04</p>
+        <p class="head">Workspace Guard</p>
+        <p>WorkspaceScopedFileSystemProvider 限制工具只能访问工作区路径。</p>
+      </div>
+      <div class="timeline-step">
+        <p class="num">05</p>
+        <p class="head">Tool Call Event</p>
+        <p>运行中会产生 `tool.call` 和 `text.delta` 等事件。</p>
+      </div>
+      <div class="timeline-step">
+        <p class="num">06</p>
+        <p class="head">CLI Display</p>
+        <p>RuntimeHttpClient 解析 SSE，并映射为 UI 消息。</p>
+      </div>
+      <div class="timeline-step">
+        <p class="num">07</p>
+        <p class="head">Simple Exploration</p>
+        <p>最终支持查看目录、读取文件、做简单代码库探索。</p>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-top: 12pt;">
+      <div class="mini-card">
+        <h3>当前重点 1</h3>
+        <p>把 Koog 内置文件工具安全接进 runtime。</p>
+      </div>
+      <div class="mini-card">
+        <h3>当前重点 2</h3>
+        <p>把工具执行过程通过流式事件暴露给 CLI。</p>
+      </div>
+      <div class="mini-card">
+        <h3>当前重点 3</h3>
+        <p>让 agent 可以完成简单的代码库探索任务。</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

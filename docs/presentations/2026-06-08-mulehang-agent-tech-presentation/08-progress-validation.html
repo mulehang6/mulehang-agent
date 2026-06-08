@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>当前成果与验证方式</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>08 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">Current Status</p>
+      <h1>当前成果与验证方式</h1>
+      <p class="subtitle">本页只总结当前可以稳定讲清楚、也有代码和测试支持的结果。</p>
+    </div>
+    <div class="two-col">
+      <div class="col col-55">
+        <div class="grid-2">
+          <div class="block">
+            <h3>当前成果</h3>
+            <ul>
+              <li>Koog agent 已经可以注册内置文件工具。</li>
+              <li>工具访问已经限制在工作区根目录内。</li>
+              <li>CLI 已经能接收并展示流式事件。</li>
+            </ul>
+          </div>
+          <div class="block">
+            <h3>当前能演示的事情</h3>
+            <ul>
+              <li>查看项目目录结构。</li>
+              <li>读取某个源码文件的内容。</li>
+              <li>做简单的代码定位和仓库探索。</li>
+            </ul>
+          </div>
+        </div>
+        <div class="soft-block">
+          <h3>验证入口</h3>
+          <ul>
+            <li>`KoogToolRegistryAssemblerTest.kt` 验证 built-in file tools 注册结果。</li>
+            <li>`DefaultRuntimeHttpServiceTest.kt` 验证默认 capability set 和流式返回。</li>
+            <li>`runtime-http-client.test.ts` 验证 SSE 事件映射到 CLI 消息。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col col-45">
+        <div class="dark-band">
+          <h3>当前技术亮点</h3>
+          <ul>
+            <li>Koog 内置文件工具已接入</li>
+            <li>工作区访问边界已实现</li>
+            <li>tool.call 与 text.delta 已能流式展示</li>
+          </ul>
+        </div>
+        <div class="block">
+          <h3>当前限制</h3>
+          <ul>
+            <li>当前展示重点是文件探索，不展开更大的能力范围。</li>
+            <li>当前定位是面向仓库探索的原型 agent。</li>
+            <li>答辩时围绕“已完成链路”来讲会更稳。</li>
+          </ul>
+        </div>
+        <div class="soft-block">
+          <h3>阶段状态</h3>
+          <p>当前最完整的一条链路是：CLI 发起请求 -> Koog 调用文件工具 -> runtime 流式回传结果 -> CLI 展示探索过程。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

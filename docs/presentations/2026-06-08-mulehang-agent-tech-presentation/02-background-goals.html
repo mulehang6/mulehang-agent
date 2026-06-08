@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>项目背景与目标</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>02 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">Goal</p>
+      <h1>项目目标与当前范围</h1>
+      <p class="subtitle">本次展示聚焦当前已经完成的能力：Koog 接入、内置文件工具接入、工作区内的简单代码探索，以及 CLI 流式输出。</p>
+    </div>
+    <div class="two-col">
+      <div class="col col-58">
+        <div class="block">
+          <h3>项目目标</h3>
+          <ul>
+            <li>基于 JetBrains Koog 搭建一个可以运行的 agent 原型。</li>
+            <li>让 agent 能调用内置文件工具，在工作区内完成目录查看和文件读取。</li>
+            <li>让运行结果通过 runtime 流式返回到 CLI 界面。</li>
+          </ul>
+        </div>
+        <div class="quote-line">
+          <p>当前完成度集中在 <b>代码库探索能力</b>，展示重点也是这条链路。</p>
+        </div>
+        <div class="soft-block">
+          <h3>当前展示范围</h3>
+          <ul>
+            <li>讲 Koog agent 如何注册工具。</li>
+            <li>讲 built-in file tools 如何受工作区根目录限制。</li>
+            <li>讲 CLI 如何接收 `tool.call`、`text.delta` 这类流式事件。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col col-42">
+        <div class="grid-2">
+          <div class="mini-card">
+            <h3>01</h3>
+            <p>Koog agent 主链路已接上</p>
+          </div>
+          <div class="mini-card">
+            <h3>02</h3>
+            <p>内置文件工具已注册到 runtime</p>
+          </div>
+          <div class="mini-card">
+            <h3>03</h3>
+            <p>文件访问已限制在工作区内</p>
+          </div>
+          <div class="mini-card">
+            <h3>04</h3>
+            <p>CLI 已能消费 SSE 流</p>
+          </div>
+        </div>
+        <div class="dark-band">
+          <h3>一句话概括</h3>
+          <p>当前版本已经可以用 Koog 内置文件工具完成简单代码库探索任务。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

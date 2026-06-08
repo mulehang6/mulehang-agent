@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>系统架构设计</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>04 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">Architecture</p>
+      <h1>系统架构设计</h1>
+      <p class="subtitle">当前展示只保留已经打通的主链路：CLI 发请求，runtime 组装 Koog agent，agent 调用文件工具，结果再通过 SSE 返回到 CLI。</p>
+    </div>
+    <div class="diagram-strip" style="margin-bottom: 12pt;">
+      <div class="diagram-node">
+        <h3>CLI / OpenTUI</h3>
+        <p>发送 prompt<br>展示 tool.call<br>展示 text.delta</p>
+      </div>
+      <div class="arrow"><p>→</p></div>
+      <div class="diagram-node">
+        <h3>Runtime Stream</h3>
+        <p>/runtime/run/stream<br>HTTP + SSE</p>
+      </div>
+      <div class="arrow"><p>→</p></div>
+      <div class="diagram-node dark">
+        <h3>Koog Agent</h3>
+        <p>tool registry<br>prompt execution<br>event output</p>
+      </div>
+      <div class="arrow"><p>→</p></div>
+      <div class="diagram-node">
+        <h3>File Tools</h3>
+        <p>list / read / write / edit<br>workspace-scoped</p>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="col col-55">
+        <div class="grid-2">
+          <div class="block">
+            <h3>runtime/</h3>
+            <p>当前重点文件集中在 <b>agent、server、capability</b> 三部分。</p>
+          </div>
+          <div class="block">
+            <h3>cli/</h3>
+            <p>当前重点是 `runtime-http-client.ts` 对 SSE 的消费与事件映射。</p>
+          </div>
+        </div>
+        <div class="soft-block">
+          <h3>当前链路里的关键职责</h3>
+          <ul>
+            <li>runtime 负责请求处理、能力集装配和结果流输出。</li>
+            <li>Koog 负责执行 prompt 和触发工具调用。</li>
+            <li>CLI 负责把事件转成用户可读的界面消息。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col col-45">
+        <div class="dark-band">
+          <h3>当前仓库中已落地的关键文件</h3>
+          <ul>
+            <li>`KoogToolRegistryAssembler.kt`</li>
+            <li>`WorkspaceScopedFileSystemProvider.kt`</li>
+            <li>`RuntimeHttpService.kt`</li>
+            <li>`runtime-http-client.ts`</li>
+            <li>`DefaultRuntimeHttpServiceTest.kt`</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

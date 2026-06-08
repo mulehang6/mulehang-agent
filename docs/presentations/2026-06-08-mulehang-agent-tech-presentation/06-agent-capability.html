@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Agent 与能力接入</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>06 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">Exploration Flow</p>
+      <h1>简单代码探索流程</h1>
+      <p class="subtitle">当前 agent 可以围绕文件系统做简单探索。典型任务是看目录结构、读取指定文件，再把结果通过事件流反馈到 CLI。</p>
+    </div>
+    <div class="two-col">
+      <div class="col col-45">
+        <div class="dark-band">
+          <h3>一次简单探索会发生什么</h3>
+          <ul>
+            <li>用户输入一个和代码库相关的问题。</li>
+            <li>Koog agent 判断需要先看目录还是先读文件。</li>
+            <li>tool registry 调用 `__list_directory__` 或 `__read_file__`。</li>
+            <li>结果回到 runtime，再通过 SSE 发给 CLI。</li>
+          </ul>
+        </div>
+        <div class="soft-block">
+          <h3>当前适合演示的任务</h3>
+          <ul>
+            <li>查看某个目录里有哪些模块。</li>
+            <li>读取某个 Kotlin 或 TypeScript 文件。</li>
+            <li>定位一个简单功能对应的代码位置。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col col-55">
+        <div class="block">
+          <div class="diagram-strip">
+            <div class="diagram-node dark"><h3>User Prompt</h3><p>询问代码库中的某个问题</p></div>
+          </div>
+          <div class="diagram-strip" style="margin-top: 10pt;">
+            <div class="diagram-node"><h3>List Directory</h3><p>先确定目标目录或模块</p></div>
+            <div class="diagram-node"><h3>Read File</h3><p>读取关键文件内容</p></div>
+            <div class="diagram-node"><h3>Tool Call Event</h3><p>把调用结果推回 CLI</p></div>
+          </div>
+        </div>
+        <div class="soft-block">
+          <h3>这页要讲清楚的点</h3>
+          <ul>
+            <li>当前 agent 的探索能力主要依赖文件工具。</li>
+            <li>CLI 会持续展示探索过程事件，用户可以看到完整过程。</li>
+            <li>这条链路已经有实现和测试支撑，比较适合课堂展示。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

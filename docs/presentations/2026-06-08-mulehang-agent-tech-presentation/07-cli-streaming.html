@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>CLI 流式输出</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>07 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">CLI Surface</p>
+      <h1>核心实现三：CLI 流式输出</h1>
+      <p class="subtitle">CLI 当前通过 `runtime-http-client.ts` 连接 `/runtime/run/stream`，把 SSE 事件映射成界面消息。这里已经能看到工具调用和文本增量输出。</p>
+    </div>
+    <div class="two-col">
+      <div class="col col-45">
+        <div class="block">
+          <h3>CLI 当前职责</h3>
+          <ul>
+            <li>接收用户输入与命令</li>
+            <li>连接 runtime HTTP client</li>
+            <li>消费 SSE 事件流并更新界面</li>
+            <li>显示 `tool.call`、`text.delta`、`status` 等事件</li>
+          </ul>
+        </div>
+        <div class="soft-block">
+          <h3>当前比较关键的前端文件</h3>
+          <ul>
+            <li>`runtime-http-client.ts`</li>
+            <li>`runtime-events.ts`</li>
+            <li>`components/TranscriptView.tsx`</li>
+            <li>`screens/ChatScreen.tsx`</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col col-55">
+        <div class="diagram-strip">
+          <div class="diagram-node"><h3>User Input</h3><p>提出代码探索问题</p></div>
+          <div class="arrow"><p>→</p></div>
+          <div class="diagram-node"><h3>Runtime Request</h3><p>POST /runtime/run/stream</p></div>
+          <div class="arrow"><p>→</p></div>
+          <div class="diagram-node"><h3>SSE Stream</h3><p>status / tool.call / text.delta</p></div>
+        </div>
+        <div class="dark-band" style="margin-top: 10pt;">
+          <h3>OpenTUI 界面层</h3>
+          <p>聊天记录、事件回显、状态提示</p>
+        </div>
+        <div class="quote-line" style="margin-top: 10pt;">
+          <p>工具调用过程和文本输出过程都可以直接展示给用户，这一点很适合做课堂演示。</p>
+        </div>
+        <div class="soft-block">
+          <h3>这样做的价值</h3>
+          <p>当前 CLI 已经具备展示完整执行过程的基础能力，用户可以直接看到 agent 在做什么。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Provider 与模型发现</title>
+  <link rel="stylesheet" href="./theme.css">
+</head>
+<body>
+  <div class="slide">
+    <div class="section-number"><p>05 / 10</p></div>
+    <div class="section-rule"></div>
+    <div class="title-block">
+      <p class="eyebrow">Built-in File Tools</p>
+      <h1>核心实现：Koog 内置文件工具接入</h1>
+      <p class="subtitle">当前最实的一块能力是文件工具接入。runtime 会默认挂载 4 个内置文件工具，本次展示重点放在目录查看和文件读取这两个能力。</p>
+    </div>
+    <div class="grid-3" style="flex: 1;">
+      <div class="block">
+        <h3>工具集合</h3>
+        <ul>
+          <li>`__list_directory__`</li>
+          <li>`__read_file__`</li>
+          <li>`__write_file__`</li>
+          <li>`edit_file`</li>
+        </ul>
+        <p style="margin-top: 8pt; color: #57534e;">课堂展示主要会用到 `__list_directory__` 和 `__read_file__`。</p>
+      </div>
+      <div class="soft-block">
+        <h3>默认启用位置</h3>
+        <ul>
+          <li>`defaultRuntimeCapabilitySet()` 会把这 4 个工具放进默认 capability set。</li>
+          <li>对应实现位于 `RuntimeHttpService.kt`。</li>
+        </ul>
+      </div>
+      <div class="dark-band">
+        <h3>注册位置</h3>
+        <ul>
+          <li>`KoogToolRegistryAssembler` 会把这些 built-in file tools 注册进 primary registry。</li>
+          <li>测试已经验证工具名和风险级别会进入 runtime 执行链。</li>
+        </ul>
+      </div>
+    </div>
+    <div class="diagram-strip" style="margin-top: 12pt;">
+      <div class="diagram-node"><h3>Capability Set</h3><p>默认挂载 4 个 built-in file tools</p></div>
+      <div class="arrow"><p>→</p></div>
+      <div class="diagram-node"><h3>Tool Registry</h3><p>注册到 Koog primary registry</p></div>
+      <div class="arrow"><p>→</p></div>
+      <div class="diagram-node dark"><h3>Agent Execution</h3><p>agent 在需要时调用文件工具</p></div>
+    </div>
+  </div>
+</body>
+</html>

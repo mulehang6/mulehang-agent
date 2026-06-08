@@ -1,6 +1,6 @@
 # KMP Desktop Reset Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 把仓库从旧的 `runtime + cli + vendor/kilocode` 主线重置为 `Koog 1.0.0 + KMP + Compose Multiplatform Desktop` 的 Windows Desktop first 工程，并打通最小聊天闭环。
 
@@ -17,7 +17,7 @@
 - `runtime/`
 - `cli/`
 - `vendor/kilocode`
-- `.gitmodules`
+- `.gitmodules` 中的 `vendor/kilocode` 配置；如果 `.gitmodules` 只剩非主线参考 submodule，则保留文件
 - `docs/superpowers/specs/01-runtime-foundation-and-contracts.md`
 - `docs/superpowers/specs/02-provider-byok-and-model-discovery.md`
 - `docs/superpowers/specs/03-agent-strategy-and-capability-integration.md`
@@ -98,19 +98,30 @@
 
 本计划中的 `vendor` 清理目标仅限旧主线依赖的 `vendor/kilocode`。如果后续重新引入其他独立的 `vendor/*` 项目作为参考、镜像或隔离实验，这不构成对本计划的回滚；关键约束仍然是仓库主线不能再次建立在 `vendor/kilocode` 或同类外置主模块之上。
 
+## Completion Status
+
+完成记录：
+
+1. `runtime/`、`cli/`、`vendor/kilocode` 与旧 specs/plans 文档已从当前主线移除。
+2. 当前 `.gitmodules` 只记录 `vendor/paicli`，不再包含 `vendor/kilocode`；按本计划的 vendor 边界说明，保留 `vendor/paicli` 不构成主线回滚。
+3. `shared/` 与 `composeApp/` 已成为当前产品主线模块。
+4. 双层 settings、环境变量覆盖、按项目 profile 记忆、最小 Koog 执行入口和 Desktop 聊天 UI 已接通。
+5. 完成提交：`7233847 feat(desktop): 完成最小聊天闭环`。
+6. 最新验证：`.\gradlew.bat build` 通过。
+
 ## Task 1: 清理旧主线并改写仓库入口文档
 
 **Files:**
 - Remove: `runtime/`
 - Remove: `cli/`
 - Remove: `vendor/kilocode`
-- Remove: `.gitmodules`
+- Remove: `.gitmodules` 中的 `vendor/kilocode` 配置；若只剩 `vendor/paicli` 等非主线参考 submodule，则保留 `.gitmodules`
 - Remove: 旧 `docs/superpowers/specs/*.md` 与 `docs/superpowers/plans/*.md`
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 - Modify: `.gitignore`
 
-- [ ] **Step 1: 先确认待删除目录与文档存在**
+- [x] **Step 1: 先确认待删除目录与文档存在**
 
 Run:
 
@@ -122,7 +133,7 @@ Get-ChildItem .\docs\superpowers\plans
 
 Expected: 能看到 `runtime/`、`cli/`、`vendor/kilocode`、旧 `specs/plans` 文档，以及新的 `2026-05-26-kmp-desktop-reset-design.md`。
 
-- [ ] **Step 2: 删除旧目录和旧文档，只保留新的 reset design 与新的 implementation plan**
+- [x] **Step 2: 删除旧目录和旧文档，只保留新的 reset design 与新的 implementation plan**
 
 Run:
 
@@ -130,7 +141,7 @@ Run:
 Remove-Item -LiteralPath .\runtime -Recurse -Force
 Remove-Item -LiteralPath .\cli -Recurse -Force
 Remove-Item -LiteralPath .\vendor\kilocode -Recurse -Force
-Remove-Item -LiteralPath .\.gitmodules -Force
+git config -f .\.gitmodules --remove-section submodule.vendor/kilocode
 Remove-Item -LiteralPath .\docs\superpowers\specs\01-runtime-foundation-and-contracts.md -Force
 Remove-Item -LiteralPath .\docs\superpowers\specs\02-provider-byok-and-model-discovery.md -Force
 Remove-Item -LiteralPath .\docs\superpowers\specs\03-agent-strategy-and-capability-integration.md -Force
@@ -154,9 +165,9 @@ Remove-Item -LiteralPath .\docs\superpowers\plans\2026-05-06-kilo-style-cli-http
 Remove-Item -LiteralPath .\docs\superpowers\plans\2026-05-14-koog-built-in-file-tools-implementation-plan.md -Force
 ```
 
-Expected: 旧目录和旧文档被删除，`docs/superpowers` 中只剩新的 reset design 与当前 implementation plan。
+Expected: 旧目录、`vendor/kilocode` 子模块配置和旧文档被删除，`docs/superpowers` 中只剩新的 reset design 与当前 implementation plan。若 `.gitmodules` 仍只包含非主线参考 submodule，例如 `vendor/paicli`，则保留。
 
-- [ ] **Step 3: 改写 `.gitignore`，转向新的本地配置与桌面构建产物**
+- [x] **Step 3: 改写 `.gitignore`，转向新的本地配置与桌面构建产物**
 
 ```gitignore
 .gradle
@@ -181,7 +192,7 @@ out/
 /.mulehang/
 ```
 
-- [ ] **Step 4: 改写 `README.md` 为新主线入口**
+- [x] **Step 4: 改写 `README.md` 为新主线入口**
 
 ```md
 # mulehang-agent
@@ -216,7 +227,7 @@ out/
 ```
 ```
 
-- [ ] **Step 5: 改写 `AGENTS.md`，把仓库规则和文档入口切到 KMP Desktop 主线**
+- [x] **Step 5: 改写 `AGENTS.md`，把仓库规则和文档入口切到 KMP Desktop 主线**
 
 ```md
 # Repository Guidelines
@@ -239,7 +250,7 @@ out/
 2. `docs/superpowers/plans/2026-05-26-kmp-desktop-reset-implementation-plan.md`
 ```
 
-- [ ] **Step 6: 检查目录收缩结果**
+- [x] **Step 6: 检查目录收缩结果**
 
 Run:
 
@@ -261,7 +272,7 @@ Expected: 根目录不再有 `runtime/`、`cli/`、`vendor/kilocode`；`docs/sup
 - Create: `composeApp/build.gradle.kts`
 - Create: `composeApp/src/desktopMain/kotlin/com/agent/app/Main.kt`
 
-- [ ] **Step 1: 更新 `settings.gradle.kts`，只声明新模块**
+- [x] **Step 1: 更新 `settings.gradle.kts`，只声明新模块**
 
 ```kotlin
 pluginManagement {
@@ -286,7 +297,7 @@ include(":shared")
 include(":composeApp")
 ```
 
-- [ ] **Step 2: 更新根 `build.gradle.kts`，切到 multiplatform + compose 主线**
+- [x] **Step 2: 更新根 `build.gradle.kts`，切到 multiplatform + compose 主线**
 
 ```kotlin
 plugins {
@@ -300,7 +311,7 @@ group = "com.agent"
 version = "0.1.0"
 ```
 
-- [ ] **Step 3: 扩展 `gradle.properties` 为 KMP/Compose 友好配置**
+- [x] **Step 3: 扩展 `gradle.properties` 为 KMP/Compose 友好配置**
 
 ```properties
 kotlin.code.style=official
@@ -311,7 +322,7 @@ org.gradle.parallel=true
 org.jetbrains.compose.experimental.uikit.enabled=false
 ```
 
-- [ ] **Step 4: 创建 `shared/build.gradle.kts`**
+- [x] **Step 4: 创建 `shared/build.gradle.kts`**
 
 ```kotlin
 plugins {
@@ -342,7 +353,7 @@ kotlin {
 }
 ```
 
-- [ ] **Step 5: 创建 `composeApp/build.gradle.kts`**
+- [x] **Step 5: 创建 `composeApp/build.gradle.kts`**
 
 ```kotlin
 plugins {
@@ -381,7 +392,7 @@ compose.desktop {
 }
 ```
 
-- [ ] **Step 6: 先放一个最小 desktop 入口，验证工程骨架能编译**
+- [x] **Step 6: 先放一个最小 desktop 入口，验证工程骨架能编译**
 
 ```kotlin
 package com.agent.app
@@ -415,7 +426,7 @@ fun MulehangDesktopApp() {
 }
 ```
 
-- [ ] **Step 7: 运行构建，确认新骨架可解析**
+- [x] **Step 7: 运行构建，确认新骨架可解析**
 
 Run:
 
@@ -440,7 +451,7 @@ Expected: `shared` 测试任务可发现但尚无测试；`composeApp:compileKot
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/state/AppError.kt`
 - Test: `shared/src/commonTest/kotlin/com/agent/shared/config/SettingsMergerTest.kt`
 
-- [ ] **Step 1: 先写配置合并与默认启用规则的失败测试**
+- [x] **Step 1: 先写配置合并与默认启用规则的失败测试**
 
 ```kotlin
 package com.agent.shared.config
@@ -520,7 +531,7 @@ class SettingsMergerTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试，确认类型尚不存在**
+- [x] **Step 2: 运行测试，确认类型尚不存在**
 
 Run:
 
@@ -530,7 +541,7 @@ Run:
 
 Expected: FAIL，报 `AgentProfile`、`ProviderType`、`SettingsMerger` 等类型不存在。
 
-- [ ] **Step 3: 写最小配置模型与状态模型**
+- [x] **Step 3: 写最小配置模型与状态模型**
 
 ```kotlin
 package com.agent.shared.config
@@ -586,7 +597,7 @@ enum class ConfigLayer {
 /**
  * 合并后的最终 profile。
  */
-data class ResolvedAgentProfile(
+data class ConfigProfile(
     val id: String,
     val providerType: ProviderType,
     val baseUrl: String,
@@ -644,7 +655,7 @@ data class ConversationState(
 )
 ```
 
-- [ ] **Step 4: 写最小 `SettingsMerger` 实现**
+- [x] **Step 4: 写最小 `SettingsMerger` 实现**
 
 ```kotlin
 package com.agent.shared.config
@@ -658,14 +669,14 @@ object SettingsMerger {
         user: SettingsDocument?,
         project: SettingsDocument?,
         environment: Map<String, String>,
-    ): List<ResolvedAgentProfile> {
+    ): List<ConfigProfile> {
         val mergedProfiles = linkedMapOf<String, AgentProfile>()
 
         user?.profiles.orEmpty().forEach { mergedProfiles[it.id] = it }
         project?.profiles.orEmpty().forEach { mergedProfiles[it.id] = it }
 
         return mergedProfiles.values.map { profile ->
-            ResolvedAgentProfile(
+            ConfigProfile(
                 id = environment["MULEHANG_PROFILE_ID"] ?: profile.id,
                 providerType = environment["MULEHANG_PROVIDER_TYPE"]?.let(ProviderType::valueOf) ?: profile.providerType,
                 baseUrl = environment["MULEHANG_BASE_URL"] ?: profile.baseUrl,
@@ -679,7 +690,7 @@ object SettingsMerger {
 }
 ```
 
-- [ ] **Step 5: 重新运行测试**
+- [x] **Step 5: 重新运行测试**
 
 Run:
 
@@ -702,7 +713,7 @@ Expected: PASS。
 - Create: `shared/src/desktopTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
 - Create: `mulehang/settings.json.example`
 
-- [ ] **Step 1: 先写 profile 选择回退逻辑测试**
+- [x] **Step 1: 先写 profile 选择回退逻辑测试**
 
 ```kotlin
 package com.agent.shared.config
@@ -718,8 +729,8 @@ class ProfileSelectionResolverTest {
     @Test
     fun `should restore remembered profile when enabled`() {
         val profiles = listOf(
-            ResolvedAgentProfile("openai-main", ProviderType.OPENAI_RESPONSES, "https://api.openai.com/v1", "key", "gpt-4.1", true, ConfigLayer.USER),
-            ResolvedAgentProfile("google-main", ProviderType.GOOGLE, "https://generativelanguage.googleapis.com", "key", "gemini-2.5-pro", true, ConfigLayer.USER),
+            ConfigProfile("openai-main", ProviderType.OPENAI_RESPONSES, "https://api.openai.com/v1", "key", "gpt-4.1", true, ConfigLayer.USER),
+            ConfigProfile("google-main", ProviderType.GOOGLE, "https://generativelanguage.googleapis.com", "key", "gemini-2.5-pro", true, ConfigLayer.USER),
         )
 
         val selected = ProfileSelectionResolver.selectActiveProfile(
@@ -733,8 +744,8 @@ class ProfileSelectionResolverTest {
     @Test
     fun `should fall back to first enabled profile when remembered profile is disabled`() {
         val profiles = listOf(
-            ResolvedAgentProfile("openai-main", ProviderType.OPENAI_RESPONSES, "https://api.openai.com/v1", "key", "gpt-4.1", true, ConfigLayer.USER),
-            ResolvedAgentProfile("anthropic-main", ProviderType.ANTHROPIC, "https://api.anthropic.com", "key", "claude-sonnet-4", false, ConfigLayer.USER),
+            ConfigProfile("openai-main", ProviderType.OPENAI_RESPONSES, "https://api.openai.com/v1", "key", "gpt-4.1", true, ConfigLayer.USER),
+            ConfigProfile("anthropic-main", ProviderType.ANTHROPIC, "https://api.anthropic.com", "key", "claude-sonnet-4", false, ConfigLayer.USER),
         )
 
         val selected = ProfileSelectionResolver.selectActiveProfile(
@@ -747,7 +758,7 @@ class ProfileSelectionResolverTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试，确认选择器尚不存在**
+- [x] **Step 2: 运行测试，确认选择器尚不存在**
 
 Run:
 
@@ -757,7 +768,7 @@ Run:
 
 Expected: FAIL，报 `ProfileSelectionResolver` 不存在。
 
-- [ ] **Step 3: 实现 profile 选择器**
+- [x] **Step 3: 实现 profile 选择器**
 
 ```kotlin
 package com.agent.shared.config
@@ -768,9 +779,9 @@ package com.agent.shared.config
 object ProfileSelectionResolver {
 
     fun selectActiveProfile(
-        profiles: List<ResolvedAgentProfile>,
+        profiles: List<ConfigProfile>,
         rememberedProfileId: String?,
-    ): ResolvedAgentProfile? {
+    ): ConfigProfile? {
         val enabledProfiles = profiles.filter { it.enabled }
         val remembered = enabledProfiles.firstOrNull { it.id == rememberedProfileId }
 
@@ -779,7 +790,7 @@ object ProfileSelectionResolver {
 }
 ```
 
-- [ ] **Step 4: 写桌面配置仓库与 UI 状态存储测试**
+- [x] **Step 4: 写桌面配置仓库与 UI 状态存储测试**
 
 ```kotlin
 package com.agent.shared.config
@@ -852,7 +863,7 @@ class DesktopUiStateStoreTest {
 }
 ```
 
-- [ ] **Step 5: 实现桌面路径解析、环境变量覆盖、配置仓库和 UI 状态存储**
+- [x] **Step 5: 实现桌面路径解析、环境变量覆盖、配置仓库和 UI 状态存储**
 
 ```kotlin
 package com.agent.shared.config
@@ -892,7 +903,7 @@ class DesktopSettingsRepository(
     private val environmentOverrides: DesktopEnvironmentOverrides,
     private val json: Json = Json { ignoreUnknownKeys = true; prettyPrint = true },
 ) {
-    fun loadResolvedProfiles(): List<ResolvedAgentProfile> {
+    fun loadResolvedProfiles(): List<ConfigProfile> {
         val user = readDocument(pathResolver.userSettingsPath())
         val project = readDocument(pathResolver.projectSettingsPath())
         return SettingsMerger.merge(user, project, environmentOverrides.asMap())
@@ -955,7 +966,7 @@ class DesktopUiStateStore(
 }
 ```
 
-- [ ] **Step 6: 写项目级示例配置**
+- [x] **Step 6: 写项目级示例配置**
 
 ```json
 {
@@ -979,7 +990,7 @@ class DesktopUiStateStore(
 }
 ```
 
-- [ ] **Step 7: 运行配置相关测试**
+- [x] **Step 7: 运行配置相关测试**
 
 Run:
 
@@ -1003,7 +1014,7 @@ Expected: PASS。
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionRepository.kt`
 - Test: `shared/src/commonTest/kotlin/com/agent/shared/application/SendMessageUseCaseTest.kt`
 
-- [ ] **Step 1: 先写发送消息用例测试**
+- [x] **Step 1: 先写发送消息用例测试**
 
 ```kotlin
 package com.agent.shared.application
@@ -1026,13 +1037,13 @@ class SendMessageUseCaseTest {
     @Test
     fun `should emit delta and completed events from gateway`() = runTest {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, profile: ResolvedAgentProfile) = flowOf(
+            override fun run(prompt: String, profile: ConfigProfile) = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.Delta("hello"),
                 AgentStreamEvent.Completed("hello world"),
             )
         }
-        val profile = ResolvedAgentProfile(
+        val profile = ConfigProfile(
             id = "openai-main",
             providerType = ProviderType.OPENAI_RESPONSES,
             baseUrl = "https://api.openai.com/v1",
@@ -1050,7 +1061,7 @@ class SendMessageUseCaseTest {
 }
 ```
 
-- [ ] **Step 2: 运行测试，确认 gateway 与 use case 尚不存在**
+- [x] **Step 2: 运行测试，确认 gateway 与 use case 尚不存在**
 
 Run:
 
@@ -1060,7 +1071,7 @@ Run:
 
 Expected: FAIL，报 `AgentGateway`、`SendMessageUseCase` 不存在。
 
-- [ ] **Step 3: 实现公共 agent 事件模型与用例层**
+- [x] **Step 3: 实现公共 agent 事件模型与用例层**
 
 ```kotlin
 package com.agent.shared.agent
@@ -1086,7 +1097,7 @@ import kotlinx.coroutines.flow.Flow
  * 对 Koog 执行入口的最小抽象。
  */
 interface AgentGateway {
-    fun run(prompt: String, profile: ResolvedAgentProfile): Flow<AgentStreamEvent>
+    fun run(prompt: String, profile: ConfigProfile): Flow<AgentStreamEvent>
 }
 ```
 
@@ -1104,12 +1115,12 @@ class SendMessageUseCase(
 ) {
     operator fun invoke(
         prompt: String,
-        profile: ResolvedAgentProfile,
+        profile: ConfigProfile,
     ) = agentGateway.run(prompt, profile)
 }
 ```
 
-- [ ] **Step 4: 实现最小 `KoogAgentGateway`**
+- [x] **Step 4: 实现最小 `KoogAgentGateway`**
 
 ```kotlin
 package com.agent.shared.agent
@@ -1130,7 +1141,7 @@ import kotlinx.coroutines.flow.flow
  */
 class KoogAgentGateway : AgentGateway {
 
-    override fun run(prompt: String, profile: ResolvedAgentProfile): Flow<AgentStreamEvent> = flow {
+    override fun run(prompt: String, profile: ConfigProfile): Flow<AgentStreamEvent> = flow {
         emit(AgentStreamEvent.Started)
 
         if (profile.providerType != ProviderType.OPENAI_RESPONSES) {
@@ -1158,7 +1169,7 @@ class KoogAgentGateway : AgentGateway {
 }
 ```
 
-- [ ] **Step 5: 重新运行用例测试**
+- [x] **Step 5: 重新运行用例测试**
 
 Run:
 
@@ -1179,7 +1190,7 @@ Expected: PASS。
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionSnapshot.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionRepository.kt`
 
-- [ ] **Step 1: 定义会话快照与加载用例**
+- [x] **Step 1: 定义会话快照与加载用例**
 
 ```kotlin
 package com.agent.shared.application
@@ -1190,8 +1201,8 @@ import com.agent.shared.config.ConfigProfile
  * UI 初始装配所需的快照。
  */
 data class AppSessionSnapshot(
-    val profiles: List<ResolvedAgentProfile>,
-    val activeProfile: ResolvedAgentProfile?,
+    val profiles: List<ConfigProfile>,
+    val activeProfile: ConfigProfile?,
 )
 ```
 
@@ -1224,13 +1235,13 @@ import com.agent.shared.config.ConfigProfile
  * 屏蔽配置与 UI 状态持久化实现细节。
  */
 interface AppSessionRepository {
-    suspend fun loadProfiles(): List<ResolvedAgentProfile>
+    suspend fun loadProfiles(): List<ConfigProfile>
     suspend fun loadRememberedProfileId(): String?
     suspend fun saveRememberedProfileId(profileId: String)
 }
 ```
 
-- [ ] **Step 2: 写最小桌面窗口状态持有者**
+- [x] **Step 2: 写最小桌面窗口状态持有者**
 
 ```kotlin
 package com.agent.app.ui
@@ -1296,7 +1307,7 @@ class ChatWindowState(
 }
 ```
 
-- [ ] **Step 3: 写最小 Compose 聊天界面**
+- [x] **Step 3: 写最小 Compose 聊天界面**
 
 ```kotlin
 package com.agent.app.ui
@@ -1363,7 +1374,7 @@ fun ChatScreen(
 }
 ```
 
-- [ ] **Step 4: 把 `Main.kt` 接到真正的 app 根节点**
+- [x] **Step 4: 把 `Main.kt` 接到真正的 app 根节点**
 
 ```kotlin
 package com.agent.app
@@ -1412,7 +1423,7 @@ fun MulehangDesktopApp() {
 }
 ```
 
-- [ ] **Step 5: 编译桌面模块**
+- [x] **Step 5: 编译桌面模块**
 
 Run:
 
@@ -1432,7 +1443,7 @@ Expected: PASS。
 - Modify: `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
 - Modify: `shared/src/desktopMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
 
-- [ ] **Step 1: 把桌面仓库实现为 `AppSessionRepository`**
+- [x] **Step 1: 把桌面仓库实现为 `AppSessionRepository`**
 
 ```kotlin
 package com.agent.shared.application
@@ -1456,7 +1467,7 @@ class DesktopAppSessionRepository(
     private val settingsRepository = DesktopSettingsRepository(pathResolver, com.agent.shared.config.DesktopEnvironmentOverrides())
     private val uiStateStore = DesktopUiStateStore(Paths.get(System.getProperty("user.home")).resolve(".mulehang/ui-state.json"))
 
-    override suspend fun loadProfiles(): List<ResolvedAgentProfile> =
+    override suspend fun loadProfiles(): List<ConfigProfile> =
         settingsRepository.loadResolvedProfiles()
 
     override suspend fun loadRememberedProfileId(): String? =
@@ -1468,7 +1479,7 @@ class DesktopAppSessionRepository(
 }
 ```
 
-- [ ] **Step 2: 在 app 启动时加载真实 snapshot**
+- [x] **Step 2: 在 app 启动时加载真实 snapshot**
 
 ```kotlin
 package com.agent.app
@@ -1510,7 +1521,7 @@ fun MulehangDesktopApp() {
 }
 ```
 
-- [ ] **Step 3: 在选择 profile 后保存记忆值**
+- [x] **Step 3: 在选择 profile 后保存记忆值**
 
 ```kotlin
 package com.agent.shared.application
@@ -1532,7 +1543,7 @@ class LoadAppSessionUseCase(
 }
 ```
 
-- [ ] **Step 4: 运行桌面编译与共享测试**
+- [x] **Step 4: 运行桌面编译与共享测试**
 
 Run:
 
@@ -1563,11 +1574,11 @@ Expected: PASS。
 - Check: `shared/src/desktopMain/kotlin/com/agent/shared/config/*.kt`
 - Check: `shared/src/desktopMain/kotlin/com/agent/shared/state/*.kt`
 
-- [ ] **Step 1: 对所有新建和修改的代码文件运行 IDEA inspection**
+- [x] **Step 1: 对所有新建和修改的代码文件运行 IDEA inspection**
 
 Expected: 无 error；warning 如为弱提示可忽略。
 
-- [ ] **Step 2: 运行全量构建**
+- [x] **Step 2: 运行全量构建**
 
 Run:
 
@@ -1577,7 +1588,7 @@ Run:
 
 Expected: PASS。
 
-- [ ] **Step 3: 记录验证结果**
+- [x] **Step 3: 记录验证结果**
 
 最终汇报至少列出：
 
@@ -1604,6 +1615,6 @@ Expected: PASS。
   - 没有 `TODO`、`TBD` 或“后续补充”占位语
   - 每个任务都给出了明确文件路径和验证命令
 - Type consistency:
-  - 统一使用 `ProviderType`、`AgentProfile`、`ResolvedAgentProfile`、`AgentStreamEvent`
+  - 统一使用 `ProviderType`、`AgentProfile`、`ConfigProfile`、`AgentStreamEvent`
   - profile 记忆统一走 `DesktopUiStateStore`
   - 加载入口统一走 `LoadAppSessionUseCase`

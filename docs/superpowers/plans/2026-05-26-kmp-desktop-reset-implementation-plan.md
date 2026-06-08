@@ -85,7 +85,7 @@
 - `shared/src/commonTest/kotlin/com/agent/shared/application/SendMessageUseCaseTest.kt`
 - `shared/src/desktopTest/kotlin/com/agent/shared/config/DesktopSettingsRepositoryTest.kt`
 - `shared/src/desktopTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
-- `mulehang/settings.json.example`
+- `.mulehang/settings.json.example`
 
 ### Keep
 
@@ -187,9 +187,9 @@ out/
 .kotlin
 .DS_Store
 
-/mulehang/settings.json
+/.mulehang/*
+!/.mulehang/settings.json.example
 /.env
-/.mulehang/
 ```
 
 - [x] **Step 4: 改写 `README.md` 为新主线入口**
@@ -214,8 +214,8 @@ out/
 ## 本地配置
 
 1. 用户级配置：`~/.mulehang/settings.json`
-2. 项目级配置：`./mulehang/settings.json`
-3. 示例文件：`./mulehang/settings.json.example`
+2. 项目级配置：`./.mulehang/settings.json`
+3. 示例文件：`./.mulehang/settings.json.example`
 
 优先级：`环境变量 > 项目级配置 > 用户级配置 > 默认值`
 
@@ -243,7 +243,7 @@ out/
 ```
 
 ## 安全与配置提示
-项目级配置路径为 `mulehang/settings.json`，用户级配置路径为 `~/.mulehang/settings.json`。提交时只保留 `mulehang/settings.json.example`，不要提交真实密钥。
+项目级配置路径为 `.mulehang/settings.json`，用户级配置路径为 `~/.mulehang/settings.json`。提交时只保留 `.mulehang/settings.json.example`，不要提交真实密钥。
 
 ## 文档入口
 1. `docs/superpowers/specs/2026-05-26-kmp-desktop-reset-design.md`
@@ -711,7 +711,7 @@ Expected: PASS。
 - Create: `shared/src/commonTest/kotlin/com/agent/shared/config/ProfileSelectionResolverTest.kt`
 - Create: `shared/src/desktopTest/kotlin/com/agent/shared/config/DesktopSettingsRepositoryTest.kt`
 - Create: `shared/src/desktopTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
-- Create: `mulehang/settings.json.example`
+- Create: `.mulehang/settings.json.example`
 
 - [x] **Step 1: 先写 profile 选择回退逻辑测试**
 
@@ -810,14 +810,14 @@ class DesktopSettingsRepositoryTest {
         val userHome = root.resolve("user-home")
         val projectRoot = root.resolve("workspace")
         Files.createDirectories(userHome.resolve(".mulehang"))
-        Files.createDirectories(projectRoot.resolve("mulehang"))
+        Files.createDirectories(projectRoot.resolve(".mulehang"))
 
         Files.writeString(
             userHome.resolve(".mulehang/settings.json"),
             """{"profiles":[{"id":"main","providerType":"OPENAI_RESPONSES","baseUrl":"https://api.openai.com/v1","apiKey":"user","model":"gpt-4.1"}]}"""
         )
         Files.writeString(
-            projectRoot.resolve("mulehang/settings.json"),
+            projectRoot.resolve(".mulehang/settings.json"),
             """{"profiles":[{"id":"main","providerType":"OPENAI_RESPONSES","baseUrl":"https://project.example/v1","apiKey":"project","model":"gpt-4.1-mini"}]}"""
         )
 
@@ -883,7 +883,7 @@ data class DesktopPathResolver(
     val projectRoot: Path,
 ) {
     fun userSettingsPath(): Path = userHome.resolve(".mulehang/settings.json")
-    fun projectSettingsPath(): Path = projectRoot.resolve("mulehang/settings.json")
+    fun projectSettingsPath(): Path = projectRoot.resolve(".mulehang/settings.json")
 }
 
 /**
@@ -910,7 +910,7 @@ class DesktopSettingsRepository(
     }
 
     fun writeExampleSettings(exampleContent: String) {
-        val target = pathResolver.projectRoot.resolve("mulehang/settings.json.example")
+        val target = pathResolver.projectRoot.resolve(".mulehang/settings.json.example")
         target.parent.createDirectories()
         Files.writeString(target, exampleContent)
     }

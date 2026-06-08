@@ -35,7 +35,7 @@ class DesktopSettingsRepository(
      * 写入项目级示例 settings。
      */
     fun writeExampleSettings(exampleContent: String) {
-        val target = pathResolver.projectRoot.resolve("mulehang/settings.json.example")
+        val target = pathResolver.projectRoot.resolve(".mulehang/settings.json.example")
         target.parent.createDirectories()
         Files.writeString(target, exampleContent)
     }

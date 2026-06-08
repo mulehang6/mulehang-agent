@@ -17,5 +17,5 @@ data class DesktopPathResolver(
     /**
      * 项目级 settings 路径。
      */
-    fun projectSettingsPath(): Path = projectRoot.resolve("mulehang/settings.json")
+    fun projectSettingsPath(): Path = projectRoot.resolve(".mulehang/settings.json")
 }

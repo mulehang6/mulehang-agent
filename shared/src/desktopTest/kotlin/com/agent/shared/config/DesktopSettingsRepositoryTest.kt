@@ -18,14 +18,14 @@ class DesktopSettingsRepositoryTest {
         val userHome = root.resolve("user-home")
         val projectRoot = root.resolve("workspace")
         Files.createDirectories(userHome.resolve(".mulehang"))
-        Files.createDirectories(projectRoot.resolve("mulehang"))
+        Files.createDirectories(projectRoot.resolve(".mulehang"))
 
         Files.writeString(
             userHome.resolve(".mulehang/settings.json"),
             """{"profiles":[{"id":"main","providerType":"openai-responses","baseUrl":"https://api.openai.com/v1","apiKey":"user","model":"gpt-4.1"}]}""",
         )
         Files.writeString(
-            projectRoot.resolve("mulehang/settings.json"),
+            projectRoot.resolve(".mulehang/settings.json"),
             """{"profiles":[{"id":"main","providerType":"openai-responses","baseUrl":"https://project.example/v1","apiKey":"project","model":"gpt-4.1-mini"}]}""",
         )
 
@@ -41,10 +41,10 @@ class DesktopSettingsRepositoryTest {
     }
 
     /**
-     * 示例配置应写入项目级 mulehang 目录。
+     * 示例配置应写入项目级 .mulehang 目录。
      */
     @Test
-    fun `should write example settings under project mulehang directory`() {
+    fun `should write example settings under project dot mulehang directory`() {
         val root = Files.createTempDirectory("mulehang-settings-example-test")
         val repository = DesktopSettingsRepository(
             pathResolver = DesktopPathResolver(root.resolve("home"), root.resolve("workspace")),
@@ -55,7 +55,7 @@ class DesktopSettingsRepositoryTest {
 
         assertEquals(
             """{"profiles":[]}""",
-            Files.readString(root.resolve("workspace/mulehang/settings.json.example")),
+            Files.readString(root.resolve("workspace/.mulehang/settings.json.example")),
         )
     }
 }

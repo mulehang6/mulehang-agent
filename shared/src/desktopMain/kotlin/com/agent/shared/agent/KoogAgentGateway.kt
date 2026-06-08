@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * Koog 1.0.0 接入点骨架。
+ * Koog 1.0.0 接入点，负责执行单轮消息并转换为应用事件。
  */
 class KoogAgentGateway : AgentGateway {
     /**
@@ -19,13 +19,13 @@ class KoogAgentGateway : AgentGateway {
         try {
             val agent = AIAgent(
                 promptExecutor = buildPromptExecutor(config),
-                llmModel = OpenAIModels.Chat.GPT5_4Mini
+                llmModel = OpenAIModels.Chat.GPT5_4Mini,
             )
+            val result = agent.run(prompt)
+            emit(AgentStreamEvent.Delta(result))
+            emit(AgentStreamEvent.Completed(result))
         } catch (e: Exception) {
             emit(AgentStreamEvent.Failed(e.message ?: "执行错误"))
         }
     }
-
-
-
 }

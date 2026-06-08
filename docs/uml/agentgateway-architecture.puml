@@ -25,8 +25,9 @@ package "composeApp" as composeApp {
 
 package "shared.application" as sharedApp {
   component "SendMessageUseCase\n发送消息用例" as sendMessageUseCase
-  component "LoadAppSessionUseCase\n<<planned>>\n启动会话加载" as loadSessionUseCase
-  component "AppSessionRepository\n<<planned>>\n会话仓库接口" as appSessionRepository
+  component "LoadAppSessionUseCase\n启动会话加载" as loadSessionUseCase
+  component "AppSessionRepository\n会话仓库接口" as appSessionRepository
+  component "DesktopAppSessionRepository\n桌面会话仓库实现" as desktopAppSessionRepository
   component "AppSessionSnapshot\n启动快照" as appSessionSnapshot
 }
 
@@ -39,15 +40,15 @@ package "shared.agent" as sharedAgent {
 
 package "shared.config" as sharedConfig {
   component "ConfigProfile\n运行时最终配置" as configProfile
-  component "DesktopSettingsRepository\n<<planned>>\n双层 settings 读取" as desktopSettingsRepository
-  component "DesktopEnvironmentOverrides\n<<planned>>\n环境变量覆盖" as desktopEnvOverrides
-  component "DesktopPathResolver\n<<planned>>\n配置路径解析" as desktopPathResolver
+  component "DesktopSettingsRepository\n双层 settings 读取" as desktopSettingsRepository
+  component "DesktopEnvironmentOverrides\n环境变量覆盖" as desktopEnvOverrides
+  component "DesktopPathResolver\n配置路径解析" as desktopPathResolver
 }
 
 package "shared.state" as sharedState {
   component "ConversationState\n窗口会话状态" as conversationState
   component "ChatMessage\n消息模型" as chatMessage
-  component "DesktopUiStateStore\n<<planned>>\n按项目记忆 profile" as desktopUiStateStore
+  component "DesktopUiStateStore\n按项目记忆 profile" as desktopUiStateStore
 }
 
 package "Koog / LLM" as koogLlm {
@@ -59,13 +60,14 @@ package "Koog / LLM" as koogLlm {
 
 ' 主链路：只保留最重要的调用流
 desktopApp --> chatWindowState : 创建
+desktopApp --> loadSessionUseCase : 启动加载 snapshot
 chatScreen --> chatWindowState : 读写 UI 状态
-chatWindowState --> sendMessageUseCase : send(message)\nTODO: 待接入
+chatWindowState --> sendMessageUseCase : send(message)
 sendMessageUseCase --> agentGateway : run(prompt, profile)
 sendMessageUseCase --> configProfile : 使用
 agentGateway <|.. koogAgentGateway
 koogAgentGateway --> promptExecutor : buildPromptExecutor(config)
-koogAgentGateway --> aiAgent : 创建并执行
+koogAgentGateway --> aiAgent : 创建并 run(prompt)
 koogAgentGateway --> openAiModels : 当前模型常量
 koogAgentGateway --> agentStreamEvent : 输出事件流
 
@@ -76,9 +78,10 @@ conversationState --> chatMessage : 包含
 
 loadSessionUseCase ..> appSessionRepository : 依赖
 loadSessionUseCase ..> appSessionSnapshot : 输出
+appSessionRepository <|.. desktopAppSessionRepository
 appSessionRepository ..> configProfile : loadProfiles()
-appSessionRepository ..> desktopUiStateStore : 记忆 profile
-appSessionRepository ..> desktopSettingsRepository : 桌面实现提供
+desktopAppSessionRepository ..> desktopUiStateStore : 记忆 profile
+desktopAppSessionRepository ..> desktopSettingsRepository : loadProfiles()
 desktopSettingsRepository ..> desktopEnvOverrides
 desktopSettingsRepository ..> desktopPathResolver
 
@@ -106,8 +109,8 @@ legend right
 
 当前实现状态：
 1. AgentGateway 是 shared 层对 Koog 的最小隔离边界
-2. KoogAgentGateway 已能创建 AIAgent 与 PromptExecutor
-3. ChatWindowState.send() / LoadAppSessionUseCase 仍是骨架
+2. KoogAgentGateway 已能创建 AIAgent / PromptExecutor 并执行单轮 prompt
+3. ChatWindowState.send() 已消费 Started / Delta / Completed / Failed
 4. 真实主链路是 composeApp -> application -> agent -> Koog/LLM
 endlegend
 

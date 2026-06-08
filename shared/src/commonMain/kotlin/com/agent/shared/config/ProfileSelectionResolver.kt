@@ -12,6 +12,8 @@ object ProfileSelectionResolver {
         profiles: List<ConfigProfile>,
         rememberedProfileId: String?,
     ): ConfigProfile? {
-        TODO("Implement profile restoration and fallback selection.")
+        val enabledProfiles = profiles.filter { it.enabled }
+        return enabledProfiles.firstOrNull { it.id == rememberedProfileId }
+            ?: enabledProfiles.firstOrNull()
     }
 }

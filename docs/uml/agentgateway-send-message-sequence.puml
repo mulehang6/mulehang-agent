@@ -20,8 +20,8 @@ user -> chatScreen : 输入消息并点击 Send
 chatScreen -> chatWindowState : send(message)
 
 note right of chatWindowState
-当前代码里 send(message) 仍是 TODO。
-这里画的是设计上的目标主链路。
+send(message) 会先追加用户消息，
+再消费 AgentStreamEvent 更新 UI 状态。
 end note
 
 chatWindowState -> sendMessageUseCase : invoke(prompt, activeProfile)
@@ -34,13 +34,10 @@ promptExecutor --> koogAgentGateway : MultiLLMPromptExecutor
 koogAgentGateway -> aiAgent : 创建 AIAgent
 
 koogAgentGateway --> sendMessageUseCase : Flow<Started>
-
-group 后续目标
-  koogAgentGateway -> aiAgent : 发送 prompt
-  aiAgent --> koogAgentGateway : 增量/最终结果
-  koogAgentGateway --> sendMessageUseCase : Flow<Delta>
-  koogAgentGateway --> sendMessageUseCase : Flow<Completed>
-end
+koogAgentGateway -> aiAgent : run(prompt)
+aiAgent --> koogAgentGateway : 最终结果
+koogAgentGateway --> sendMessageUseCase : Flow<Delta>
+koogAgentGateway --> sendMessageUseCase : Flow<Completed>
 
 alt 执行异常
   koogAgentGateway --> sendMessageUseCase : Flow<Failed>
@@ -55,11 +52,8 @@ legend right
 1. SendMessageUseCase 参数校验
 2. AgentGateway 抽象边界
 3. KoogAgentGateway 内部创建 AIAgent / PromptExecutor
-
-尚未完成：
-1. ChatWindowState 对事件流的消费
-2. 实际 prompt 发送
-3. Delta / Completed 的产出与回写
+4. KoogAgentGateway 执行 prompt 并输出 Delta / Completed
+5. ChatWindowState 消费事件并回写消息列表与执行状态
 endlegend
 
 @enduml

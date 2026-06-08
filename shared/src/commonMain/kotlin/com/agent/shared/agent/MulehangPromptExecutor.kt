@@ -7,14 +7,11 @@ import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ProviderType
 import com.agent.shared.exceptions.IllegalConfigExceptions
 
-
-
 /**
  * 按配置创建 Koog prompt executor。
  */
 internal fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor {
     when (config.providerType) {
-        // TODO 区分responses和chat/completions
         ProviderType.OPENAI_CHAT_COMPLETIONS,
         ProviderType.OPENAI_RESPONSES
             -> {
@@ -28,10 +25,7 @@ internal fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor 
         }
 
         else -> {
-            // TODO 目前版本无GoogleLLMClient
-            /*val googleLLMClient = GoogleLLMClient(config.apiKey)
-            return MultiLLMPromptExecutor(googleLLMClient)*/
-            throw IllegalConfigExceptions { "暂不支持此类型，不关我的事，Koog没这个类型 🤔" }
+            throw IllegalConfigExceptions { "暂不支持的 providerType: ${config.providerType}" }
         }
     }
 }

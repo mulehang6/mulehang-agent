@@ -19,7 +19,9 @@ import java.nio.file.Paths
  */
 @Composable
 fun MulehangDesktopApp() {
-    val projectRoot = remember { Paths.get("").toAbsolutePath().normalize() }
+    val projectRoot = remember {
+        DesktopProjectRootResolver.resolve(Paths.get(""))
+    }
     val snapshotState = remember {
         mutableStateOf(AppSessionSnapshot(profiles = emptyList(), activeProfile = null))
     }

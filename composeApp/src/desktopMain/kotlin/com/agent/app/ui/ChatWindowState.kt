@@ -34,6 +34,14 @@ class ChatWindowState(
         private set
 
     /**
+     * 当前失败状态对应的 UI 可见错误文本。
+     */
+    val errorMessage: String?
+        get() = (state.executionState as? ExecutionState.Failed)?.error?.let { error ->
+            "${error.title}: ${error.message}"
+        }
+
+    /**
      * 发送消息并根据 agent 事件更新窗口状态。
      */
     fun send(message: String) {

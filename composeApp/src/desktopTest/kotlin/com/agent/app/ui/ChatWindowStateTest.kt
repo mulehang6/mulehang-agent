@@ -75,6 +75,31 @@ class ChatWindowStateTest {
         assertEquals(ExecutionState.Idle, state.state.executionState)
     }
 
+    /**
+     * Agent 失败时应暴露可被 UI 展示的错误文本。
+     */
+    @Test
+    fun `should expose visible error message after failed event`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.Failed("invalid api key"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        assertEquals("Agent 执行失败: invalid api key", state.errorMessage)
+    }
+
     private fun profile(): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = ProviderType.OPENAI_RESPONSES,

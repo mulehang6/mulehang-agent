@@ -4,7 +4,9 @@ plugins {
 }
 
 kotlin {
-    jvm("desktop")
+    jvm("desktop") {
+        compilations["test"].associateWith(compilations["main"])
+    }
 
     sourceSets {
         val commonMain by getting {

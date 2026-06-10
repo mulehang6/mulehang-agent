@@ -1,7 +1,6 @@
 package com.agent.shared.agent
 
 import ai.koog.agents.core.agent.AIAgent
-import ai.koog.prompt.executor.clients.openai.OpenAIModels
 import com.agent.shared.config.ConfigProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -19,7 +18,7 @@ class KoogAgentGateway : AgentGateway {
         try {
             val agent = AIAgent(
                 promptExecutor = buildPromptExecutor(config),
-                llmModel = OpenAIModels.Chat.GPT5_4Mini,
+                llmModel = buildLlmModel(config),
             )
             val result = agent.run(prompt)
             emit(AgentStreamEvent.Delta(result))

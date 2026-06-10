@@ -33,6 +33,9 @@ fun ChatScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Active profile: ${state.state.activeProfileId ?: "none"}")
+        state.errorMessage?.let { message ->
+            Text("Error: $message")
+        }
         LazyColumn(
             modifier = Modifier
                 .weight(1f)

@@ -8,9 +8,13 @@ import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
 import com.agent.shared.state.AppError
 import com.agent.shared.state.ChatMessage
+import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationState
+import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ExecutionState
+import com.agent.shared.state.ToolEventItem
+import com.agent.shared.state.ToolEventStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,8 +66,9 @@ class ChatWindowState(
         }
 
         state = state.copy(
-            messages = state.messages + ChatMessage(ChatRole.User, prompt),
+            items = state.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt)),
             executionState = ExecutionState.Running,
+            streamingAssistantItemIndex = null,
         )
 
         scope.launch {
@@ -90,11 +95,26 @@ class ChatWindowState(
     private fun applyAgentEvent(event: AgentStreamEvent) {
         state = when (event) {
             AgentStreamEvent.Started -> state.copy(executionState = ExecutionState.Running)
-            is AgentStreamEvent.Delta -> state.copy(
-                messages = state.messages + ChatMessage(ChatRole.Assistant, event.text),
+            is AgentStreamEvent.TextDelta -> appendAssistantDelta(event.text)
+            is AgentStreamEvent.ToolCallStarted -> appendToolEvent(
+                toolName = event.name,
+                status = ToolEventStatus.Started,
+                preview = event.argumentsPreview,
             )
 
-            is AgentStreamEvent.Completed -> state.copy(executionState = ExecutionState.Idle)
+            is AgentStreamEvent.ToolCallFinished -> appendToolEvent(
+                toolName = event.name,
+                status = ToolEventStatus.Finished,
+                preview = event.resultPreview,
+            )
+
+            is AgentStreamEvent.Status -> appendToolEvent(
+                toolName = "status",
+                status = ToolEventStatus.Status,
+                preview = event.message,
+            )
+
+            is AgentStreamEvent.Completed -> completeAssistantMessage(event.text)
             is AgentStreamEvent.Failed -> state.copy(
                 executionState = ExecutionState.Failed(
                     AppError(
@@ -102,7 +122,85 @@ class ChatWindowState(
                         message = event.reason,
                     ),
                 ),
+                streamingAssistantItemIndex = null,
             )
         }
+    }
+
+    /**
+     * 将文本增量拼接到当前正在生成的助手消息。
+     */
+    private fun appendAssistantDelta(delta: String): ConversationState {
+        if (delta.isEmpty()) {
+            return state
+        }
+        val currentIndex = state.streamingAssistantItemIndex
+        return if (currentIndex == null) {
+            state.copy(
+                items = state.items + ChatMessageItem(ChatMessage(ChatRole.Assistant, delta)),
+                streamingAssistantItemIndex = state.items.size,
+            )
+        } else {
+            val existingItem = state.items[currentIndex] as? ChatMessageItem ?: return state
+            val updatedItems = state.items.toMutableList()
+            updatedItems[currentIndex] = existingItem.copy(
+                message = existingItem.message.copy(content = existingItem.message.content + delta),
+            )
+            state.copy(items = updatedItems)
+        }
+    }
+
+    /**
+     * 将工具或状态事件追加到时间线。
+     */
+    private fun appendToolEvent(
+        toolName: String,
+        status: ToolEventStatus,
+        preview: String?,
+    ): ConversationState = state.copy(
+        items = state.items + ToolEventItem(
+            toolName = toolName,
+            status = status,
+            preview = preview,
+        ),
+    )
+
+    /**
+     * 在完成时补齐最终正文，并清理流式状态。
+     */
+    private fun completeAssistantMessage(finalText: String): ConversationState {
+        val currentIndex = state.streamingAssistantItemIndex ?: return state.copy(
+            items = appendCompletedAssistantIfNeeded(state.items, finalText),
+            executionState = ExecutionState.Idle,
+            streamingAssistantItemIndex = null,
+        )
+        val existingItem = state.items[currentIndex] as? ChatMessageItem ?: return state.copy(
+            executionState = ExecutionState.Idle,
+            streamingAssistantItemIndex = null,
+        )
+        val updatedItems = state.items.toMutableList()
+        if (finalText.isNotBlank() && existingItem.message.content != finalText) {
+            updatedItems[currentIndex] = existingItem.copy(
+                message = existingItem.message.copy(content = finalText),
+            )
+        }
+        return state.copy(
+            items = updatedItems,
+            executionState = ExecutionState.Idle,
+            streamingAssistantItemIndex = null,
+        )
+    }
+
+    /**
+     * 当底层只返回完成文本时补一条助手消息。
+     */
+    private fun appendCompletedAssistantIfNeeded(
+        items: List<ConversationItem>,
+        finalText: String,
+    ): List<ConversationItem> {
+        if (finalText.isBlank()) {
+            return items
+        }
+        return items + ChatMessageItem(ChatMessage(ChatRole.Assistant, finalText))
     }
 }

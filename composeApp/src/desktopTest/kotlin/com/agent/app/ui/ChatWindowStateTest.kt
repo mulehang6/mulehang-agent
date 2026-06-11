@@ -7,8 +7,11 @@ import com.agent.shared.application.SendMessageUseCase
 import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ProviderType
+import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
+import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ExecutionState
+import com.agent.shared.state.ToolEventItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -47,14 +50,15 @@ class ChatWindowStateTest {
     }
 
     /**
-     * 发送消息时应追加用户消息、消费助手增量并回到空闲态。
+     * 多个文本增量应折叠到同一条助手消息，并在完成后回到空闲态。
      */
     @Test
-    fun `should append messages and return idle after completed event`() = runTest(dispatcher) {
+    fun `should merge text deltas into a single assistant message and return idle`() = runTest(dispatcher) {
         val gateway = object : AgentGateway {
             override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
-                AgentStreamEvent.Delta("hello"),
+                AgentStreamEvent.TextDelta("hel"),
+                AgentStreamEvent.TextDelta("lo"),
                 AgentStreamEvent.Completed("hello"),
             )
         }
@@ -69,9 +73,12 @@ class ChatWindowStateTest {
         state.send("hi")
         advanceUntilIdle()
 
-        assertEquals(2, state.state.messages.size)
-        assertEquals(ChatRole.User, state.state.messages.first().role)
-        assertEquals(ChatRole.Assistant, state.state.messages.last().role)
+        assertEquals(2, state.state.items.size)
+        val userItem = state.state.items.first() as ChatMessageItem
+        val assistantItem = state.state.items.last() as ChatMessageItem
+        assertEquals(ChatRole.User, userItem.message.role)
+        assertEquals(ChatRole.Assistant, assistantItem.message.role)
+        assertEquals("hello", assistantItem.message.content)
         assertEquals(ExecutionState.Idle, state.state.executionState)
     }
 
@@ -98,6 +105,42 @@ class ChatWindowStateTest {
         advanceUntilIdle()
 
         assertEquals("Agent 执行失败: invalid api key", state.errorMessage)
+    }
+
+    /**
+     * 工具调用事件应被保留为单独的时间线项，避免混入助手正文。
+     */
+    @Test
+    fun `should append tool events as standalone timeline items`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.ToolCallStarted(name = "read_file", argumentsPreview = """{"path":"README.md"}"""),
+                AgentStreamEvent.ToolCallFinished(name = "read_file", resultPreview = "ok"),
+                AgentStreamEvent.TextDelta("done"),
+                AgentStreamEvent.Completed("done"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        assertEquals(4, state.state.items.size)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
+        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[1].kind)
+        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[2].kind)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[3].kind)
+        val started = state.state.items[1] as ToolEventItem
+        val finished = state.state.items[2] as ToolEventItem
+        assertEquals("read_file", started.toolName)
+        assertEquals("read_file", finished.toolName)
     }
 
     private fun profile(): ConfigProfile = ConfigProfile(

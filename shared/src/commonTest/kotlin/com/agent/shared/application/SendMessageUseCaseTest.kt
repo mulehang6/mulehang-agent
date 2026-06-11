@@ -25,7 +25,7 @@ class SendMessageUseCaseTest {
         val gateway = object : AgentGateway {
             override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
-                AgentStreamEvent.Delta("hello"),
+                AgentStreamEvent.TextDelta("hello"),
                 AgentStreamEvent.Completed("hello world"),
             )
         }

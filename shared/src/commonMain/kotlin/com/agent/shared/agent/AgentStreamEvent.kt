@@ -1,7 +1,7 @@
 package com.agent.shared.agent
 
 /**
- * UI 可消费的 agent 事件骨架。
+ * UI 可消费的 agent 流式事件。
  */
 sealed interface AgentStreamEvent {
     /**
@@ -10,9 +10,30 @@ sealed interface AgentStreamEvent {
     data object Started : AgentStreamEvent
 
     /**
-     * 增量输出。
+     * 助手正文的文本增量。
      */
-    data class Delta(val text: String) : AgentStreamEvent
+    data class TextDelta(val text: String) : AgentStreamEvent
+
+    /**
+     * 工具调用开始。
+     */
+    data class ToolCallStarted(
+        val name: String,
+        val argumentsPreview: String? = null,
+    ) : AgentStreamEvent
+
+    /**
+     * 工具调用结束。
+     */
+    data class ToolCallFinished(
+        val name: String,
+        val resultPreview: String? = null,
+    ) : AgentStreamEvent
+
+    /**
+     * 非正文的中间状态文本。
+     */
+    data class Status(val message: String) : AgentStreamEvent
 
     /**
      * 执行完成。

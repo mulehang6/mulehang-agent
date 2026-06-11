@@ -16,6 +16,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.agent.shared.state.ChatMessageItem
+import com.agent.shared.state.ToolEventItem
+import com.agent.shared.state.ToolEventStatus
 
 /**
  * 最小聊天界面骨架。
@@ -42,8 +45,11 @@ fun ChatScreen(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(state.state.messages) { message ->
-                Text("${message.role}: ${message.content}")
+            items(state.state.items) { item ->
+                when (item) {
+                    is ChatMessageItem -> Text("${item.message.role}: ${item.message.content}")
+                    is ToolEventItem -> Text(buildToolEventLabel(item))
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,4 +72,19 @@ fun ChatScreen(
             }
         }
     }
+}
+
+/**
+ * 将工具事件格式化为时间线可读文本。
+ */
+private fun buildToolEventLabel(item: ToolEventItem): String {
+    val prefix = when (item.status) {
+        ToolEventStatus.Started -> "Tool: 正在调用 ${item.toolName}"
+        ToolEventStatus.Finished -> "Tool: ${item.toolName} 已返回"
+        ToolEventStatus.Status -> "Status: ${item.preview.orEmpty()}"
+    }
+    return item.preview
+        ?.takeIf { it.isNotBlank() && item.status != ToolEventStatus.Status }
+        ?.let { "$prefix ($it)" }
+        ?: prefix
 }

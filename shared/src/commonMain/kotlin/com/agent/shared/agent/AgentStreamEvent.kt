@@ -36,6 +36,22 @@ sealed interface AgentStreamEvent {
     data class Status(val message: String) : AgentStreamEvent
 
     /**
+     * 思考内容的流式增量。
+     */
+    data class ReasoningDelta(
+        val summary: String?,
+        val rawText: String?,
+    ) : AgentStreamEvent
+
+    /**
+     * 思考内容的完整收尾事件。
+     */
+    data class ReasoningCompleted(
+        val summary: String?,
+        val rawText: String?,
+    ) : AgentStreamEvent
+
+    /**
      * 执行完成。
      */
     data class Completed(val text: String) : AgentStreamEvent

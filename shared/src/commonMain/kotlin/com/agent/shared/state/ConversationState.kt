@@ -8,4 +8,5 @@ data class ConversationState(
     val executionState: ExecutionState = ExecutionState.Idle,
     val activeProfileId: String? = null,
     val streamingAssistantItemIndex: Int? = null,
+    val streamingReasoningItemIndex: Int? = null,
 )

@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.agent.shared.state.ChatMessageItem
+import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
 
@@ -48,6 +49,7 @@ fun ChatScreen(
             items(state.state.items) { item ->
                 when (item) {
                     is ChatMessageItem -> Text("${item.message.role}: ${item.message.content}")
+                    is ReasoningItem -> ReasoningBlock(item)
                     is ToolEventItem -> Text(buildToolEventLabel(item))
                 }
             }
@@ -70,6 +72,19 @@ fun ChatScreen(
             ) {
                 Text("Send")
             }
+        }
+    }
+}
+
+/**
+ * 展示默认展开的思考块。
+ */
+@Composable
+private fun ReasoningBlock(item: ReasoningItem) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(if (item.isStreaming) "Thinking: 思考中..." else "Thinking:")
+        if (item.expanded) {
+            Text(item.displayText)
         }
     }
 }

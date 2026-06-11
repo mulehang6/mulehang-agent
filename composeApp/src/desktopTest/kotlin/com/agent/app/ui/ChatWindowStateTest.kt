@@ -11,6 +11,7 @@ import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ExecutionState
+import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -141,6 +142,80 @@ class ChatWindowStateTest {
         val finished = state.state.items[2] as ToolEventItem
         assertEquals("read_file", started.toolName)
         assertEquals("read_file", finished.toolName)
+    }
+
+    /**
+     * 思考流在工具前后出现时，应拆成多个默认展开的思考块，并保持正文单独流式拼接。
+     */
+    @Test
+    fun `should split reasoning blocks around tool events and keep them expanded by default`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.ReasoningDelta(summary = "先分析问题", rawText = "先分析问题的原始内容"),
+                AgentStreamEvent.ReasoningDelta(summary = "继续分析", rawText = "继续分析的原始内容"),
+                AgentStreamEvent.ToolCallStarted(name = "search_web", argumentsPreview = """{"q":"kotlin"}"""),
+                AgentStreamEvent.ToolCallFinished(name = "search_web", resultPreview = "ok"),
+                AgentStreamEvent.ReasoningDelta(summary = "结合工具结果继续推理", rawText = "第二段原始思考"),
+                AgentStreamEvent.TextDelta("answer"),
+                AgentStreamEvent.Completed("answer"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        assertEquals(6, state.state.items.size)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
+        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[1].kind)
+        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[2].kind)
+        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[3].kind)
+        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[4].kind)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[5].kind)
+
+        val firstReasoning = state.state.items[1] as ReasoningItem
+        val secondReasoning = state.state.items[4] as ReasoningItem
+        assertEquals("先分析问题继续分析", firstReasoning.displayText)
+        assertEquals("先分析问题的原始内容继续分析的原始内容", firstReasoning.rawText)
+        assertEquals(true, firstReasoning.expanded)
+        assertEquals(false, firstReasoning.isStreaming)
+        assertEquals("结合工具结果继续推理", secondReasoning.displayText)
+        assertEquals(true, secondReasoning.expanded)
+    }
+
+    /**
+     * 当 summary 缺失时，思考块应回退显示原始 reasoning 文本。
+     */
+    @Test
+    fun `should fall back to raw reasoning text when summary is missing`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.ReasoningDelta(summary = null, rawText = "只拿到了原始思考"),
+                AgentStreamEvent.Completed(""),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        val reasoningItem = state.state.items[1] as ReasoningItem
+        assertEquals("只拿到了原始思考", reasoningItem.displayText)
+        assertEquals("只拿到了原始思考", reasoningItem.rawText)
     }
 
     private fun profile(): ConfigProfile = ConfigProfile(

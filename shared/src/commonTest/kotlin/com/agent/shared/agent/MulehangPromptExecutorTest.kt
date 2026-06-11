@@ -24,6 +24,7 @@ class MulehangPromptExecutorTest {
         assertEquals("deepseek-v4-flash", model.id)
         assertEquals(LLMProvider.OpenAI, model.provider)
         assertTrue(model.supports(LLMCapability.Completion))
+        assertTrue(model.supports(LLMCapability.Thinking))
         assertTrue(model.supports(LLMCapability.OpenAIEndpoint.Completions))
     }
 

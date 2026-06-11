@@ -13,6 +13,7 @@ import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationState
 import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ExecutionState
+import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +70,7 @@ class ChatWindowState(
             items = state.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt)),
             executionState = ExecutionState.Running,
             streamingAssistantItemIndex = null,
+            streamingReasoningItemIndex = null,
         )
 
         scope.launch {
@@ -114,6 +116,16 @@ class ChatWindowState(
                 preview = event.message,
             )
 
+            is AgentStreamEvent.ReasoningDelta -> appendReasoningDelta(
+                summary = event.summary,
+                rawText = event.rawText,
+            )
+
+            is AgentStreamEvent.ReasoningCompleted -> completeReasoning(
+                summary = event.summary,
+                rawText = event.rawText,
+            )
+
             is AgentStreamEvent.Completed -> completeAssistantMessage(event.text)
             is AgentStreamEvent.Failed -> state.copy(
                 executionState = ExecutionState.Failed(
@@ -123,6 +135,8 @@ class ChatWindowState(
                     ),
                 ),
                 streamingAssistantItemIndex = null,
+                streamingReasoningItemIndex = null,
+                items = closeStreamingReasoning(state).items,
             )
         }
     }
@@ -134,19 +148,20 @@ class ChatWindowState(
         if (delta.isEmpty()) {
             return state
         }
-        val currentIndex = state.streamingAssistantItemIndex
+        val normalizedState = closeStreamingReasoning(state)
+        val currentIndex = normalizedState.streamingAssistantItemIndex
         return if (currentIndex == null) {
-            state.copy(
-                items = state.items + ChatMessageItem(ChatMessage(ChatRole.Assistant, delta)),
-                streamingAssistantItemIndex = state.items.size,
+            normalizedState.copy(
+                items = normalizedState.items + ChatMessageItem(ChatMessage(ChatRole.Assistant, delta)),
+                streamingAssistantItemIndex = normalizedState.items.size,
             )
         } else {
-            val existingItem = state.items[currentIndex] as? ChatMessageItem ?: return state
-            val updatedItems = state.items.toMutableList()
+            val existingItem = normalizedState.items[currentIndex] as? ChatMessageItem ?: return normalizedState
+            val updatedItems = normalizedState.items.toMutableList()
             updatedItems[currentIndex] = existingItem.copy(
                 message = existingItem.message.copy(content = existingItem.message.content + delta),
             )
-            state.copy(items = updatedItems)
+            normalizedState.copy(items = updatedItems)
         }
     }
 
@@ -157,34 +172,101 @@ class ChatWindowState(
         toolName: String,
         status: ToolEventStatus,
         preview: String?,
-    ): ConversationState = state.copy(
-        items = state.items + ToolEventItem(
+    ): ConversationState {
+        val normalizedState = closeStreamingReasoning(state)
+        return normalizedState.copy(
+            items = normalizedState.items + ToolEventItem(
             toolName = toolName,
             status = status,
             preview = preview,
         ),
-    )
+        )
+    }
+
+    /**
+     * 将思考增量拼接到当前思考块。
+     */
+    private fun appendReasoningDelta(
+        summary: String?,
+        rawText: String?,
+    ): ConversationState {
+        if (summary.isNullOrEmpty() && rawText.isNullOrEmpty()) {
+            return state
+        }
+        val currentIndex = state.streamingReasoningItemIndex
+        return if (currentIndex == null) {
+            state.copy(
+                items = state.items + ReasoningItem(
+                    summaryText = summary,
+                    rawText = rawText ?: summary,
+                    expanded = true,
+                    isStreaming = true,
+                ),
+                streamingReasoningItemIndex = state.items.size,
+            )
+        } else {
+            val existingItem = state.items[currentIndex] as? ReasoningItem ?: return state
+            val updatedItems = state.items.toMutableList()
+            updatedItems[currentIndex] = existingItem.copy(
+                summaryText = existingItem.summaryText.orEmpty().appendNullable(summary),
+                rawText = existingItem.rawText.orEmpty().appendNullable(rawText ?: summary),
+                expanded = true,
+                isStreaming = true,
+            )
+            state.copy(items = updatedItems)
+        }
+    }
+
+    /**
+     * 收到 reasoning 完整事件后收尾当前思考块。
+     */
+    private fun completeReasoning(
+        summary: String?,
+        rawText: String?,
+    ): ConversationState {
+        val currentIndex = state.streamingReasoningItemIndex ?: return state.copy(
+            items = state.items + ReasoningItem(
+                summaryText = summary,
+                rawText = rawText ?: summary,
+                expanded = true,
+                isStreaming = false,
+            ),
+        )
+        val existingItem = state.items[currentIndex] as? ReasoningItem ?: return state
+        val updatedItems = state.items.toMutableList()
+        updatedItems[currentIndex] = existingItem.copy(
+            summaryText = summary ?: existingItem.summaryText,
+            rawText = rawText ?: existingItem.rawText,
+            expanded = true,
+            isStreaming = false,
+        )
+        return state.copy(
+            items = updatedItems,
+            streamingReasoningItemIndex = null,
+        )
+    }
 
     /**
      * 在完成时补齐最终正文，并清理流式状态。
      */
     private fun completeAssistantMessage(finalText: String): ConversationState {
-        val currentIndex = state.streamingAssistantItemIndex ?: return state.copy(
-            items = appendCompletedAssistantIfNeeded(state.items, finalText),
+        val normalizedState = closeStreamingReasoning(state)
+        val currentIndex = normalizedState.streamingAssistantItemIndex ?: return normalizedState.copy(
+            items = appendCompletedAssistantIfNeeded(normalizedState.items, finalText),
             executionState = ExecutionState.Idle,
             streamingAssistantItemIndex = null,
         )
-        val existingItem = state.items[currentIndex] as? ChatMessageItem ?: return state.copy(
+        val existingItem = normalizedState.items[currentIndex] as? ChatMessageItem ?: return normalizedState.copy(
             executionState = ExecutionState.Idle,
             streamingAssistantItemIndex = null,
         )
-        val updatedItems = state.items.toMutableList()
+        val updatedItems = normalizedState.items.toMutableList()
         if (finalText.isNotBlank() && existingItem.message.content != finalText) {
             updatedItems[currentIndex] = existingItem.copy(
                 message = existingItem.message.copy(content = finalText),
             )
         }
-        return state.copy(
+        return normalizedState.copy(
             items = updatedItems,
             executionState = ExecutionState.Idle,
             streamingAssistantItemIndex = null,
@@ -203,4 +285,28 @@ class ChatWindowState(
         }
         return items + ChatMessageItem(ChatMessage(ChatRole.Assistant, finalText))
     }
+
+    /**
+     * 在进入工具或正文阶段前关闭仍处于流式中的思考块。
+     */
+    private fun closeStreamingReasoning(source: ConversationState): ConversationState {
+        val reasoningIndex = source.streamingReasoningItemIndex ?: return source
+        val reasoningItem = source.items[reasoningIndex] as? ReasoningItem ?: return source.copy(
+            streamingReasoningItemIndex = null,
+        )
+        if (!reasoningItem.isStreaming) {
+            return source.copy(streamingReasoningItemIndex = null)
+        }
+        val updatedItems = source.items.toMutableList()
+        updatedItems[reasoningIndex] = reasoningItem.copy(isStreaming = false, expanded = true)
+        return source.copy(
+            items = updatedItems,
+            streamingReasoningItemIndex = null,
+        )
+    }
 }
+
+/**
+ * 仅在有值时追加文本片段。
+ */
+private fun String.appendNullable(next: String?): String = if (next.isNullOrEmpty()) this else this + next

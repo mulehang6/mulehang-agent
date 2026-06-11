@@ -11,10 +11,14 @@ import kotlinx.coroutines.flow.flow
  */
 class KoogAgentGateway(
     private val streamRunner: suspend (prompt: String, config: ConfigProfile) -> Flow<StreamFrame> = { prompt, config ->
-        buildPromptExecutor(config).executeStreaming(
-            prompt = buildPrompt(prompt),
-            model = buildLlmModel(config),
-        )
+        if (config.isDeepSeekChatCompletionsProfile()) {
+            DeepSeekChatCompletionsStreamer().stream(prompt = prompt, config = config)
+        } else {
+            buildPromptExecutor(config).executeStreaming(
+                prompt = buildPrompt(prompt),
+                model = buildLlmModel(config),
+            )
+        }
     },
 ) : AgentGateway {
     /**
@@ -70,8 +74,20 @@ class KoogAgentGateway(
                         )
                     }
 
-                    is StreamFrame.ReasoningDelta -> Unit
-                    is StreamFrame.ReasoningComplete -> Unit
+                    is StreamFrame.ReasoningDelta -> emit(
+                        AgentStreamEvent.ReasoningDelta(
+                            summary = frame.summary,
+                            rawText = frame.text,
+                        ),
+                    )
+
+                    is StreamFrame.ReasoningComplete -> emit(
+                        AgentStreamEvent.ReasoningCompleted(
+                            summary = frame.summary?.joinToString(separator = ""),
+                            rawText = frame.content.joinToString(separator = ""),
+                        ),
+                    )
+
                     is StreamFrame.End -> Unit
                 }
             }

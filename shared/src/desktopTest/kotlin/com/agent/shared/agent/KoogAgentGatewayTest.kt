@@ -85,6 +85,50 @@ class KoogAgentGatewayTest {
         assertEquals(AgentStreamEvent.Completed("hello"), events[5])
     }
 
+    /**
+     * reasoning frame 应映射为 summary 优先的思考流事件。
+     */
+    @Test
+    fun `should map reasoning frames into reasoning events`() = runTest {
+        val gateway = KoogAgentGateway(
+            streamRunner = { _, _ ->
+                flowOf(
+                    StreamFrame.ReasoningDelta(
+                        id = "r1",
+                        text = "raw-1",
+                        summary = "summary-1",
+                    ),
+                    StreamFrame.ReasoningComplete(
+                        id = "r1",
+                        content = listOf("raw-1", "raw-2"),
+                        summary = listOf("summary-1", "summary-2"),
+                    ),
+                    StreamFrame.End(),
+                )
+            },
+        )
+
+        val events = gateway.run("hello", openAiProfile()).toList()
+
+        assertEquals(4, events.size)
+        assertEquals(AgentStreamEvent.Started, events[0])
+        assertEquals(
+            AgentStreamEvent.ReasoningDelta(
+                summary = "summary-1",
+                rawText = "raw-1",
+            ),
+            events[1],
+        )
+        assertEquals(
+            AgentStreamEvent.ReasoningCompleted(
+                summary = "summary-1summary-2",
+                rawText = "raw-1raw-2",
+            ),
+            events[2],
+        )
+        assertEquals(AgentStreamEvent.Completed(""), events[3])
+    }
+
     private fun openAiProfile(): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = ProviderType.OPENAI_RESPONSES,

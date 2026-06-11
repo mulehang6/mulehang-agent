@@ -22,5 +22,10 @@ sealed interface ConversationItem {
          * 工具调用或中间状态事件。
          */
         ToolEvent,
+
+        /**
+         * 思考块。
+         */
+        Reasoning,
     }
 }

@@ -52,6 +52,9 @@ internal fun buildLlmModel(config: ConfigProfile): LLModel {
         add(LLMCapability.ToolChoice)
         add(LLMCapability.Schema.JSON.Basic)
         add(LLMCapability.Schema.JSON.Standard)
+        if (config.isDeepSeekChatCompletionsProfile()) {
+            add(LLMCapability.Thinking)
+        }
         if (endpointCapability != null) {
             add(endpointCapability)
         }
@@ -90,3 +93,10 @@ private fun ConfigProfile.toLlmProvider(): LLMProvider = when (providerType) {
     ProviderType.ANTHROPIC -> LLMProvider.Anthropic
     else -> throw IllegalConfigExceptions { "暂不支持的 providerType: $providerType" }
 }
+
+/**
+ * 判断当前 profile 是否走 DeepSeek 的 OpenAI chat-completions 兼容接口。
+ */
+internal fun ConfigProfile.isDeepSeekChatCompletionsProfile(): Boolean =
+    providerType == ProviderType.OPENAI_CHAT_COMPLETIONS &&
+        (baseUrl.contains("deepseek.com", ignoreCase = true) || model.startsWith("deepseek", ignoreCase = true))

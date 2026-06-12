@@ -43,8 +43,38 @@ class DeepSeekChatCompletionsStreamerTest {
         assertEquals("deepseek-v4-flash", request.model)
         assertEquals(true, request.stream)
         assertEquals(DeepSeekThinking(type = "enabled"), request.thinking)
-        assertEquals("high", request.reasoningEffort)
+        assertEquals("medium", request.reasoningEffort)
         assertEquals(listOf(DeepSeekChatMessage(role = "user", content = "你好")), request.messages)
+    }
+
+    /**
+     * 请求体中的 reasoning effort 应跟随上层传入值，而不是固定写死。
+     */
+    @Test
+    fun `should map request reasoning effort into deepseek payload`() = runTest {
+        var capturedRequest: DeepSeekChatCompletionRequest? = null
+        val streamer = DeepSeekChatCompletionsStreamer(
+            chunkRunner = { request, _ ->
+                capturedRequest = request
+                flowOf(
+                    DeepSeekChatCompletionChunk(
+                        id = "chatcmpl-2",
+                        created = 2L,
+                        model = "deepseek-v4-flash",
+                    ),
+                )
+            },
+        )
+
+        streamer.stream(
+            request = AgentRunRequest(
+                prompt = "你好",
+                profile = deepSeekProfile(),
+                reasoningEffort = ReasoningEffort.LOW,
+            ),
+        ).toList()
+
+        assertEquals("low", capturedRequest?.reasoningEffort)
     }
 
     /**

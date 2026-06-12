@@ -34,11 +34,11 @@ internal class DeepSeekChatCompletionsStreamer(
     /**
      * 执行一次 DeepSeek chat-completions 流式请求。
      */
-    fun stream(prompt: String, config: ConfigProfile): Flow<StreamFrame> = flow {
+    fun stream(request: AgentRunRequest): Flow<StreamFrame> = flow {
         var finishReason: String? = null
         var metaInfo: ResponseMetaInfo? = null
 
-        chunkRunner(buildRequest(prompt, config), config).collect { chunk ->
+        chunkRunner(buildRequest(request), request.profile).collect { chunk ->
             chunk.choices.firstOrNull()?.let { choice ->
                 choice.delta.reasoningContent?.takeIf { it.isNotBlank() }?.let { reasoning ->
                     emit(StreamFrame.ReasoningDelta(text = reasoning, index = choice.index))
@@ -64,16 +64,26 @@ internal class DeepSeekChatCompletionsStreamer(
     }
 
     /**
+     * 兼容旧调用方式，默认使用请求对象中的默认推理强度。
+     */
+    fun stream(prompt: String, config: ConfigProfile): Flow<StreamFrame> = stream(
+        AgentRunRequest(
+            prompt = prompt,
+            profile = config,
+        ),
+    )
+
+    /**
      * 构造 DeepSeek 所需的最小 chat-completions 请求。
      */
-    internal fun buildRequest(prompt: String, config: ConfigProfile): DeepSeekChatCompletionRequest =
+    internal fun buildRequest(request: AgentRunRequest): DeepSeekChatCompletionRequest =
         DeepSeekChatCompletionRequest(
-            model = config.model,
-            messages = listOf(DeepSeekChatMessage(role = "user", content = prompt)),
+            model = request.profile.model,
+            messages = listOf(DeepSeekChatMessage(role = "user", content = request.prompt)),
             stream = true,
             streamOptions = DeepSeekStreamOptions(includeUsage = true),
             thinking = DeepSeekThinking(type = "enabled"),
-            reasoningEffort = "high",
+            reasoningEffort = request.reasoningEffort?.wireValue ?: ReasoningEffort.MEDIUM.wireValue,
         )
 
 }

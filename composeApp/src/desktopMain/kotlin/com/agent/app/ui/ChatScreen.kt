@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
@@ -556,9 +557,18 @@ private fun ComposerPanel(state: ChatWindowState) {
                                             if (hoveredReasoningModelId == profile.id && modelSupportsReasoning(profile.model)) {
                                                 Spacer(modifier = Modifier.height(8.dp))
                                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    ReasoningChip(text = "low", selected = false)
-                                                    ReasoningChip(text = "medium", selected = true)
-                                                    ReasoningChip(text = "high", selected = false)
+                                                    ReasoningEffort.entries.forEach { effort ->
+                                                        ReasoningChip(
+                                                            text = effort.wireValue,
+                                                            selected = activeConversation.reasoningEffort == effort,
+                                                            onClick = {
+                                                                state.selectProfile(profile.id)
+                                                                state.updateReasoningEffort(effort)
+                                                                hoveredReasoningModelId = null
+                                                                modelExpanded = false
+                                                            },
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -712,8 +722,10 @@ private fun SelectorChip(
 private fun ReasoningChip(
     text: String,
     selected: Boolean,
+    onClick: () -> Unit,
 ) {
     Surface(
+        onClick = onClick,
         shape = RoundedCornerShape(999.dp),
         color = if (selected) Color(0xFF213D2E) else Color(0xFFECE3D2),
     ) {
@@ -967,7 +979,8 @@ internal fun providerLabel(providerType: ProviderType): String = when (providerT
  * 判断模型是否支持 thinking level。
  */
 internal fun modelSupportsReasoning(model: String): Boolean =
-    listOf("r1", "reason", "thinking").any { token -> model.contains(token, ignoreCase = true) }
+    model.startsWith("deepseek", ignoreCase = true) ||
+        listOf("r1", "reason", "thinking").any { token -> model.contains(token, ignoreCase = true) }
 
 /**
  * 生成上下文圆环 hover 文案。

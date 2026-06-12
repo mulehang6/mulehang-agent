@@ -1,7 +1,9 @@
 package com.agent.shared.application
 
 import com.agent.shared.agent.AgentGateway
+import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
+import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ProviderType
@@ -23,7 +25,7 @@ class SendMessageUseCaseTest {
     @Test
     fun `should emit delta and completed events from gateway`() = runTest {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.TextDelta("hello"),
                 AgentStreamEvent.Completed("hello world"),
@@ -34,6 +36,30 @@ class SendMessageUseCaseTest {
 
         assertEquals(3, events.size)
         assertEquals(AgentStreamEvent.Completed("hello world"), events.last())
+    }
+
+    /**
+     * 用例应把 reasoning effort 透明转发到底层 gateway。
+     */
+    @Test
+    fun `should forward reasoning effort to gateway request`() = runTest {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(AgentStreamEvent.Started, AgentStreamEvent.Completed("done"))
+            }
+        }
+
+        SendMessageUseCase(gateway).invoke(
+            AgentRunRequest(
+                prompt = "hi",
+                profile = profile(),
+                reasoningEffort = ReasoningEffort.LOW,
+            ),
+        ).toList()
+
+        assertEquals(ReasoningEffort.LOW, capturedRequest?.reasoningEffort)
     }
 
     private fun profile(): ConfigProfile = ConfigProfile(

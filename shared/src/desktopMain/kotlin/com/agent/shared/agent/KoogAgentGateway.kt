@@ -2,7 +2,6 @@ package com.agent.shared.agent
 
 import ai.koog.prompt.Prompt
 import ai.koog.prompt.streaming.StreamFrame
-import com.agent.shared.config.ConfigProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -10,13 +9,13 @@ import kotlinx.coroutines.flow.flow
  * Koog 1.0.0 接入点，负责执行单轮消息并转换为应用事件。
  */
 class KoogAgentGateway(
-    private val streamRunner: suspend (prompt: String, config: ConfigProfile) -> Flow<StreamFrame> = { prompt, config ->
-        if (config.isDeepSeekChatCompletionsProfile()) {
-            DeepSeekChatCompletionsStreamer().stream(prompt = prompt, config = config)
+    private val streamRunner: suspend (request: AgentRunRequest) -> Flow<StreamFrame> = { request ->
+        if (request.profile.isDeepSeekChatCompletionsProfile()) {
+            DeepSeekChatCompletionsStreamer().stream(request)
         } else {
-            buildPromptExecutor(config).executeStreaming(
-                prompt = buildPrompt(prompt),
-                model = buildLlmModel(config),
+            buildPromptExecutor(request.profile).executeStreaming(
+                prompt = buildPrompt(request.prompt),
+                model = buildLlmModel(request.profile),
             )
         }
     },
@@ -24,13 +23,13 @@ class KoogAgentGateway(
     /**
      * 运行一次消息请求。
      */
-    override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flow {
+    override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
         emit(AgentStreamEvent.Started)
         val textBuffer = StringBuilder()
         val announcedToolCalls = mutableSetOf<String>()
 
         try {
-            streamRunner(prompt, config).collect { frame ->
+            streamRunner(request).collect { frame ->
                 when (frame) {
                     is StreamFrame.TextDelta -> {
                         textBuffer.append(frame.text)

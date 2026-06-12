@@ -3,7 +3,9 @@ package com.agent.app.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
+import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
 import com.agent.shared.config.ConfigProfile
@@ -40,6 +42,7 @@ data class ChatConversationUiState(
     val workspacePath: String,
     val items: List<ConversationItem> = emptyList(),
     val attachments: List<ChatAttachmentUiState> = emptyList(),
+    val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
     val executionState: ExecutionState = ExecutionState.Idle,
     val streamingAssistantItemIndex: Int? = null,
     val streamingReasoningItemIndex: Int? = null,
@@ -232,6 +235,15 @@ class ChatWindowState(
     }
 
     /**
+     * 调整当前活动会话的推理强度档位。
+     */
+    fun updateReasoningEffort(reasoningEffort: ReasoningEffort) {
+        mutateActiveConversation { conversation ->
+            conversation.copy(reasoningEffort = reasoningEffort)
+        }
+    }
+
+    /**
      * 兼容旧调用方式的直接发送入口。
      */
     fun send(message: String) {
@@ -264,8 +276,8 @@ class ChatWindowState(
         val targetConversationId = ui.activeConversationId
         mutateConversation(targetConversationId) { conversation ->
             val nextItems = conversation.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt))
-            conversation.copy(
-                title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
+                conversation.copy(
+                    title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
                     ?: prompt.take(24).ifBlank { DEFAULT_CONVERSATION_TITLE },
                 items = nextItems,
                 attachments = emptyList(),
@@ -282,7 +294,13 @@ class ChatWindowState(
 
         scope.launch {
             try {
-                sendMessageUseCase(prompt, profile).collect { event ->
+                sendMessageUseCase(
+                    AgentRunRequest(
+                        prompt = prompt,
+                        profile = profile,
+                        reasoningEffort = findConversation(targetConversationId).reasoningEffort,
+                    ),
+                ).collect { event ->
                     applyAgentEvent(targetConversationId, event)
                 }
             } catch (exception: Exception) {

@@ -1,7 +1,9 @@
 package com.agent.app.ui
 
 import com.agent.shared.agent.AgentGateway
+import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
+import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
 import com.agent.shared.config.ConfigLayer
@@ -57,7 +59,7 @@ class ChatWindowStateTest {
     @Test
     fun `should merge text deltas into a single assistant message and return idle`() = runTest(dispatcher) {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.TextDelta("hel"),
                 AgentStreamEvent.TextDelta("lo"),
@@ -90,7 +92,7 @@ class ChatWindowStateTest {
     @Test
     fun `should expose visible error message after failed event`() = runTest(dispatcher) {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.Failed("invalid api key"),
             )
@@ -115,7 +117,7 @@ class ChatWindowStateTest {
     @Test
     fun `should append tool events as standalone timeline items`() = runTest(dispatcher) {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.ToolCallStarted(name = "read_file", argumentsPreview = """{"path":"README.md"}"""),
                 AgentStreamEvent.ToolCallFinished(name = "read_file", resultPreview = "ok"),
@@ -151,7 +153,7 @@ class ChatWindowStateTest {
     @Test
     fun `should split reasoning blocks around tool events and keep them expanded by default`() = runTest(dispatcher) {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.ReasoningDelta(summary = "先分析问题", rawText = "先分析问题的原始内容"),
                 AgentStreamEvent.ReasoningDelta(summary = "继续分析", rawText = "继续分析的原始内容"),
@@ -197,7 +199,7 @@ class ChatWindowStateTest {
     @Test
     fun `should fall back to raw reasoning text when summary is missing`() = runTest(dispatcher) {
         val gateway = object : AgentGateway {
-            override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
                 AgentStreamEvent.Started,
                 AgentStreamEvent.ReasoningDelta(summary = null, rawText = "只拿到了原始思考"),
                 AgentStreamEvent.Completed(""),
@@ -291,25 +293,66 @@ class ChatWindowStateTest {
         assertEquals(2, secondConversation.items.filterIsInstance<ChatMessageItem>().size)
     }
 
-    private fun profile(): ConfigProfile = ConfigProfile(
+    /**
+     * 当前会话的 thinking level 应进入发送请求，避免只停留在 hover 展示层。
+     */
+    @Test
+    fun `should send active conversation reasoning effort with draft`() = runTest(dispatcher) {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.Completed("ok"),
+                )
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile(model = "deepseek-r1")),
+                activeProfile = profile(model = "deepseek-r1"),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.updateReasoningEffort(ReasoningEffort.HIGH)
+        state.updateDraft("hello")
+        state.sendDraft()
+        advanceUntilIdle()
+
+        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+        assertEquals(ReasoningEffort.HIGH, capturedRequest?.reasoningEffort)
+    }
+
+    private fun profile(model: String = "gpt-4.1"): ConfigProfile = ConfigProfile(
         id = "openai-main",
-        providerType = ProviderType.OPENAI_RESPONSES,
-        baseUrl = "https://api.openai.com/v1",
+        providerType = if (model.startsWith("deepseek", ignoreCase = true)) {
+            ProviderType.OPENAI_CHAT_COMPLETIONS
+        } else {
+            ProviderType.OPENAI_RESPONSES
+        },
+        baseUrl = if (model.startsWith("deepseek", ignoreCase = true)) {
+            "https://api.deepseek.com/v1"
+        } else {
+            "https://api.openai.com/v1"
+        },
         apiKey = "key",
-        model = "gpt-4.1",
+        model = model,
         enabled = true,
         layer = ConfigLayer.PROJECT,
     )
 
     private fun idleGateway(): AgentGateway = object : AgentGateway {
-        override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+        override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
             AgentStreamEvent.Started,
             AgentStreamEvent.Completed(""),
         )
     }
 
     private fun streamingGateway(): AgentGateway = object : AgentGateway {
-        override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+        override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
             AgentStreamEvent.Started,
             AgentStreamEvent.TextDelta("hel"),
             AgentStreamEvent.TextDelta("lo"),

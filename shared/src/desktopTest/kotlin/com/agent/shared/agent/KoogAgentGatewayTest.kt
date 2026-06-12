@@ -24,15 +24,17 @@ class KoogAgentGatewayTest {
     @Test
     fun `should emit failed event for unsupported provider`() = runTest {
         val events = KoogAgentGateway().run(
-            prompt = "hello",
-            config = ConfigProfile(
-                id = "google-main",
-                providerType = ProviderType.GOOGLE,
-                baseUrl = "https://generativelanguage.googleapis.com",
-                apiKey = "key",
-                model = "gemini-2.5-pro",
-                enabled = true,
-                layer = ConfigLayer.PROJECT,
+            AgentRunRequest(
+                prompt = "hello",
+                profile = ConfigProfile(
+                    id = "google-main",
+                    providerType = ProviderType.GOOGLE,
+                    baseUrl = "https://generativelanguage.googleapis.com",
+                    apiKey = "key",
+                    model = "gemini-2.5-pro",
+                    enabled = true,
+                    layer = ConfigLayer.PROJECT,
+                ),
             ),
         ).toList()
 
@@ -48,7 +50,7 @@ class KoogAgentGatewayTest {
     @Test
     fun `should map stream frames into text and tool events`() = runTest {
         val gateway = KoogAgentGateway(
-            streamRunner = { _, _ ->
+            streamRunner = { _ ->
                 flowOf(
                     StreamFrame.TextDelta("hel"),
                     StreamFrame.ToolCallComplete(
@@ -62,7 +64,12 @@ class KoogAgentGatewayTest {
             },
         )
 
-        val events = gateway.run("hello", openAiProfile()).toList()
+        val events = gateway.run(
+            AgentRunRequest(
+                prompt = "hello",
+                profile = openAiProfile(),
+            ),
+        ).toList()
 
         assertEquals(6, events.size)
         assertEquals(AgentStreamEvent.Started, events[0])
@@ -91,7 +98,7 @@ class KoogAgentGatewayTest {
     @Test
     fun `should map reasoning frames into reasoning events`() = runTest {
         val gateway = KoogAgentGateway(
-            streamRunner = { _, _ ->
+            streamRunner = { _ ->
                 flowOf(
                     StreamFrame.ReasoningDelta(
                         id = "r1",
@@ -108,7 +115,12 @@ class KoogAgentGatewayTest {
             },
         )
 
-        val events = gateway.run("hello", openAiProfile()).toList()
+        val events = gateway.run(
+            AgentRunRequest(
+                prompt = "hello",
+                profile = openAiProfile(),
+            ),
+        ).toList()
 
         assertEquals(4, events.size)
         assertEquals(AgentStreamEvent.Started, events[0])

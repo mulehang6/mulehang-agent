@@ -50,6 +50,7 @@ class ChatScreenPresentationTest {
     fun `should expose provider label and reasoning support from profile`() {
         assertEquals("OpenAI Compatible", providerLabel(ProviderType.OPENAI_CHAT_COMPLETIONS))
         assertEquals(true, modelSupportsReasoning("deepseek-r1"))
+        assertEquals(true, modelSupportsReasoning("deepseek-v4-flash"))
         assertEquals(false, modelSupportsReasoning("claude-sonnet-4"))
     }
 

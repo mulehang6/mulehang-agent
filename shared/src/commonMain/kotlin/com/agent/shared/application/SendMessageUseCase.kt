@@ -1,6 +1,7 @@
 package com.agent.shared.application
 
 import com.agent.shared.agent.AgentGateway
+import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.exceptions.IllegalConfigExceptions
@@ -22,16 +23,28 @@ class SendMessageUseCase(
      * 执行一次消息发送。
      */
     operator fun invoke(prompt: String, profile: ConfigProfile): Flow<AgentStreamEvent> {
-        if (prompt.isBlank()) {
-            log.warn({ "提示词为空" })
+        return invoke(
+            AgentRunRequest(
+                prompt = prompt,
+                profile = profile,
+            ),
+        )
+    }
+
+    /**
+     * 执行一次带运行参数的消息发送。
+     */
+    operator fun invoke(request: AgentRunRequest): Flow<AgentStreamEvent> {
+        if (request.prompt.isBlank()) {
+            log.warn { "提示词为空" }
             throw IllegalArgumentException("提示词不能为空")
         }
 
-        if (profile.id.isBlank()) {
-            log.warn({ "profile id 为空" })
-            throw IllegalConfigExceptions({ "profile id 不能为空" })
+        if (request.profile.id.isBlank()) {
+            log.warn { "profile id 为空" }
+            throw IllegalConfigExceptions { "profile id 不能为空" }
         }
-        return agentGateway.run(prompt, profile)
+        return agentGateway.run(request)
     }
 
 }

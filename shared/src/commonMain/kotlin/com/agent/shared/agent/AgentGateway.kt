@@ -1,6 +1,5 @@
 package com.agent.shared.agent
 
-import com.agent.shared.config.ConfigProfile
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -10,5 +9,5 @@ interface AgentGateway {
     /**
      * 执行一次消息请求。
      */
-    fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent>
+    fun run(request: AgentRunRequest): Flow<AgentStreamEvent>
 }

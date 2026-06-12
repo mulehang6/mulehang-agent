@@ -26,6 +26,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 /**
  * 验证桌面聊天窗口状态的消息发送流转。
@@ -218,6 +219,78 @@ class ChatWindowStateTest {
         assertEquals("只拿到了原始思考", reasoningItem.rawText)
     }
 
+    /**
+     * 新建对话应在当前工作目录分组下追加一条空会话，并切换焦点。
+     */
+    @Test
+    fun `should create a new workspace conversation and switch focus to it`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        val originalConversationId = state.ui.activeConversationId
+        state.createConversationForWorkspace("E:\\abc\\def")
+
+        assertEquals("def", state.ui.workspaceGroups.single().label)
+        assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+        assertNotEquals(originalConversationId, state.ui.activeConversationId)
+        assertEquals(emptyList(), state.ui.activeConversation.attachments)
+    }
+
+    /**
+     * 附件选择结果应挂到当前活动会话的输入区，而不是进入消息正文。
+     */
+    @Test
+    fun `should attach selected files to active conversation draft`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.attachFiles(listOf("D:\\tmp\\ChatScreen.kt", "D:\\tmp\\design.png"))
+
+        assertEquals(
+            listOf("ChatScreen.kt", "design.png"),
+            state.ui.activeConversation.attachments.map { it.name },
+        )
+    }
+
+    /**
+     * 发送动作只能影响当前激活的会话，不应回写到其他线程。
+     */
+    @Test
+    fun `should append messages only to the active conversation`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(streamingGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        val firstConversationId = state.ui.activeConversationId
+        state.createConversationForWorkspace("E:\\abc\\def")
+        val secondConversationId = state.ui.activeConversationId
+
+        state.updateDraft("hello")
+        state.sendDraft()
+        advanceUntilIdle()
+
+        val firstConversation = state.findConversation(firstConversationId)
+        val secondConversation = state.findConversation(secondConversationId)
+        assertEquals(0, firstConversation.items.size)
+        assertEquals(2, secondConversation.items.filterIsInstance<ChatMessageItem>().size)
+    }
+
     private fun profile(): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = ProviderType.OPENAI_RESPONSES,
@@ -227,4 +300,20 @@ class ChatWindowStateTest {
         enabled = true,
         layer = ConfigLayer.PROJECT,
     )
+
+    private fun idleGateway(): AgentGateway = object : AgentGateway {
+        override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            AgentStreamEvent.Started,
+            AgentStreamEvent.Completed(""),
+        )
+    }
+
+    private fun streamingGateway(): AgentGateway = object : AgentGateway {
+        override fun run(prompt: String, config: ConfigProfile): Flow<AgentStreamEvent> = flowOf(
+            AgentStreamEvent.Started,
+            AgentStreamEvent.TextDelta("hel"),
+            AgentStreamEvent.TextDelta("lo"),
+            AgentStreamEvent.Completed("hello"),
+        )
+    }
 }

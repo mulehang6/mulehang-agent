@@ -45,5 +45,6 @@ bin/
 /.env
 /.mulehang/*
 !/.mulehang/settings.json.example
+/.superpowers/
 logs/
 /.ai/mcp/

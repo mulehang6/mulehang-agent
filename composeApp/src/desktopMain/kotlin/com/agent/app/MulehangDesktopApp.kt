@@ -35,6 +35,7 @@ fun MulehangDesktopApp() {
         ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(KoogAgentGateway()),
             snapshot = snapshotState.value,
+            projectPath = projectRoot.toString(),
         )
     }
 

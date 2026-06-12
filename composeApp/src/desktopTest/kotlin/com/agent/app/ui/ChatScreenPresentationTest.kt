@@ -3,6 +3,7 @@ package com.agent.app.ui
 import com.agent.shared.state.ChatMessage
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
+import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ReasoningItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,5 +32,32 @@ class ChatScreenPresentationTest {
     fun `should keep thinking headline for reasoning block`() {
         assertEquals("Thinking: 思考中...", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
         assertEquals("Thinking:", buildReasoningHeadline(ReasoningItem(isStreaming = false)))
+    }
+
+    /**
+     * pwd 分组标题应只显示末级目录名。
+     */
+    @Test
+    fun `should map workspace path to terminal folder label`() {
+        assertEquals("def", buildWorkspaceLabel("E:\\abc\\def"))
+        assertEquals("repo-x", buildWorkspaceLabel("D:\\work\\repo-x"))
+    }
+
+    /**
+     * provider 标签和 reasoning 支持能力应符合原型规则。
+     */
+    @Test
+    fun `should expose provider label and reasoning support from profile`() {
+        assertEquals("OpenAI Compatible", providerLabel(ProviderType.OPENAI_CHAT_COMPLETIONS))
+        assertEquals(true, modelSupportsReasoning("deepseek-r1"))
+        assertEquals(false, modelSupportsReasoning("claude-sonnet-4"))
+    }
+
+    /**
+     * 上下文剩余数值只应出现在 hover tooltip 文案中。
+     */
+    @Test
+    fun `should keep context usage value inside tooltip text only`() {
+        assertEquals("58% remaining", buildContextTooltip(0.58f))
     }
 }

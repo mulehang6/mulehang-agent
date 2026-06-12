@@ -1,3 +1,6 @@
 [submodule "vendor/paicli"]
 	path = vendor/paicli
 	url = https://gitcode.com/javabetter/paicli.git
+[submodule "vendor/kilocode"]
+	path = vendor/kilocode
+	url = https://github.com/Kilo-Org/kilocode.git

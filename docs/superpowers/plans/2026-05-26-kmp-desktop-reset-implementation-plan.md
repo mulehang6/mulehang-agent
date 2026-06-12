@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** 把仓库从旧的 `runtime + cli + vendor/kilocode` 主线重置为 `Koog 1.0.0 + KMP + Compose Multiplatform Desktop` 的 Windows Desktop first 工程，并打通最小聊天闭环。
+**Goal:** 把仓库从旧的 `runtime + cli + 外置子仓主线依赖` 重置为 `Koog 1.0.0 + KMP + Compose Multiplatform Desktop` 的 Windows Desktop first 工程，并打通最小聊天闭环。
 
 **Architecture:** 仓库收敛为 `composeApp/` 与 `shared/` 两个模块。`composeApp/` 只负责 Desktop UI 与窗口生命周期；`shared/` 负责配置模型、双层配置加载、按项目记忆的 profile 选择状态、Koog 1.0.0 最小执行入口以及面向 UI 的发送消息用例。UI 只消费仓库自己的状态与事件模型，不直接依赖 Koog 原始对象。
 
@@ -16,8 +16,6 @@
 
 - `runtime/`
 - `cli/`
-- `vendor/kilocode`
-- `.gitmodules` 中的 `vendor/kilocode` 配置；如果 `.gitmodules` 只剩非主线参考 submodule，则保留文件
 - `docs/superpowers/specs/01-runtime-foundation-and-contracts.md`
 - `docs/superpowers/specs/02-provider-byok-and-model-discovery.md`
 - `docs/superpowers/specs/03-agent-strategy-and-capability-integration.md`
@@ -96,26 +94,23 @@
 
 本计划不包含 `git commit` 步骤。仓库规则要求只有在用户明确允许时才提交。
 
-本计划中的 `vendor` 清理目标仅限旧主线依赖的 `vendor/kilocode`。如果后续重新引入其他独立的 `vendor/*` 项目作为参考、镜像或隔离实验，这不构成对本计划的回滚；关键约束仍然是仓库主线不能再次建立在 `vendor/kilocode` 或同类外置主模块之上。
+本计划中的 `vendor` 清理目标仅限旧主线对外置仓库的主线依赖关系。如果后续重新引入 `vendor/kilocode` 或其他独立的 `vendor/*` 项目作为参考、镜像或隔离实验，这不构成对本计划的回滚；关键约束仍然是仓库主线不能再次建立在 `vendor/*` 子模块之上。
 
 ## Completion Status
 
 完成记录：
 
-1. `runtime/`、`cli/`、`vendor/kilocode` 与旧 specs/plans 文档已从当前主线移除。
-2. 当前 `.gitmodules` 只记录 `vendor/paicli`，不再包含 `vendor/kilocode`；按本计划的 vendor 边界说明，保留 `vendor/paicli` 不构成主线回滚。
-3. `shared/` 与 `composeApp/` 已成为当前产品主线模块。
-4. 双层 settings、环境变量覆盖、按项目 profile 记忆、最小 Koog 执行入口和 Desktop 聊天 UI 已接通。
-5. 完成提交：`7233847 feat(desktop): 完成最小聊天闭环`。
-6. 最新验证：`.\gradlew.bat build` 通过。
+1. `runtime/`、`cli/` 与旧 specs/plans 文档已从当前主线移除。
+2. `shared/` 与 `composeApp/` 已成为当前产品主线模块。
+3. 双层 settings、环境变量覆盖、按项目 profile 记忆、最小 Koog 执行入口和 Desktop 聊天 UI 已接通。
+4. 完成提交：`7233847 feat(desktop): 完成最小聊天闭环`。
+5. 最新验证：`.\gradlew.bat build` 通过。
 
 ## Task 1: 清理旧主线并改写仓库入口文档
 
 **Files:**
 - Remove: `runtime/`
 - Remove: `cli/`
-- Remove: `vendor/kilocode`
-- Remove: `.gitmodules` 中的 `vendor/kilocode` 配置；若只剩 `vendor/paicli` 等非主线参考 submodule，则保留 `.gitmodules`
 - Remove: 旧 `docs/superpowers/specs/*.md` 与 `docs/superpowers/plans/*.md`
 - Modify: `README.md`
 - Modify: `AGENTS.md`
@@ -131,7 +126,7 @@ Get-ChildItem .\docs\superpowers\specs
 Get-ChildItem .\docs\superpowers\plans
 ```
 
-Expected: 能看到 `runtime/`、`cli/`、`vendor/kilocode`、旧 `specs/plans` 文档，以及新的 `2026-05-26-kmp-desktop-reset-design.md`。
+Expected: 能看到 `runtime/`、`cli/`、旧 `specs/plans` 文档，以及新的 `2026-05-26-kmp-desktop-reset-design.md`。
 
 - [x] **Step 2: 删除旧目录和旧文档，只保留新的 reset design 与新的 implementation plan**
 
@@ -140,8 +135,6 @@ Run:
 ```powershell
 Remove-Item -LiteralPath .\runtime -Recurse -Force
 Remove-Item -LiteralPath .\cli -Recurse -Force
-Remove-Item -LiteralPath .\vendor\kilocode -Recurse -Force
-git config -f .\.gitmodules --remove-section submodule.vendor/kilocode
 Remove-Item -LiteralPath .\docs\superpowers\specs\01-runtime-foundation-and-contracts.md -Force
 Remove-Item -LiteralPath .\docs\superpowers\specs\02-provider-byok-and-model-discovery.md -Force
 Remove-Item -LiteralPath .\docs\superpowers\specs\03-agent-strategy-and-capability-integration.md -Force
@@ -165,7 +158,7 @@ Remove-Item -LiteralPath .\docs\superpowers\plans\2026-05-06-kilo-style-cli-http
 Remove-Item -LiteralPath .\docs\superpowers\plans\2026-05-14-koog-built-in-file-tools-implementation-plan.md -Force
 ```
 
-Expected: 旧目录、`vendor/kilocode` 子模块配置和旧文档被删除，`docs/superpowers` 中只剩新的 reset design 与当前 implementation plan。若 `.gitmodules` 仍只包含非主线参考 submodule，例如 `vendor/paicli`，则保留。
+Expected: 旧目录和旧文档被删除，`docs/superpowers` 中只剩新的 reset design 与当前 implementation plan。若 `.gitmodules` 仍包含参考型 submodule，则保留。
 
 - [x] **Step 3: 改写 `.gitignore`，转向新的本地配置与桌面构建产物**
 
@@ -260,7 +253,7 @@ Get-ChildItem .\docs\superpowers\specs
 Get-ChildItem .\docs\superpowers\plans
 ```
 
-Expected: 根目录不再有 `runtime/`、`cli/`、`vendor/kilocode`；`docs/superpowers/specs` 与 `docs/superpowers/plans` 只剩新的 reset design 与新的 implementation plan。后续如果存在其他 `vendor/*` 目录，不属于这一步的失败条件。
+Expected: 根目录不再有 `runtime/`、`cli/`；`docs/superpowers/specs` 与 `docs/superpowers/plans` 只剩新的 reset design 与新的 implementation plan。后续如果存在 `vendor/*` 目录，不属于这一步的失败条件。
 
 ## Task 2: 重建根 Gradle 和 KMP/Compose Desktop 模块骨架
 

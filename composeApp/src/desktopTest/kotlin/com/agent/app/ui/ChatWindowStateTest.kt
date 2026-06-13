@@ -488,6 +488,35 @@ class ChatWindowStateTest {
         assertEquals(0f, state.ui.activeConversation.contextUsageFraction)
     }
 
+    /**
+     * 切换 profile 后应使用新模型的 context limit 重算已有会话占比。
+     */
+    @Test
+    fun `should recalculate context usage when active profile changes`() = runTest(dispatcher) {
+        val smallContextProfile = profile(
+            model = "deepseek-v4-pro",
+            limit = ModelLimit(context = 100, output = 20),
+        )
+        val largeContextProfile = profile(
+            model = "deepseek-v4-flash",
+            limit = ModelLimit(context = 200, output = 20),
+        )
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(smallContextProfile, largeContextProfile),
+                activeProfile = smallContextProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("a".repeat(80))
+        advanceUntilIdle()
+        state.selectProfile(largeContextProfile.id)
+
+        assertEquals(0.1f, state.ui.activeConversation.contextUsageFraction)
+    }
+
     private fun profile(
         model: String = "gpt-4.1",
         limit: ModelLimit? = null,

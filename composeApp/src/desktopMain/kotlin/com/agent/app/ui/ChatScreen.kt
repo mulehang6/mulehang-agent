@@ -731,7 +731,7 @@ private fun SelectorChip(
 }
 
 /**
- * 上下文剩余圆环胶囊。
+ * 上下文占用圆环胶囊。
  */
 @Composable
 private fun ContextRingChip(
@@ -745,29 +745,42 @@ private fun ContextRingChip(
             .onPointerEvent(PointerEventType.Exit) { hovered = false },
     ) {
         Surface(
-            shape = CircleShape,
+            shape = RoundedCornerShape(999.dp),
             color = Color(0xFFF4EDDF),
             border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .padding(8.dp)
-                    .size(18.dp)
-                    .background(
-                        brush = Brush.sweepGradient(
-                            0.0f to AppAccent,
-                            usageFraction to AppAccent,
-                            usageFraction to Color(0xFFD8D0C2),
-                            1.0f to Color(0xFFD8D0C2),
-                        ),
-                        shape = CircleShape,
-                    )
-                    .padding(4.dp),
+                    .padding(horizontal = 8.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFFFBF7EF), CircleShape),
+                        .size(18.dp)
+                        .background(
+                            brush = Brush.sweepGradient(
+                                0.0f to AppAccent,
+                                usageFraction to AppAccent,
+                                usageFraction to Color(0xFFD8D0C2),
+                                1.0f to Color(0xFFD8D0C2),
+                            ),
+                            shape = CircleShape,
+                        )
+                        .padding(4.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFFFBF7EF), CircleShape),
+                    )
+                }
+                Text(
+                    text = buildContextUsageLabel(usageFraction),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = AppText,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
                 )
             }
         }
@@ -983,6 +996,12 @@ internal fun groupProfilesByProvider(profiles: List<ConfigProfile>): Map<String,
  */
 internal fun buildContextTooltip(usageFraction: Float): String =
     "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}% used"
+
+/**
+ * 生成上下文圆环旁的可见百分比文案。
+ */
+internal fun buildContextUsageLabel(usageFraction: Float): String =
+    "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}%"
 
 /**
  * 判断 composer 键盘事件是否应触发发送；Shift+Enter 保留给多行输入。

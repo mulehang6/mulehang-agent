@@ -231,8 +231,18 @@ class ChatWindowState(
      * 切换当前 profile。
      */
     fun selectProfile(profileId: String) {
-        if (snapshot.profiles.any { it.id == profileId }) {
-            ui = ui.copy(selectedProfileId = profileId)
+        val selectedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
+        if (selectedProfile != null) {
+            ui = ui.copy(
+                selectedProfileId = profileId,
+                workspaceGroups = ui.workspaceGroups.map { group ->
+                    group.copy(
+                        conversations = group.conversations.map { conversation ->
+                            conversation.withRecalculatedContextUsage(contextWindowFor(selectedProfile))
+                        },
+                    )
+                },
+            )
         }
     }
 
@@ -502,7 +512,14 @@ class ChatWindowState(
             updatedItems[currentIndex] = existingItem.copy(
                 message = existingItem.message.copy(content = existingItem.message.content + delta),
             )
-            normalizedConversation.copy(items = updatedItems)
+            normalizedConversation.copy(
+                items = updatedItems,
+                contextUsageFraction = estimateContextUsage(
+                    items = updatedItems,
+                    attachmentCount = normalizedConversation.attachments.size,
+                    contextWindow = activeContextWindow(),
+                ),
+            )
         }
     }
 
@@ -685,6 +702,18 @@ class ChatWindowState(
         )
     }
 }
+
+/**
+ * 使用指定上下文窗口重算会话占比。
+ */
+private fun ChatConversationUiState.withRecalculatedContextUsage(contextWindow: Int?): ChatConversationUiState =
+    copy(
+        contextUsageFraction = estimateContextUsage(
+            items = items,
+            attachmentCount = attachments.size,
+            contextWindow = contextWindow,
+        ),
+    )
 
 /**
  * 基于当前项目路径和 profile 快照建立初始 UI 状态。

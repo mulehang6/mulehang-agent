@@ -74,6 +74,14 @@ class ChatScreenPresentationTest {
     }
 
     /**
+     * 上下文圆环旁应直接展示当前计算出的占用百分比。
+     */
+    @Test
+    fun `should expose context usage percentage as visible chip label`() {
+        assertEquals("58%", buildContextUsageLabel(0.58f))
+    }
+
+    /**
      * composer 应支持 Enter 发送，同时保留 Shift+Enter 换行。
      */
     @Test

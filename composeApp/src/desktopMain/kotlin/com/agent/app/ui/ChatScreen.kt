@@ -49,7 +49,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
-import com.agent.shared.agent.ReasoningEffort
+import com.agent.shared.config.ConfigProfile
+import com.agent.shared.config.ModelCapabilitiesResolver
+import com.agent.shared.config.ModelVariant
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
@@ -437,8 +439,8 @@ private fun ComposerPanel(state: ChatWindowState) {
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
     var providerExpanded by remember { mutableStateOf(false) }
     var modelExpanded by remember { mutableStateOf(false) }
+    var reasoningExpanded by remember { mutableStateOf(false) }
     var permissionExpanded by remember { mutableStateOf(false) }
-    var hoveredReasoningModelId by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -539,38 +541,12 @@ private fun ComposerPanel(state: ChatWindowState) {
                             currentProviderProfiles.forEach { profile ->
                                 DropdownMenuItem(
                                     text = {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .onPointerEvent(PointerEventType.Enter) {
-                                                    hoveredReasoningModelId = profile.id
-                                                }
-                                                .onPointerEvent(PointerEventType.Exit) {
-                                                    hoveredReasoningModelId = null
-                                                },
-                                        ) {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
                                             Text(profile.model)
                                             Text(
                                                 text = providerLabel(profile.providerType),
                                                 style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                                             )
-                                            if (hoveredReasoningModelId == profile.id && modelSupportsReasoning(profile.model)) {
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    ReasoningEffort.entries.forEach { effort ->
-                                                        ReasoningChip(
-                                                            text = effort.wireValue,
-                                                            selected = activeConversation.reasoningEffort == effort,
-                                                            onClick = {
-                                                                state.selectProfile(profile.id)
-                                                                state.updateReasoningEffort(effort)
-                                                                hoveredReasoningModelId = null
-                                                                modelExpanded = false
-                                                            },
-                                                        )
-                                                    }
-                                                }
-                                            }
                                         }
                                     },
                                     onClick = {
@@ -581,12 +557,36 @@ private fun ComposerPanel(state: ChatWindowState) {
                             }
                         }
 
-                        ContextRingChip(activeConversation.contextUsageFraction)
+                        val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
+                        if (selectedVariants.isNotEmpty()) {
+                            val selectedReasoningValue = selectedVariants
+                                .firstOrNull { it.reasoningEffort == activeConversation.reasoningEffort }
+                                ?.id
+                                ?: selectedVariants.first().id
+                            SelectorChip(
+                                label = "Thinking",
+                                value = selectedReasoningValue,
+                                expanded = reasoningExpanded,
+                                onExpandedChange = { reasoningExpanded = !reasoningExpanded },
+                            ) {
+                                selectedVariants.forEach { variant ->
+                                    val effort = variant.reasoningEffort ?: return@forEach
+                                    DropdownMenuItem(
+                                        text = { Text(variant.id) },
+                                        onClick = {
+                                            reasoningExpanded = false
+                                            state.updateReasoningEffort(effort)
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        ContextRingChip(activeConversation.contextUsageFraction)
                         SelectorChip(
                             label = "Permission",
                             value = permissionLabel(state.ui.permissionPreset),
@@ -712,30 +712,6 @@ private fun SelectorChip(
         ) {
             menuContent()
         }
-    }
-}
-
-/**
- * 模型 reasoning 等级预览胶囊。
- */
-@Composable
-private fun ReasoningChip(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(999.dp),
-        color = if (selected) Color(0xFF213D2E) else Color(0xFFECE3D2),
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall.copy(
-                color = if (selected) Color(0xFFF7F0E5) else Color(0xFF54493C),
-            ),
-        )
     }
 }
 
@@ -976,11 +952,10 @@ internal fun providerLabel(providerType: ProviderType): String = when (providerT
 }
 
 /**
- * 判断模型是否支持 thinking level。
+ * 返回 profile 支持的模型变体。
  */
-internal fun modelSupportsReasoning(model: String): Boolean =
-    model.startsWith("deepseek", ignoreCase = true) ||
-        listOf("r1", "reason", "thinking").any { token -> model.contains(token, ignoreCase = true) }
+internal fun modelVariantsFor(profile: ConfigProfile): List<ModelVariant> =
+    ModelCapabilitiesResolver.resolve(profile).variants.values.toList()
 
 /**
  * 生成上下文圆环 hover 文案。

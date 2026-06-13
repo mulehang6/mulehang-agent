@@ -83,7 +83,7 @@ internal class DeepSeekChatCompletionsStreamer(
             stream = true,
             streamOptions = DeepSeekStreamOptions(includeUsage = true),
             thinking = DeepSeekThinking(type = "enabled"),
-            reasoningEffort = request.reasoningEffort?.wireValue ?: ReasoningEffort.MEDIUM.wireValue,
+            reasoningEffort = request.reasoningEffort?.wireValue,
         )
 
 }
@@ -134,7 +134,7 @@ internal data class DeepSeekChatCompletionRequest(
     val streamOptions: DeepSeekStreamOptions,
     val thinking: DeepSeekThinking,
     @SerialName("reasoning_effort")
-    val reasoningEffort: String,
+    val reasoningEffort: String?,
 )
 
 /**

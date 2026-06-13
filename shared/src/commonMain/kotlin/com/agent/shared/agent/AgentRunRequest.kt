@@ -20,4 +20,5 @@ enum class ReasoningEffort(
     LOW("low"),
     MEDIUM("medium"),
     HIGH("high"),
+    MAX("max"),
 }

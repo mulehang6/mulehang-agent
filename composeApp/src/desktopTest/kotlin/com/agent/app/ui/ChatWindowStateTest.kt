@@ -326,6 +326,70 @@ class ChatWindowStateTest {
         assertEquals(ReasoningEffort.HIGH, capturedRequest?.reasoningEffort)
     }
 
+    /**
+     * 当前会话默认档位不在模型 variants 内时，应使用 profile 能力默认档位发送。
+     */
+    @Test
+    fun `should send profile default reasoning effort when conversation effort is unsupported`() = runTest(dispatcher) {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.Completed("ok"),
+                )
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile(model = "deepseek-v4-flash")),
+                activeProfile = profile(model = "deepseek-v4-flash"),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.updateDraft("hello")
+        state.sendDraft()
+        advanceUntilIdle()
+
+        assertEquals(ReasoningEffort.HIGH, capturedRequest?.reasoningEffort)
+    }
+
+    /**
+     * 当前模型不支持 thinking 时，发送请求不应携带 reasoning effort。
+     */
+    @Test
+    fun `should omit reasoning effort for unsupported active profile`() = runTest(dispatcher) {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.Completed("ok"),
+                )
+            }
+        }
+        val unsupportedProfile = profile(model = "claude-sonnet-4")
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(unsupportedProfile),
+                activeProfile = unsupportedProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.updateReasoningEffort(ReasoningEffort.HIGH)
+        state.updateDraft("hello")
+        state.sendDraft()
+        advanceUntilIdle()
+
+        assertEquals(null, capturedRequest?.reasoningEffort)
+    }
+
     private fun profile(model: String = "gpt-4.1"): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = if (model.startsWith("deepseek", ignoreCase = true)) {

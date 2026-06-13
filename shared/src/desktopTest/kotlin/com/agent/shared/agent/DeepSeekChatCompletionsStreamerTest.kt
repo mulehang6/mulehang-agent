@@ -78,6 +78,66 @@ class DeepSeekChatCompletionsStreamerTest {
     }
 
     /**
+     * DeepSeek V4 的 max thinking 档位应原样写入 reasoning_effort。
+     */
+    @Test
+    fun `should map max reasoning effort into deepseek payload`() = runTest {
+        var capturedRequest: DeepSeekChatCompletionRequest? = null
+        val streamer = DeepSeekChatCompletionsStreamer(
+            chunkRunner = { request, _ ->
+                capturedRequest = request
+                flowOf(
+                    DeepSeekChatCompletionChunk(
+                        id = "chatcmpl-max",
+                        created = 4L,
+                        model = "deepseek-v4-flash",
+                    ),
+                )
+            },
+        )
+
+        streamer.stream(
+            request = AgentRunRequest(
+                prompt = "你好",
+                profile = deepSeekProfile(),
+                reasoningEffort = ReasoningEffort.MAX,
+            ),
+        ).toList()
+
+        assertEquals("max", capturedRequest?.reasoningEffort)
+    }
+
+    /**
+     * 上层裁剪为 null 时，DeepSeek 请求体不应再回退写入 medium。
+     */
+    @Test
+    fun `should keep null reasoning effort out of deepseek payload`() = runTest {
+        var capturedRequest: DeepSeekChatCompletionRequest? = null
+        val streamer = DeepSeekChatCompletionsStreamer(
+            chunkRunner = { request, _ ->
+                capturedRequest = request
+                flowOf(
+                    DeepSeekChatCompletionChunk(
+                        id = "chatcmpl-3",
+                        created = 3L,
+                        model = "deepseek-v4-flash",
+                    ),
+                )
+            },
+        )
+
+        streamer.stream(
+            request = AgentRunRequest(
+                prompt = "你好",
+                profile = deepSeekProfile(),
+                reasoningEffort = null,
+            ),
+        ).toList()
+
+        assertEquals(null, capturedRequest?.reasoningEffort)
+    }
+
+    /**
      * reasoning_content 与 content 应分别映射成 reasoning/text frame。
      */
     @Test

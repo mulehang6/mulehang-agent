@@ -9,6 +9,7 @@ import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
 import com.agent.shared.config.ConfigProfile
+import com.agent.shared.config.ModelCapabilitiesResolver
 import com.agent.shared.state.AppError
 import com.agent.shared.state.ChatMessage
 import com.agent.shared.state.ChatMessageItem
@@ -298,7 +299,10 @@ class ChatWindowState(
                     AgentRunRequest(
                         prompt = prompt,
                         profile = profile,
-                        reasoningEffort = findConversation(targetConversationId).reasoningEffort,
+                        reasoningEffort = supportedReasoningEffort(
+                            profile = profile,
+                            conversation = findConversation(targetConversationId),
+                        ),
                     ),
                 ).collect { event ->
                     applyAgentEvent(targetConversationId, event)
@@ -324,6 +328,20 @@ class ChatWindowState(
     fun findConversation(conversationId: String): ChatConversationUiState =
         findConversationOrNull(conversationId)
             ?: error("Conversation $conversationId not found.")
+
+    /**
+     * 仅当当前 profile 支持所选档位时才将 reasoning effort 送入执行链路。
+     */
+    private fun supportedReasoningEffort(
+        profile: ConfigProfile,
+        conversation: ChatConversationUiState,
+    ): ReasoningEffort? {
+        val capabilities = ModelCapabilitiesResolver.resolve(profile)
+        val variants = capabilities.variants.values
+        return conversation.reasoningEffort.takeIf { effort ->
+            variants.any { variant -> variant.reasoningEffort == effort }
+        } ?: capabilities.defaultReasoningEffort
+    }
 
     /**
      * 将 agent 事件应用到指定活动会话。

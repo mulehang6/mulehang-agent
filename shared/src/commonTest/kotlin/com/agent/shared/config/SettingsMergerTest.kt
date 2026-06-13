@@ -194,6 +194,42 @@ class SettingsMergerTest {
     }
 
     /**
+     * 同一个 provider 下不同模型应保留各自的上下文和最大输出限制。
+     */
+    @Test
+    fun `should keep different limits per model under same provider`() {
+        val projectSettings = SettingsDocument(
+            providers = listOf(
+                ProviderProfile(
+                    id = "openrouter",
+                    providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                    baseUrl = "https://openrouter.ai/api/v1",
+                    apiKey = "project-key",
+                    models = listOf(
+                        ModelProfile(
+                            id = "openai/gpt-5-codex",
+                            limit = ModelLimit(context = 272_000, output = 128_000),
+                        ),
+                        ModelProfile(
+                            id = "anthropic/claude-sonnet-4",
+                            limit = ModelLimit(context = 200_000, output = 64_000),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = projectSettings,
+            environment = emptyMap(),
+        )
+
+        assertEquals(ModelLimit(context = 272_000, output = 128_000), merged[0].limit)
+        assertEquals(ModelLimit(context = 200_000, output = 64_000), merged[1].limit)
+    }
+
+    /**
      * 环境变量应允许临时覆盖上下文窗口，便于验证不同 profile 能力。
      */
     @Test

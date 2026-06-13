@@ -6,8 +6,10 @@ import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
+import com.agent.shared.config.ModelLimit
 import com.agent.shared.config.ProviderType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -60,6 +62,62 @@ class SendMessageUseCaseTest {
         ).toList()
 
         assertEquals(ReasoningEffort.LOW, capturedRequest?.reasoningEffort)
+    }
+
+    /**
+     * 请求诊断摘要应包含关键发送参数，但不能暴露 prompt 或 apiKey。
+     */
+    @Test
+    fun `should build safe send request diagnostic summary`() {
+        val request = AgentRunRequest(
+            prompt = "secret prompt",
+            profile = profile().copy(
+                id = "deepseek:deepseek-v4-pro",
+                providerId = "deepseek",
+                providerLabel = "DeepSeek",
+                model = "deepseek-v4-pro",
+                limit = ModelLimit(context = 1_000_000, output = 384_000),
+            ),
+            reasoningEffort = ReasoningEffort.MAX,
+        )
+
+        val summary = buildAgentRunRequestDiagnostic(request)
+
+        assertEquals(
+            "Agent request: provider=deepseek model=deepseek-v4-pro reasoning_effort=max context=1000000 output=384000",
+            summary,
+        )
+        assertEquals(false, summary.contains("secret prompt"))
+        assertEquals(false, summary.contains("key"))
+    }
+
+    /**
+     * 发送请求应保持冷流语义，每次收集都重新进入 gateway。
+     */
+    @Test
+    fun `should invoke gateway for every flow collection`() = runTest {
+        var calls = 0
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                calls += 1
+                return flow {
+                    emit(AgentStreamEvent.Started)
+                    emit(AgentStreamEvent.Completed("done"))
+                }
+            }
+        }
+        val flow = SendMessageUseCase(gateway).invoke(
+            AgentRunRequest(
+                prompt = "hi",
+                profile = profile(),
+                reasoningEffort = ReasoningEffort.MAX,
+            ),
+        )
+
+        flow.toList()
+        flow.toList()
+
+        assertEquals(2, calls)
     }
 
     private fun profile(): ConfigProfile = ConfigProfile(

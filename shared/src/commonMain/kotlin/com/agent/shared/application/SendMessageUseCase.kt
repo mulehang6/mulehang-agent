@@ -7,6 +7,7 @@ import com.agent.shared.config.ConfigProfile
 import com.agent.shared.exceptions.IllegalConfigExceptions
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /**
  * 发送消息用例骨架。
@@ -34,7 +35,7 @@ class SendMessageUseCase(
     /**
      * 执行一次带运行参数的消息发送。
      */
-    operator fun invoke(request: AgentRunRequest): Flow<AgentStreamEvent> {
+    operator fun invoke(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
         if (request.prompt.isBlank()) {
             log.warn { "提示词为空" }
             throw IllegalArgumentException("提示词不能为空")
@@ -44,7 +45,18 @@ class SendMessageUseCase(
             log.warn { "profile id 为空" }
             throw IllegalConfigExceptions { "profile id 不能为空" }
         }
-        return agentGateway.run(request)
+        log.info { buildAgentRunRequestDiagnostic(request) }
+        agentGateway.run(request).collect(::emit)
     }
 
 }
+
+/**
+ * 构造不包含 prompt、apiKey 的发送请求诊断摘要。
+ */
+internal fun buildAgentRunRequestDiagnostic(request: AgentRunRequest): String =
+    "Agent request: provider=${request.profile.providerId} " +
+        "model=${request.profile.model} " +
+        "reasoning_effort=${request.reasoningEffort?.wireValue ?: "null"} " +
+        "context=${request.profile.limit?.context ?: "null"} " +
+        "output=${request.profile.limit?.output ?: "null"}"

@@ -15,7 +15,19 @@
         </rollingPolicy>
     </appender>
 
-    <root level="DEBUG">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.apache.hc.client5.http2.frame" level="WARN" />
+    <logger name="org.apache.hc.client5.http.wire" level="WARN" />
+    <logger name="org.apache.hc.client5.http.headers" level="WARN" />
+    <logger name="io.ktor" level="WARN" />
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
         <appender-ref ref="FILE" />
     </root>
 </configuration>

@@ -1,5 +1,7 @@
 package com.agent.app.ui
 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
 import com.agent.shared.state.ChatMessage
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
@@ -69,6 +71,16 @@ class ChatScreenPresentationTest {
     @Test
     fun `should keep context usage value inside tooltip text only`() {
         assertEquals("58% remaining", buildContextTooltip(0.58f))
+    }
+
+    /**
+     * composer 应支持 Enter 发送，同时保留 Shift+Enter 换行。
+     */
+    @Test
+    fun `should submit composer on enter without shift only`() {
+        assertEquals(true, shouldSubmitComposerKey(Key.Enter, KeyEventType.KeyUp, isShiftPressed = false))
+        assertEquals(false, shouldSubmitComposerKey(Key.Enter, KeyEventType.KeyUp, isShiftPressed = true))
+        assertEquals(false, shouldSubmitComposerKey(Key.Enter, KeyEventType.KeyDown, isShiftPressed = false))
     }
 
     private fun profile(model: String): ConfigProfile = ConfigProfile(

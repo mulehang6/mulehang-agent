@@ -40,6 +40,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
@@ -487,7 +493,16 @@ private fun ComposerPanel(state: ChatWindowState) {
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onPreviewKeyEvent { event ->
+                            if (shouldSubmitComposerKey(event.key, event.type, event.isShiftPressed)) {
+                                state.sendDraft()
+                                true
+                            } else {
+                                false
+                            }
+                        },
                     value = state.ui.draft,
                     onValueChange = state::updateDraft,
                     minLines = 3,
@@ -962,6 +977,16 @@ internal fun modelVariantsFor(profile: ConfigProfile): List<ModelVariant> =
  */
 internal fun buildContextTooltip(usageFraction: Float): String =
     "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}% remaining"
+
+/**
+ * 判断 composer 键盘事件是否应触发发送；Shift+Enter 保留给多行输入。
+ */
+internal fun shouldSubmitComposerKey(
+    key: Key,
+    type: KeyEventType,
+    isShiftPressed: Boolean,
+): Boolean =
+    key == Key.Enter && type == KeyEventType.KeyUp && !isShiftPressed
 
 /**
  * 权限档位的展示文案。

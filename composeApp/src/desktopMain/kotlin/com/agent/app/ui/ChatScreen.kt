@@ -440,8 +440,8 @@ private fun ComposerPanel(state: ChatWindowState) {
     val activeConversation = state.ui.activeConversation
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
-    val providerProfiles = profiles.groupBy { it.providerType }
-    val currentProvider = selectedProfile?.providerType ?: profiles.firstOrNull()?.providerType
+    val providerProfiles = groupProfilesByProvider(profiles)
+    val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
     var providerExpanded by remember { mutableStateOf(false) }
     var modelExpanded by remember { mutableStateOf(false) }
@@ -530,17 +530,17 @@ private fun ComposerPanel(state: ChatWindowState) {
 
                         SelectorChip(
                             label = "Provider",
-                            value = currentProvider?.let(::providerLabel) ?: "None",
+                            value = selectedProfile?.providerLabel ?: currentProvider ?: "None",
                             expanded = providerExpanded,
                             onExpandedChange = { providerExpanded = !providerExpanded },
                         ) {
-                            providerProfiles.keys.forEach { providerType ->
+                            providerProfiles.forEach { (providerId, providerModels) ->
                                 DropdownMenuItem(
-                                    text = { Text(providerLabel(providerType)) },
+                                    text = { Text(providerModels.firstOrNull()?.providerLabel ?: providerId) },
                                     onClick = {
                                         providerExpanded = false
-                                        providerProfiles[providerType]
-                                            ?.firstOrNull()
+                                        providerModels
+                                            .firstOrNull()
                                             ?.let { profile -> state.selectProfile(profile.id) }
                                     },
                                 )
@@ -549,7 +549,7 @@ private fun ComposerPanel(state: ChatWindowState) {
 
                         SelectorChip(
                             label = "Model",
-                            value = selectedProfile?.model ?: "None",
+                            value = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "None",
                             expanded = modelExpanded,
                             onExpandedChange = { modelExpanded = !modelExpanded },
                         ) {
@@ -557,9 +557,9 @@ private fun ComposerPanel(state: ChatWindowState) {
                                 DropdownMenuItem(
                                     text = {
                                         Column(modifier = Modifier.fillMaxWidth()) {
-                                            Text(profile.model)
+                                            Text(profile.modelLabel ?: profile.model)
                                             Text(
-                                                text = providerLabel(profile.providerType),
+                                                text = profile.model,
                                                 style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                                             )
                                         }
@@ -971,6 +971,12 @@ internal fun providerLabel(providerType: ProviderType): String = when (providerT
  */
 internal fun modelVariantsFor(profile: ConfigProfile): List<ModelVariant> =
     ModelCapabilitiesResolver.resolve(profile).variants.values.toList()
+
+/**
+ * 按配置 providerId 分组模型，避免同类 OpenAI-compatible provider 被混在一起。
+ */
+internal fun groupProfilesByProvider(profiles: List<ConfigProfile>): Map<String, List<ConfigProfile>> =
+    profiles.groupBy { it.providerId }
 
 /**
  * 生成上下文圆环 hover 文案。

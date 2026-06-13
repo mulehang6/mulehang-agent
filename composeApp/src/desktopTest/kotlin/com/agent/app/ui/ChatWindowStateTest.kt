@@ -392,6 +392,58 @@ class ChatWindowStateTest {
     }
 
     /**
+     * 同一个 provider 下切换模型时，应只切换运行时 profile，不改变 provider 分组语义。
+     */
+    @Test
+    fun `should select model under the same provider`() = runTest(dispatcher) {
+        val flash = profile(model = "deepseek-v4-flash")
+        val pro = profile(model = "deepseek-v4-pro").copy(
+            id = "deepseek:deepseek-v4-pro",
+            providerId = "deepseek",
+            providerLabel = "DeepSeek",
+        )
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(flash, pro),
+                activeProfile = flash,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.selectProfile("deepseek:deepseek-v4-pro")
+
+        assertEquals("deepseek", state.activeProfile?.providerId)
+        assertEquals("deepseek-v4-pro", state.activeProfile?.model)
+    }
+
+    /**
+     * Provider 分组应使用配置 providerId，而不是 providerType。
+     */
+    @Test
+    fun `should group model picker entries by provider id`() {
+        val profiles = listOf(
+            profile(model = "deepseek-v4-flash"),
+            profile(model = "deepseek-v4-pro").copy(
+                id = "deepseek:deepseek-v4-pro",
+                providerId = "deepseek",
+                providerLabel = "DeepSeek",
+            ),
+            profile(model = "openai/gpt-5-codex").copy(
+                id = "openrouter:openai/gpt-5-codex",
+                providerId = "openrouter",
+                providerLabel = "OpenRouter",
+                baseUrl = "https://openrouter.ai/api/v1",
+            ),
+        )
+
+        val grouped = groupProfilesByProvider(profiles)
+
+        assertEquals(setOf("deepseek", "openrouter"), grouped.keys)
+        assertEquals(listOf("deepseek-v4-flash", "deepseek-v4-pro"), grouped["deepseek"]?.map { it.model })
+    }
+
+    /**
      * 上下文圆环应使用当前 profile 的 context limit 作为分母，而不是固定展示占比。
      */
     @Test
@@ -440,7 +492,13 @@ class ChatWindowStateTest {
         model: String = "gpt-4.1",
         limit: ModelLimit? = null,
     ): ConfigProfile = ConfigProfile(
-        id = "openai-main",
+        id = if (model.startsWith("deepseek", ignoreCase = true)) {
+            "deepseek:$model"
+        } else {
+            "openai:$model"
+        },
+        providerId = if (model.startsWith("deepseek", ignoreCase = true)) "deepseek" else "openai",
+        providerLabel = if (model.startsWith("deepseek", ignoreCase = true)) "DeepSeek" else "OpenAI",
         providerType = if (model.startsWith("deepseek", ignoreCase = true)) {
             ProviderType.OPENAI_CHAT_COMPLETIONS
         } else {

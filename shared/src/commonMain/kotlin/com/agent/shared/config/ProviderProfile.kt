@@ -3,17 +3,18 @@ package com.agent.shared.config
 import kotlinx.serialization.Serializable
 
 /**
- * 单个 agent profile 配置项。
+ * 一套 provider 凭据与其可用模型列表。
  */
 @Serializable
-data class AgentProfile(
+data class ProviderProfile(
     val id: String,
+    val label: String? = null,
     val providerType: ProviderType,
     val baseUrl: String,
     val apiKey: String,
-    val model: String,
+    val models: List<ModelProfile> = emptyList(),
+    val defaultModel: String? = null,
     val enabled: Boolean? = null,
-    val limit: ModelLimit? = null,
 ) {
     /**
      * 配置未显式关闭时默认启用。

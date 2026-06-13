@@ -5,6 +5,9 @@ package com.agent.shared.config
  */
 data class ConfigProfile(
     val id: String,
+    val providerId: String = id.substringBefore(':', id),
+    val providerLabel: String = providerId,
+    val modelLabel: String? = null,
     val providerType: ProviderType,
     val baseUrl: String,
     val apiKey: String,

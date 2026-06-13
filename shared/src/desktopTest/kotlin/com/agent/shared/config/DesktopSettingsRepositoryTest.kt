@@ -22,11 +22,11 @@ class DesktopSettingsRepositoryTest {
 
         Files.writeString(
             userHome.resolve(".mulehang/settings.json"),
-            """{"profiles":[{"id":"main","providerType":"openai-responses","baseUrl":"https://api.openai.com/v1","apiKey":"user","model":"gpt-4.1"}]}""",
+            """{"providers":[{"id":"openai","providerType":"openai-responses","baseUrl":"https://api.openai.com/v1","apiKey":"user","models":[{"id":"gpt-4.1"}]}]}""",
         )
         Files.writeString(
             projectRoot.resolve(".mulehang/settings.json"),
-            """{"profiles":[{"id":"main","providerType":"openai-responses","baseUrl":"https://project.example/v1","apiKey":"project","model":"gpt-4.1-mini"}]}""",
+            """{"providers":[{"id":"openai","providerType":"openai-responses","baseUrl":"https://project.example/v1","apiKey":"project","models":[{"id":"gpt-4.1-mini"}]}]}""",
         )
 
         val repository = DesktopSettingsRepository(
@@ -51,10 +51,10 @@ class DesktopSettingsRepositoryTest {
             environmentOverrides = DesktopEnvironmentOverrides(emptyMap()),
         )
 
-        repository.writeExampleSettings("""{"profiles":[]}""")
+        repository.writeExampleSettings("""{"providers":[]}""")
 
         assertEquals(
-            """{"profiles":[]}""",
+            """{"providers":[]}""",
             Files.readString(root.resolve("workspace/.mulehang/settings.json.example")),
         )
     }

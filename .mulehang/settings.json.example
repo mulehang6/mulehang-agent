@@ -1,30 +1,49 @@
 {
-  "profiles": [
+  "providers": [
     {
-      "id": "openai-main",
+      "id": "openai",
+      "label": "OpenAI",
       "providerType": "openai-responses",
       "baseUrl": "https://api.openai.com/v1",
       "apiKey": "your-api-key",
-      "model": "gpt-4.1"
+      "models": [
+        {
+          "id": "gpt-4.1",
+          "label": "GPT 4.1"
+        }
+      ],
+      "defaultModel": "gpt-4.1"
     },
     {
-      "id": "deepseek-main",
+      "id": "deepseek",
+      "label": "DeepSeek",
       "providerType": "openai-chat-completions",
       "baseUrl": "https://api.deepseek.com/v1",
       "apiKey": "your-api-key",
-      "model": "deepseek-v4-pro",
-      "limit": {
-        "context": 1000000,
-        "output": 384000
-      },
-      "enabled": false
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "label": "V4 Flash"
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "label": "V4 Pro"
+        }
+      ],
+      "defaultModel": "deepseek-v4-flash"
     },
     {
-      "id": "google-main",
+      "id": "google",
+      "label": "Google",
       "providerType": "google",
       "baseUrl": "https://generativelanguage.googleapis.com",
       "apiKey": "your-api-key",
-      "model": "gemini-2.5-pro",
+      "models": [
+        {
+          "id": "gemini-2.5-pro",
+          "label": "Gemini 2.5 Pro"
+        }
+      ],
       "enabled": false
     }
   ]

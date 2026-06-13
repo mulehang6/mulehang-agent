@@ -7,5 +7,5 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class SettingsDocument(
-    val profiles: List<AgentProfile> = emptyList(),
+    val providers: List<ProviderProfile> = emptyList(),
 )

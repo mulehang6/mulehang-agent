@@ -6,6 +6,7 @@ package com.agent.shared.config
 object SettingsMerger {
     private val environmentKeys = setOf(
         "MULEHANG_PROFILE_ID",
+        "MULEHANG_PROVIDER_ID",
         "MULEHANG_PROVIDER_TYPE",
         "MULEHANG_BASE_URL",
         "MULEHANG_API_KEY",
@@ -24,21 +25,21 @@ object SettingsMerger {
         project: SettingsDocument?,
         environment: Map<String, String>,
     ): List<ConfigProfile> {
-        val profiles = linkedMapOf<String, LayeredProfile>()
-        user?.profiles.orEmpty().forEach { profile ->
-            profiles[profile.id] = LayeredProfile(profile, ConfigLayer.USER)
+        val providers = linkedMapOf<String, LayeredProvider>()
+        user?.providers.orEmpty().forEach { provider ->
+            providers[provider.id] = LayeredProvider(provider, ConfigLayer.USER)
         }
-        project?.profiles.orEmpty().forEach { profile ->
-            profiles[profile.id] = LayeredProfile(profile, ConfigLayer.PROJECT)
+        project?.providers.orEmpty().forEach { provider ->
+            providers[provider.id] = LayeredProvider(provider, ConfigLayer.PROJECT)
         }
 
-        if (profiles.isEmpty()) {
+        if (providers.isEmpty()) {
             return environmentProfile(environment)?.let(::listOf).orEmpty()
         }
 
         val hasEnvironmentOverride = environmentKeys.any(environment::containsKey)
-        return profiles.values.map { layered ->
-            layered.profile.toConfigProfile(
+        return providers.values.flatMap { layered ->
+            layered.provider.toConfigProfiles(
                 environment = environment,
                 layer = if (hasEnvironmentOverride) ConfigLayer.ENVIRONMENT else layered.layer,
             )
@@ -52,7 +53,12 @@ object SettingsMerger {
         if (!environmentKeys.any(environment::containsKey)) return null
 
         return ConfigProfile(
-            id = environment["MULEHANG_PROFILE_ID"] ?: "environment",
+            id = buildProfileId(
+                providerId = environment["MULEHANG_PROVIDER_ID"] ?: environment["MULEHANG_PROFILE_ID"] ?: "environment",
+                model = (environment["MULEHANG_MODEL"] ?: "gpt-4.1").sanitizeModelName(),
+            ),
+            providerId = environment["MULEHANG_PROVIDER_ID"] ?: environment["MULEHANG_PROFILE_ID"] ?: "environment",
+            providerLabel = environment["MULEHANG_PROVIDER_ID"] ?: environment["MULEHANG_PROFILE_ID"] ?: "environment",
             providerType = environment["MULEHANG_PROVIDER_TYPE"]?.toProviderType() ?: ProviderType.OPENAI_RESPONSES,
             baseUrl = environment["MULEHANG_BASE_URL"] ?: "https://api.openai.com/v1",
             apiKey = environment["MULEHANG_API_KEY"] ?: "",
@@ -64,31 +70,47 @@ object SettingsMerger {
     }
 
     /**
-     * 将原始 profile 应用环境变量覆盖后转为运行时 profile。
+     * 将 provider 下启用的模型展平成运行时 profile。
      */
-    private fun AgentProfile.toConfigProfile(
+    private fun ProviderProfile.toConfigProfiles(
         environment: Map<String, String>,
         layer: ConfigLayer,
-    ): ConfigProfile = ConfigProfile(
-        id = environment["MULEHANG_PROFILE_ID"] ?: id,
-        providerType = environment["MULEHANG_PROVIDER_TYPE"]?.toProviderType() ?: providerType,
-        baseUrl = environment["MULEHANG_BASE_URL"] ?: baseUrl,
-        apiKey = environment["MULEHANG_API_KEY"] ?: apiKey,
-        model = (environment["MULEHANG_MODEL"] ?: model).sanitizeModelName(),
-        enabled = environment["MULEHANG_ENABLED"]?.toBooleanStrictOrNull() ?: isEnabled(),
-        layer = layer,
-        limit = environment.toModelLimit(default = limit),
-    )
+    ): List<ConfigProfile> {
+        val providerId = environment["MULEHANG_PROVIDER_ID"] ?: id
+        val providerEnabled = environment["MULEHANG_ENABLED"]?.toBooleanStrictOrNull() ?: isEnabled()
+        val configuredModels = models.orderDefaultFirst(defaultModel)
+        val effectiveModels = environment["MULEHANG_MODEL"]
+            ?.let { listOf(ModelProfile(id = it.sanitizeModelName())) }
+            ?: configuredModels
+
+        return effectiveModels
+            .filter { model -> providerEnabled && model.isEnabled() }
+            .map { model ->
+                val modelId = model.id.sanitizeModelName()
+                ConfigProfile(
+                    id = environment["MULEHANG_PROFILE_ID"] ?: buildProfileId(providerId, modelId),
+                    providerId = providerId,
+                    providerLabel = label ?: providerId,
+                    modelLabel = model.label,
+                    providerType = environment["MULEHANG_PROVIDER_TYPE"]?.toProviderType() ?: providerType,
+                    baseUrl = environment["MULEHANG_BASE_URL"] ?: baseUrl,
+                    apiKey = environment["MULEHANG_API_KEY"] ?: apiKey,
+                    model = modelId,
+                    enabled = true,
+                    layer = layer,
+                    limit = environment.toModelLimit(default = model.limit),
+                )
+            }
+    }
 
     /**
      * 合并环境变量里的 token 限制，未设置的字段保留 JSON 中的显式值。
      */
-    private fun Map<String, String>.toModelLimit(default: ModelLimit?): ModelLimit? {
-        val context = this["MULEHANG_CONTEXT_WINDOW"]?.toPositiveIntOrNull() ?: default?.context
+    private fun Map<String, String>.toModelLimit(default: ModelLimit?): ModelLimit {
+        val context = this["MULEHANG_CONTEXT_WINDOW"]?.toPositiveIntOrNull() ?: default?.context ?: DEFAULT_CONTEXT_WINDOW
         val input = this["MULEHANG_INPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.input
-        val output = this["MULEHANG_OUTPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.output
+        val output = this["MULEHANG_OUTPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.output ?: DEFAULT_OUTPUT_TOKEN_LIMIT
         return ModelLimit(context = context, input = input, output = output)
-            .takeUnless { it.context == null && it.input == null && it.output == null }
     }
 
     /**
@@ -110,11 +132,23 @@ object SettingsMerger {
     private fun String.toPositiveIntOrNull(): Int? =
         trim().toIntOrNull()?.takeIf { it > 0 }
 
+    private fun List<ModelProfile>.orderDefaultFirst(defaultModel: String?): List<ModelProfile> {
+        if (defaultModel.isNullOrBlank()) return this
+        return sortedBy { model -> if (model.id == defaultModel) 0 else 1 }
+    }
+
+    private fun buildProfileId(providerId: String, model: String): String =
+        "$providerId:$model"
+
     /**
-     * 保留原始 profile 与其来源层级。
+     * 保留原始 provider 与其来源层级。
      */
-    private data class LayeredProfile(
-        val profile: AgentProfile,
+    private data class LayeredProvider(
+        val provider: ProviderProfile,
         val layer: ConfigLayer,
     )
+
+    private const val DEFAULT_CONTEXT_WINDOW = 1_000_000
+
+    private const val DEFAULT_OUTPUT_TOKEN_LIMIT = 384_000
 }

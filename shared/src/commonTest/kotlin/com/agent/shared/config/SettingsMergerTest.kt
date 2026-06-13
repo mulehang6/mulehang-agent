@@ -100,6 +100,93 @@ class SettingsMergerTest {
     }
 
     /**
+     * 模型上下文窗口配置应从 JSON profile 合并到运行时 profile。
+     */
+    @Test
+    fun `should merge model limit from profile settings`() {
+        val projectSettings = SettingsDocument(
+            profiles = listOf(
+                AgentProfile(
+                    id = "deepseek",
+                    providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                    baseUrl = "https://api.deepseek.com/v1",
+                    apiKey = "project-key",
+                    model = "deepseek-v4-pro",
+                    limit = ModelLimit(context = 1_000_000, output = 384_000),
+                ),
+            ),
+        )
+
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = projectSettings,
+            environment = emptyMap(),
+        )
+
+        assertEquals(ModelLimit(context = 1_000_000, output = 384_000), merged.single().limit)
+    }
+
+    /**
+     * 环境变量应允许临时覆盖上下文窗口，便于验证不同 profile 能力。
+     */
+    @Test
+    fun `should let environment override context limit`() {
+        val projectSettings = SettingsDocument(
+            profiles = listOf(
+                AgentProfile(
+                    id = "deepseek",
+                    providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                    baseUrl = "https://api.deepseek.com/v1",
+                    apiKey = "project-key",
+                    model = "deepseek-v4-pro",
+                    limit = ModelLimit(context = 128_000, output = 8_000),
+                ),
+            ),
+        )
+
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = projectSettings,
+            environment = mapOf("MULEHANG_CONTEXT_WINDOW" to "1000000"),
+        )
+
+        assertEquals(ModelLimit(context = 1_000_000, output = 8_000), merged.single().limit)
+        assertEquals(ConfigLayer.ENVIRONMENT, merged.single().layer)
+    }
+
+    /**
+     * 模型名应清理终端样式残留，避免 ANSI 片段被发送到 provider。
+     */
+    @Test
+    fun `should sanitize styled model names from settings and environment`() {
+        val projectSettings = SettingsDocument(
+            profiles = listOf(
+                AgentProfile(
+                    id = "deepseek",
+                    providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                    baseUrl = "https://api.deepseek.com/v1",
+                    apiKey = "project-key",
+                    model = "deepseek-v4-pro\u001B[1m",
+                ),
+            ),
+        )
+
+        val fromProject = SettingsMerger.merge(
+            user = null,
+            project = projectSettings,
+            environment = emptyMap(),
+        )
+        val fromEnvironment = SettingsMerger.merge(
+            user = null,
+            project = projectSettings,
+            environment = mapOf("MULEHANG_MODEL" to "deepseek-v4-flash[1m"),
+        )
+
+        assertEquals("deepseek-v4-pro", fromProject.single().model)
+        assertEquals("deepseek-v4-flash", fromEnvironment.single().model)
+    }
+
+    /**
      * 显式 enabled=false 应关闭 profile。
      */
     @Test

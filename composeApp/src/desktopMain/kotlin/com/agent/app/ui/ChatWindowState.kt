@@ -173,7 +173,7 @@ class ChatWindowState(
      * 在指定工作目录下新建对话并切换焦点。
      */
     fun createConversationForWorkspace(workspacePath: String) {
-        val conversation = newConversation(workspacePath)
+        val conversation = newConversation(workspacePath, activeContextWindow())
         val existingGroup = ui.workspaceGroups.firstOrNull { it.workspacePath == workspacePath }
         val updatedGroups = if (existingGroup == null) {
             ui.workspaceGroups + WorkspaceConversationGroupUiState(
@@ -212,8 +212,9 @@ class ChatWindowState(
             conversation.copy(
                 attachments = attachments.distinctBy { it.path },
                 contextUsageFraction = estimateContextUsage(
-                    itemCount = conversation.items.size,
+                    items = conversation.items,
                     attachmentCount = attachments.size,
+                    contextWindow = activeContextWindow(),
                 ),
             )
         }
@@ -286,8 +287,9 @@ class ChatWindowState(
                 streamingAssistantItemIndex = null,
                 streamingReasoningItemIndex = null,
                 contextUsageFraction = estimateContextUsage(
-                    itemCount = nextItems.size,
+                    items = nextItems,
                     attachmentCount = 0,
+                    contextWindow = contextWindowFor(profile),
                 ),
             )
         }
@@ -342,6 +344,17 @@ class ChatWindowState(
             variants.any { variant -> variant.reasoningEffort == effort }
         } ?: capabilities.defaultReasoningEffort
     }
+
+    /**
+     * 当前 profile 的上下文窗口；显式配置优先，其次使用 provider/model 默认能力。
+     */
+    private fun activeContextWindow(): Int? = activeProfile?.let(::contextWindowFor)
+
+    /**
+     * 解析指定 profile 的上下文窗口。
+     */
+    private fun contextWindowFor(profile: ConfigProfile): Int? =
+        resolveContextWindow(profile)
 
     /**
      * 将 agent 事件应用到指定活动会话。
@@ -478,8 +491,9 @@ class ChatWindowState(
                 items = nextItems,
                 streamingAssistantItemIndex = normalizedConversation.items.size,
                 contextUsageFraction = estimateContextUsage(
-                    itemCount = nextItems.size,
+                    items = nextItems,
                     attachmentCount = normalizedConversation.attachments.size,
+                    contextWindow = activeContextWindow(),
                 ),
             )
         } else {
@@ -510,8 +524,9 @@ class ChatWindowState(
         return normalizedConversation.copy(
             items = nextItems,
             contextUsageFraction = estimateContextUsage(
-                itemCount = nextItems.size,
+                items = nextItems,
                 attachmentCount = normalizedConversation.attachments.size,
+                contextWindow = activeContextWindow(),
             ),
         )
     }
@@ -539,8 +554,9 @@ class ChatWindowState(
                 items = nextItems,
                 streamingReasoningItemIndex = conversation.items.size,
                 contextUsageFraction = estimateContextUsage(
-                    itemCount = nextItems.size,
+                    items = nextItems,
                     attachmentCount = conversation.attachments.size,
+                    contextWindow = activeContextWindow(),
                 ),
             )
         } else {
@@ -574,8 +590,9 @@ class ChatWindowState(
             return conversation.copy(
                 items = nextItems,
                 contextUsageFraction = estimateContextUsage(
-                    itemCount = nextItems.size,
+                    items = nextItems,
                     attachmentCount = conversation.attachments.size,
+                    contextWindow = activeContextWindow(),
                 ),
             )
         }
@@ -608,8 +625,9 @@ class ChatWindowState(
                 executionState = ExecutionState.Idle,
                 streamingAssistantItemIndex = null,
                 contextUsageFraction = estimateContextUsage(
-                    itemCount = nextItems.size,
+                    items = nextItems,
                     attachmentCount = normalizedConversation.attachments.size,
+                    contextWindow = activeContextWindow(),
                 ),
             )
         }
@@ -628,8 +646,9 @@ class ChatWindowState(
             executionState = ExecutionState.Idle,
             streamingAssistantItemIndex = null,
             contextUsageFraction = estimateContextUsage(
-                itemCount = updatedItems.size,
+                items = updatedItems,
                 attachmentCount = normalizedConversation.attachments.size,
+                contextWindow = activeContextWindow(),
             ),
         )
     }
@@ -675,7 +694,10 @@ private fun initialUiState(
     projectPath: String,
 ): ChatWindowUiState {
     val workspacePath = projectPath.ifBlank { "Unknown Workspace" }
-    val initialConversation = newConversation(workspacePath)
+    val initialConversation = newConversation(
+        workspacePath = workspacePath,
+        contextWindow = snapshot.activeProfile?.let(::resolveContextWindow),
+    )
     return ChatWindowUiState(
         workspaceGroups = listOf(
             WorkspaceConversationGroupUiState(
@@ -692,17 +714,53 @@ private fun initialUiState(
 /**
  * 创建一条空白会话。
  */
-private fun newConversation(workspacePath: String): ChatConversationUiState = ChatConversationUiState(
+private fun newConversation(
+    workspacePath: String,
+    contextWindow: Int?,
+): ChatConversationUiState = ChatConversationUiState(
     id = UUID.randomUUID().toString(),
     title = DEFAULT_CONVERSATION_TITLE,
     workspacePath = workspacePath,
+    contextUsageFraction = estimateContextUsage(
+        items = emptyList(),
+        attachmentCount = 0,
+        contextWindow = contextWindow,
+    ),
 )
 
 /**
- * 依据已有消息数和附件数粗略估计上下文占用比例。
+ * 解析 profile 的上下文窗口；profile 显式配置优先，其次使用模型能力默认值。
  */
-private fun estimateContextUsage(itemCount: Int, attachmentCount: Int): Float =
-    (0.72f - itemCount * 0.07f - attachmentCount * 0.04f).coerceIn(0.18f, 0.92f)
+private fun resolveContextWindow(profile: ConfigProfile): Int? =
+    profile.limit?.context ?: ModelCapabilitiesResolver.resolve(profile).limit?.context
+
+/**
+ * 依据已有消息和附件粗略估计上下文占用比例；没有 context 窗口时回退为 0。
+ */
+private fun estimateContextUsage(
+    items: List<ConversationItem>,
+    attachmentCount: Int,
+    contextWindow: Int?,
+): Float {
+    val window = contextWindow?.takeIf { it > 0 } ?: return 0f
+    val estimatedTokens = items.sumOf(::estimateTokens) + attachmentCount * ATTACHMENT_TOKEN_ESTIMATE
+    return (estimatedTokens.toFloat() / window).coerceIn(0f, 1f)
+}
+
+/**
+ * 粗略估算单个时间线项的 token 数，后续可被 provider usage 或 tokenizer 替换。
+ */
+private fun estimateTokens(item: ConversationItem): Int = when (item) {
+    is ChatMessageItem -> estimateTextTokens(item.message.content)
+    is ReasoningItem -> estimateTextTokens(item.rawText ?: item.displayText)
+    is ToolEventItem -> estimateTextTokens(item.preview.orEmpty()) + estimateTextTokens(item.toolName)
+}
+
+/**
+ * 使用常见的 4 字符约 1 token 经验值估算文本 token 数。
+ */
+private fun estimateTextTokens(text: String): Int =
+    (text.length + CHARS_PER_TOKEN_ESTIMATE - 1) / CHARS_PER_TOKEN_ESTIMATE
 
 /**
  * 仅在有值时追加文本片段。
@@ -713,3 +771,7 @@ private fun String.appendNullable(next: String?): String = if (next.isNullOrEmpt
  * 新对话的默认标题。
  */
 private const val DEFAULT_CONVERSATION_TITLE = "新对话"
+
+private const val CHARS_PER_TOKEN_ESTIMATE = 4
+
+private const val ATTACHMENT_TOKEN_ESTIMATE = 64

@@ -7,6 +7,7 @@ import com.agent.shared.config.ProviderType
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlin.test.assertFalse
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -135,6 +136,30 @@ class DeepSeekChatCompletionsStreamerTest {
         ).toList()
 
         assertEquals(null, capturedRequest?.reasoningEffort)
+    }
+
+    /**
+     * 请求诊断摘要只应包含安全字段，方便确认 reasoning_effort 是否真正写入。
+     */
+    @Test
+    fun `should build safe request diagnostic summary`() {
+        val request = DeepSeekChatCompletionRequest(
+            model = "deepseek-v4-flash",
+            messages = listOf(DeepSeekChatMessage(role = "user", content = "secret prompt")),
+            stream = true,
+            streamOptions = DeepSeekStreamOptions(includeUsage = true),
+            thinking = DeepSeekThinking(type = "enabled"),
+            reasoningEffort = "max",
+        )
+
+        val summary = buildDeepSeekRequestDiagnostic(request)
+
+        assertEquals(
+            "DeepSeek request: model=deepseek-v4-flash thinking=enabled reasoning_effort=max stream=true",
+            summary,
+        )
+        assertFalse(summary.contains("secret prompt"))
+        assertFalse(summary.contains("messages"))
     }
 
     /**

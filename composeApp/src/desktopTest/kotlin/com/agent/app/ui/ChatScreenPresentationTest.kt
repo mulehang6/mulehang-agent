@@ -70,7 +70,7 @@ class ChatScreenPresentationTest {
      */
     @Test
     fun `should keep context usage value inside tooltip text only`() {
-        assertEquals("58% remaining", buildContextTooltip(0.58f))
+        assertEquals("58% used", buildContextTooltip(0.58f))
     }
 
     /**

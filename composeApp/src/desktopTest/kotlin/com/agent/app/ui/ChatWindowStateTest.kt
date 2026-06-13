@@ -8,6 +8,7 @@ import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
 import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
+import com.agent.shared.config.ModelLimit
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
@@ -390,7 +391,55 @@ class ChatWindowStateTest {
         assertEquals(null, capturedRequest?.reasoningEffort)
     }
 
-    private fun profile(model: String = "gpt-4.1"): ConfigProfile = ConfigProfile(
+    /**
+     * 上下文圆环应使用当前 profile 的 context limit 作为分母，而不是固定展示占比。
+     */
+    @Test
+    fun `should estimate context usage from active profile context limit`() = runTest(dispatcher) {
+        val limitedProfile = profile(
+            model = "deepseek-v4-pro",
+            limit = ModelLimit(context = 100, output = 20),
+        )
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(limitedProfile),
+                activeProfile = limitedProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("a".repeat(80))
+        advanceUntilIdle()
+
+        assertEquals(0.2f, state.ui.activeConversation.contextUsageFraction)
+    }
+
+    /**
+     * 空会话的上下文占用应按 profile limit 初始化为 0，而不是沿用占位百分比。
+     */
+    @Test
+    fun `should initialize context usage from active profile context limit`() = runTest(dispatcher) {
+        val limitedProfile = profile(
+            model = "deepseek-v4-pro",
+            limit = ModelLimit(context = 100, output = 20),
+        )
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(limitedProfile),
+                activeProfile = limitedProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        assertEquals(0f, state.ui.activeConversation.contextUsageFraction)
+    }
+
+    private fun profile(
+        model: String = "gpt-4.1",
+        limit: ModelLimit? = null,
+    ): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = if (model.startsWith("deepseek", ignoreCase = true)) {
             ProviderType.OPENAI_CHAT_COMPLETIONS
@@ -406,6 +455,7 @@ class ChatWindowStateTest {
         model = model,
         enabled = true,
         layer = ConfigLayer.PROJECT,
+        limit = limit,
     )
 
     private fun idleGateway(): AgentGateway = object : AgentGateway {

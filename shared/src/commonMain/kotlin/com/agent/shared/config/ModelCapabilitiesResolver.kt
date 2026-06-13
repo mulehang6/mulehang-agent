@@ -15,6 +15,7 @@ data class ModelVariant(
  */
 data class ModelCapabilities(
     val variants: Map<String, ModelVariant>,
+    val limit: ModelLimit? = null,
 ) {
     /**
      * 当前模型是否有可选 thinking/reasoning 变体。
@@ -36,7 +37,10 @@ data class ModelCapabilities(
 /**
  * 模型能力解析结果的构造辅助。
  */
-private fun capabilitiesOf(efforts: List<ReasoningEffort>): ModelCapabilities =
+private fun capabilitiesOf(
+    efforts: List<ReasoningEffort>,
+    limit: ModelLimit? = null,
+): ModelCapabilities =
     ModelCapabilities(
         variants = efforts.associate { effort ->
             effort.wireValue to ModelVariant(
@@ -44,6 +48,7 @@ private fun capabilitiesOf(efforts: List<ReasoningEffort>): ModelCapabilities =
                 reasoningEffort = effort,
             )
         },
+        limit = limit,
     )
 
 private val noCapabilities = ModelCapabilities(
@@ -59,6 +64,11 @@ object ModelCapabilitiesResolver {
         ReasoningEffort.MAX,
     )
 
+    private val deepSeekDefaultLimit = ModelLimit(
+        context = 1_000_000,
+        output = 384_000,
+    )
+
     /**
      * 将 provider、baseUrl 和模型名折叠为当前产品支持的能力集合。
      */
@@ -71,8 +81,14 @@ object ModelCapabilitiesResolver {
     private fun resolveOpenAICompatible(profile: ConfigProfile): ModelCapabilities {
         val model = profile.model.lowercase()
         return when {
-            profile.isDeepSeekProfile() -> capabilitiesOf(deepSeekReasoningEfforts)
-            model.isGptReasoningFamily() -> capabilitiesOf(widelySupportedReasoningEfforts)
+            profile.isDeepSeekProfile() -> capabilitiesOf(
+                efforts = deepSeekReasoningEfforts,
+                limit = profile.limit ?: deepSeekDefaultLimit,
+            )
+            model.isGptReasoningFamily() -> capabilitiesOf(
+                efforts = widelySupportedReasoningEfforts,
+                limit = profile.limit,
+            )
             else -> noCapabilities
         }
     }

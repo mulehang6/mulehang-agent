@@ -25,6 +25,7 @@ class ModelCapabilitiesResolverTest {
         assertEquals(true, capabilities.supportsReasoning)
         assertEquals(listOf(ReasoningEffort.HIGH, ReasoningEffort.MAX), capabilities.reasoningEfforts)
         assertEquals(ReasoningEffort.HIGH, capabilities.defaultReasoningEffort)
+        assertEquals(ModelLimit(context = 1_000_000, output = 384_000), capabilities.limit)
         assertEquals(
             mapOf(
                 "high" to ModelVariant(id = "high", reasoningEffort = ReasoningEffort.HIGH),
@@ -51,6 +52,7 @@ class ModelCapabilitiesResolverTest {
         assertEquals(emptyList(), capabilities.reasoningEfforts)
         assertEquals(null, capabilities.defaultReasoningEffort)
         assertEquals(emptyMap(), capabilities.variants)
+        assertEquals(null, capabilities.limit)
     }
 
     /**
@@ -73,10 +75,28 @@ class ModelCapabilitiesResolverTest {
         assertEquals(ReasoningEffort.MEDIUM, capabilities.variants["medium"]?.reasoningEffort)
     }
 
+    /**
+     * 显式 profile limit 应覆盖 provider 默认模型窗口。
+     */
+    @Test
+    fun `should let profile limit override provider default limit`() {
+        val capabilities = ModelCapabilitiesResolver.resolve(
+            profile = profile(
+                providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-v4-pro",
+                limit = ModelLimit(context = 128_000, output = 16_000),
+            ),
+        )
+
+        assertEquals(ModelLimit(context = 128_000, output = 16_000), capabilities.limit)
+    }
+
     private fun profile(
         providerType: ProviderType,
         baseUrl: String,
         model: String,
+        limit: ModelLimit? = null,
     ): ConfigProfile = ConfigProfile(
         id = "profile-$model",
         providerType = providerType,
@@ -85,5 +105,6 @@ class ModelCapabilitiesResolverTest {
         model = model,
         enabled = true,
         layer = ConfigLayer.PROJECT,
+        limit = limit,
     )
 }

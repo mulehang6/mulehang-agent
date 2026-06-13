@@ -10,6 +10,7 @@ import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
 import com.agent.shared.config.ConfigProfile
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.SerialName
@@ -37,8 +38,10 @@ internal class DeepSeekChatCompletionsStreamer(
     fun stream(request: AgentRunRequest): Flow<StreamFrame> = flow {
         var finishReason: String? = null
         var metaInfo: ResponseMetaInfo? = null
+        val deepSeekRequest = buildRequest(request)
+        log.info { buildDeepSeekRequestDiagnostic(deepSeekRequest) }
 
-        chunkRunner(buildRequest(request), request.profile).collect { chunk ->
+        chunkRunner(deepSeekRequest, request.profile).collect { chunk ->
             chunk.choices.firstOrNull()?.let { choice ->
                 choice.delta.reasoningContent?.takeIf { it.isNotBlank() }?.let { reasoning ->
                     emit(StreamFrame.ReasoningDelta(text = reasoning, index = choice.index))
@@ -86,7 +89,19 @@ internal class DeepSeekChatCompletionsStreamer(
             reasoningEffort = request.reasoningEffort?.wireValue,
         )
 
+    private companion object {
+        private val log = KotlinLogging.logger { }
+    }
 }
+
+/**
+ * 构造不包含 prompt、messages、apiKey 的 DeepSeek 请求诊断摘要。
+ */
+internal fun buildDeepSeekRequestDiagnostic(request: DeepSeekChatCompletionRequest): String =
+    "DeepSeek request: model=${request.model} " +
+        "thinking=${request.thinking.type} " +
+        "reasoning_effort=${request.reasoningEffort ?: "null"} " +
+        "stream=${request.stream}"
 
 /**
  * 打开 SSE 连接并按 chunk 产出 DeepSeek 原始流数据。

@@ -976,7 +976,7 @@ internal fun modelVariantsFor(profile: ConfigProfile): List<ModelVariant> =
  * 生成上下文圆环 hover 文案。
  */
 internal fun buildContextTooltip(usageFraction: Float): String =
-    "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}% remaining"
+    "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}% used"
 
 /**
  * 判断 composer 键盘事件是否应触发发送；Shift+Enter 保留给多行输入。

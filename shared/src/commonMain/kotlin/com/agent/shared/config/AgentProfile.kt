@@ -13,6 +13,7 @@ data class AgentProfile(
     val apiKey: String,
     val model: String,
     val enabled: Boolean? = null,
+    val limit: ModelLimit? = null,
 ) {
     /**
      * 配置未显式关闭时默认启用。

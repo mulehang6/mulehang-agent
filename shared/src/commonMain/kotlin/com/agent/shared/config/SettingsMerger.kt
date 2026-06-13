@@ -11,6 +11,9 @@ object SettingsMerger {
         "MULEHANG_API_KEY",
         "MULEHANG_MODEL",
         "MULEHANG_ENABLED",
+        "MULEHANG_CONTEXT_WINDOW",
+        "MULEHANG_INPUT_TOKEN_LIMIT",
+        "MULEHANG_OUTPUT_TOKEN_LIMIT",
     )
 
     /**
@@ -53,9 +56,10 @@ object SettingsMerger {
             providerType = environment["MULEHANG_PROVIDER_TYPE"]?.toProviderType() ?: ProviderType.OPENAI_RESPONSES,
             baseUrl = environment["MULEHANG_BASE_URL"] ?: "https://api.openai.com/v1",
             apiKey = environment["MULEHANG_API_KEY"] ?: "",
-            model = environment["MULEHANG_MODEL"] ?: "gpt-4.1",
+            model = (environment["MULEHANG_MODEL"] ?: "gpt-4.1").sanitizeModelName(),
             enabled = environment["MULEHANG_ENABLED"]?.toBooleanStrictOrNull() ?: true,
             layer = ConfigLayer.ENVIRONMENT,
+            limit = environment.toModelLimit(default = null),
         )
     }
 
@@ -70,10 +74,22 @@ object SettingsMerger {
         providerType = environment["MULEHANG_PROVIDER_TYPE"]?.toProviderType() ?: providerType,
         baseUrl = environment["MULEHANG_BASE_URL"] ?: baseUrl,
         apiKey = environment["MULEHANG_API_KEY"] ?: apiKey,
-        model = environment["MULEHANG_MODEL"] ?: model,
+        model = (environment["MULEHANG_MODEL"] ?: model).sanitizeModelName(),
         enabled = environment["MULEHANG_ENABLED"]?.toBooleanStrictOrNull() ?: isEnabled(),
         layer = layer,
+        limit = environment.toModelLimit(default = limit),
     )
+
+    /**
+     * 合并环境变量里的 token 限制，未设置的字段保留 JSON 中的显式值。
+     */
+    private fun Map<String, String>.toModelLimit(default: ModelLimit?): ModelLimit? {
+        val context = this["MULEHANG_CONTEXT_WINDOW"]?.toPositiveIntOrNull() ?: default?.context
+        val input = this["MULEHANG_INPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.input
+        val output = this["MULEHANG_OUTPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.output
+        return ModelLimit(context = context, input = input, output = output)
+            .takeUnless { it.context == null && it.input == null && it.output == null }
+    }
 
     /**
      * 解析环境变量中的 providerType，兼容 JSON serial name 与枚举名。
@@ -85,6 +101,14 @@ object SettingsMerger {
         "google" -> ProviderType.GOOGLE
         else -> ProviderType.valueOf(trim().uppercase())
     }
+
+    private fun String.sanitizeModelName(): String =
+        replace(Regex("\\u001B\\[[0-9;]*[A-Za-z]"), "")
+            .replace(Regex("\\[[0-9;]*m$"), "")
+            .trim()
+
+    private fun String.toPositiveIntOrNull(): Int? =
+        trim().toIntOrNull()?.takeIf { it > 0 }
 
     /**
      * 保留原始 profile 与其来源层级。

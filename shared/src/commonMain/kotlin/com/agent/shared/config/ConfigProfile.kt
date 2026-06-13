@@ -11,4 +11,5 @@ data class ConfigProfile(
     val model: String,
     val enabled: Boolean,
     val layer: ConfigLayer,
+    val limit: ModelLimit? = null,
 )

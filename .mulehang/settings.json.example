@@ -8,6 +8,18 @@
       "model": "gpt-4.1"
     },
     {
+      "id": "deepseek-main",
+      "providerType": "openai-chat-completions",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "apiKey": "your-api-key",
+      "model": "deepseek-v4-pro",
+      "limit": {
+        "context": 1000000,
+        "output": 384000
+      },
+      "enabled": false
+    },
+    {
       "id": "google-main",
       "providerType": "google",
       "baseUrl": "https://generativelanguage.googleapis.com",

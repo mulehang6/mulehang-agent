@@ -1,6 +1,8 @@
 package com.agent.shared.application
 
 import com.agent.shared.agent.AgentGateway
+import com.agent.shared.agent.AgentConversationHistoryMessage
+import com.agent.shared.agent.AgentConversationHistoryPart
 import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ReasoningEffort
@@ -62,6 +64,41 @@ class SendMessageUseCaseTest {
         ).toList()
 
         assertEquals(ReasoningEffort.LOW, capturedRequest?.reasoningEffort)
+    }
+
+    /**
+     * 用例应把结构化历史原样转发到底层 gateway。
+     */
+    @Test
+    fun `should forward structured history to gateway request`() = runTest {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(AgentStreamEvent.Started, AgentStreamEvent.Completed("done"))
+            }
+        }
+
+        val history = listOf(
+            AgentConversationHistoryMessage.User(content = "first user turn"),
+            AgentConversationHistoryMessage.Assistant(
+                parts = listOf(
+                    AgentConversationHistoryPart.Text(text = "first assistant turn"),
+                ),
+            ),
+        )
+
+        SendMessageUseCase(gateway).invoke(
+            AgentRunRequest(
+                prompt = "second user turn",
+                profile = profile(),
+                history = history,
+                reasoningEffort = ReasoningEffort.MEDIUM,
+            ),
+        ).toList()
+
+        assertEquals(history, capturedRequest?.history)
+        assertEquals("second user turn", capturedRequest?.prompt)
     }
 
     /**

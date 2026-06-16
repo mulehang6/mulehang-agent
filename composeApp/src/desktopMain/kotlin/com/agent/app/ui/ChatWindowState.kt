@@ -3,6 +3,8 @@ package com.agent.app.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.agent.shared.agent.AgentConversationHistoryMessage
+import com.agent.shared.agent.AgentConversationHistoryPart
 import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ReasoningEffort
@@ -43,10 +45,12 @@ data class ChatConversationUiState(
     val workspacePath: String,
     val items: List<ConversationItem> = emptyList(),
     val attachments: List<ChatAttachmentUiState> = emptyList(),
+    val history: List<AgentConversationHistoryMessage> = emptyList(),
     val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
     val executionState: ExecutionState = ExecutionState.Idle,
     val streamingAssistantItemIndex: Int? = null,
     val streamingReasoningItemIndex: Int? = null,
+    val streamingAssistantHistoryIndex: Int? = null,
     val contextUsageFraction: Float = 0.72f,
 ) {
     /**
@@ -286,16 +290,24 @@ class ChatWindowState(
         }
 
         val targetConversationId = ui.activeConversationId
+        val sourceConversation = findConversation(targetConversationId)
+        val requestHistory = sourceConversation.history
+        val reasoningEffort = supportedReasoningEffort(
+            profile = profile,
+            conversation = sourceConversation,
+        )
         mutateConversation(targetConversationId) { conversation ->
             val nextItems = conversation.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt))
-                conversation.copy(
-                    title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
+            conversation.copy(
+                title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
                     ?: prompt.take(24).ifBlank { DEFAULT_CONVERSATION_TITLE },
                 items = nextItems,
                 attachments = emptyList(),
+                history = conversation.history + AgentConversationHistoryMessage.User(content = prompt),
                 executionState = ExecutionState.Running,
                 streamingAssistantItemIndex = null,
                 streamingReasoningItemIndex = null,
+                streamingAssistantHistoryIndex = null,
                 contextUsageFraction = estimateContextUsage(
                     items = nextItems,
                     attachmentCount = 0,
@@ -311,10 +323,8 @@ class ChatWindowState(
                     AgentRunRequest(
                         prompt = prompt,
                         profile = profile,
-                        reasoningEffort = supportedReasoningEffort(
-                            profile = profile,
-                            conversation = findConversation(targetConversationId),
-                        ),
+                        history = requestHistory,
+                        reasoningEffort = reasoningEffort,
                     ),
                 ).collect { event ->
                     applyAgentEvent(targetConversationId, event)
@@ -376,24 +386,35 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.TextDelta -> mutateConversation(conversationId) { conversation ->
-                appendAssistantDelta(conversation, event.text)
+                appendAssistantTextHistory(
+                    appendAssistantDelta(conversation, event.text),
+                    event.text,
+                )
             }
 
             is AgentStreamEvent.ToolCallStarted -> mutateConversation(conversationId) { conversation ->
-                appendToolEvent(
-                    conversation = conversation,
-                    toolName = event.name,
-                    status = ToolEventStatus.Started,
-                    preview = event.argumentsPreview,
+                appendAssistantToolCallHistory(
+                    appendToolEvent(
+                        conversation = conversation,
+                        toolName = event.name,
+                        status = ToolEventStatus.Started,
+                        preview = event.argumentsPreview,
+                    ),
+                    name = event.name,
+                    argumentsPreview = event.argumentsPreview,
                 )
             }
 
             is AgentStreamEvent.ToolCallFinished -> mutateConversation(conversationId) { conversation ->
-                appendToolEvent(
-                    conversation = conversation,
-                    toolName = event.name,
-                    status = ToolEventStatus.Finished,
-                    preview = event.resultPreview,
+                appendAssistantToolResultHistory(
+                    appendToolEvent(
+                        conversation = conversation,
+                        toolName = event.name,
+                        status = ToolEventStatus.Finished,
+                        preview = event.resultPreview,
+                    ),
+                    name = event.name,
+                    resultPreview = event.resultPreview,
                 )
             }
 
@@ -407,16 +428,24 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.ReasoningDelta -> mutateConversation(conversationId) { conversation ->
-                appendReasoningDelta(
-                    conversation = conversation,
+                appendAssistantReasoningHistory(
+                    appendReasoningDelta(
+                        conversation = conversation,
+                        summary = event.summary,
+                        rawText = event.rawText,
+                    ),
                     summary = event.summary,
                     rawText = event.rawText,
                 )
             }
 
             is AgentStreamEvent.ReasoningCompleted -> mutateConversation(conversationId) { conversation ->
-                completeReasoning(
-                    conversation = conversation,
+                completeAssistantReasoningHistory(
+                    completeReasoning(
+                        conversation = conversation,
+                        summary = event.summary,
+                        rawText = event.rawText,
+                    ),
                     summary = event.summary,
                     rawText = event.rawText,
                 )
@@ -437,6 +466,7 @@ class ChatWindowState(
                     ),
                     streamingAssistantItemIndex = null,
                     streamingReasoningItemIndex = null,
+                    streamingAssistantHistoryIndex = null,
                 )
             }
         }
@@ -637,10 +667,11 @@ class ChatWindowState(
         val normalizedConversation = closeStreamingReasoning(conversation)
         val currentIndex = normalizedConversation.streamingAssistantItemIndex ?: run {
             val nextItems = appendCompletedAssistantIfNeeded(normalizedConversation.items, finalText)
-            return normalizedConversation.copy(
+            return finalizeAssistantTextHistory(normalizedConversation, finalText).copy(
                 items = nextItems,
                 executionState = ExecutionState.Idle,
                 streamingAssistantItemIndex = null,
+                streamingAssistantHistoryIndex = null,
                 contextUsageFraction = estimateContextUsage(
                     items = nextItems,
                     attachmentCount = normalizedConversation.attachments.size,
@@ -651,6 +682,7 @@ class ChatWindowState(
         val existingItem = normalizedConversation.items[currentIndex] as? ChatMessageItem ?: return normalizedConversation.copy(
             executionState = ExecutionState.Idle,
             streamingAssistantItemIndex = null,
+            streamingAssistantHistoryIndex = null,
         )
         val updatedItems = normalizedConversation.items.toMutableList()
         if (finalText.isNotBlank() && existingItem.message.content != finalText) {
@@ -658,10 +690,11 @@ class ChatWindowState(
                 message = existingItem.message.copy(content = finalText),
             )
         }
-        return normalizedConversation.copy(
+        return finalizeAssistantTextHistory(normalizedConversation, finalText).copy(
             items = updatedItems,
             executionState = ExecutionState.Idle,
             streamingAssistantItemIndex = null,
+            streamingAssistantHistoryIndex = null,
             contextUsageFraction = estimateContextUsage(
                 items = updatedItems,
                 attachmentCount = normalizedConversation.attachments.size,
@@ -804,3 +837,150 @@ private const val DEFAULT_CONVERSATION_TITLE = "新对话"
 private const val CHARS_PER_TOKEN_ESTIMATE = 4
 
 private const val ATTACHMENT_TOKEN_ESTIMATE = 64
+
+/**
+ * 确保当前会话存在一个可追加的流式助手历史消息。
+ */
+private fun ensureStreamingAssistantHistory(conversation: ChatConversationUiState): ChatConversationUiState {
+    val currentIndex = conversation.streamingAssistantHistoryIndex
+    if (currentIndex != null && conversation.history.getOrNull(currentIndex) is AgentConversationHistoryMessage.Assistant) {
+        return conversation
+    }
+    val nextHistory = conversation.history + AgentConversationHistoryMessage.Assistant()
+    return conversation.copy(
+        history = nextHistory,
+        streamingAssistantHistoryIndex = nextHistory.lastIndex,
+    )
+}
+
+/**
+ * 向当前流式助手历史中追加文本，并与最后一个文本 part 合并。
+ */
+private fun appendAssistantTextHistory(
+    conversation: ChatConversationUiState,
+    delta: String,
+): ChatConversationUiState {
+    if (delta.isEmpty()) return conversation
+    return updateAssistantHistoryParts(conversation) { parts ->
+        val last = parts.lastOrNull()
+        if (last is AgentConversationHistoryPart.Text) {
+            parts.dropLast(1) + last.copy(text = last.text + delta)
+        } else {
+            parts + AgentConversationHistoryPart.Text(text = delta)
+        }
+    }
+}
+
+/**
+ * 向当前流式助手历史中追加 reasoning，并与最后一个 reasoning part 合并。
+ */
+private fun appendAssistantReasoningHistory(
+    conversation: ChatConversationUiState,
+    summary: String?,
+    rawText: String?,
+): ChatConversationUiState {
+    if (summary.isNullOrEmpty() && rawText.isNullOrEmpty()) return conversation
+    return updateAssistantHistoryParts(conversation) { parts ->
+        val last = parts.lastOrNull()
+        if (last is AgentConversationHistoryPart.Reasoning) {
+            val mergedSummary = last.summary.orEmpty().appendNullable(summary).takeIf { it.isNotBlank() }
+            val mergedRawText = last.rawText.orEmpty().appendNullable(rawText).takeIf { it.isNotBlank() }
+            parts.dropLast(1) + last.copy(
+                summary = mergedSummary,
+                rawText = mergedRawText,
+            )
+        } else {
+            parts + AgentConversationHistoryPart.Reasoning(
+                summary = summary,
+                rawText = rawText,
+            )
+        }
+    }
+}
+
+/**
+ * 用完整 reasoning 收尾当前 assistant history 中最后一个 reasoning part。
+ */
+private fun completeAssistantReasoningHistory(
+    conversation: ChatConversationUiState,
+    summary: String?,
+    rawText: String?,
+): ChatConversationUiState {
+    if (summary.isNullOrEmpty() && rawText.isNullOrEmpty()) return conversation
+    return updateAssistantHistoryParts(conversation) { parts ->
+        val last = parts.lastOrNull()
+        if (last is AgentConversationHistoryPart.Reasoning) {
+            parts.dropLast(1) + last.copy(
+                summary = summary ?: last.summary,
+                rawText = rawText ?: last.rawText,
+            )
+        } else {
+            parts + AgentConversationHistoryPart.Reasoning(
+                summary = summary,
+                rawText = rawText,
+            )
+        }
+    }
+}
+
+/**
+ * 追加 assistant tool call 历史片段。
+ */
+private fun appendAssistantToolCallHistory(
+    conversation: ChatConversationUiState,
+    name: String,
+    argumentsPreview: String?,
+): ChatConversationUiState = updateAssistantHistoryParts(conversation) { parts ->
+    parts + AgentConversationHistoryPart.ToolCall(
+        name = name,
+        argumentsPreview = argumentsPreview,
+    )
+}
+
+/**
+ * 追加 assistant tool result 历史片段。
+ */
+private fun appendAssistantToolResultHistory(
+    conversation: ChatConversationUiState,
+    name: String,
+    resultPreview: String?,
+): ChatConversationUiState = updateAssistantHistoryParts(conversation) { parts ->
+    parts + AgentConversationHistoryPart.ToolResult(
+        name = name,
+        resultPreview = resultPreview,
+    )
+}
+
+/**
+ * 在 assistant message 完成时用最终正文收尾文本 part，避免和流式增量重复累加。
+ */
+private fun finalizeAssistantTextHistory(
+    conversation: ChatConversationUiState,
+    finalText: String,
+): ChatConversationUiState {
+    if (finalText.isBlank()) return conversation
+    return updateAssistantHistoryParts(conversation) { parts ->
+        val last = parts.lastOrNull()
+        if (last is AgentConversationHistoryPart.Text) {
+            parts.dropLast(1) + last.copy(text = finalText)
+        } else {
+            parts + AgentConversationHistoryPart.Text(text = finalText)
+        }
+    }
+}
+
+/**
+ * 更新当前流式 assistant history 的 parts 列表。
+ */
+private fun updateAssistantHistoryParts(
+    conversation: ChatConversationUiState,
+    transform: (List<AgentConversationHistoryPart>) -> List<AgentConversationHistoryPart>,
+): ChatConversationUiState {
+    val normalizedConversation = ensureStreamingAssistantHistory(conversation)
+    val historyIndex = normalizedConversation.streamingAssistantHistoryIndex ?: return normalizedConversation
+    val assistant = normalizedConversation.history[historyIndex] as? AgentConversationHistoryMessage.Assistant
+        ?: return normalizedConversation
+    val updatedHistory = normalizedConversation.history.toMutableList()
+    updatedHistory[historyIndex] = assistant.copy(parts = transform(assistant.parts))
+    return normalizedConversation.copy(history = updatedHistory)
+}

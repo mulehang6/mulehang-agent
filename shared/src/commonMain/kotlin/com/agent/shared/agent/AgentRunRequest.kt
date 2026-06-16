@@ -9,6 +9,7 @@ data class AgentRunRequest(
     val prompt: String,
     val profile: ConfigProfile,
     val reasoningEffort: ReasoningEffort? = ReasoningEffort.MEDIUM,
+    val history: List<AgentConversationHistoryMessage> = emptyList(),
 )
 
 /**

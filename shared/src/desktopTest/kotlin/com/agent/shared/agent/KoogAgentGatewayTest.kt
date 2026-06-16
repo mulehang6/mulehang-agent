@@ -141,6 +141,37 @@ class KoogAgentGatewayTest {
         assertEquals(AgentStreamEvent.Completed(""), events[3])
     }
 
+    /**
+     * 扩展请求携带结构化历史后，原有 frame 到事件的映射不应退化。
+     */
+    @Test
+    fun `should keep mapping stream frames when request carries history`() = runTest {
+        val gateway = KoogAgentGateway(
+            streamRunner = { _ ->
+                flowOf(
+                    StreamFrame.TextDelta("hel"),
+                    StreamFrame.TextDelta("lo"),
+                    StreamFrame.End(),
+                )
+            },
+        )
+
+        val events = gateway.run(
+            AgentRunRequest(
+                prompt = "hello",
+                profile = openAiProfile(),
+                history = listOf(
+                    AgentConversationHistoryMessage.User("previous turn"),
+                ),
+            ),
+        ).toList()
+
+        assertEquals(AgentStreamEvent.Started, events[0])
+        assertEquals(AgentStreamEvent.TextDelta("hel"), events[1])
+        assertEquals(AgentStreamEvent.TextDelta("lo"), events[2])
+        assertEquals(AgentStreamEvent.Completed("hello"), events[3])
+    }
+
     private fun openAiProfile(): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = ProviderType.OPENAI_RESPONSES,

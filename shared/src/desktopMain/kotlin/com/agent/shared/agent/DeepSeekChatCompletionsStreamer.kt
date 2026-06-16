@@ -82,7 +82,8 @@ internal class DeepSeekChatCompletionsStreamer(
     internal fun buildRequest(request: AgentRunRequest): DeepSeekChatCompletionRequest =
         DeepSeekChatCompletionRequest(
             model = request.profile.model,
-            messages = listOf(DeepSeekChatMessage(role = "user", content = request.prompt)),
+            messages = request.history.map(::toDeepSeekHistoryMessage) +
+                DeepSeekChatMessage(role = "user", content = request.prompt),
             stream = true,
             streamOptions = DeepSeekStreamOptions(includeUsage = true),
             thinking = DeepSeekThinking(type = "enabled"),
@@ -93,6 +94,41 @@ internal class DeepSeekChatCompletionsStreamer(
         private val log = KotlinLogging.logger { }
     }
 }
+
+/**
+ * 将结构化历史消息映射为 DeepSeek/OpenAI 兼容消息。
+ */
+private fun toDeepSeekHistoryMessage(message: AgentConversationHistoryMessage): DeepSeekChatMessage =
+    when (message) {
+        is AgentConversationHistoryMessage.User -> DeepSeekChatMessage(
+            role = "user",
+            content = message.content,
+        )
+
+        is AgentConversationHistoryMessage.Assistant -> DeepSeekChatMessage(
+            role = "assistant",
+            content = serializeAssistantParts(message.parts),
+        )
+    }
+
+/**
+ * 将助手结构化片段压平成当前 DeepSeek 兼容消息文本。
+ */
+private fun serializeAssistantParts(parts: List<AgentConversationHistoryPart>): String =
+    parts.joinToString(separator = "\n\n") { part ->
+        when (part) {
+            is AgentConversationHistoryPart.Text -> part.text
+
+            is AgentConversationHistoryPart.Reasoning ->
+                "[reasoning]\n${part.rawText ?: part.summary.orEmpty()}\n[/reasoning]"
+
+            is AgentConversationHistoryPart.ToolCall ->
+                "[tool_call:${part.name}]\n${part.argumentsPreview.orEmpty()}\n[/tool_call]"
+
+            is AgentConversationHistoryPart.ToolResult ->
+                "[tool_result:${part.name}]\n${part.resultPreview.orEmpty()}\n[/tool_result]"
+        }
+    }.trim()
 
 /**
  * 构造不包含 prompt、messages、apiKey 的 DeepSeek 请求诊断摘要。

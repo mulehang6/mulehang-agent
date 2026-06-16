@@ -1,6 +1,8 @@
 package com.agent.app.ui
 
 import com.agent.shared.agent.AgentGateway
+import com.agent.shared.agent.AgentConversationHistoryMessage
+import com.agent.shared.agent.AgentConversationHistoryPart
 import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ReasoningEffort
@@ -110,6 +112,67 @@ class ChatWindowStateTest {
         advanceUntilIdle()
 
         assertEquals("Agent 执行失败: invalid api key", state.errorMessage)
+    }
+
+    /**
+     * 第二轮发送应读取第一轮沉淀下来的结构化历史，且不把 status 事件写入历史。
+     */
+    @Test
+    fun `should send second turn with first turn structured history`() = runTest(dispatcher) {
+        val capturedRequests = mutableListOf<AgentRunRequest>()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequests += request
+                return flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.ReasoningDelta(summary = "先分析", rawText = "先分析原始思考"),
+                    AgentStreamEvent.ToolCallStarted(name = "read_file", argumentsPreview = """{"path":"README.md"}"""),
+                    AgentStreamEvent.ToolCallFinished(name = "read_file", resultPreview = "ok"),
+                    AgentStreamEvent.Status("searching"),
+                    AgentStreamEvent.TextDelta("done"),
+                    AgentStreamEvent.Completed("done"),
+                )
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile(model = "deepseek-v4-flash")),
+                activeProfile = profile(model = "deepseek-v4-flash"),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("first")
+        advanceUntilIdle()
+        state.send("second")
+        advanceUntilIdle()
+
+        assertEquals(2, capturedRequests.size)
+        assertEquals(emptyList(), capturedRequests[0].history)
+        assertEquals(
+            listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.Reasoning(
+                            summary = "先分析",
+                            rawText = "先分析原始思考",
+                        ),
+                        AgentConversationHistoryPart.ToolCall(
+                            name = "read_file",
+                            argumentsPreview = """{"path":"README.md"}""",
+                        ),
+                        AgentConversationHistoryPart.ToolResult(
+                            name = "read_file",
+                            resultPreview = "ok",
+                        ),
+                        AgentConversationHistoryPart.Text("done"),
+                    ),
+                ),
+            ),
+            capturedRequests[1].history,
+        )
     }
 
     /**

@@ -79,6 +79,79 @@ class DeepSeekChatCompletionsStreamerTest {
     }
 
     /**
+     * 结构化历史应在当前用户输入之前写入 DeepSeek messages。
+     */
+    @Test
+    fun `should map structured history into deepseek messages before current user prompt`() = runTest {
+        var capturedRequest: DeepSeekChatCompletionRequest? = null
+        val streamer = DeepSeekChatCompletionsStreamer(
+            chunkRunner = { request, _ ->
+                capturedRequest = request
+                flowOf(
+                    DeepSeekChatCompletionChunk(
+                        id = "chatcmpl-history",
+                        created = 1L,
+                        model = "deepseek-v4-flash",
+                    ),
+                )
+            },
+        )
+
+        streamer.stream(
+            AgentRunRequest(
+                prompt = "second turn",
+                profile = deepSeekProfile(),
+                history = listOf(
+                    AgentConversationHistoryMessage.User("first turn"),
+                    AgentConversationHistoryMessage.Assistant(
+                        parts = listOf(
+                            AgentConversationHistoryPart.Reasoning(
+                                summary = "先分析",
+                                rawText = "先分析原始思考",
+                            ),
+                            AgentConversationHistoryPart.ToolCall(
+                                name = "read_file",
+                                argumentsPreview = """{"path":"README.md"}""",
+                            ),
+                            AgentConversationHistoryPart.ToolResult(
+                                name = "read_file",
+                                resultPreview = "ok",
+                            ),
+                            AgentConversationHistoryPart.Text("最终回答"),
+                        ),
+                    ),
+                ),
+            ),
+        ).toList()
+
+        assertEquals(
+            listOf(
+                DeepSeekChatMessage(role = "user", content = "first turn"),
+                DeepSeekChatMessage(
+                    role = "assistant",
+                    content = """
+[reasoning]
+先分析原始思考
+[/reasoning]
+
+[tool_call:read_file]
+{"path":"README.md"}
+[/tool_call]
+
+[tool_result:read_file]
+ok
+[/tool_result]
+
+最终回答
+                    """.trimIndent(),
+                ),
+                DeepSeekChatMessage(role = "user", content = "second turn"),
+            ),
+            capturedRequest?.messages,
+        )
+    }
+
+    /**
      * DeepSeek V4 的 max thinking 档位应原样写入 reasoning_effort。
      */
     @Test

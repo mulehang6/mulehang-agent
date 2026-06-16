@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026-06-16 Kilo Style Multi Turn Chat Design</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --surface: rgba(255, 252, 247, 0.95);
+      --surface-strong: #fffdf9;
+      --line: #d9cfbf;
+      --text: #2a241c;
+      --muted: #6f675e;
+      --accent: #255f7a;
+      --accent-soft: rgba(37, 95, 122, 0.10);
+      --warn: #8a5b16;
+      --warn-soft: rgba(138, 91, 22, 0.12);
+      --good: #25654e;
+      --good-soft: rgba(37, 101, 78, 0.12);
+      --shadow: 0 28px 70px rgba(57, 47, 31, 0.10);
+      --radius-xl: 28px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(184, 160, 126, 0.24), transparent 24%),
+        linear-gradient(180deg, #f7f2ea 0%, #efe6d9 100%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .page {
+      max-width: 1460px;
+      margin: 0 auto;
+      padding: 28px 22px 56px;
+    }
+
+    .hero {
+      padding: 26px 30px 28px;
+      border: 1px solid rgba(61, 52, 37, 0.10);
+      border-radius: var(--radius-xl);
+      background: linear-gradient(135deg, rgba(255, 252, 247, 0.96), rgba(247, 241, 232, 0.96));
+      box-shadow: var(--shadow);
+    }
+
+    .hero-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(37, 95, 122, 0.08);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 18px 0 12px;
+      font-size: 38px;
+      line-height: 1.12;
+      letter-spacing: -0.04em;
+    }
+
+    .hero p {
+      max-width: 980px;
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 15px;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .hero-meta span {
+      padding: 10px 14px;
+      border: 1px solid rgba(61, 52, 37, 0.08);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.62);
+      color: #534a40;
+      font-size: 13px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .summary-card {
+      padding: 18px;
+      border: 1px solid rgba(61, 52, 37, 0.08);
+      border-radius: var(--radius-lg);
+      background: var(--surface-strong);
+    }
+
+    .summary-card h2 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      letter-spacing: 0.02em;
+    }
+
+    .summary-card p {
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 22px;
+      margin-top: 22px;
+      align-items: start;
+    }
+
+    .toc {
+      position: sticky;
+      top: 18px;
+      padding: 22px 18px;
+      border: 1px solid rgba(61, 52, 37, 0.08);
+      border-radius: var(--radius-xl);
+      background: rgba(247, 242, 234, 0.92);
+      box-shadow: var(--shadow);
+    }
+
+    .toc h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
+    }
+
+    .toc ol {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 14px;
+    }
+
+    .toc li + li {
+      margin-top: 6px;
+    }
+
+    .content {
+      display: grid;
+      gap: 18px;
+    }
+
+    section.doc {
+      padding: 24px 26px;
+      border: 1px solid rgba(61, 52, 37, 0.08);
+      border-radius: var(--radius-xl);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    section.doc h2 {
+      margin: 0 0 14px;
+      font-size: 26px;
+      letter-spacing: -0.03em;
+    }
+
+    section.doc h3 {
+      margin: 22px 0 10px;
+      font-size: 18px;
+    }
+
+    section.doc p {
+      margin: 0 0 12px;
+      line-height: 1.85;
+      color: #4a4238;
+      font-size: 15px;
+    }
+
+    section.doc ol,
+    section.doc ul {
+      margin: 0 0 12px;
+      padding-left: 22px;
+      line-height: 1.85;
+      color: #4a4238;
+      font-size: 15px;
+    }
+
+    .callout {
+      margin: 16px 0;
+      padding: 16px 18px;
+      border-radius: var(--radius-md);
+      border: 1px solid transparent;
+    }
+
+    .callout.info {
+      background: var(--accent-soft);
+      border-color: rgba(37, 95, 122, 0.16);
+    }
+
+    .callout.warn {
+      background: var(--warn-soft);
+      border-color: rgba(138, 91, 22, 0.18);
+    }
+
+    .callout.good {
+      background: var(--good-soft);
+      border-color: rgba(37, 101, 78, 0.18);
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .mini-card {
+      padding: 16px;
+      border: 1px solid rgba(61, 52, 37, 0.08);
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .mini-card h4 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .flow .step {
+      padding: 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(61, 52, 37, 0.08);
+      background: rgba(255, 255, 255, 0.74);
+    }
+
+    .flow .step strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(48, 40, 30, 0.08);
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 0.92em;
+    }
+
+    @media (max-width: 1180px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        position: static;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        padding: 18px 12px 36px;
+      }
+
+      h1 {
+        font-size: 30px;
+      }
+
+      .summary-grid,
+      .two-col,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      section.doc {
+        padding: 20px 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="hero-kicker">Spec HTML / Readable Edition</div>
+      <h1>2026-06-16 Kilo Style Multi Turn Chat Design</h1>
+      <p>这份 HTML 与 markdown spec 在信息内容上保持一致，但使用目录、卡片、强调区块和章节化排版来提高阅读效率。它服务于同一份设计结论：当前聊天界面需要从“单轮 prompt 请求”升级为按 kilo 语义维护的多轮结构化历史。</p>
+      <div class="hero-meta">
+        <span>当前目标 provider：DeepSeek + openai-chat-completions</span>
+        <span>本轮不做持久化</span>
+        <span>结构化历史与 UI 时间线分离</span>
+      </div>
+      <div class="summary-grid">
+        <article class="summary-card">
+          <h2>核心问题</h2>
+          <p>当前 UI 看起来像对话，但模型侧每次只发送当前 <code>prompt</code>，没有真实多轮上下文。</p>
+        </article>
+        <article class="summary-card">
+          <h2>核心方案</h2>
+          <p>引入 kilo 风格的结构化会话历史模型，把真实历史与页面时间线拆开维护。</p>
+        </article>
+        <article class="summary-card">
+          <h2>本轮范围</h2>
+          <p>先打通当前实际使用的 DeepSeek 链路，同时为其它 provider 保留扩展边界。</p>
+        </article>
+        <article class="summary-card">
+          <h2>明确排除</h2>
+          <p>不做持久化，不补齐所有 provider，不把 <code>status</code> 事件回灌到模型历史。</p>
+        </article>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="toc">
+        <h2>目录</h2>
+        <ol>
+          <li><a href="#background">背景</a></li>
+          <li><a href="#goals">目标</a></li>
+          <li><a href="#non-goals">非目标</a></li>
+          <li><a href="#current-issues">当前实现问题</a></li>
+          <li><a href="#principles">设计原则</a></li>
+          <li><a href="#state-boundary">数据模型与状态边界</a></li>
+          <li><a href="#request-flow">发送链路设计</a></li>
+          <li><a href="#event-mapping">流式事件到结构化历史的映射</a></li>
+          <li><a href="#alignment">与 kilo 的对齐边界</a></li>
+          <li><a href="#testing">测试策略</a></li>
+          <li><a href="#acceptance">验收标准</a></li>
+          <li><a href="#conclusion">本轮结论</a></li>
+        </ol>
+      </aside>
+
+      <div class="content">
+        <section class="doc" id="background">
+          <h2>背景</h2>
+          <p>当前桌面聊天界面已经具备多会话 UI、流式消息展示、reasoning 展示和 tool 事件展示，但底层发送链路仍然是单轮模式。</p>
+          <p>现状的关键问题不是 UI 不能连续聊天，而是模型侧每次请求只发送当前 <code>prompt</code>，没有把当前会话里已经发生过的用户消息、助手输出、reasoning 和 tool 语义一起回灌给下一轮请求。</p>
+          <p>这导致当前产品虽然在展示层看起来像“对话”，在模型语义上实际上仍然是一次次彼此割裂的单轮请求。</p>
+          <div class="callout info">
+            <strong>本轮设计定位</strong>
+            <p>本轮设计的目标不是做一个简化版“文本历史拼接”，而是明确按 kilo 的做法，引入一套独立于 UI 时间线的结构化会话历史模型，把真正给模型看的历史与当前页面展示状态分离维护。</p>
+          </div>
+        </section>
+
+        <section class="doc" id="goals">
+          <h2>目标</h2>
+          <ol>
+            <li>将当前活动会话从单轮请求改造为真正的多轮对话。</li>
+            <li>采用接近 kilo 的结构化历史语义，而不是从 UI 展示项反推聊天历史。</li>
+            <li>把用户消息、助手正文、reasoning、tool 语义纳入会话历史。</li>
+            <li>保持当前 <code>ChatWindowState</code> 和时间线 UI 的展示行为基本不回退。</li>
+            <li>先打通当前实际使用的 <code>DeepSeek + openai-chat-completions</code> 链路。</li>
+          </ol>
+        </section>
+
+        <section class="doc" id="non-goals">
+          <h2>非目标</h2>
+          <ol>
+            <li>不做会话持久化，关闭应用后不要求恢复多轮历史。</li>
+            <li>不同时补齐 <code>openai-responses</code>、<code>anthropic</code>、<code>google</code> 全部 provider 分支。</li>
+            <li>不把当前 UI 中的 <code>status</code> 事件纳入模型历史。</li>
+            <li>不在这一轮补齐 kilo 全量协议细节，例如稳定的 <code>tool_call_id</code> 或 provider 级 hosted tool 特殊编码。</li>
+            <li>不重做当前聊天界面的布局、样式或交互结构。</li>
+          </ol>
+        </section>
+
+        <section class="doc" id="current-issues">
+          <h2>当前实现问题</h2>
+          <p>当前实现中，<code>composeApp</code> 的 <code>ChatWindowState</code> 已经维护了多会话和完整时间线，但底层发送链路仍然只接受一个 prompt：</p>
+          <ol>
+            <li><code>SendMessageUseCase</code> 当前主要转发 <code>AgentRunRequest(prompt, profile, reasoningEffort)</code>。</li>
+            <li><code>KoogAgentGateway</code> 当前会把请求构造成只包含一条 <code>user(prompt)</code> 的消息。</li>
+            <li>当前时间线里的 <code>ChatMessageItem</code>、<code>ReasoningItem</code> 和 <code>ToolEventItem</code> 主要是 UI 展示模型，不是模型历史模型。</li>
+          </ol>
+          <div class="callout warn">
+            <strong>根因</strong>
+            <p>当前问题的根源不在 UI，而在“给模型看的历史模型”缺位。</p>
+          </div>
+        </section>
+
+        <section class="doc" id="principles">
+          <h2>设计原则</h2>
+          <div class="two-col">
+            <article class="mini-card">
+              <h4>1. 模型历史与 UI 时间线分离</h4>
+              <p>本轮必须把“给模型看的历史”与“给用户看的时间线”分离维护。</p>
+            </article>
+            <article class="mini-card">
+              <h4>2. 采用 kilo 风格的 assistant parts 语义</h4>
+              <p>assistant 历史不能压扁成纯文本，需要支持多种 part。</p>
+            </article>
+            <article class="mini-card">
+              <h4>3. 当前 provider 先打通</h4>
+              <p>实现上先保证 DeepSeek 链路可用，架构上为其它 provider 留口。</p>
+            </article>
+            <article class="mini-card">
+              <h4>4. status 不是模型历史</h4>
+              <p><code>status</code> 继续保留在 UI 展示层，不回灌到下一轮请求。</p>
+            </article>
+          </div>
+          <h3>1. 模型历史与 UI 时间线分离</h3>
+          <p>UI 时间线负责消息列表渲染、reasoning 展开/折叠状态、tool 事件的时间线展示和 status 文案展示。</p>
+          <p>结构化历史负责定义真实的对话顺序、表达 assistant 的多种 part 语义，并作为下一轮请求的唯一历史来源。</p>
+          <p>后续发送请求时，不能再从 <code>ConversationItem</code> 反推历史。</p>
+          <h3>2. 采用 kilo 风格的 assistant parts 语义</h3>
+          <p>本轮不把 assistant 历史压扁成一段纯文本，而是允许 assistant 消息内部携带多个 part。至少需要支持：</p>
+          <ol>
+            <li>text</li>
+            <li>reasoning</li>
+            <li>tool call</li>
+            <li>tool result</li>
+          </ol>
+          <p>这不是为了过度设计，而是为了避免把 UI 展示块错误地当成模型语义块。</p>
+          <h3>3. 当前 provider 先打通，架构为后续 provider 留口</h3>
+          <p>当前项目实际使用的是 <code>DeepSeek + openai-chat-completions</code>。因此这一轮的实现目标应收敛为：</p>
+          <ol>
+            <li>设计上按可扩展 provider 适配写</li>
+            <li>实现上先保证 DeepSeek 链路可用</li>
+            <li>其它 provider 本轮只保留接口和边界，不强行补齐</li>
+          </ol>
+          <h3>4. status 不是模型历史</h3>
+          <p>当前 <code>AgentStreamEvent.Status</code> 更像运行时状态或调试提示，而不是稳定的 assistant 语义。因此本轮明确规定：</p>
+          <ol>
+            <li><code>status</code> 继续保留在 UI 展示层</li>
+            <li><code>status</code> 不进入结构化历史</li>
+            <li>下一轮请求不回灌 <code>status</code></li>
+          </ol>
+        </section>
+
+        <section class="doc" id="state-boundary">
+          <h2>数据模型与状态边界</h2>
+          <h3>结构化会话历史</h3>
+          <p>需要在 <code>shared</code> 内新增一套结构化会话历史模型，用于表达当前会话已经累积的真实历史。</p>
+          <p>该模型的基本语义如下：</p>
+          <ol>
+            <li>一个会话包含一组有序历史消息</li>
+            <li>每条历史消息有明确 role</li>
+            <li><code>user</code> 消息至少承载文本输入</li>
+            <li><code>assistant</code> 消息包含一组有序 parts</li>
+            <li>assistant parts 至少支持 <code>text</code>、<code>reasoning</code>、<code>tool call</code>、<code>tool result</code></li>
+          </ol>
+          <p>这套模型的职责不是 UI 展示，而是为下一轮请求生成 provider 历史。</p>
+          <h3>UI 时间线继续存在，但降级为投影层</h3>
+          <p>当前 <code>ConversationItem</code>、<code>ChatMessageItem</code>、<code>ReasoningItem</code>、<code>ToolEventItem</code> 继续保留，但其职责调整为：</p>
+          <ol>
+            <li>只服务于当前页面渲染</li>
+            <li>不再承担“请求历史来源”的职责</li>
+            <li>由结构化历史和流式事件共同投影生成</li>
+          </ol>
+          <h3>ChatWindowState 的双轨维护职责</h3>
+          <p><code>ChatWindowState</code> 在本轮之后需要同时维护两份状态：</p>
+          <ol>
+            <li>结构化会话历史</li>
+            <li>现有 UI 时间线状态</li>
+          </ol>
+          <p>其中：</p>
+          <ol>
+            <li>结构化历史负责下一轮请求的真实上下文</li>
+            <li>UI 时间线负责当前展示</li>
+            <li>两者共享同一批流式事件输入，但不共享数据模型</li>
+          </ol>
+        </section>
+
+        <section class="doc" id="request-flow">
+          <h2>发送链路设计</h2>
+          <div class="flow">
+            <article class="step">
+              <strong>Step 1</strong>
+              <p>读取当前活动会话的结构化历史。</p>
+            </article>
+            <article class="step">
+              <strong>Step 2</strong>
+              <p>构造“已有历史 + 当前用户输入”的 <code>AgentRunRequest</code>。</p>
+            </article>
+            <article class="step">
+              <strong>Step 3</strong>
+              <p>在流式过程中同步更新结构化历史和 UI 投影。</p>
+            </article>
+          </div>
+          <h3>AgentRunRequest 从单轮 prompt 升级为历史化请求</h3>
+          <p><code>AgentRunRequest</code> 不应再只描述一次裸 prompt，而需要同时描述：</p>
+          <ol>
+            <li>当前轮发送前的结构化历史</li>
+            <li>当前轮用户输入</li>
+            <li>当前 profile</li>
+            <li>当前 reasoning effort</li>
+          </ol>
+          <p>当前用户输入仍然单独保留，不要求调用方先手动把当前输入塞进历史里再发请求。</p>
+          <h3>ChatWindowState 的发送流程</h3>
+          <p><code>ChatWindowState.sendDraft()</code> 在本轮之后的目标流程如下：</p>
+          <ol>
+            <li>读取当前活动会话的结构化历史</li>
+            <li>以“已有历史 + 当前用户输入”构造 <code>AgentRunRequest</code></li>
+            <li>先把当前用户消息写入 UI 时间线</li>
+            <li>同时把当前用户消息写入结构化历史</li>
+            <li>启动流式请求</li>
+            <li>在流式过程中持续补全当前轮 assistant message 的结构化 parts 与 UI 投影</li>
+          </ol>
+          <h3>DeepSeek 请求生成方式</h3>
+          <p>对本轮实际要打通的 <code>DeepSeek + openai-chat-completions</code> 分支，底层不再构造单条 <code>user(prompt)</code>，而是要按顺序构造完整历史消息列表。</p>
+          <p>其语义顺序应为：</p>
+          <ol>
+            <li>历史 user messages</li>
+            <li>历史 assistant message parts 映射后的 assistant messages</li>
+            <li>当前轮用户输入作为最后一条 user message</li>
+          </ol>
+          <div class="callout good">
+            <strong>关键约束</strong>
+            <p>发送给 provider 的历史来源必须是结构化历史，而不是 UI item。</p>
+          </div>
+        </section>
+
+        <section class="doc" id="event-mapping">
+          <h2>流式事件到结构化历史的映射</h2>
+          <h3>TextDelta</h3>
+          <p><code>AgentStreamEvent.TextDelta</code> 进入当前轮 assistant message 的 text part。</p>
+          <p>其规则如下：</p>
+          <ol>
+            <li>连续 text delta 追加到同一个文本 part</li>
+            <li>UI 侧继续合并成当前助手正文块</li>
+            <li>结构化历史中保留为 assistant text 语义</li>
+          </ol>
+          <h3>ReasoningDelta 与 ReasoningCompleted</h3>
+          <p><code>AgentStreamEvent.ReasoningDelta</code> 和 <code>AgentStreamEvent.ReasoningCompleted</code> 进入当前轮 assistant message 的 reasoning part。</p>
+          <p>其规则如下：</p>
+          <ol>
+            <li>reasoning 与正文分离存储</li>
+            <li>UI 侧继续展示为 <code>ReasoningItem</code></li>
+            <li>reasoning 不与 assistant 最终正文混成一段纯文本</li>
+          </ol>
+          <h3>ToolCallStarted</h3>
+          <p><code>AgentStreamEvent.ToolCallStarted</code> 进入当前轮 assistant message 的 tool-call part。</p>
+          <p>本轮记录的最小必要信息如下：</p>
+          <ol>
+            <li>tool name</li>
+            <li>arguments preview</li>
+            <li>调用状态</li>
+          </ol>
+          <p>UI 侧继续落成 tool started 时间线项。</p>
+          <h3>ToolCallFinished</h3>
+          <p><code>AgentStreamEvent.ToolCallFinished</code> 进入当前轮 assistant message 的 tool-result part。</p>
+          <p>本轮记录的最小必要信息如下：</p>
+          <ol>
+            <li>tool name</li>
+            <li>result preview</li>
+            <li>完成状态</li>
+          </ol>
+          <p>UI 侧继续落成 tool finished 时间线项。</p>
+          <h3>Status</h3>
+          <p><code>AgentStreamEvent.Status</code> 不进入结构化历史。</p>
+          <p>其规则如下：</p>
+          <ol>
+            <li>只保留在 UI 时间线或调试展示</li>
+            <li>不作为 assistant history part</li>
+            <li>不回灌到下一轮模型请求</li>
+          </ol>
+        </section>
+
+        <section class="doc" id="alignment">
+          <h2>与 kilo 的对齐边界</h2>
+          <p>本轮的目标是按 kilo 的消息语义工作，而不是一次性复制 kilo 的全部协议细节。</p>
+          <div class="two-col">
+            <article class="mini-card">
+              <h4>本轮与 kilo 对齐的部分</h4>
+              <ol>
+                <li>模型历史与 UI 时间线分离</li>
+                <li>assistant 以多 part 形式表达历史</li>
+                <li>tool 与 reasoning 都进入 assistant 历史</li>
+                <li>下一轮请求基于结构化历史生成</li>
+              </ol>
+            </article>
+            <article class="mini-card">
+              <h4>本轮暂不完全对齐的部分</h4>
+              <ol>
+                <li>不要求完整的 provider 级 hosted tool 编码</li>
+                <li>不要求稳定的 <code>tool_call_id</code></li>
+                <li>不要求一次打通所有 provider 协议分支</li>
+              </ol>
+            </article>
+          </div>
+          <p>这意味着本轮是“按 kilo 的核心语义做”，而不是“逐字段复刻 kilo 内部实现”。</p>
+        </section>
+
+        <section class="doc" id="testing">
+          <h2>测试策略</h2>
+          <h3>shared 层测试</h3>
+          <p><code>shared</code> 层测试应优先覆盖：</p>
+          <ol>
+            <li>结构化历史在多轮发送中持续累积</li>
+            <li><code>SendMessageUseCase</code> 会转发“历史 + 当前输入”</li>
+            <li><code>TextDelta</code>、<code>ReasoningDelta</code>、<code>ToolCallStarted</code>、<code>ToolCallFinished</code>、<code>Status</code> 的归类规则</li>
+            <li>当前轮 assistant 流式事件能正确回填到结构化历史</li>
+          </ol>
+          <h3>composeApp 层测试</h3>
+          <p><code>composeApp</code> 层测试应优先覆盖：</p>
+          <ol>
+            <li>同一会话连续两轮发送时，第二轮请求读取第一轮历史</li>
+            <li>切换会话时，各会话结构化历史互不污染</li>
+            <li>引入结构化历史后，现有 UI 时间线展示不回退</li>
+          </ol>
+        </section>
+
+        <section class="doc" id="acceptance">
+          <h2>验收标准</h2>
+          <ol>
+            <li>同一会话连续发送两轮时，第二轮请求不再是裸 <code>prompt</code>，而是包含第一轮结构化历史。</li>
+            <li>第一轮中的用户消息、助手正文、reasoning 和 tool 语义会进入会话历史。</li>
+            <li><code>status</code> 事件只用于展示，不进入模型历史。</li>
+            <li>不同会话之间的结构化历史相互隔离。</li>
+            <li>当前实际使用的 <code>DeepSeek + openai-chat-completions</code> 链路通过测试并可工作。</li>
+            <li>当前 UI 时间线中的消息、reasoning 和 tool event 展示行为不退化。</li>
+            <li>本轮不做持久化，重启后不要求恢复多轮历史。</li>
+            <li>其它 provider 分支本轮不要求实现完成，但设计边界需要保留。</li>
+          </ol>
+        </section>
+
+        <section class="doc" id="conclusion">
+          <h2>本轮结论</h2>
+          <p>本轮不采用“从 UI 时间线反推聊天历史”的方案，而是明确引入 kilo 风格的结构化会话历史模型。</p>
+          <p>真正的多轮能力将建立在以下基础上：</p>
+          <ol>
+            <li>结构化历史是模型上下文的真相源</li>
+            <li>UI 时间线只是展示投影</li>
+            <li>assistant 历史保留 text、reasoning、tool call、tool result 等 part</li>
+            <li>当前先打通 DeepSeek 链路，后续再扩展其它 provider</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

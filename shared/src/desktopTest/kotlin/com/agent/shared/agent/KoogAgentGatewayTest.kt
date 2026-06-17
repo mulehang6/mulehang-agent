@@ -289,6 +289,7 @@ class KoogAgentGatewayTest {
         assertEquals(AgentStreamEvent.TextDelta("hel"), events[1])
         assertEquals(
             AgentStreamEvent.ToolCallStarted(
+                toolCallId = "call-1",
                 name = "read_file",
                 argumentsPreview = """{"path":"README.md"}""",
             ),
@@ -296,6 +297,7 @@ class KoogAgentGatewayTest {
         )
         assertEquals(
             AgentStreamEvent.ToolCallFinished(
+                toolCallId = "call-1",
                 name = "read_file",
                 resultPreview = """{"path":"README.md"}""",
             ),
@@ -383,6 +385,109 @@ class KoogAgentGatewayTest {
         assertEquals(AgentStreamEvent.TextDelta("hel"), events[1])
         assertEquals(AgentStreamEvent.TextDelta("lo"), events[2])
         assertEquals(AgentStreamEvent.Completed("hello"), events[3])
+    }
+
+    /**
+     * 首轮 Koog 请求也必须把已有结构化历史映射回 prompt，而不是只发送当前 prompt。
+     */
+    @Test
+    fun `should build koog prompt messages from structured conversation history`() {
+        val messages = buildConversationMessages(
+            history = listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.Reasoning(
+                            summary = "先分析",
+                            rawText = "先分析原始思考",
+                        ),
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
+                            name = "read_file",
+                            argumentsPreview = """{"path":"README.md"}""",
+                        ),
+                        AgentConversationHistoryPart.ToolResult(
+                            id = "call-1",
+                            name = "read_file",
+                            resultPreview = "file-content",
+                        ),
+                        AgentConversationHistoryPart.Text("done"),
+                    ),
+                ),
+            ),
+            prompt = "second",
+        )
+
+        assertEquals(5, messages.size)
+        assertEquals(listOf(MessagePart.Text("first")), assertIs<Message.User>(messages[0]).parts)
+        assertEquals(
+            listOf(
+                MessagePart.Reasoning(content = listOf("先分析原始思考"), summary = listOf("先分析")),
+                MessagePart.Tool.Call(
+                    id = "call-1",
+                    tool = "read_file",
+                    args = """{"path":"README.md"}""",
+                ),
+            ),
+            assertIs<Message.Assistant>(messages[1]).parts,
+        )
+        assertEquals(
+            listOf(
+                MessagePart.Tool.Result(
+                    id = "call-1",
+                    tool = "read_file",
+                    output = "file-content",
+                ),
+            ),
+            assertIs<Message.User>(messages[2]).parts,
+        )
+        assertEquals(listOf(MessagePart.Text("done")), assertIs<Message.Assistant>(messages[3]).parts)
+        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[4]).parts)
+    }
+
+    /**
+     * 中断或失败的上一轮可能只留下 tool call；恢复历史时必须补齐 tool result，避免兼容 API 拒绝请求。
+     */
+    @Test
+    fun `should synthesize tool result for orphaned historical tool call`() {
+        val messages = buildConversationMessages(
+            history = listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
+                            name = "read_file",
+                            argumentsPreview = """{"path":"README.md"}""",
+                        ),
+                    ),
+                ),
+            ),
+            prompt = "second",
+        )
+
+        assertEquals(4, messages.size)
+        assertEquals(
+            listOf(
+                MessagePart.Tool.Call(
+                    id = "call-1",
+                    tool = "read_file",
+                    args = """{"path":"README.md"}""",
+                ),
+            ),
+            assertIs<Message.Assistant>(messages[1]).parts,
+        )
+        assertEquals(
+            listOf(
+                MessagePart.Tool.Result(
+                    id = "call-1",
+                    tool = "read_file",
+                    output = "工具调用未完成，未产生可用结果。",
+                ),
+            ),
+            assertIs<Message.User>(messages[2]).parts,
+        )
+        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[3]).parts)
     }
 
     /**

@@ -24,8 +24,10 @@ import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
@@ -136,6 +138,7 @@ class ChatWindowState(
     private val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var activeRunJob: Job? = null
 
     /**
      * 当前窗口可选的全部 profile。
@@ -282,6 +285,21 @@ class ChatWindowState(
     }
 
     /**
+     * 取消当前正在执行的轮次，并恢复到可继续输入的空闲态。
+     */
+    fun cancelActiveRun() {
+        activeRunJob?.cancel()
+        activeRunJob = null
+        mutateActiveConversation { conversation ->
+            if (conversation.executionState != ExecutionState.Running) {
+                conversation
+            } else {
+                conversation.copy(executionState = ExecutionState.Idle)
+            }
+        }
+    }
+
+    /**
      * 回答当前挂起问题，并恢复同一轮 agent 执行。
      */
     fun answerPendingQuestion(answer: String) {
@@ -357,7 +375,7 @@ class ChatWindowState(
         }
         ui = ui.copy(draft = "")
 
-        scope.launch {
+        activeRunJob = scope.launch {
             try {
                 sendMessageUseCase(
                     AgentRunRequest(
@@ -371,6 +389,14 @@ class ChatWindowState(
                 ).collect { event ->
                     applyAgentEvent(targetConversationId, event)
                 }
+            } catch (_: CancellationException) {
+                mutateConversation(targetConversationId) { conversation ->
+                    if (conversation.executionState == ExecutionState.Running) {
+                        conversation.copy(executionState = ExecutionState.Idle)
+                    } else {
+                        conversation
+                    }
+                }
             } catch (exception: Exception) {
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
@@ -382,6 +408,8 @@ class ChatWindowState(
                         ),
                     )
                 }
+            } finally {
+                activeRunJob = null
             }
         }
     }
@@ -442,6 +470,7 @@ class ChatWindowState(
                         status = ToolEventStatus.Started,
                         preview = event.argumentsPreview,
                     ),
+                    id = event.toolCallId,
                     name = event.name,
                     argumentsPreview = event.argumentsPreview,
                 )
@@ -455,6 +484,7 @@ class ChatWindowState(
                         status = ToolEventStatus.Finished,
                         preview = event.resultPreview,
                     ),
+                    id = event.toolCallId,
                     name = event.name,
                     resultPreview = event.resultPreview,
                 )
@@ -611,7 +641,8 @@ class ChatWindowState(
                 ),
             )
         } else {
-            val existingItem = normalizedConversation.items[currentIndex] as? ChatMessageItem ?: return normalizedConversation
+            val existingItem =
+                normalizedConversation.items[currentIndex] as? ChatMessageItem ?: return normalizedConversation
             val updatedItems = normalizedConversation.items.toMutableList()
             updatedItems[currentIndex] = existingItem.copy(
                 message = existingItem.message.copy(content = existingItem.message.content + delta),
@@ -755,11 +786,12 @@ class ChatWindowState(
                 ),
             )
         }
-        val existingItem = normalizedConversation.items[currentIndex] as? ChatMessageItem ?: return normalizedConversation.copy(
-            executionState = ExecutionState.Idle,
-            streamingAssistantItemIndex = null,
-            streamingAssistantHistoryIndex = null,
-        )
+        val existingItem =
+            normalizedConversation.items[currentIndex] as? ChatMessageItem ?: return normalizedConversation.copy(
+                executionState = ExecutionState.Idle,
+                streamingAssistantItemIndex = null,
+                streamingAssistantHistoryIndex = null,
+            )
         val updatedItems = normalizedConversation.items.toMutableList()
         if (finalText.isNotBlank() && existingItem.message.content != finalText) {
             updatedItems[currentIndex] = existingItem.copy(
@@ -1007,10 +1039,12 @@ private fun completeAssistantReasoningHistory(
  */
 private fun appendAssistantToolCallHistory(
     conversation: ChatConversationUiState,
+    id: String?,
     name: String,
     argumentsPreview: String?,
 ): ChatConversationUiState = updateAssistantHistoryParts(conversation) { parts ->
     parts + AgentConversationHistoryPart.ToolCall(
+        id = id,
         name = name,
         argumentsPreview = argumentsPreview,
     )
@@ -1021,10 +1055,12 @@ private fun appendAssistantToolCallHistory(
  */
 private fun appendAssistantToolResultHistory(
     conversation: ChatConversationUiState,
+    id: String?,
     name: String,
     resultPreview: String?,
 ): ChatConversationUiState = updateAssistantHistoryParts(conversation) { parts ->
     parts + AgentConversationHistoryPart.ToolResult(
+        id = id,
         name = name,
         resultPreview = resultPreview,
     )

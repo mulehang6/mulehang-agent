@@ -18,6 +18,7 @@ sealed interface AgentStreamEvent {
      * 工具调用开始。
      */
     data class ToolCallStarted(
+        val toolCallId: String? = null,
         val name: String,
         val argumentsPreview: String? = null,
     ) : AgentStreamEvent
@@ -26,6 +27,7 @@ sealed interface AgentStreamEvent {
      * 工具调用结束。
      */
     data class ToolCallFinished(
+        val toolCallId: String? = null,
         val name: String,
         val resultPreview: String? = null,
     ) : AgentStreamEvent

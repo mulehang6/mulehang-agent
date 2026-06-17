@@ -2,6 +2,7 @@
 
 package com.agent.app.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,14 +34,17 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -55,18 +60,21 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.graphics.drawscope.Stroke
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelCapabilitiesResolver
 import com.agent.shared.config.ModelVariant
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
+import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
 import java.awt.FileDialog
 import java.awt.Frame
+import java.util.Locale
 
 /**
  * codex-like 聊天主界面。
@@ -436,10 +444,29 @@ private fun AbilityCard(
 private fun ConversationTimeline(
     conversation: ChatConversationUiState,
 ) {
+    val listState = rememberLazyListState()
+    var followLatest by remember(conversation.id) { mutableStateOf(true) }
+    var observedItemCount by remember(conversation.id) { mutableStateOf(conversation.items.size) }
+    val nextFollowLatest = nextAutoScrollFollowState(
+        currentFollowLatest = followLatest,
+        lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index,
+        totalItems = conversation.items.size,
+        previousTotalItems = observedItemCount,
+    )
+    LaunchedEffect(conversation.id, conversation.items.size, nextFollowLatest) {
+        if (conversation.items.isNotEmpty() && nextFollowLatest) {
+            listState.scrollToItem(timelineAutoScrollAnchorIndex(conversation.items.size))
+        }
+    }
+    SideEffect {
+        followLatest = nextFollowLatest
+        observedItemCount = conversation.items.size
+    }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 34.dp, vertical = 18.dp),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         items(conversation.items) { item ->
@@ -448,6 +475,9 @@ private fun ConversationTimeline(
                 is ReasoningItem -> ReasoningBlock(item)
                 is ToolEventItem -> ToolEventBlock(item)
             }
+        }
+        item(key = "timeline-anchor-${conversation.id}") {
+            Spacer(modifier = Modifier.height(1.dp))
         }
     }
 }
@@ -460,6 +490,7 @@ private fun ComposerPanel(state: ChatWindowState) {
     val activeConversation = state.ui.activeConversation
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
+    val primaryActionVisual = buildComposerPrimaryActionVisual(activeConversation.executionState)
     val providerProfiles = groupProfilesByProvider(profiles)
     val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
@@ -640,8 +671,13 @@ private fun ComposerPanel(state: ChatWindowState) {
                         }
                         DividerMark()
                         IconPillButton(
-                            symbol = "↑",
-                            onClick = state::sendDraft,
+                            symbol = primaryActionVisual.symbol,
+                            danger = primaryActionVisual.danger,
+                            onClick = if (activeConversation.executionState == ExecutionState.Running) {
+                                state::cancelActiveRun
+                            } else {
+                                state::sendDraft
+                            },
                         )
                     }
                 }
@@ -677,13 +713,14 @@ private fun NewConversationButton(
 @Composable
 private fun IconPillButton(
     symbol: String,
+    danger: Boolean = false,
     onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = AppDark,
+            containerColor = if (danger) ComposerDanger else AppDark,
             contentColor = Color(0xFFFFF8EF),
         ),
         modifier = Modifier.size(36.dp),
@@ -775,25 +812,36 @@ private fun ContextRingChip(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .background(
-                            brush = Brush.sweepGradient(
-                                0.0f to AppAccent,
-                                usageFraction to AppAccent,
-                                usageFraction to Color(0xFFD8D0C2),
-                                1.0f to Color(0xFFD8D0C2),
-                            ),
-                            shape = CircleShape,
-                        )
-                        .padding(4.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFFFBF7EF), CircleShape),
+                Canvas(modifier = Modifier.size(18.dp)) {
+                    val strokeWidth = size.minDimension * 0.22f
+                    val inset = strokeWidth / 2f
+                    val sweepAngle = contextRingSweepAngle(usageFraction)
+                    drawArc(
+                        color = Color(0xFFD8D0C2),
+                        startAngle = 0f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                        size = androidx.compose.ui.geometry.Size(
+                            width = size.width - strokeWidth,
+                            height = size.height - strokeWidth,
+                        ),
+                        style = Stroke(width = strokeWidth),
                     )
+                    if (sweepAngle > 0f) {
+                        drawArc(
+                            color = AppAccent,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                            size = androidx.compose.ui.geometry.Size(
+                                width = size.width - strokeWidth,
+                                height = size.height - strokeWidth,
+                            ),
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                        )
+                    }
                 }
                 Text(
                     text = buildContextUsageLabel(usageFraction),
@@ -1015,13 +1063,90 @@ internal fun groupProfilesByProvider(profiles: List<ConfigProfile>): Map<String,
  * 生成上下文圆环 hover 文案。
  */
 internal fun buildContextTooltip(usageFraction: Float): String =
-    "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}% used"
+    "${formatContextUsagePercent(usageFraction)} used"
 
 /**
  * 生成上下文圆环旁的可见百分比文案。
  */
 internal fun buildContextUsageLabel(usageFraction: Float): String =
-    "${(usageFraction.coerceIn(0f, 1f) * 100).toInt()}%"
+    formatContextUsagePercent(usageFraction)
+
+/**
+ * composer 主按钮的展示状态。
+ */
+internal data class ComposerPrimaryActionVisual(
+    val symbol: String,
+    val danger: Boolean,
+)
+
+/**
+ * 根据执行状态生成 composer 主按钮视觉。
+ */
+internal fun buildComposerPrimaryActionVisual(executionState: ExecutionState): ComposerPrimaryActionVisual =
+    if (executionState == ExecutionState.Running) {
+        ComposerPrimaryActionVisual(symbol = "■", danger = true)
+    } else {
+        ComposerPrimaryActionVisual(symbol = "↑", danger = false)
+    }
+
+/**
+ * 将上下文占比换算为圆环 sweep angle，并为非零占用保留最小可见弧度。
+ */
+internal fun contextRingSweepAngle(usageFraction: Float): Float {
+    val clampedFraction = usageFraction.coerceIn(0f, 1f)
+    if (clampedFraction <= 0f) return 0f
+    if (clampedFraction >= 1f) return 360f
+    return (clampedFraction * 360f).coerceAtLeast(MIN_VISIBLE_CONTEXT_SWEEP_ANGLE)
+}
+
+/**
+ * 仅当用户仍停在底部附近时，才让时间线自动跟随最新内容。
+ */
+internal fun shouldAutoScrollToLatest(
+    lastVisibleIndex: Int?,
+    totalItems: Int,
+    trailingThreshold: Int = TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS,
+): Boolean {
+    if (lastVisibleIndex == null) {
+        return true
+    }
+    val threshold = trailingThreshold.coerceAtLeast(0)
+    return lastVisibleIndex >= timelineAutoScrollAnchorIndex(totalItems) - threshold
+}
+
+/**
+ * 根据当前滚动位置和是否刚追加内容，决定是否继续保持“跟随最新内容”。
+ */
+internal fun nextAutoScrollFollowState(
+    currentFollowLatest: Boolean,
+    lastVisibleIndex: Int?,
+    totalItems: Int,
+    previousTotalItems: Int,
+    trailingThreshold: Int = TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS,
+): Boolean {
+    if (shouldAutoScrollToLatest(lastVisibleIndex, totalItems, trailingThreshold)) {
+        return true
+    }
+    return currentFollowLatest && totalItems > previousTotalItems
+}
+
+/**
+ * 时间线自动滚动时使用的尾部锚点索引。
+ */
+internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int = totalItems.coerceAtLeast(0)
+
+/**
+ * 生成适合上下文圆环显示的小百分比文案。
+ */
+private fun formatContextUsagePercent(usageFraction: Float): String {
+    val percent = usageFraction.coerceIn(0f, 1f) * 100f
+    return when {
+        percent <= 0f -> "0%"
+        percent < 0.1f -> "<0.1%"
+        percent < 10f -> String.format(Locale.US, "%.1f%%", percent)
+        else -> "${percent.toInt()}%"
+    }
+}
 
 /**
  * 判断 composer 键盘事件是否应触发发送；Shift+Enter 保留给多行输入。
@@ -1043,6 +1168,12 @@ private fun permissionLabel(permissionPreset: PermissionPreset): String = when (
     PermissionPreset.PLAN -> "plan"
     PermissionPreset.BRAVE -> "brave"
 }
+
+private const val TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS = 1
+
+private const val MIN_VISIBLE_CONTEXT_SWEEP_ANGLE = 6f
+
+private val ComposerDanger = Color(0xFFC94F4F)
 
 /**
  * 选择本地附件文件。

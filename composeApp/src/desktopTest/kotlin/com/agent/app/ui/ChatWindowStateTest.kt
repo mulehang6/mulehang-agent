@@ -21,8 +21,10 @@ import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -36,6 +38,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * 验证桌面聊天窗口状态的消息发送流转。
@@ -130,8 +133,16 @@ class ChatWindowStateTest {
                 return flowOf(
                     AgentStreamEvent.Started,
                     AgentStreamEvent.ReasoningDelta(summary = "先分析", rawText = "先分析原始思考"),
-                    AgentStreamEvent.ToolCallStarted(name = "read_file", argumentsPreview = """{"path":"README.md"}"""),
-                    AgentStreamEvent.ToolCallFinished(name = "read_file", resultPreview = "ok"),
+                    AgentStreamEvent.ToolCallStarted(
+                        toolCallId = "call-1",
+                        name = "read_file",
+                        argumentsPreview = """{"path":"README.md"}""",
+                    ),
+                    AgentStreamEvent.ToolCallFinished(
+                        toolCallId = "call-1",
+                        name = "read_file",
+                        resultPreview = "ok",
+                    ),
                     AgentStreamEvent.Status("searching"),
                     AgentStreamEvent.TextDelta("done"),
                     AgentStreamEvent.Completed("done"),
@@ -164,10 +175,12 @@ class ChatWindowStateTest {
                             rawText = "先分析原始思考",
                         ),
                         AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
                             name = "read_file",
                             argumentsPreview = """{"path":"README.md"}""",
                         ),
                         AgentConversationHistoryPart.ToolResult(
+                            id = "call-1",
                             name = "read_file",
                             resultPreview = "ok",
                         ),
@@ -632,6 +645,41 @@ class ChatWindowStateTest {
         state.selectProfile(largeContextProfile.id)
 
         assertEquals(0.1f, state.ui.activeConversation.contextUsageFraction)
+    }
+
+    /**
+     * 执行中再次触发主按钮时应取消当前轮次，并恢复到空闲态。
+     */
+    @Test
+    fun `should cancel active run and return idle when requested`() = runTest(dispatcher) {
+        val cancelled = CompletableDeferred<Unit>()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                try {
+                    awaitCancellation()
+                } finally {
+                    cancelled.complete(Unit)
+                }
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("long running")
+        advanceUntilIdle()
+        assertEquals(ExecutionState.Running, state.ui.activeConversation.executionState)
+
+        state.cancelActiveRun()
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertTrue(cancelled.isCompleted)
     }
 
     /**

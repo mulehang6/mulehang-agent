@@ -10,6 +10,7 @@ import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelVariant
 import com.agent.shared.config.ProviderType
+import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.ReasoningItem
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -71,6 +72,7 @@ class ChatScreenPresentationTest {
     @Test
     fun `should keep context usage value inside tooltip text only`() {
         assertEquals("58% used", buildContextTooltip(0.58f))
+        assertEquals("<0.1% used", buildContextTooltip(0.00002f))
     }
 
     /**
@@ -79,6 +81,79 @@ class ChatScreenPresentationTest {
     @Test
     fun `should expose context usage percentage as visible chip label`() {
         assertEquals("58%", buildContextUsageLabel(0.58f))
+        assertEquals("<0.1%", buildContextUsageLabel(0.00002f))
+    }
+
+    /**
+     * 上下文圆环的 sweep angle 应按 0..1 占比换算，并在非零时保留最小可见弧度。
+     */
+    @Test
+    fun `should clamp context ring sweep angle from usage fraction`() {
+        assertEquals(208.8f, contextRingSweepAngle(0.58f), 0.001f)
+        assertEquals(0f, contextRingSweepAngle(-0.2f), 0.001f)
+        assertEquals(360f, contextRingSweepAngle(1.4f), 0.001f)
+        assertEquals(6f, contextRingSweepAngle(0.00002f), 0.001f)
+    }
+
+    /**
+     * 只有当时间线已经停在底部附近时，新增内容才应自动跟随到底部。
+     */
+    @Test
+    fun `should auto scroll only when timeline is already near the latest item`() {
+        assertEquals(true, shouldAutoScrollToLatest(lastVisibleIndex = null, totalItems = 6))
+        assertEquals(6, timelineAutoScrollAnchorIndex(totalItems = 6))
+        assertEquals(true, shouldAutoScrollToLatest(lastVisibleIndex = 6, totalItems = 6))
+        assertEquals(true, shouldAutoScrollToLatest(lastVisibleIndex = 5, totalItems = 6))
+        assertEquals(false, shouldAutoScrollToLatest(lastVisibleIndex = 2, totalItems = 6))
+    }
+
+    /**
+     * 如果原本已经跟随到底部，连续追加多个时间线块时不应因为可见索引短暂落后而丢失跟随状态。
+     */
+    @Test
+    fun `should keep following latest while new timeline blocks are appended`() {
+        assertEquals(
+            true,
+            nextAutoScrollFollowState(
+                currentFollowLatest = true,
+                lastVisibleIndex = 6,
+                totalItems = 8,
+                previousTotalItems = 6,
+            ),
+        )
+        assertEquals(
+            false,
+            nextAutoScrollFollowState(
+                currentFollowLatest = true,
+                lastVisibleIndex = 2,
+                totalItems = 8,
+                previousTotalItems = 8,
+            ),
+        )
+        assertEquals(
+            false,
+            nextAutoScrollFollowState(
+                currentFollowLatest = false,
+                lastVisibleIndex = 6,
+                totalItems = 8,
+                previousTotalItems = 6,
+            ),
+        )
+    }
+
+    /**
+     * 执行中时主按钮应切为停止态，避免继续显示发送图标。
+     */
+    @Test
+    fun `should expose stop action visual while agent is running`() {
+        assertEquals(
+            ComposerPrimaryActionVisual(symbol = "■", danger = true),
+            buildComposerPrimaryActionVisual(ExecutionState.Running),
+        )
+        assertEquals(
+            ComposerPrimaryActionVisual(symbol = "↑", danger = false),
+            buildComposerPrimaryActionVisual(ExecutionState.Idle),
+        )
     }
 
     /**

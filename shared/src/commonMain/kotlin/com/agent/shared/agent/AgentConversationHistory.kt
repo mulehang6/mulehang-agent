@@ -42,6 +42,7 @@ sealed interface AgentConversationHistoryPart {
      * 工具调用片段。
      */
     data class ToolCall(
+        val id: String? = null,
         val name: String,
         val argumentsPreview: String? = null,
     ) : AgentConversationHistoryPart
@@ -50,6 +51,7 @@ sealed interface AgentConversationHistoryPart {
      * 工具结果片段。
      */
     data class ToolResult(
+        val id: String? = null,
         val name: String,
         val resultPreview: String? = null,
     ) : AgentConversationHistoryPart

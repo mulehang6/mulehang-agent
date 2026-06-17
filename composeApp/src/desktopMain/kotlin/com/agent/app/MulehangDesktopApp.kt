@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import com.agent.app.ui.ChatScreen
 import com.agent.app.ui.ChatWindowState
+import com.agent.app.ui.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.KoogAgentGateway
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.DesktopAppSessionRepository
@@ -25,6 +26,9 @@ fun MulehangDesktopApp() {
     val snapshotState = remember {
         mutableStateOf(AppSessionSnapshot(profiles = emptyList(), activeProfile = null))
     }
+    val toolInteractionCoordinator = remember {
+        DesktopToolInteractionCoordinator()
+    }
 
     LaunchedEffect(projectRoot) {
         val repository = DesktopAppSessionRepository(projectRoot)
@@ -33,9 +37,12 @@ fun MulehangDesktopApp() {
 
     val windowState = remember(snapshotState.value) {
         ChatWindowState(
-            sendMessageUseCase = SendMessageUseCase(KoogAgentGateway()),
+            sendMessageUseCase = SendMessageUseCase(
+                KoogAgentGateway(interactionBridge = toolInteractionCoordinator),
+            ),
             snapshot = snapshotState.value,
             projectPath = projectRoot.toString(),
+            toolInteractionCoordinator = toolInteractionCoordinator,
         )
     }
 

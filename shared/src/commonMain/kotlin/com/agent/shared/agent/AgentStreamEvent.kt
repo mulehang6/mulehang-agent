@@ -31,6 +31,16 @@ sealed interface AgentStreamEvent {
     ) : AgentStreamEvent
 
     /**
+     * 工具请求用户回答问题。
+     */
+    data class QuestionRequested(val request: QuestionRequest) : AgentStreamEvent
+
+    /**
+     * 工具请求用户审批危险操作。
+     */
+    data class ApprovalRequested(val request: ApprovalRequest) : AgentStreamEvent
+
+    /**
      * 非正文的中间状态文本。
      */
     data class Status(val message: String) : AgentStreamEvent

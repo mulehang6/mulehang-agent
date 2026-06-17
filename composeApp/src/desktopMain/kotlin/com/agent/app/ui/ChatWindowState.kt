@@ -19,6 +19,7 @@ import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ConversationState
 import com.agent.shared.state.ExecutionState
+import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
@@ -37,6 +38,27 @@ data class ChatAttachmentUiState(
 )
 
 /**
+ * 当前轮次挂起中的提问卡片状态。
+ */
+data class PendingQuestionUiState(
+    val requestId: String,
+    val question: String,
+    val options: List<String>,
+    val allowFreeText: Boolean,
+)
+
+/**
+ * 当前轮次挂起中的审批卡片状态。
+ */
+data class PendingApprovalUiState(
+    val requestId: String,
+    val toolName: String,
+    val summary: String,
+    val targetPath: String?,
+    val payloadPreview: String?,
+)
+
+/**
  * 单个对话线程的窗口级展示状态。
  */
 data class ChatConversationUiState(
@@ -52,6 +74,8 @@ data class ChatConversationUiState(
     val streamingReasoningItemIndex: Int? = null,
     val streamingAssistantHistoryIndex: Int? = null,
     val contextUsageFraction: Float = 0.72f,
+    val pendingQuestion: PendingQuestionUiState? = null,
+    val pendingApproval: PendingApprovalUiState? = null,
 ) {
     /**
      * 将对话线程折叠为旧的会话状态模型，兼容现有测试和渲染辅助函数。
@@ -73,17 +97,6 @@ data class WorkspaceConversationGroupUiState(
     val label: String,
     val conversations: List<ChatConversationUiState>,
 )
-
-/**
- * composer 权限档位。
- */
-enum class PermissionPreset {
-    AUTO,
-    DEFAULT,
-    EDIT_ALLOW,
-    PLAN,
-    BRAVE,
-}
 
 /**
  * 整个聊天窗口的 UI 状态。
@@ -120,6 +133,7 @@ class ChatWindowState(
     private val sendMessageUseCase: SendMessageUseCase,
     private val snapshot: AppSessionSnapshot,
     projectPath: String = "",
+    private val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -268,6 +282,32 @@ class ChatWindowState(
     }
 
     /**
+     * 回答当前挂起问题，并恢复同一轮 agent 执行。
+     */
+    fun answerPendingQuestion(answer: String) {
+        if (!toolInteractionCoordinator.submitQuestion(answer)) return
+        mutateActiveConversation { conversation ->
+            conversation.copy(
+                pendingQuestion = null,
+                executionState = ExecutionState.Running,
+            )
+        }
+    }
+
+    /**
+     * 提交当前挂起审批，并恢复同一轮 agent 执行。
+     */
+    fun answerPendingApproval(approved: Boolean) {
+        if (!toolInteractionCoordinator.submitApproval(approved)) return
+        mutateActiveConversation { conversation ->
+            conversation.copy(
+                pendingApproval = null,
+                executionState = ExecutionState.Running,
+            )
+        }
+    }
+
+    /**
      * 发送当前草稿，并把流式结果归入当前活动会话。
      */
     fun sendDraft() {
@@ -325,6 +365,8 @@ class ChatWindowState(
                         profile = profile,
                         history = requestHistory,
                         reasoningEffort = reasoningEffort,
+                        workspacePath = sourceConversation.workspacePath,
+                        permissionPreset = ui.permissionPreset,
                     ),
                 ).collect { event ->
                     applyAgentEvent(targetConversationId, event)
@@ -418,6 +460,33 @@ class ChatWindowState(
                 )
             }
 
+            is AgentStreamEvent.QuestionRequested -> mutateConversation(conversationId) { conversation ->
+                conversation.copy(
+                    pendingQuestion = PendingQuestionUiState(
+                        requestId = event.request.requestId,
+                        question = event.request.question,
+                        options = event.request.options,
+                        allowFreeText = event.request.allowFreeText,
+                    ),
+                    pendingApproval = null,
+                    executionState = ExecutionState.WaitingForUserInput,
+                )
+            }
+
+            is AgentStreamEvent.ApprovalRequested -> mutateConversation(conversationId) { conversation ->
+                conversation.copy(
+                    pendingApproval = PendingApprovalUiState(
+                        requestId = event.request.requestId,
+                        toolName = event.request.toolName,
+                        summary = event.request.summary,
+                        targetPath = event.request.targetPath,
+                        payloadPreview = event.request.payloadPreview,
+                    ),
+                    pendingQuestion = null,
+                    executionState = ExecutionState.WaitingForApproval,
+                )
+            }
+
             is AgentStreamEvent.Status -> mutateConversation(conversationId) { conversation ->
                 appendToolEvent(
                     conversation = conversation,
@@ -452,7 +521,10 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.Completed -> mutateConversation(conversationId) { conversation ->
-                completeAssistantMessage(conversation, event.text)
+                completeAssistantMessage(conversation, event.text).copy(
+                    pendingQuestion = null,
+                    pendingApproval = null,
+                )
             }
 
             is AgentStreamEvent.Failed -> mutateConversation(conversationId) { conversation ->
@@ -467,6 +539,8 @@ class ChatWindowState(
                     streamingAssistantItemIndex = null,
                     streamingReasoningItemIndex = null,
                     streamingAssistantHistoryIndex = null,
+                    pendingQuestion = null,
+                    pendingApproval = null,
                 )
             }
         }
@@ -627,22 +701,24 @@ class ChatWindowState(
         summary: String?,
         rawText: String?,
     ): ChatConversationUiState {
-        val currentIndex = conversation.streamingReasoningItemIndex ?: run {
-            val nextItems = conversation.items + ReasoningItem(
-                summaryText = summary,
-                rawText = rawText ?: summary,
-                expanded = true,
-                isStreaming = false,
-            )
-            return conversation.copy(
-                items = nextItems,
-                contextUsageFraction = estimateContextUsage(
+        val currentIndex = conversation.streamingReasoningItemIndex
+            ?: conversation.items.indexOfLast { item -> item is ReasoningItem }.takeIf { it >= 0 }
+            ?: run {
+                val nextItems = conversation.items + ReasoningItem(
+                    summaryText = summary,
+                    rawText = rawText ?: summary,
+                    expanded = true,
+                    isStreaming = false,
+                )
+                return conversation.copy(
                     items = nextItems,
-                    attachmentCount = conversation.attachments.size,
-                    contextWindow = activeContextWindow(),
-                ),
-            )
-        }
+                    contextUsageFraction = estimateContextUsage(
+                        items = nextItems,
+                        attachmentCount = conversation.attachments.size,
+                        contextWindow = activeContextWindow(),
+                    ),
+                )
+            }
         val existingItem = conversation.items[currentIndex] as? ReasoningItem ?: return conversation
         val updatedItems = conversation.items.toMutableList()
         updatedItems[currentIndex] = existingItem.copy(
@@ -908,12 +984,15 @@ private fun completeAssistantReasoningHistory(
 ): ChatConversationUiState {
     if (summary.isNullOrEmpty() && rawText.isNullOrEmpty()) return conversation
     return updateAssistantHistoryParts(conversation) { parts ->
-        val last = parts.lastOrNull()
-        if (last is AgentConversationHistoryPart.Reasoning) {
-            parts.dropLast(1) + last.copy(
-                summary = summary ?: last.summary,
-                rawText = rawText ?: last.rawText,
-            )
+        val reasoningIndex = parts.indexOfLast { part -> part is AgentConversationHistoryPart.Reasoning }
+        if (reasoningIndex >= 0) {
+            val last = parts[reasoningIndex] as AgentConversationHistoryPart.Reasoning
+            parts.toMutableList().apply {
+                this[reasoningIndex] = last.copy(
+                    summary = summary ?: last.summary,
+                    rawText = rawText ?: last.rawText,
+                )
+            }
         } else {
             parts + AgentConversationHistoryPart.Reasoning(
                 summary = summary,

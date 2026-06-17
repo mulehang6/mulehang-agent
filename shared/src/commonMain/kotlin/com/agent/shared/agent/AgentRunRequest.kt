@@ -1,6 +1,7 @@
 package com.agent.shared.agent
 
 import com.agent.shared.config.ConfigProfile
+import com.agent.shared.state.PermissionPreset
 
 /**
  * 描述一次消息发送所需的最小运行参数。
@@ -10,6 +11,8 @@ data class AgentRunRequest(
     val profile: ConfigProfile,
     val reasoningEffort: ReasoningEffort? = ReasoningEffort.MEDIUM,
     val history: List<AgentConversationHistoryMessage> = emptyList(),
+    val workspacePath: String = "",
+    val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
 )
 
 /**

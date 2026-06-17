@@ -5,6 +5,8 @@ import com.agent.shared.agent.AgentConversationHistoryMessage
 import com.agent.shared.agent.AgentConversationHistoryPart
 import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
+import com.agent.shared.agent.ApprovalRequest
+import com.agent.shared.agent.QuestionRequest
 import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
@@ -16,11 +18,13 @@ import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ExecutionState
+import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -255,6 +259,56 @@ class ChatWindowStateTest {
         assertEquals(false, firstReasoning.isStreaming)
         assertEquals("结合工具结果继续推理", secondReasoning.displayText)
         assertEquals(true, secondReasoning.expanded)
+    }
+
+    /**
+     * reasoning 完成事件晚于正文增量到达时，不应额外补出第二个思考块。
+     */
+    @Test
+    fun `should not duplicate reasoning block when completion arrives after text delta`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.ReasoningDelta(summary = "先分析问题", rawText = "先分析问题的原始内容"),
+                AgentStreamEvent.TextDelta("answer"),
+                AgentStreamEvent.ReasoningCompleted(
+                    summary = "先分析问题总结",
+                    rawText = "先分析问题的完整原始思考",
+                ),
+                AgentStreamEvent.Completed("answer"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        assertEquals(3, state.state.items.size)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
+        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[1].kind)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[2].kind)
+
+        val reasoningItem = state.state.items[1] as ReasoningItem
+        assertEquals("先分析问题总结", reasoningItem.displayText)
+        assertEquals("先分析问题的完整原始思考", reasoningItem.rawText)
+        assertEquals(false, reasoningItem.isStreaming)
+        val assistantHistory = state.ui.activeConversation.history.last() as AgentConversationHistoryMessage.Assistant
+        assertEquals(
+            listOf(
+                AgentConversationHistoryPart.Reasoning(
+                    summary = "先分析问题总结",
+                    rawText = "先分析问题的完整原始思考",
+                ),
+                AgentConversationHistoryPart.Text("answer"),
+            ),
+            assistantHistory.parts,
+        )
     }
 
     /**
@@ -578,6 +632,128 @@ class ChatWindowStateTest {
         state.selectProfile(largeContextProfile.id)
 
         assertEquals(0.1f, state.ui.activeConversation.contextUsageFraction)
+    }
+
+    /**
+     * ask_user 期间应保持同一轮次挂起，回答后继续执行而不是新开一轮。
+     */
+    @Test
+    fun `should keep same turn running while waiting for ask user response`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                val question = QuestionRequest(
+                    requestId = "q1",
+                    toolCallId = "call-1",
+                    question = "Pick one",
+                    options = listOf("Option A", "Option B"),
+                )
+                emit(AgentStreamEvent.QuestionRequested(question))
+                val answer = coordinator.requestQuestion(question)
+                emit(AgentStreamEvent.Completed("selected: $answer"))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("start")
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.WaitingForUserInput, state.ui.activeConversation.executionState)
+        assertEquals("Pick one", state.ui.activeConversation.pendingQuestion?.question)
+
+        state.answerPendingQuestion("Option A")
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(null, state.ui.activeConversation.pendingQuestion)
+        val assistantItem = state.state.items.last() as ChatMessageItem
+        assertEquals("selected: Option A", assistantItem.message.content)
+    }
+
+    /**
+     * 当前会话的工作区和权限档位必须进入 agent 运行请求。
+     */
+    @Test
+    fun `should send workspace path and permission preset from active conversation`() = runTest(dispatcher) {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.Completed("ok"),
+                )
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.updatePermission(PermissionPreset.BRAVE)
+        state.send("hello")
+        advanceUntilIdle()
+
+        assertEquals("E:\\abc\\def", capturedRequest?.workspacePath)
+        assertEquals(PermissionPreset.BRAVE, capturedRequest?.permissionPreset)
+    }
+
+    /**
+     * 审批请求应进入等待态，提交结果后继续当前轮次。
+     */
+    @Test
+    fun `should keep same turn running while waiting for approval response`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                val approval = ApprovalRequest(
+                    requestId = "a1",
+                    toolName = "run_powershell",
+                    summary = "执行 PowerShell 7 脚本",
+                    payloadPreview = "Get-Location",
+                )
+                emit(AgentStreamEvent.ApprovalRequested(approval))
+                val approved = coordinator.requestApproval(approval)
+                emit(AgentStreamEvent.Completed("approved: $approved"))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("run command")
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.WaitingForApproval, state.ui.activeConversation.executionState)
+        assertEquals("run_powershell", state.ui.activeConversation.pendingApproval?.toolName)
+
+        state.answerPendingApproval(true)
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(null, state.ui.activeConversation.pendingApproval)
+        val assistantItem = state.state.items.last() as ChatMessageItem
+        assertEquals("approved: true", assistantItem.message.content)
     }
 
     private fun profile(

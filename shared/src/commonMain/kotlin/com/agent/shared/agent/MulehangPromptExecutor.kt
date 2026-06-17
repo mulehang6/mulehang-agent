@@ -1,39 +1,17 @@
 package com.agent.shared.agent
 
-import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
-import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
+import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
-import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
+import ai.koog.prompt.executor.clients.openai.OpenAIResponsesParams
+import ai.koog.prompt.executor.clients.openai.models.ReasoningConfig
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
+import ai.koog.prompt.params.LLMParams
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ProviderType
 import com.agent.shared.exceptions.IllegalConfigExceptions
-
-/**
- * 按配置创建 Koog prompt executor。
- */
-internal fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor {
-    when (config.providerType) {
-        ProviderType.OPENAI_CHAT_COMPLETIONS, ProviderType.OPENAI_RESPONSES -> {
-            val openAILLMClient = OpenAILLMClient(
-                apiKey = config.apiKey,
-                settings = buildOpenAIClientSettings(config),
-            )
-            return MultiLLMPromptExecutor(openAILLMClient)
-        }
-
-        ProviderType.ANTHROPIC -> {
-            val anthropicLLMClient = AnthropicLLMClient(config.apiKey)
-            return MultiLLMPromptExecutor(anthropicLLMClient)
-        }
-
-        else -> {
-            throw IllegalConfigExceptions { "暂不支持的 providerType: ${config.providerType}" }
-        }
-    }
-}
+import ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort as KoogReasoningEffort
 
 /**
  * 根据 profile 创建 Koog 运行时模型，确保请求使用配置文件中的模型 id。
@@ -65,6 +43,28 @@ internal fun buildLlmModel(config: ConfigProfile): LLModel {
         id = config.model,
         capabilities = capabilities,
     )
+}
+
+/**
+ * 根据 provider 与推理强度构造 Koog 运行参数。
+ */
+@Suppress("UnstableApiUsage")
+internal fun buildPromptParams(
+    config: ConfigProfile,
+    reasoningEffort: ReasoningEffort?,
+): LLMParams = when (config.providerType) {
+    ProviderType.OPENAI_CHAT_COMPLETIONS -> OpenAIChatParams(
+        reasoningEffort = reasoningEffort?.toKoogReasoningEffort(),
+    )
+
+    ProviderType.OPENAI_RESPONSES -> OpenAIResponsesParams(
+        reasoning = reasoningEffort?.toKoogReasoningEffort()?.let { effort ->
+            ReasoningConfig(effort = effort)
+        },
+    )
+
+    ProviderType.ANTHROPIC -> LLMParams()
+    else -> throw IllegalConfigExceptions { "暂不支持的 providerType: ${config.providerType}" }
 }
 
 /**
@@ -100,3 +100,15 @@ private fun ConfigProfile.toLlmProvider(): LLMProvider = when (providerType) {
 internal fun ConfigProfile.isDeepSeekChatCompletionsProfile(): Boolean =
     providerType == ProviderType.OPENAI_CHAT_COMPLETIONS &&
         (baseUrl.contains("deepseek.com", ignoreCase = true) || model.startsWith("deepseek", ignoreCase = true))
+
+/**
+ * 将项目侧推理强度映射到 Koog 支持的 OpenAI 推理强度。
+ *
+ * Koog 当前最高只支持 `high`，因此 `MAX` 需要回退到最高兼容值。
+ */
+private fun ReasoningEffort.toKoogReasoningEffort(): KoogReasoningEffort = when (this) {
+    ReasoningEffort.LOW -> KoogReasoningEffort.LOW
+    ReasoningEffort.MEDIUM -> KoogReasoningEffort.MEDIUM
+    ReasoningEffort.HIGH -> KoogReasoningEffort.HIGH
+    ReasoningEffort.MAX -> KoogReasoningEffort.HIGH
+}

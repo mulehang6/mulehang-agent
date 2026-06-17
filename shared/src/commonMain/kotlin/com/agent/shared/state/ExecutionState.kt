@@ -15,6 +15,16 @@ sealed interface ExecutionState {
     data object Running : ExecutionState
 
     /**
+     * 正在等待用户回答 ask_user。
+     */
+    data object WaitingForUserInput : ExecutionState
+
+    /**
+     * 正在等待用户审批危险操作。
+     */
+    data object WaitingForApproval : ExecutionState
+
+    /**
      * 执行失败。
      */
     data class Failed(val error: AppError) : ExecutionState

@@ -61,6 +61,7 @@ import com.agent.shared.config.ModelVariant
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
+import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
@@ -320,6 +321,15 @@ private fun ChatWorkspacePanel(
                 style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF9E4D30)),
             )
         }
+        activeConversation.pendingQuestion?.let { pending ->
+            QuestionCard(
+                pending = pending,
+                onOptionClick = state::answerPendingQuestion,
+                onSubmitText = state::answerPendingQuestion,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -330,6 +340,16 @@ private fun ChatWorkspacePanel(
             } else {
                 ConversationTimeline(activeConversation)
             }
+        }
+        activeConversation.pendingApproval?.let { pending ->
+            Spacer(modifier = Modifier.height(12.dp))
+            ApprovalCard(
+                pending = pending,
+                onApprove = { state.answerPendingApproval(true) },
+                onReject = { state.answerPendingApproval(false) },
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            Spacer(modifier = Modifier.height(12.dp))
         }
         ComposerPanel(state = state)
     }

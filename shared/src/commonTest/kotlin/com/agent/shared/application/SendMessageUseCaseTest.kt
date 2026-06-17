@@ -10,6 +10,7 @@ import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelLimit
 import com.agent.shared.config.ProviderType
+import com.agent.shared.state.PermissionPreset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -155,6 +156,32 @@ class SendMessageUseCaseTest {
         flow.toList()
 
         assertEquals(2, calls)
+    }
+
+    /**
+     * 工作区路径与权限档位应透传到底层 gateway 请求。
+     */
+    @Test
+    fun `should forward workspace path and permission preset in run request`() = runTest {
+        var capturedRequest: AgentRunRequest? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedRequest = request
+                return flowOf(AgentStreamEvent.Started, AgentStreamEvent.Completed("done"))
+            }
+        }
+
+        SendMessageUseCase(gateway).invoke(
+            AgentRunRequest(
+                prompt = "hello",
+                profile = profile(),
+                workspacePath = "D:\\repo",
+                permissionPreset = PermissionPreset.DEFAULT,
+            ),
+        ).toList()
+
+        assertEquals("D:\\repo", capturedRequest?.workspacePath)
+        assertEquals(PermissionPreset.DEFAULT, capturedRequest?.permissionPreset)
     }
 
     private fun profile(): ConfigProfile = ConfigProfile(

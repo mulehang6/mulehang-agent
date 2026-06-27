@@ -233,6 +233,46 @@ class ChatWindowStateTest {
     }
 
     /**
+     * 如果正文增量早于后续工具/思考事件到达，最终完成态仍应把回答落在当前轮次最末尾。
+     */
+    @Test
+    fun `should keep completed assistant message at end of current turn`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.ReasoningDelta(summary = "先分析问题", rawText = "先分析问题"),
+                AgentStreamEvent.TextDelta("先给一个草稿回答"),
+                AgentStreamEvent.ToolCallStarted(name = "read_file", argumentsPreview = """{"path":"README.md"}"""),
+                AgentStreamEvent.ToolCallFinished(name = "read_file", resultPreview = "ok"),
+                AgentStreamEvent.ReasoningDelta(summary = "结合文件结果继续分析", rawText = "结合文件结果继续分析"),
+                AgentStreamEvent.Completed("最终回答"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        assertEquals(6, state.state.items.size)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
+        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[1].kind)
+        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[2].kind)
+        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[3].kind)
+        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[4].kind)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[5].kind)
+        val assistantItem = state.state.items[5] as ChatMessageItem
+        assertEquals(ChatRole.Assistant, assistantItem.message.role)
+        assertEquals("最终回答", assistantItem.message.content)
+    }
+
+    /**
      * 思考流在工具前后出现时，应拆成多个默认展开的思考块，并保持正文单独流式拼接。
      */
     @Test

@@ -834,11 +834,20 @@ class ChatWindowState(
                 streamingAssistantItemIndex = null,
                 streamingAssistantHistoryIndex = null,
             )
-        val updatedItems = normalizedConversation.items.toMutableList()
-        if (finalText.isNotBlank() && existingItem.message.content != finalText) {
-            updatedItems[currentIndex] = existingItem.copy(
+        val finalizedItem = if (finalText.isNotBlank() && existingItem.message.content != finalText) {
+            existingItem.copy(
                 message = existingItem.message.copy(content = finalText),
             )
+        } else {
+            existingItem
+        }
+        val updatedItems = normalizedConversation.items.toMutableList().apply {
+            if (currentIndex == lastIndex) {
+                this[currentIndex] = finalizedItem
+            } else {
+                removeAt(currentIndex)
+                add(finalizedItem)
+            }
         }
         return finalizeAssistantTextHistory(normalizedConversation, finalText).copy(
             items = updatedItems,

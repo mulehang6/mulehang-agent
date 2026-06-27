@@ -5,6 +5,7 @@ package com.agent.app.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -993,12 +994,68 @@ private fun ReasoningBlock(item: ReasoningItem) {
  */
 @Composable
 private fun ToolEventBlock(item: ToolEventItem) {
+    val expandable = toolEventHasDetails(item)
+    var expanded by remember(item.toolName, item.status, item.preview) { mutableStateOf(false) }
+
     BubbleBlock(
-        text = buildToolEventLabel(item),
         containerColor = Color(0xFF171A1E),
         contentColor = AppMuted,
         borderColor = AppLineSoft,
-    )
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (expandable) {
+                            Modifier.clickable { expanded = !expanded }
+                        } else {
+                            Modifier
+                        },
+                    ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = buildToolEventHeadline(item),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        color = AppText,
+                    ),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    buildToolEventKindLabel(item)?.let { kindLabel ->
+                        Text(
+                            text = kindLabel,
+                            style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                        )
+                    }
+                    if (expandable) {
+                        Text(
+                            text = if (expanded) "收起" else "展开",
+                            style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                        )
+                    }
+                }
+            }
+            if (expanded) {
+                Text(
+                    text = item.preview.orEmpty(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF111316), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = Color(0xFFD3D7DE),
+                        lineHeight = 20.sp,
+                    ),
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -1058,19 +1115,25 @@ private fun BubbleBlock(
 }
 
 /**
- * 将工具事件格式化为时间线可读文本。
+ * 生成工具事件主行标题。
  */
-private fun buildToolEventLabel(item: ToolEventItem): String {
-    val prefix = when (item.status) {
-        ToolEventStatus.Started -> "Tool: 正在调用 ${item.toolName}"
-        ToolEventStatus.Finished -> "Tool: ${item.toolName} 已返回"
-        ToolEventStatus.Status -> "Status: ${item.preview.orEmpty()}"
-    }
-    return item.preview
-        ?.takeIf { it.isNotBlank() && item.status != ToolEventStatus.Status }
-        ?.let { "$prefix ($it)" }
-        ?: prefix
+internal fun buildToolEventHeadline(item: ToolEventItem): String =
+    if (item.status == ToolEventStatus.Status) item.preview.orEmpty().ifBlank { "Status" } else item.toolName
+
+/**
+ * 生成工具事件的轻量类型标签。
+ */
+internal fun buildToolEventKindLabel(item: ToolEventItem): String? = when (item.status) {
+    ToolEventStatus.Started -> "输入"
+    ToolEventStatus.Finished -> "输出"
+    ToolEventStatus.Status -> null
 }
+
+/**
+ * 判断工具事件是否存在可展开的详情文本。
+ */
+internal fun toolEventHasDetails(item: ToolEventItem): Boolean =
+    item.status != ToolEventStatus.Status && !item.preview.isNullOrBlank()
 
 /**
  * 聊天消息正文直接显示内容，不再拼接角色前缀。

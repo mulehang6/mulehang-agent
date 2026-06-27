@@ -12,6 +12,8 @@ import com.agent.shared.config.ModelVariant
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.ReasoningItem
+import com.agent.shared.state.ToolEventItem
+import com.agent.shared.state.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -39,6 +41,90 @@ class ChatScreenPresentationTest {
     fun `should keep thinking headline for reasoning block`() {
         assertEquals("Thinking: 思考中...", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
         assertEquals("Thinking:", buildReasoningHeadline(ReasoningItem(isStreaming = false)))
+    }
+
+    /**
+     * 工具事件应显示纯文本标题，并把输入输出放到轻量标签里。
+     */
+    @Test
+    fun `should expose plain text tool event headline and kind label`() {
+        assertEquals(
+            "read_file",
+            buildToolEventHeadline(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Started,
+                    preview = """{"path":"README.md"}""",
+                ),
+            ),
+        )
+        assertEquals(
+            "输入",
+            buildToolEventKindLabel(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Started,
+                    preview = """{"path":"README.md"}""",
+                ),
+            ),
+        )
+        assertEquals(
+            "输出",
+            buildToolEventKindLabel(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Finished,
+                    preview = "ok",
+                ),
+            ),
+        )
+        assertEquals(
+            "正在整理结果",
+            buildToolEventHeadline(
+                ToolEventItem(
+                    toolName = "status",
+                    status = ToolEventStatus.Status,
+                    preview = "正在整理结果",
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 只有带输入输出预览的工具事件才需要展开详情。
+     */
+    @Test
+    fun `should only expand tool events that have preview details`() {
+        assertEquals(
+            true,
+            toolEventHasDetails(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Started,
+                    preview = """{"path":"README.md"}""",
+                ),
+            ),
+        )
+        assertEquals(
+            false,
+            toolEventHasDetails(
+                ToolEventItem(
+                    toolName = "status",
+                    status = ToolEventStatus.Status,
+                    preview = "working",
+                ),
+            ),
+        )
+        assertEquals(
+            false,
+            toolEventHasDetails(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Finished,
+                    preview = "",
+                ),
+            ),
+        )
     }
 
     /**

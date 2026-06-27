@@ -132,8 +132,7 @@ class DesktopToolSet(
         @LLMDescription("PowerShell script text.") script: String,
     ): String {
         ensureExecuteApproval(
-            toolName = "run_powershell",
-            summary = "执行 PowerShell 7 脚本",
+            summary = buildPowerShellApprovalSummary(script),
             payloadPreview = script.take(240),
         )
         return powerShellTool.execute(DesktopPowerShellTool.Args(script = script))
@@ -208,7 +207,6 @@ class DesktopToolSet(
      * 根据权限档位处理执行类工具的审批。
      */
     private fun ensureExecuteApproval(
-        toolName: String,
         summary: String,
         payloadPreview: String?,
     ) {
@@ -222,7 +220,7 @@ class DesktopToolSet(
             interactionBridge.requestApproval(
                 ApprovalRequest(
                     requestId = UUID.randomUUID().toString(),
-                    toolName = toolName,
+                    toolName = "run_powershell",
                     summary = summary,
                     payloadPreview = payloadPreview,
                 ),
@@ -231,3 +229,21 @@ class DesktopToolSet(
         check(approved) { "用户拒绝执行命令。" }
     }
 }
+
+/**
+ * 为 PowerShell 审批卡片生成可读标题，优先使用脚本第一行。
+ */
+internal fun buildPowerShellApprovalSummary(script: String): String {
+    val headline = script
+        .lineSequence()
+        .map { line -> line.trim().replace(Regex("\\s+"), " ") }
+        .firstOrNull(String::isNotBlank)
+        .orEmpty()
+        .take(POWERSHELL_APPROVAL_HEADLINE_MAX_LENGTH)
+    return headline
+        .takeIf(String::isNotBlank)
+        ?.let { "执行 PowerShell: $it" }
+        ?: "执行 PowerShell 7 脚本"
+}
+
+private const val POWERSHELL_APPROVAL_HEADLINE_MAX_LENGTH = 80

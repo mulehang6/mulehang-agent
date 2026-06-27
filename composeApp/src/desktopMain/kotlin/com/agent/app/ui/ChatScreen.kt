@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +62,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.zIndex
 import com.agent.app.DesktopProjectRootResolver
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelCapabilitiesResolver
@@ -350,15 +352,6 @@ private fun ChatWorkspacePanel(
                 style = MaterialTheme.typography.bodySmall.copy(color = ComposerDanger),
             )
         }
-        activeConversation?.pendingQuestion?.let { pending ->
-            QuestionCard(
-                pending = pending,
-                onOptionClick = state::answerPendingQuestion,
-                onSubmitText = state::answerPendingQuestion,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-        }
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -369,18 +362,55 @@ private fun ChatWorkspacePanel(
             } else {
                 ConversationTimeline(activeConversation)
             }
-        }
-        activeConversation?.pendingApproval?.let { pending ->
-            Spacer(modifier = Modifier.height(12.dp))
-            ApprovalCard(
-                pending = pending,
-                onApprove = { state.answerPendingApproval(true) },
-                onReject = { state.answerPendingApproval(false) },
-                modifier = Modifier.padding(horizontal = 24.dp),
+            PendingInteractionOverlay(
+                activeConversation = activeConversation,
+                onQuestionOptionClick = state::answerPendingQuestion,
+                onQuestionSubmitText = state::answerPendingQuestion,
+                onApprovalApprove = { state.answerPendingApproval(true) },
+                onApprovalReject = { state.answerPendingApproval(false) },
             )
-            Spacer(modifier = Modifier.height(12.dp))
         }
         ComposerPanel(state = state)
+    }
+}
+
+/**
+ * 把 agent 的挂起询问/审批卡片固定覆盖在对话区域顶部，不参与时间线滚动。
+ */
+@Composable
+private fun BoxScope.PendingInteractionOverlay(
+    activeConversation: ChatConversationUiState?,
+    onQuestionOptionClick: (String) -> Unit,
+    onQuestionSubmitText: (String) -> Unit,
+    onApprovalApprove: () -> Unit,
+    onApprovalReject: () -> Unit,
+) {
+    val pendingQuestion = activeConversation?.pendingQuestion
+    val pendingApproval = activeConversation?.pendingApproval
+    if (pendingQuestion == null && pendingApproval == null) return
+
+    Column(
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .zIndex(1f)
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        pendingQuestion?.let { pending ->
+            QuestionCard(
+                pending = pending,
+                onOptionClick = onQuestionOptionClick,
+                onSubmitText = onQuestionSubmitText,
+            )
+        }
+        pendingApproval?.let { pending ->
+            ApprovalCard(
+                pending = pending,
+                onApprove = onApprovalApprove,
+                onReject = onApprovalReject,
+            )
+        }
     }
 }
 

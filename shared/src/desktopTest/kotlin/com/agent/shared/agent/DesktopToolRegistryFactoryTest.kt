@@ -3,6 +3,7 @@ package com.agent.shared.agent
 import com.agent.shared.state.PermissionPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /**
  * 验证首批桌面工具是否都已注册。
@@ -36,6 +37,44 @@ class DesktopToolRegistryFactoryTest {
             ),
             names,
         )
+    }
+
+    /**
+     * PowerShell 审批标题应带上脚本首行，避免所有运行脚本请求都显示同一个固定标题。
+     */
+    @Test
+    fun `powershell approval summary should include script headline`() {
+        var capturedApproval: ApprovalRequest? = null
+        val toolSet = DesktopToolSet(
+            workspacePath = "D:\\repo",
+            permissionPreset = PermissionPreset.DEFAULT,
+            interactionBridge = object : DesktopToolInteractionBridge {
+                override suspend fun requestQuestion(request: QuestionRequest): String = "answer"
+
+                override suspend fun requestApproval(request: ApprovalRequest): Boolean {
+                    capturedApproval = request
+                    return false
+                }
+            },
+        )
+
+        assertFailsWith<IllegalStateException> {
+            toolSet.run_powershell("Get-Location\nGet-ChildItem")
+        }
+
+        assertEquals("执行 PowerShell: Get-Location", capturedApproval?.summary)
+    }
+
+    /**
+     * PowerShell 审批标题生成应折叠空白并在空脚本时回退到稳定默认值。
+     */
+    @Test
+    fun `powershell approval summary builder should normalize script text`() {
+        assertEquals(
+            "执行 PowerShell: Get-ChildItem -Force",
+            buildPowerShellApprovalSummary("  Get-ChildItem   -Force  ")
+        )
+        assertEquals("执行 PowerShell 7 脚本", buildPowerShellApprovalSummary("  \n  "))
     }
 }
 

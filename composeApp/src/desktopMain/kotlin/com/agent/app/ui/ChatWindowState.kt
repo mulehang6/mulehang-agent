@@ -226,7 +226,15 @@ class ChatWindowState(
         } else {
             ui.workspaceGroups.map { group ->
                 if (group.workspacePath == workspacePath) {
-                    group.copy(conversations = listOf(conversation) + group.conversations)
+                    group.copy(
+                        conversations = if (shouldReplaceActiveEmptyConversation(workspacePath)) {
+                            group.conversations.map { existing ->
+                                if (existing.id == ui.activeConversationId) conversation else existing
+                            }
+                        } else {
+                            listOf(conversation) + group.conversations
+                        },
+                    )
                 } else {
                     group
                 }
@@ -384,7 +392,7 @@ class ChatWindowState(
             val nextItems = conversation.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt))
             conversation.copy(
                 title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
-                    ?: prompt.take(24).ifBlank { DEFAULT_CONVERSATION_TITLE },
+                    ?: buildConversationTitle(prompt),
                 items = nextItems,
                 attachments = emptyList(),
                 history = conversation.history + AgentConversationHistoryMessage.User(content = prompt),
@@ -633,6 +641,14 @@ class ChatWindowState(
      */
     private fun mutateActiveConversation(transform: (ChatConversationUiState) -> ChatConversationUiState) {
         mutateConversation(ui.activeConversationId, transform)
+    }
+
+    /**
+     * 判断新建会话时是否应覆盖当前空白占位会话，避免侧栏出现两个“新对话”。
+     */
+    private fun shouldReplaceActiveEmptyConversation(workspacePath: String): Boolean {
+        val activeConversation = ui.activeConversationOrNull ?: return false
+        return activeConversation.workspacePath == workspacePath && activeConversation.isEmptyDefaultConversation()
     }
 
     /**
@@ -971,9 +987,35 @@ private fun estimateTextTokens(text: String): Int =
 private fun String.appendNullable(next: String?): String = if (next.isNullOrEmpty()) this else this + next
 
 /**
+ * 根据首条用户消息生成本地短标题；后续可替换为无工具 LLM title executor。
+ */
+internal fun buildConversationTitle(prompt: String): String {
+    val firstLine = prompt
+        .lineSequence()
+        .map { line -> line.trim().replace(Regex("\\s+"), " ") }
+        .firstOrNull(String::isNotBlank)
+        .orEmpty()
+    return firstLine.take(CONVERSATION_TITLE_MAX_LENGTH).ifBlank { DEFAULT_CONVERSATION_TITLE }
+}
+
+/**
+ * 判断会话是否仍是未使用过的默认空会话。
+ */
+private fun ChatConversationUiState.isEmptyDefaultConversation(): Boolean =
+    title == DEFAULT_CONVERSATION_TITLE &&
+            items.isEmpty() &&
+            attachments.isEmpty() &&
+            history.isEmpty() &&
+            pendingQuestion == null &&
+            pendingApproval == null &&
+            executionState == ExecutionState.Idle
+
+/**
  * 新对话的默认标题。
  */
 private const val DEFAULT_CONVERSATION_TITLE = "新对话"
+
+private const val CONVERSATION_TITLE_MAX_LENGTH = 24
 
 private const val CHARS_PER_TOKEN_ESTIMATE = 4
 

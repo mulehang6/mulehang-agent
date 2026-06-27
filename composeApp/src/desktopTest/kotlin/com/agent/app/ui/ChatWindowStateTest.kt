@@ -378,10 +378,10 @@ class ChatWindowStateTest {
     }
 
     /**
-     * 新建对话应在当前工作目录分组下追加一条空会话，并切换焦点。
+     * 新建对话时如果当前会话仍是空白默认会话，应替换它而不是留下两个“新对话”。
      */
     @Test
-    fun `should create a new workspace conversation and switch focus to it`() = runTest(dispatcher) {
+    fun `should replace current empty conversation when creating a new workspace conversation`() = runTest(dispatcher) {
         val state = ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(idleGateway()),
             snapshot = AppSessionSnapshot(
@@ -395,9 +395,46 @@ class ChatWindowStateTest {
         state.createConversationForWorkspace("E:\\abc\\def")
 
         assertEquals("def", state.ui.workspaceGroups.single().label)
-        assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+        assertEquals(1, state.ui.workspaceGroups.single().conversations.size)
         assertNotEquals(originalConversationId, state.ui.activeConversationId)
         assertEquals(emptyList(), state.ui.activeConversation.attachments)
+    }
+
+    /**
+     * 当前会话已有内容时，新建对话应保留历史线程并切换到新的空线程。
+     */
+    @Test
+    fun `should keep existing non-empty conversation when creating a new one`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(streamingGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        val originalConversationId = state.ui.activeConversationId
+
+        state.send("hello")
+        advanceUntilIdle()
+        state.createConversationForWorkspace("E:\\abc\\def")
+
+        assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+        assertNotEquals(originalConversationId, state.ui.activeConversationId)
+        assertEquals(2, state.findConversation(originalConversationId).items.size)
+        assertEquals(emptyList(), state.ui.activeConversation.items)
+    }
+
+    /**
+     * 对话标题应从首条消息生成一个短标题，去掉多行和冗余空白。
+     */
+    @Test
+    fun `should build compact conversation title from first user prompt`() {
+        assertEquals(
+            "重构 ChatWindowState",
+            buildConversationTitle("  重构 ChatWindowState\n避免重复的新对话  "),
+        )
+        assertEquals("新对话", buildConversationTitle("   "))
     }
 
     /**
@@ -464,6 +501,8 @@ class ChatWindowStateTest {
             projectPath = "E:\\abc\\def",
         )
         val firstConversationId = state.ui.activeConversationId
+        state.send("seed")
+        advanceUntilIdle()
         state.createConversationForWorkspace("E:\\abc\\def")
         val secondConversationId = state.ui.activeConversationId
 
@@ -473,7 +512,7 @@ class ChatWindowStateTest {
 
         val firstConversation = state.findConversation(firstConversationId)
         val secondConversation = state.findConversation(secondConversationId)
-        assertEquals(0, firstConversation.items.size)
+        assertEquals(2, firstConversation.items.size)
         assertEquals(2, secondConversation.items.filterIsInstance<ChatMessageItem>().size)
     }
 

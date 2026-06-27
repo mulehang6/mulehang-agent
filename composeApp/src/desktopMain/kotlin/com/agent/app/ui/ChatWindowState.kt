@@ -114,18 +114,24 @@ data class ChatWindowUiState(
      * 当前激活的对话线程。
      */
     val activeConversation: ChatConversationUiState
+        get() = activeConversationOrNull ?: error("Workspace is not selected.")
+
+    /**
+     * 当前激活的对话线程；未选择工作区时返回 null。
+     */
+    val activeConversationOrNull: ChatConversationUiState?
         get() = workspaceGroups
             .asSequence()
             .flatMap { it.conversations.asSequence() }
-            .first { it.id == activeConversationId }
+            .firstOrNull { it.id == activeConversationId }
 
     /**
      * 当前激活线程所属的工作目录标签。
      */
     val activeWorkspaceLabel: String
-        get() = workspaceGroups.first { group ->
+        get() = workspaceGroups.firstOrNull { group ->
             group.conversations.any { it.id == activeConversationId }
-        }.label
+        }?.label ?: "请选择工作区"
 }
 
 /**
@@ -133,12 +139,14 @@ data class ChatWindowUiState(
  */
 class ChatWindowState(
     private val sendMessageUseCase: SendMessageUseCase,
-    private val snapshot: AppSessionSnapshot,
+    snapshot: AppSessionSnapshot,
     projectPath: String = "",
     private val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
+    private val onWorkspaceSelected: (String) -> Unit = {},
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
+    private var snapshot by mutableStateOf(snapshot)
 
     /**
      * 当前窗口可选的全部 profile。
@@ -170,9 +178,21 @@ class ChatWindowState(
      * 当前失败状态对应的 UI 可见错误文本。
      */
     val errorMessage: String?
-        get() = (ui.activeConversation.executionState as? ExecutionState.Failed)?.error?.let { error ->
+        get() = (ui.activeConversationOrNull?.executionState as? ExecutionState.Failed)?.error?.let { error ->
             "${error.title}: ${error.message}"
         }
+
+    /**
+     * 更新配置快照，但保留已有工作区、会话和输入状态。
+     */
+    fun updateSessionSnapshot(snapshot: AppSessionSnapshot) {
+        this.snapshot = snapshot
+        val selectedProfileId = ui.selectedProfileId
+            ?.takeIf { profileId -> snapshot.profiles.any { it.id == profileId } }
+            ?: snapshot.activeProfile?.id
+            ?: snapshot.profiles.firstOrNull()?.id
+        ui = ui.copy(selectedProfileId = selectedProfileId)
+    }
 
     /**
      * 更新当前输入框草稿。
@@ -194,6 +214,7 @@ class ChatWindowState(
      * 在指定工作目录下新建对话并切换焦点。
      */
     fun createConversationForWorkspace(workspacePath: String) {
+        onWorkspaceSelected(workspacePath)
         val conversation = newConversation(workspacePath, activeContextWindow())
         val existingGroup = ui.workspaceGroups.firstOrNull { it.workspacePath == workspacePath }
         val updatedGroups = if (existingGroup == null) {
@@ -331,6 +352,11 @@ class ChatWindowState(
     fun sendDraft() {
         val prompt = ui.draft.trim()
         if (prompt.isBlank()) return
+
+        if (ui.activeConversationOrNull == null) {
+            ui = ui.copy(draft = prompt)
+            return
+        }
 
         val profile = activeProfile
         if (profile == null) {
@@ -863,7 +889,14 @@ private fun initialUiState(
     snapshot: AppSessionSnapshot,
     projectPath: String,
 ): ChatWindowUiState {
-    val workspacePath = projectPath.ifBlank { "Unknown Workspace" }
+    if (projectPath.isBlank()) {
+        return ChatWindowUiState(
+            workspaceGroups = emptyList(),
+            activeConversationId = "",
+            selectedProfileId = snapshot.activeProfile?.id ?: snapshot.profiles.firstOrNull()?.id,
+        )
+    }
+    val workspacePath = projectPath
     val initialConversation = newConversation(
         workspacePath = workspacePath,
         contextWindow = snapshot.activeProfile?.let(::resolveContextWindow),

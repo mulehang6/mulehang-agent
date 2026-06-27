@@ -26,4 +26,17 @@ class DesktopUiStateStoreTest {
 
         assertEquals("openai-main", remembered)
     }
+
+    /**
+     * UI 状态应保存和读取最近使用的工作区。
+     */
+    @Test
+    fun `should remember last selected workspace`() {
+        val root = Files.createTempDirectory("mulehang-ui-workspace-state-test")
+        val store = DesktopUiStateStore(root.resolve(".mulehang/ui-state.json"))
+
+        store.saveRecentWorkspace("D:/workspace/demo")
+
+        assertEquals("D:/workspace/demo", store.loadRecentWorkspace())
+    }
 }

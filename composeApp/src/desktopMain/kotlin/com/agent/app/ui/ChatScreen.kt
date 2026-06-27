@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.agent.app.DesktopProjectRootResolver
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelCapabilitiesResolver
 import com.agent.shared.config.ModelVariant
@@ -75,6 +76,7 @@ import com.agent.shared.state.ToolEventStatus
 import java.awt.FileDialog
 import java.awt.Frame
 import java.util.Locale
+import javax.swing.JFileChooser
 
 /**
  * codex-like 聊天主界面。
@@ -150,20 +152,16 @@ private fun WorkspaceSidebar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NewConversationButton(
-                onClick = { state.createConversationForWorkspace(state.ui.activeConversation.workspacePath) },
+                onClick = {
+                    state.ui.activeConversationOrNull?.workspacePath?.let(state::createConversationForWorkspace)
+                },
                 modifier = Modifier.weight(1f),
             )
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0x9EFFF9F0),
-                border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
-            ) {
-                Text(
-                    text = "⋯",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    color = AppMuted,
-                )
-            }
+            WorkspacePickerButton(
+                onClick = {
+                    pickWorkspaceDirectory()?.let(state::createConversationForWorkspace)
+                },
+            )
         }
         Text(
             text = "BY WORKSPACE",
@@ -185,6 +183,29 @@ private fun WorkspaceSidebar(
                 )
             }
         }
+    }
+}
+
+/**
+ * 打开工作目录选择器的侧栏按钮。
+ */
+@Composable
+private fun WorkspacePickerButton(
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0x9EFFF9F0),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
+    ) {
+        Text(
+            text = "Open",
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            color = AppMuted,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+        )
     }
 }
 
@@ -290,7 +311,7 @@ private fun ChatWorkspacePanel(
     state: ChatWindowState,
     modifier: Modifier = Modifier,
 ) {
-    val activeConversation = state.ui.activeConversation
+    val activeConversation = state.ui.activeConversationOrNull
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -304,7 +325,7 @@ private fun ChatWorkspacePanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (activeConversation.items.isEmpty()) "Conversation / Empty" else "Conversation / Active",
+                text = if (activeConversation?.items.isNullOrEmpty()) "Conversation / Empty" else "Conversation / Active",
                 style = MaterialTheme.typography.labelMedium.copy(
                     color = AppMuted,
                     letterSpacing = 1.1.sp,
@@ -329,7 +350,7 @@ private fun ChatWorkspacePanel(
                 style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF9E4D30)),
             )
         }
-        activeConversation.pendingQuestion?.let { pending ->
+        activeConversation?.pendingQuestion?.let { pending ->
             QuestionCard(
                 pending = pending,
                 onOptionClick = state::answerPendingQuestion,
@@ -343,13 +364,13 @@ private fun ChatWorkspacePanel(
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
-            if (activeConversation.items.isEmpty()) {
+            if (activeConversation == null || activeConversation.items.isEmpty()) {
                 LandingState(state.ui.activeWorkspaceLabel)
             } else {
                 ConversationTimeline(activeConversation)
             }
         }
-        activeConversation.pendingApproval?.let { pending ->
+        activeConversation?.pendingApproval?.let { pending ->
             Spacer(modifier = Modifier.height(12.dp))
             ApprovalCard(
                 pending = pending,
@@ -487,10 +508,11 @@ private fun ConversationTimeline(
  */
 @Composable
 private fun ComposerPanel(state: ChatWindowState) {
-    val activeConversation = state.ui.activeConversation
+    val activeConversation = state.ui.activeConversationOrNull
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
-    val primaryActionVisual = buildComposerPrimaryActionVisual(activeConversation.executionState)
+    val executionState = activeConversation?.executionState ?: ExecutionState.Idle
+    val primaryActionVisual = buildComposerPrimaryActionVisual(executionState)
     val providerProfiles = groupProfilesByProvider(profiles)
     val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
@@ -505,7 +527,7 @@ private fun ComposerPanel(state: ChatWindowState) {
             .padding(horizontal = 24.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (activeConversation.attachments.isNotEmpty()) {
+        if (!activeConversation?.attachments.isNullOrEmpty()) {
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -626,7 +648,7 @@ private fun ComposerPanel(state: ChatWindowState) {
                         val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
                         if (selectedVariants.isNotEmpty()) {
                             val selectedReasoningValue = selectedVariants
-                                .firstOrNull { it.reasoningEffort == activeConversation.reasoningEffort }
+                                .firstOrNull { it.reasoningEffort == activeConversation?.reasoningEffort }
                                 ?.id
                                 ?: selectedVariants.first().id
                             SelectorChip(
@@ -652,7 +674,7 @@ private fun ComposerPanel(state: ChatWindowState) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        ContextRingChip(activeConversation.contextUsageFraction)
+                        ContextRingChip(activeConversation?.contextUsageFraction ?: 0f)
                         SelectorChip(
                             label = "Permission",
                             value = permissionLabel(state.ui.permissionPreset),
@@ -673,7 +695,7 @@ private fun ComposerPanel(state: ChatWindowState) {
                         IconPillButton(
                             symbol = primaryActionVisual.symbol,
                             danger = primaryActionVisual.danger,
-                            onClick = if (activeConversation.executionState == ExecutionState.Running) {
+                            onClick = if (executionState == ExecutionState.Running) {
                                 state::cancelActiveRun
                             } else {
                                 state::sendDraft
@@ -1184,6 +1206,24 @@ private fun pickFiles(): List<String> {
         isVisible = true
     }
     return dialog.files?.map { it.absolutePath }.orEmpty()
+}
+
+/**
+ * 选择一个本地工作目录，并按桌面项目根目录规则规范化路径。
+ */
+private fun pickWorkspaceDirectory(): String? {
+    val chooser = JFileChooser().apply {
+        dialogTitle = "Select workspace"
+        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+        isAcceptAllFileFilterUsed = false
+    }
+    if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
+        return null
+    }
+    return chooser.selectedFile
+        ?.toPath()
+        ?.let(DesktopProjectRootResolver::resolve)
+        ?.toString()
 }
 
 /**

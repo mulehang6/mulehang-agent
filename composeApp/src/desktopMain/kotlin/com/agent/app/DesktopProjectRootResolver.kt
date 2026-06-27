@@ -9,17 +9,14 @@ import java.nio.file.Path
 object DesktopProjectRootResolver {
 
     /**
-     * 从启动工作目录向上查找 Gradle 仓库根，找不到时返回原始目录。
+     * 使用用户实际选择的路径作为项目根目录；如果传入文件路径，则使用它的父目录。
      */
-    fun resolve(start: Path): Path {
-        val normalizedStart = start.toAbsolutePath().normalize()
-        var current: Path? = normalizedStart
-        while (current != null) {
-            if (Files.exists(current.resolve("settings.gradle.kts"))) {
-                return current
-            }
-            current = current.parent
+    fun resolve(selectedRoot: Path): Path {
+        val normalizedRoot = selectedRoot.toAbsolutePath().normalize()
+        return if (Files.isRegularFile(normalizedRoot)) {
+            normalizedRoot.parent ?: normalizedRoot
+        } else {
+            normalizedRoot
         }
-        return normalizedStart
     }
 }

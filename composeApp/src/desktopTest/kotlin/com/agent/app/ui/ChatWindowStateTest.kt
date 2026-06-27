@@ -37,6 +37,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -297,6 +298,7 @@ class ChatWindowStateTest {
                 profiles = listOf(profile()),
                 activeProfile = profile(),
             ),
+            projectPath = "E:\\abc\\def",
         )
 
         state.send("hi")
@@ -322,6 +324,24 @@ class ChatWindowStateTest {
             ),
             assistantHistory.parts,
         )
+    }
+
+    /**
+     * 首次启动且没有选择工作区时，不应创建占位工作区。
+     */
+    @Test
+    fun `should start without workspace when project path is blank`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+        )
+
+        assertEquals(emptyList(), state.ui.workspaceGroups)
+        assertNull(state.ui.activeConversationOrNull)
+        assertNull(state.errorMessage)
     }
 
     /**
@@ -373,6 +393,34 @@ class ChatWindowStateTest {
         assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
         assertNotEquals(originalConversationId, state.ui.activeConversationId)
         assertEquals(emptyList(), state.ui.activeConversation.attachments)
+    }
+
+    /**
+     * 刷新配置快照不应清空已经打开的多个工作区会话。
+     */
+    @Test
+    fun `should keep workspace groups when session snapshot updates`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        state.createConversationForWorkspace("E:\\abc\\ghi")
+        val activeConversationId = state.ui.activeConversationId
+
+        state.updateSessionSnapshot(
+            AppSessionSnapshot(
+                profiles = listOf(profile(model = "gpt-4.1-mini")),
+                activeProfile = profile(model = "gpt-4.1-mini"),
+            ),
+        )
+
+        assertEquals(listOf("def", "ghi"), state.ui.workspaceGroups.map { it.label })
+        assertEquals(activeConversationId, state.ui.activeConversationId)
+        assertEquals("openai:gpt-4.1-mini", state.activeProfile?.id)
     }
 
     /**

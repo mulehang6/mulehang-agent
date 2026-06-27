@@ -13,37 +13,46 @@ import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.DesktopAppSessionRepository
 import com.agent.shared.application.LoadAppSessionUseCase
 import com.agent.shared.application.SendMessageUseCase
+import com.agent.shared.state.DesktopUiStateStore
+import java.nio.file.Path
 import java.nio.file.Paths
 
 /**
  * 根 composable，负责加载桌面会话快照并装配窗口状态。
  */
 @Composable
-fun MulehangDesktopApp() {
-    val projectRoot = remember {
-        DesktopProjectRootResolver.resolve(Paths.get(""))
-    }
-    val snapshotState = remember {
-        mutableStateOf(AppSessionSnapshot(profiles = emptyList(), activeProfile = null))
+fun MulehangDesktopApp(initialProjectRoot: Path?) {
+    val userHome = remember { Paths.get(System.getProperty("user.home")) }
+    val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
+    val projectRootState = remember {
+        mutableStateOf(
+            initialProjectRoot ?: uiStateStore.loadRecentWorkspace()
+                ?.let(Paths::get)
+                ?.let(DesktopProjectRootResolver::resolve),
+        )
     }
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
     }
-
-    LaunchedEffect(projectRoot) {
-        val repository = DesktopAppSessionRepository(projectRoot)
-        snapshotState.value = LoadAppSessionUseCase(repository).invoke()
-    }
-
-    val windowState = remember(snapshotState.value) {
+    val windowState = remember {
         ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(
                 KoogAgentGateway(interactionBridge = toolInteractionCoordinator),
             ),
-            snapshot = snapshotState.value,
-            projectPath = projectRoot.toString(),
+            snapshot = AppSessionSnapshot(profiles = emptyList(), activeProfile = null),
+            projectPath = projectRootState.value?.toString().orEmpty(),
             toolInteractionCoordinator = toolInteractionCoordinator,
+            onWorkspaceSelected = { workspacePath ->
+                projectRootState.value = DesktopProjectRootResolver.resolve(Paths.get(workspacePath))
+            },
         )
+    }
+
+    LaunchedEffect(projectRootState.value) {
+        val projectRoot = projectRootState.value ?: return@LaunchedEffect
+        uiStateStore.saveRecentWorkspace(projectRoot.toString())
+        val repository = DesktopAppSessionRepository(projectRoot = projectRoot, userHome = userHome)
+        windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
     }
 
     MaterialTheme {

@@ -16,7 +16,7 @@ class DesktopProjectRootResolverTest {
     @Test
     fun `should keep the selected directory as project root`() {
         val repositoryRoot = Files.createTempDirectory("mulehang-project-root-test")
-        val selectedRoot = Files.createDirectories(repositoryRoot.resolve("composeApp"))
+        val selectedRoot = Files.createDirectories(repositoryRoot.resolve("desktopApp"))
         Files.writeString(repositoryRoot.resolve("settings.gradle.kts"), "rootProject.name = \"test\"")
 
         val resolved = DesktopProjectRootResolver.resolve(selectedRoot)
@@ -57,3 +57,4 @@ class DesktopProjectRootResolverTest {
         assertNull(resolveInitialProjectRoot(emptyArray()))
     }
 }
+

@@ -9,4 +9,4 @@ pluginManagement {
 rootProject.name = "mulehang-agent"
 
 include(":shared")
-include(":composeApp")
+include(":desktopApp")

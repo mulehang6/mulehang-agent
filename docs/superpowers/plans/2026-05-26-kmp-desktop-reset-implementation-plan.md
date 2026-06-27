@@ -4,7 +4,7 @@
 
 **Goal:** 把仓库从旧的 `runtime + cli + 外置子仓主线依赖` 重置为 `Koog 1.0.0 + KMP + Compose Multiplatform Desktop` 的 Windows Desktop first 工程，并打通最小聊天闭环。
 
-**Architecture:** 仓库收敛为 `composeApp/` 与 `shared/` 两个模块。`composeApp/` 只负责 Desktop UI 与窗口生命周期；`shared/` 负责配置模型、双层配置加载、按项目记忆的 profile 选择状态、Koog 1.0.0 最小执行入口以及面向 UI 的发送消息用例。UI 只消费仓库自己的状态与事件模型，不直接依赖 Koog 原始对象。
+**Architecture:** 仓库收敛为 `desktopApp/` 与 `shared/` 两个模块。`desktopApp/` 只负责 Desktop UI 与窗口生命周期；`shared/` 负责配置模型、双层配置加载、按项目记忆的 profile 选择状态、Koog 1.0.0 最小执行入口以及面向 UI 的发送消息用例。UI 只消费仓库自己的状态与事件模型，不直接依赖 Koog 原始对象。
 
 **Tech Stack:** Kotlin 2.4.0, Compose Multiplatform 1.11.1, Kotlin Multiplatform, Koog 1.0.0, kotlinx.serialization, kotlinx.coroutines, kotlin.test, JUnit 5
 
@@ -50,11 +50,11 @@
 
 ### Create
 
-- `composeApp/build.gradle.kts`
-- `composeApp/src/desktopMain/kotlin/com/agent/app/Main.kt`
-- `composeApp/src/desktopMain/kotlin/com/agent/app/MulehangDesktopApp.kt`
-- `composeApp/src/desktopMain/kotlin/com/agent/app/ui/ChatWindowState.kt`
-- `composeApp/src/desktopMain/kotlin/com/agent/app/ui/ChatScreen.kt`
+- `desktopApp/build.gradle.kts`
+- `desktopApp/src/main/kotlin/com/agent/app/Main.kt`
+- `desktopApp/src/main/kotlin/com/agent/app/MulehangDesktopApp.kt`
+- `desktopApp/src/main/kotlin/com/agent/app/ui/ChatWindowState.kt`
+- `desktopApp/src/main/kotlin/com/agent/app/ui/ChatScreen.kt`
 - `shared/build.gradle.kts`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/ProviderType.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/config/AgentProfile.kt`
@@ -73,16 +73,16 @@
 - `shared/src/commonMain/kotlin/com/agent/shared/application/LoadAppSessionUseCase.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionSnapshot.kt`
 - `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionRepository.kt`
-- `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
-- `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopEnvironmentOverrides.kt`
-- `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopPathResolver.kt`
-- `shared/src/desktopMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
-- `shared/src/desktopMain/kotlin/com/agent/shared/agent/KoogAgentGateway.kt`
+- `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
+- `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopEnvironmentOverrides.kt`
+- `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopPathResolver.kt`
+- `shared/src/jvmMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
+- `shared/src/jvmMain/kotlin/com/agent/shared/agent/KoogAgentGateway.kt`
 - `shared/src/commonTest/kotlin/com/agent/shared/config/SettingsMergerTest.kt`
 - `shared/src/commonTest/kotlin/com/agent/shared/config/ProfileSelectionResolverTest.kt`
 - `shared/src/commonTest/kotlin/com/agent/shared/application/SendMessageUseCaseTest.kt`
-- `shared/src/desktopTest/kotlin/com/agent/shared/config/DesktopSettingsRepositoryTest.kt`
-- `shared/src/desktopTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
+- `shared/src/jvmTest/kotlin/com/agent/shared/config/DesktopSettingsRepositoryTest.kt`
+- `shared/src/jvmTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
 - `.mulehang/settings.json.example`
 
 ### Keep
@@ -101,7 +101,7 @@
 完成记录：
 
 1. `runtime/`、`cli/` 与旧 specs/plans 文档已从当前主线移除。
-2. `shared/` 与 `composeApp/` 已成为当前产品主线模块。
+2. `shared/` 与 `desktopApp/` 已成为当前产品主线模块。
 3. 双层 settings、环境变量覆盖、按项目 profile 记忆、最小 Koog 执行入口和 Desktop 聊天 UI 已接通。
 4. 完成提交：`7233847 feat(desktop): 完成最小聊天闭环`。
 5. 最新验证：`.\gradlew.bat build` 通过。
@@ -197,7 +197,7 @@ out/
 仓库当前主线只有一条：
 
 1. `shared/`：配置、状态、Koog 接入与应用用例
-2. `composeApp/`：Desktop UI 与窗口生命周期
+2. `desktopApp/`：Desktop UI 与窗口生命周期
 
 ## 文档入口
 
@@ -226,7 +226,7 @@ out/
 # Repository Guidelines
 
 ## 项目结构与模块组织
-本仓库采用 Kotlin Multiplatform 与 Compose Multiplatform Desktop。`shared` 承载配置模型、状态模型、Koog 接入和应用用例；`composeApp` 负责 Windows Desktop UI 与窗口生命周期。
+本仓库采用 Kotlin Multiplatform 与 Compose Multiplatform Desktop。`shared` 承载配置模型、状态模型、Koog 接入和应用用例；`desktopApp` 负责 Windows Desktop UI 与窗口生命周期。
 
 ## 构建、测试与本地开发命令
 ```powershell
@@ -262,8 +262,8 @@ Expected: 根目录不再有 `runtime/`、`cli/`；`docs/superpowers/specs` 与 
 - Modify: `build.gradle.kts`
 - Modify: `gradle.properties`
 - Create: `shared/build.gradle.kts`
-- Create: `composeApp/build.gradle.kts`
-- Create: `composeApp/src/desktopMain/kotlin/com/agent/app/Main.kt`
+- Create: `desktopApp/build.gradle.kts`
+- Create: `desktopApp/src/main/kotlin/com/agent/app/Main.kt`
 
 - [x] **Step 1: 更新 `settings.gradle.kts`，只声明新模块**
 
@@ -287,7 +287,7 @@ dependencyResolutionManagement {
 rootProject.name = "mulehang-agent"
 
 include(":shared")
-include(":composeApp")
+include(":desktopApp")
 ```
 
 - [x] **Step 2: 更新根 `build.gradle.kts`，切到 multiplatform + compose 主线**
@@ -340,33 +340,25 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
             }
         }
-        val desktopMain by getting
-        val desktopTest by getting
+        val jvmMain by getting
+        val jvmTest by getting
     }
 }
 ```
 
-- [x] **Step 5: 创建 `composeApp/build.gradle.kts`**
+- [x] **Step 5: 创建 `desktopApp/build.gradle.kts`**
 
 ```kotlin
 plugins {
-    kotlin("multiplatform")
+    kotlin("jvm")
     id("org.jetbrains.compose")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-kotlin {
-    jvm("desktop")
-
-    sourceSets {
-        val desktopMain by getting {
-            dependencies {
-                implementation(project(":shared"))
-                implementation(compose.desktop.currentOs)
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
-            }
-        }
-    }
+dependencies {
+    implementation(project(":shared"))
+    implementation(compose.desktop.currentOs)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
 }
 
 compose.desktop {
@@ -424,11 +416,11 @@ fun MulehangDesktopApp() {
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest
-.\gradlew.bat :composeApp:compileKotlinDesktop
+.\gradlew.bat :shared:jvmTest
+.\gradlew.bat :desktopApp:compileKotlinDesktop
 ```
 
-Expected: `shared` 测试任务可发现但尚无测试；`composeApp:compileKotlinDesktop` PASS。
+Expected: `shared` 测试任务可发现但尚无测试；`desktopApp:compileKotlinDesktop` PASS。
 
 ## Task 3: 定义共享状态模型与配置模型
 
@@ -529,7 +521,7 @@ class SettingsMergerTest {
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.config.SettingsMergerTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.config.SettingsMergerTest"
 ```
 
 Expected: FAIL，报 `AgentProfile`、`ProviderType`、`SettingsMerger` 等类型不存在。
@@ -688,7 +680,7 @@ object SettingsMerger {
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.config.SettingsMergerTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.config.SettingsMergerTest"
 ```
 
 Expected: PASS。
@@ -697,13 +689,13 @@ Expected: PASS。
 
 **Files:**
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/config/ProfileSelectionResolver.kt`
-- Create: `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopPathResolver.kt`
-- Create: `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopEnvironmentOverrides.kt`
-- Create: `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
-- Create: `shared/src/desktopMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
+- Create: `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopPathResolver.kt`
+- Create: `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopEnvironmentOverrides.kt`
+- Create: `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
+- Create: `shared/src/jvmMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
 - Create: `shared/src/commonTest/kotlin/com/agent/shared/config/ProfileSelectionResolverTest.kt`
-- Create: `shared/src/desktopTest/kotlin/com/agent/shared/config/DesktopSettingsRepositoryTest.kt`
-- Create: `shared/src/desktopTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
+- Create: `shared/src/jvmTest/kotlin/com/agent/shared/config/DesktopSettingsRepositoryTest.kt`
+- Create: `shared/src/jvmTest/kotlin/com/agent/shared/state/DesktopUiStateStoreTest.kt`
 - Create: `.mulehang/settings.json.example`
 
 - [x] **Step 1: 先写 profile 选择回退逻辑测试**
@@ -756,7 +748,7 @@ class ProfileSelectionResolverTest {
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.config.ProfileSelectionResolverTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.config.ProfileSelectionResolverTest"
 ```
 
 Expected: FAIL，报 `ProfileSelectionResolver` 不存在。
@@ -988,9 +980,9 @@ class DesktopUiStateStore(
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.config.ProfileSelectionResolverTest"
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.config.DesktopSettingsRepositoryTest"
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.state.DesktopUiStateStoreTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.config.ProfileSelectionResolverTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.config.DesktopSettingsRepositoryTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.state.DesktopUiStateStoreTest"
 ```
 
 Expected: PASS。
@@ -1000,7 +992,7 @@ Expected: PASS。
 **Files:**
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/agent/AgentStreamEvent.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/agent/AgentGateway.kt`
-- Create: `shared/src/desktopMain/kotlin/com/agent/shared/agent/KoogAgentGateway.kt`
+- Create: `shared/src/jvmMain/kotlin/com/agent/shared/agent/KoogAgentGateway.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/SendMessageUseCase.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/LoadAppSessionUseCase.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionSnapshot.kt`
@@ -1059,7 +1051,7 @@ class SendMessageUseCaseTest {
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.application.SendMessageUseCaseTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.application.SendMessageUseCaseTest"
 ```
 
 Expected: FAIL，报 `AgentGateway`、`SendMessageUseCase` 不存在。
@@ -1167,7 +1159,7 @@ class KoogAgentGateway : AgentGateway {
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest --tests "com.agent.shared.application.SendMessageUseCaseTest"
+.\gradlew.bat :shared:jvmTest --tests "com.agent.shared.application.SendMessageUseCaseTest"
 ```
 
 Expected: PASS。
@@ -1175,10 +1167,10 @@ Expected: PASS。
 ## Task 6: 实现桌面 UI、会话状态装配和按项目恢复选择
 
 **Files:**
-- Create: `composeApp/src/desktopMain/kotlin/com/agent/app/MulehangDesktopApp.kt`
-- Create: `composeApp/src/desktopMain/kotlin/com/agent/app/ui/ChatWindowState.kt`
-- Create: `composeApp/src/desktopMain/kotlin/com/agent/app/ui/ChatScreen.kt`
-- Modify: `composeApp/src/desktopMain/kotlin/com/agent/app/Main.kt`
+- Create: `desktopApp/src/main/kotlin/com/agent/app/MulehangDesktopApp.kt`
+- Create: `desktopApp/src/main/kotlin/com/agent/app/ui/ChatWindowState.kt`
+- Create: `desktopApp/src/main/kotlin/com/agent/app/ui/ChatScreen.kt`
+- Modify: `desktopApp/src/main/kotlin/com/agent/app/Main.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/LoadAppSessionUseCase.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionSnapshot.kt`
 - Create: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionRepository.kt`
@@ -1421,7 +1413,7 @@ fun MulehangDesktopApp() {
 Run:
 
 ```powershell
-.\gradlew.bat :composeApp:compileKotlinDesktop
+.\gradlew.bat :desktopApp:compileKotlinDesktop
 ```
 
 Expected: PASS。
@@ -1429,12 +1421,12 @@ Expected: PASS。
 ## Task 7: 打通真实配置装配并完成项目级 profile 恢复
 
 **Files:**
-- Modify: `composeApp/src/desktopMain/kotlin/com/agent/app/Main.kt`
-- Modify: `composeApp/src/desktopMain/kotlin/com/agent/app/MulehangDesktopApp.kt`
+- Modify: `desktopApp/src/main/kotlin/com/agent/app/Main.kt`
+- Modify: `desktopApp/src/main/kotlin/com/agent/app/MulehangDesktopApp.kt`
 - Modify: `shared/src/commonMain/kotlin/com/agent/shared/application/LoadAppSessionUseCase.kt`
 - Modify: `shared/src/commonMain/kotlin/com/agent/shared/application/AppSessionRepository.kt`
-- Modify: `shared/src/desktopMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
-- Modify: `shared/src/desktopMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
+- Modify: `shared/src/jvmMain/kotlin/com/agent/shared/config/DesktopSettingsRepository.kt`
+- Modify: `shared/src/jvmMain/kotlin/com/agent/shared/state/DesktopUiStateStore.kt`
 
 - [x] **Step 1: 把桌面仓库实现为 `AppSessionRepository`**
 
@@ -1541,8 +1533,8 @@ class LoadAppSessionUseCase(
 Run:
 
 ```powershell
-.\gradlew.bat :shared:desktopTest
-.\gradlew.bat :composeApp:compileKotlinDesktop
+.\gradlew.bat :shared:jvmTest
+.\gradlew.bat :desktopApp:compileKotlinDesktop
 ```
 
 Expected: PASS。
@@ -1554,18 +1546,18 @@ Expected: PASS。
 - Check: `AGENTS.md`
 - Check: `build.gradle.kts`
 - Check: `settings.gradle.kts`
-- Check: `composeApp/build.gradle.kts`
+- Check: `desktopApp/build.gradle.kts`
 - Check: `shared/build.gradle.kts`
-- Check: `composeApp/src/desktopMain/kotlin/com/agent/app/Main.kt`
-- Check: `composeApp/src/desktopMain/kotlin/com/agent/app/MulehangDesktopApp.kt`
-- Check: `composeApp/src/desktopMain/kotlin/com/agent/app/ui/ChatWindowState.kt`
-- Check: `composeApp/src/desktopMain/kotlin/com/agent/app/ui/ChatScreen.kt`
+- Check: `desktopApp/src/main/kotlin/com/agent/app/Main.kt`
+- Check: `desktopApp/src/main/kotlin/com/agent/app/MulehangDesktopApp.kt`
+- Check: `desktopApp/src/main/kotlin/com/agent/app/ui/ChatWindowState.kt`
+- Check: `desktopApp/src/main/kotlin/com/agent/app/ui/ChatScreen.kt`
 - Check: `shared/src/commonMain/kotlin/com/agent/shared/config/*.kt`
 - Check: `shared/src/commonMain/kotlin/com/agent/shared/state/*.kt`
 - Check: `shared/src/commonMain/kotlin/com/agent/shared/agent/*.kt`
 - Check: `shared/src/commonMain/kotlin/com/agent/shared/application/*.kt`
-- Check: `shared/src/desktopMain/kotlin/com/agent/shared/config/*.kt`
-- Check: `shared/src/desktopMain/kotlin/com/agent/shared/state/*.kt`
+- Check: `shared/src/jvmMain/kotlin/com/agent/shared/config/*.kt`
+- Check: `shared/src/jvmMain/kotlin/com/agent/shared/state/*.kt`
 
 - [x] **Step 1: 对所有新建和修改的代码文件运行 IDEA inspection**
 
@@ -1590,7 +1582,7 @@ Expected: PASS。
 2. 新建了哪些 KMP/Compose 模块和核心文件
 3. Koog 是否已升级到 1.0.0
 4. 双层 settings 与按项目记忆是否可用
-5. build 与 desktopTest 是否通过
+5. build 与 test 是否通过
 ```
 
 ## Self-Review
@@ -1611,3 +1603,4 @@ Expected: PASS。
   - 统一使用 `ProviderType`、`AgentProfile`、`ConfigProfile`、`AgentStreamEvent`
   - profile 记忆统一走 `DesktopUiStateStore`
   - 加载入口统一走 `LoadAppSessionUseCase`
+

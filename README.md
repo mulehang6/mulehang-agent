@@ -7,7 +7,7 @@
 仓库当前主线只有两部分：
 
 1. `shared/`：配置、状态、Koog 接入与应用用例
-2. `composeApp/`：Desktop UI 与窗口生命周期
+2. `desktopApp/`：Desktop UI 与窗口生命周期
 
 ## 文档入口
 
@@ -35,3 +35,4 @@
 .\gradlew.bat test
 .\gradlew.bat clean
 ```
+

@@ -32,16 +32,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Test desktop target
-        run: .\gradlew.bat :shared:desktopTest :composeApp:desktopTest --no-daemon
+        run: .\gradlew.bat :shared:jvmTest :desktopApp:test --no-daemon
 
       - name: Package Windows desktop app
-        run: .\gradlew.bat :composeApp:packageDistributionForCurrentOS --no-daemon
+        run: .\gradlew.bat :desktopApp:packageDistributionForCurrentOS --no-daemon
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:
           name: mulehang-agent-windows-desktop
           path: |
-            composeApp/build/compose/binaries/main/exe/*.exe
-            composeApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main/exe/*.exe
+            desktopApp/build/compose/binaries/main/msi/*.msi
           if-no-files-found: error
+

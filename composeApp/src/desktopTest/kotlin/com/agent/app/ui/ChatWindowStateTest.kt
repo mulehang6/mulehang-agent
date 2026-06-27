@@ -83,6 +83,7 @@ class ChatWindowStateTest {
                 profiles = listOf(profile()),
                 activeProfile = profile(),
             ),
+            projectPath = "E:\\abc\\def",
         )
 
         state.send("hi")
@@ -114,6 +115,7 @@ class ChatWindowStateTest {
                 profiles = listOf(profile()),
                 activeProfile = profile(),
             ),
+            projectPath = "E:\\abc\\def",
         )
 
         state.send("hi")
@@ -213,6 +215,7 @@ class ChatWindowStateTest {
                 profiles = listOf(profile()),
                 activeProfile = profile(),
             ),
+            projectPath = "E:\\abc\\def",
         )
 
         state.send("hi")
@@ -252,6 +255,7 @@ class ChatWindowStateTest {
                 profiles = listOf(profile()),
                 activeProfile = profile(),
             ),
+            projectPath = "E:\\abc\\def",
         )
 
         state.send("hi")
@@ -362,6 +366,7 @@ class ChatWindowStateTest {
                 profiles = listOf(profile()),
                 activeProfile = profile(),
             ),
+            projectPath = "E:\\abc\\def",
         )
 
         state.send("hi")

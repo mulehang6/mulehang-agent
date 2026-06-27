@@ -78,8 +78,8 @@ fun QuestionCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xFFF7F1E5),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x2A3D3528)),
+        color = Color(0xFF17191D),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF34373D)),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -88,14 +88,14 @@ fun QuestionCard(
             Text(
                 text = "Agent 需要补充信息",
                 style = MaterialTheme.typography.labelLarge.copy(
-                    color = Color(0xFF6B6257),
+                    color = Color(0xFFA3A7AE),
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
             Text(
                 text = model.title,
                 style = MaterialTheme.typography.bodyLarge.copy(
-                    color = Color(0xFF241F18),
+                    color = Color(0xFFF2F4F8),
                     lineHeight = 24.sp,
                 ),
             )
@@ -109,8 +109,8 @@ fun QuestionCard(
                             onClick = { onOptionClick(option) },
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF23211D),
-                                contentColor = Color(0xFFFFF8EF),
+                                containerColor = Color(0xFF1F7DE8),
+                                contentColor = Color(0xFFF8FAFC),
                             ),
                         ) {
                             Text(option)
@@ -132,8 +132,8 @@ fun QuestionCard(
                     enabled = draft.isNotBlank(),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1F8A5D),
-                        contentColor = Color(0xFFFFF8EF),
+                        containerColor = Color(0xFF1FA982),
+                        contentColor = Color(0xFFF8FAFC),
                     ),
                 ) {
                     Text("提交")
@@ -158,8 +158,8 @@ fun ApprovalCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xFFFFF6F0),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33A75C36)),
+        color = Color(0xFF1D171A),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4C2630)),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -168,21 +168,21 @@ fun ApprovalCard(
             Text(
                 text = "Agent 需要执行确认",
                 style = MaterialTheme.typography.labelLarge.copy(
-                    color = Color(0xFF8A4C2B),
+                    color = Color(0xFFE6476B),
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
             Text(
                 text = model.title,
                 style = MaterialTheme.typography.bodyLarge.copy(
-                    color = Color(0xFF241F18),
+                    color = Color(0xFFF2F4F8),
                     lineHeight = 24.sp,
                 ),
             )
             model.targetPath?.takeIf { it.isNotBlank() }?.let { path ->
                 Text(
                     text = path,
-                    style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF6D655B)),
+                    style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFFA3A7AE)),
                 )
             }
             model.payloadPreview?.takeIf { it.isNotBlank() }?.let { preview ->
@@ -190,10 +190,10 @@ fun ApprovalCard(
                     text = preview,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0x1A3D3528), RoundedCornerShape(14.dp))
+                        .background(Color(0xFF262A30), RoundedCornerShape(14.dp))
                         .padding(12.dp),
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color(0xFF51483E),
+                        color = Color(0xFFD3D7DE),
                         lineHeight = 20.sp,
                     ),
                 )
@@ -203,8 +203,8 @@ fun ApprovalCard(
                     onClick = onApprove,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF23211D),
-                        contentColor = Color(0xFFFFF8EF),
+                        containerColor = Color(0xFF1F7DE8),
+                        contentColor = Color(0xFFF8FAFC),
                     ),
                 ) {
                     Text("允许")
@@ -213,8 +213,8 @@ fun ApprovalCard(
                     onClick = onReject,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFE6D8CC),
-                        contentColor = Color(0xFF5D4E42),
+                        containerColor = Color(0xFF2F3339),
+                        contentColor = Color(0xFFA3A7AE),
                     ),
                 ) {
                     Text("拒绝")

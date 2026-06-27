@@ -1,10 +1,12 @@
 package com.agent.app
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import com.agent.app.ui.ChatScreen
 import com.agent.app.ui.ChatWindowState
 import com.agent.app.ui.DesktopToolInteractionCoordinator
@@ -55,7 +57,22 @@ fun MulehangDesktopApp(initialProjectRoot: Path?) {
         windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
     }
 
-    MaterialTheme {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            background = Color(0xFF0B0C0E),
+            surface = Color(0xFF17191D),
+            surfaceVariant = Color(0xFF24272D),
+            primary = Color(0xFF1F7DE8),
+            secondary = Color(0xFF1FA982),
+            error = Color(0xFFE6476B),
+            onBackground = Color(0xFFF2F4F8),
+            onSurface = Color(0xFFF2F4F8),
+            onSurfaceVariant = Color(0xFFA3A7AE),
+            onPrimary = Color(0xFFF8FAFC),
+            onSecondary = Color(0xFFF8FAFC),
+            onError = Color(0xFFF8FAFC),
+        ),
+    ) {
         ChatScreen(windowState)
     }
 }

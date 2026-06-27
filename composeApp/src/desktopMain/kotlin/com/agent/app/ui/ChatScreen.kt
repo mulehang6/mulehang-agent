@@ -90,7 +90,7 @@ fun ChatScreen(
             .fillMaxSize()
             .background(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFFF7F2E8), Color(0xFFEFE7D7)),
+                    colors = listOf(Color(0xFF0B0C0E), Color(0xFF111316)),
                 ),
             ),
     ) {
@@ -119,7 +119,7 @@ private fun WorkspaceSidebar(
         modifier = modifier
             .background(
                 brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFFEBE3D3), Color(0xFFE4DBC9)),
+                    colors = listOf(Color(0xFF08090A), Color(0xFF0D0F11)),
                 ),
             )
             .padding(14.dp),
@@ -134,7 +134,7 @@ private fun WorkspaceSidebar(
                     .size(28.dp)
                     .background(
                         brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFF2A8F64), Color(0xFF95C76E)),
+                            colors = listOf(Color(0xFF1F7DE8), AppAccent),
                         ),
                         shape = RoundedCornerShape(9.dp),
                     ),
@@ -166,7 +166,7 @@ private fun WorkspaceSidebar(
         Text(
             text = "BY WORKSPACE",
             style = MaterialTheme.typography.labelSmall.copy(
-                color = Color(0xFF7C7265),
+                color = AppMuted,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.4.sp,
             ),
@@ -196,7 +196,7 @@ private fun WorkspacePickerButton(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(12.dp),
-        color = Color(0x9EFFF9F0),
+        color = AppPanelRaised,
         border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
     ) {
         Text(
@@ -226,7 +226,7 @@ private fun WorkspaceGroupCard(
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .background(
-                color = if (hovered) Color(0xB0FFFCF5) else Color.Transparent,
+                color = if (hovered) AppPanelHover else Color.Transparent,
                 shape = RoundedCornerShape(18.dp),
             )
             .border(
@@ -253,7 +253,7 @@ private fun WorkspaceGroupCard(
                 Text(
                     text = group.workspacePath,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color(0xFF887D6F),
+                        color = AppMuted,
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -263,7 +263,7 @@ private fun WorkspaceGroupCard(
                 Surface(
                     onClick = { onCreateConversation(group.workspacePath) },
                     shape = RoundedCornerShape(10.dp),
-                    color = Color(0x1423211D),
+                    color = Color(0x332F3339),
                 ) {
                     Text(
                         text = "+",
@@ -279,7 +279,7 @@ private fun WorkspaceGroupCard(
                 onClick = { onConversationSelected(conversation.id) },
                 shape = RoundedCornerShape(12.dp),
                 color = if (conversation.id == activeConversationId) {
-                    Color(0xDBFFFDF5)
+                    AppPanelHover
                 } else {
                     Color.Transparent
                 },
@@ -315,7 +315,7 @@ private fun ChatWorkspacePanel(
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .background(Color(0xE0FCF9F4)),
+            .background(Color(0xFF111214)),
     ) {
         Row(
             modifier = Modifier
@@ -333,13 +333,13 @@ private fun ChatWorkspacePanel(
             )
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = Color(0xB3FFFFFF),
+                color = AppPanelRaised,
                 border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
             ) {
                 Text(
                     text = "Workspace grouped by pwd",
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF50483F)),
+                    style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                 )
             }
         }
@@ -347,7 +347,7 @@ private fun ChatWorkspacePanel(
             Text(
                 text = message,
                 modifier = Modifier.padding(horizontal = 24.dp),
-                style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF9E4D30)),
+                style = MaterialTheme.typography.bodySmall.copy(color = ComposerDanger),
             )
         }
         activeConversation?.pendingQuestion?.let { pending ->
@@ -431,7 +431,7 @@ private fun AbilityCard(
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xC7FFFCF6),
+        color = AppPanel,
         border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
     ) {
         Column(
@@ -535,7 +535,7 @@ private fun ComposerPanel(state: ChatWindowState) {
                 activeConversation.attachments.forEach { attachment ->
                     Surface(
                         shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFFF3EDDF),
+                        color = AppPanelRaised,
                         border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
                     ) {
                         Row(
@@ -560,8 +560,8 @@ private fun ComposerPanel(state: ChatWindowState) {
 
         Surface(
             shape = RoundedCornerShape(28.dp),
-            color = Color(0xF7FFFDF7),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x2A3D3528)),
+            color = Color(0xFF05060B),
+            border = androidx.compose.foundation.BorderStroke(1.dp, AppBlueLine),
             shadowElevation = 4.dp,
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -722,7 +722,7 @@ private fun NewConversationButton(
         shape = RoundedCornerShape(15.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = AppDark,
-            contentColor = Color(0xFFFFF9EF),
+            contentColor = Color(0xFFF8FAFC),
         ),
     ) {
         Text(text = "+ New conversation")
@@ -743,7 +743,7 @@ private fun IconPillButton(
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (danger) ComposerDanger else AppDark,
-            contentColor = Color(0xFFFFF8EF),
+            contentColor = Color(0xFFF8FAFC),
         ),
         modifier = Modifier.size(36.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
@@ -759,7 +759,7 @@ private fun IconPillButton(
 private fun DividerMark() {
     Text(
         text = "|",
-        color = Color(0xFF9A8D7D),
+        color = AppMuted,
         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
     )
 }
@@ -779,7 +779,7 @@ private fun SelectorChip(
         Surface(
             onClick = onExpandedChange,
             shape = RoundedCornerShape(14.dp),
-            color = Color(0xFFEFE7D7),
+            color = AppPanelRaised,
             border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
         ) {
             Row(
@@ -790,7 +790,7 @@ private fun SelectorChip(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = Color(0xFF7A6F62),
+                        color = AppMuted,
                         letterSpacing = 0.8.sp,
                     ),
                 )
@@ -825,7 +825,7 @@ private fun ContextRingChip(
     ) {
         Surface(
             shape = RoundedCornerShape(999.dp),
-            color = Color(0xFFF4EDDF),
+            color = AppPanelRaised,
             border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
         ) {
             Row(
@@ -839,7 +839,7 @@ private fun ContextRingChip(
                     val inset = strokeWidth / 2f
                     val sweepAngle = contextRingSweepAngle(usageFraction)
                     drawArc(
-                        color = Color(0xFFD8D0C2),
+                        color = Color(0xFF3A3E46),
                         startAngle = 0f,
                         sweepAngle = 360f,
                         useCenter = false,
@@ -881,13 +881,13 @@ private fun ContextRingChip(
             ) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFF2C271F),
+                    color = AppPanelRaised,
                     shadowElevation = 6.dp,
                 ) {
                     Text(
                         text = buildContextTooltip(usageFraction),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelSmall.copy(color = Color(0xFFFFF7EB)),
+                        style = MaterialTheme.typography.labelSmall.copy(color = AppText),
                     )
                 }
             }
@@ -904,7 +904,7 @@ private fun ChatMessageBlock(item: ChatMessageItem) {
         ChatRole.System -> Text(
             text = buildChatMessageText(item),
             style = MaterialTheme.typography.bodySmall.copy(
-                color = Color(0xFF6B7480),
+                color = AppMuted,
                 lineHeight = 20.sp,
             ),
         )
@@ -912,14 +912,14 @@ private fun ChatMessageBlock(item: ChatMessageItem) {
         ChatRole.User -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             BubbleBlock(
                 text = buildChatMessageText(item),
-                containerColor = Color(0xFF2B2620),
-                contentColor = Color(0xFFFFF9EF),
+                containerColor = AppDark,
+                contentColor = Color(0xFFF8FAFC),
             )
         }
 
         ChatRole.Assistant -> BubbleBlock(
             text = buildChatMessageText(item),
-            containerColor = Color(0xDDF4EFE7),
+            containerColor = AppPanel,
             contentColor = AppText,
             borderColor = AppLineSoft,
         )
@@ -932,16 +932,16 @@ private fun ChatMessageBlock(item: ChatMessageItem) {
 @Composable
 private fun ReasoningBlock(item: ReasoningItem) {
     BubbleBlock(
-        containerColor = Color(0xFFF2F4F7),
-        contentColor = Color(0xFF273142),
-        borderColor = Color(0xFFD4DAE3),
+        containerColor = Color(0xFF202329),
+        contentColor = Color(0xFFD3D7DE),
+        borderColor = AppLineSoft,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = buildReasoningHeadline(item),
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF526173),
+                    color = AppMuted,
                 ),
             )
             if (item.expanded) {
@@ -950,7 +950,7 @@ private fun ReasoningBlock(item: ReasoningItem) {
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 13.sp,
                         lineHeight = 22.sp,
-                        color = Color(0xFF2A3342),
+                        color = Color(0xFFD3D7DE),
                     ),
                 )
             }
@@ -965,7 +965,7 @@ private fun ReasoningBlock(item: ReasoningItem) {
 private fun ToolEventBlock(item: ToolEventItem) {
     BubbleBlock(
         text = buildToolEventLabel(item),
-        containerColor = Color(0xF8F8F5EE),
+        containerColor = Color(0xFF171A1E),
         contentColor = AppMuted,
         borderColor = AppLineSoft,
     )
@@ -1195,7 +1195,7 @@ private const val TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS = 1
 
 private const val MIN_VISIBLE_CONTEXT_SWEEP_ANGLE = 6f
 
-private val ComposerDanger = Color(0xFFC94F4F)
+private val ComposerDanger = Color(0xFFE6476B)
 
 /**
  * 选择本地附件文件。
@@ -1229,24 +1229,44 @@ private fun pickWorkspaceDirectory(): String? {
 /**
  * 页面主文字色。
  */
-private val AppText = Color(0xFF241F18)
+private val AppText = Color(0xFFF2F4F8)
 
 /**
  * 页面次级文字色。
  */
-private val AppMuted = Color(0xFF6D655B)
+private val AppMuted = Color(0xFFA3A7AE)
 
 /**
  * 页面深色按钮色。
  */
-private val AppDark = Color(0xFF23211D)
+private val AppDark = Color(0xFF1F7DE8)
 
 /**
  * 页面柔和描边色。
  */
-private val AppLineSoft = Color(0x2A3D3528)
+private val AppLineSoft = Color(0xFF34373D)
 
 /**
  * 页面强调色。
  */
-private val AppAccent = Color(0xFF1F8A5D)
+private val AppAccent = Color(0xFF1FA982)
+
+/**
+ * 参考图里的浮层面板色。
+ */
+private val AppPanel = Color(0xFF17191D)
+
+/**
+ * 参考图里的悬浮控件面板色。
+ */
+private val AppPanelRaised = Color(0xFF24272D)
+
+/**
+ * 参考图里的选中和 hover 面板色。
+ */
+private val AppPanelHover = Color(0xFF2F3339)
+
+/**
+ * 参考图里的输入聚焦蓝色描边。
+ */
+private val AppBlueLine = Color(0xFF1F7DE8)

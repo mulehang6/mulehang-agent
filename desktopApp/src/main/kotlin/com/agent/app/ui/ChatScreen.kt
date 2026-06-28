@@ -997,63 +997,56 @@ private fun ToolEventBlock(item: ToolEventItem) {
     val expandable = toolEventHasDetails(item)
     var expanded by remember(item.toolName, item.status, item.preview) { mutableStateOf(false) }
 
-    BubbleBlock(
-        containerColor = Color(0xFF171A1E),
-        contentColor = AppMuted,
-        borderColor = AppLineSoft,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (expandable) {
+                        Modifier.clickable { expanded = !expanded }
+                    } else {
+                        Modifier
+                    },
+                ),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = buildToolEventHeadline(item),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    color = AppMuted,
+                ),
+            )
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (expandable) {
-                            Modifier.clickable { expanded = !expanded }
-                        } else {
-                            Modifier
-                        },
-                    ),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = buildToolEventHeadline(item),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        color = AppText,
-                    ),
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    buildToolEventKindLabel(item)?.let { kindLabel ->
-                        Text(
-                            text = kindLabel,
-                            style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
-                        )
-                    }
-                    if (expandable) {
-                        Text(
-                            text = if (expanded) "收起" else "展开",
-                            style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
-                        )
-                    }
+                buildToolEventKindLabel(item)?.let { kindLabel ->
+                    Text(
+                        text = kindLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                    )
+                }
+                if (expandable) {
+                    Text(
+                        text = if (expanded) "收起" else "展开",
+                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                    )
                 }
             }
-            if (expanded) {
-                Text(
-                    text = item.preview.orEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF111316), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color(0xFFD3D7DE),
-                        lineHeight = 20.sp,
-                    ),
-                )
-            }
+        }
+        if (expanded) {
+            Text(
+                text = item.preview.orEmpty(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 14.dp),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = Color(0xFFD3D7DE),
+                    lineHeight = 20.sp,
+                ),
+            )
         }
     }
 }

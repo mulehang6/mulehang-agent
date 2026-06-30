@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useMemo, useState, type ChangeEvent } from 'react'
 import Button from '@jetbrains/ring-ui-built/components/button/button.js'
 import Input from '@jetbrains/ring-ui-built/components/input/input.js'
 import { Directions } from '@jetbrains/ring-ui-built/components/popup/popup.consts.js'
@@ -31,98 +30,40 @@ export default function Composer({
   )
   const [thinkingLevel, setThinkingLevel] = useState(
     initialThinking ??
-      models.find((m) => m.key === initialModel)?.thinking ??
-      models.find((m) => m.key === initialModel)?.thinkingLevels?.[0] ??
-      '',
+    models.find((m) => m.key === initialModel)?.thinking ??
+    models.find((m) => m.key === initialModel)?.thinkingLevels?.[0] ??
+    '',
   )
   const [permission, setPermission] = useState(
     permissionOptions.find((item) => item.key === 'default') ?? permissionOptions[0],
   )
-  const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  const [hoveredModelKey, setHoveredModelKey] = useState<string | null>(null)
-  const [hoveredModelPanelTop, setHoveredModelPanelTop] = useState<number | null>(null)
-  const [modelPopupElement, setModelPopupElement] = useState<HTMLElement | null>(null)
-  const thinkingPanelHideTimerRef = useRef<number | null>(null)
-
-  const cancelThinkingPanelHide = () => {
-    if (thinkingPanelHideTimerRef.current !== null) {
-      window.clearTimeout(thinkingPanelHideTimerRef.current)
-      thinkingPanelHideTimerRef.current = null
-    }
+  // 切换 task 时按新的初始 props 同步跟随任务的字段（provider/model/thinking），
+  // 保留草稿文本与权限选择等本地状态，避免整组件 remount 造成输入丢失
+  const [prevInitial, setPrevInitial] = useState({
+    provider: initialProvider,
+    model: initialModel,
+    thinking: initialThinking,
+  })
+  if (
+    initialProvider !== prevInitial.provider ||
+    initialModel !== prevInitial.model ||
+    initialThinking !== prevInitial.thinking
+  ) {
+    setPrevInitial({
+      provider: initialProvider,
+      model: initialModel,
+      thinking: initialThinking,
+    })
+    const foundModel = models.find((m) => m.key === initialModel) ?? models[0]
+    setProvider(providers.find((p) => p.label === initialProvider) ?? providers[0])
+    setModel(foundModel)
+    setThinkingLevel(
+      initialThinking ??
+        foundModel.thinking ??
+        foundModel.thinkingLevels?.[0] ??
+        '',
+    )
   }
-
-  const hideThinkingPanel = () => {
-    cancelThinkingPanelHide()
-    setHoveredModelKey(null)
-    setHoveredModelPanelTop(null)
-  }
-
-  const scheduleThinkingPanelHide = () => {
-    cancelThinkingPanelHide()
-    thinkingPanelHideTimerRef.current = window.setTimeout(() => {
-      setHoveredModelKey(null)
-      setHoveredModelPanelTop(null)
-      thinkingPanelHideTimerRef.current = null
-    }, 120)
-  }
-
-  useEffect(() => {
-    if (!modelMenuOpen) {
-      setModelPopupElement(null)
-      hideThinkingPanel()
-      return
-    }
-
-    const popup = document.querySelector('.composer-model-popup') as HTMLElement | null
-    if (!popup) return
-
-    setModelPopupElement(popup)
-
-    const showThinkingPanelForItem = (item: HTMLElement, hoveredModelIndex: number) => {
-      const hoveredModel = models[hoveredModelIndex]
-      if (!hoveredModel) return
-
-      const popupRect = popup.getBoundingClientRect()
-      const itemRect = item.getBoundingClientRect()
-
-      cancelThinkingPanelHide()
-      setHoveredModelKey(hoveredModel.key)
-      setHoveredModelPanelTop(itemRect.top - popupRect.top + itemRect.height / 2)
-    }
-
-    const handlePointerOver = (event: Event) => {
-      const target = event.target as HTMLElement | null
-      const item = target?.closest('.ring-list-item') as HTMLElement | null
-      if (!item || !popup.contains(item)) return
-
-      const items = Array.from(popup.querySelectorAll('.ring-list-item')) as HTMLElement[]
-      const hoveredIndex = items.indexOf(item)
-      if (hoveredIndex < 0) return
-
-      showThinkingPanelForItem(item, hoveredIndex)
-    }
-
-    const handlePopupLeave = () => {
-      scheduleThinkingPanelHide()
-    }
-
-    popup.addEventListener('mouseover', handlePointerOver)
-    popup.addEventListener('focusin', handlePointerOver)
-    popup.addEventListener('mouseleave', handlePopupLeave)
-
-    return () => {
-      popup.removeEventListener('mouseover', handlePointerOver)
-      popup.removeEventListener('focusin', handlePointerOver)
-      popup.removeEventListener('mouseleave', handlePopupLeave)
-    }
-  }, [modelMenuOpen])
-
-  useEffect(
-    () => () => {
-      cancelThinkingPanelHide()
-    },
-    [],
-  )
 
   const handleSend = () => {
     if (!text.trim()) return
@@ -153,10 +94,15 @@ export default function Composer({
     [permission],
   )
 
-  const hoveredModel =
-    models.find((item) => item.key === hoveredModelKey) ??
-    models.find((item) => item.key === model.key) ??
-    null
+  const thinkingLevels = model.thinkingLevels ?? []
+  const selectedThinking = useMemo(
+    () => ({
+      key: thinkingLevel,
+      label: thinkingLevel,
+      type: 'item' as const,
+    }),
+    [thinkingLevel],
+  )
 
   return (
     <div className="composer-stack">
@@ -166,12 +112,12 @@ export default function Composer({
         borderless
         placeholder={placeholder}
         value={text}
-        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
+        onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setText(e.target.value)}
       />
 
       <div className="composer-bar">
         <div className="composer-bar-left">
-          <Button icon={addIcon} inline />
+          <Button icon={addIcon} inline aria-label="Add" />
 
           <Select
             className="composer-select composer-select-provider"
@@ -188,39 +134,48 @@ export default function Composer({
             }}
           />
 
-          <div className="composer-model-hover-zone">
+          <Select
+            className="composer-select composer-select-model"
+            buttonClassName="composer-select-trigger"
+            popupClassName="composer-select-popup ring-ui-theme-dark"
+            type={Select.Type.BUTTON}
+            selected={selectedModel}
+            data={models.map((m) => ({ key: m.key, label: m.label, type: 'item' as const }))}
+            minWidth={152}
+            directions={[
+              Directions.TOP_LEFT,
+              Directions.TOP_RIGHT,
+              Directions.BOTTOM_LEFT,
+              Directions.BOTTOM_RIGHT,
+            ]}
+            onChange={(item: { key: string; label: string } | null) => {
+              if (!item) return
+              const found = models.find((m) => m.key === item.key)
+              if (found) {
+                setModel(found)
+                setThinkingLevel(found.thinking ?? found.thinkingLevels?.[0] ?? '')
+              }
+            }}
+          />
+
+          {thinkingLevels.length > 0 && (
             <Select
-              className="composer-select composer-select-model"
+              className="composer-select composer-select-reasoning"
               buttonClassName="composer-select-trigger"
-              popupClassName="composer-select-popup composer-model-popup ring-ui-theme-dark"
+              popupClassName="composer-select-popup ring-ui-theme-dark"
               type={Select.Type.BUTTON}
-              selected={selectedModel}
-              data={models.map((m) => ({ key: m.key, label: m.label, type: 'item' as const }))}
-              minWidth={152}
-              directions={[
-                Directions.TOP_LEFT,
-                Directions.TOP_RIGHT,
-                Directions.BOTTOM_LEFT,
-                Directions.BOTTOM_RIGHT,
-              ]}
-              onOpen={() => {
-                setModelMenuOpen(true)
-                hideThinkingPanel()
-              }}
-              onClose={() => {
-                setModelMenuOpen(false)
-                hideThinkingPanel()
-              }}
+              selected={selectedThinking}
+              data={thinkingLevels.map((level) => ({
+                key: level,
+                label: level,
+                type: 'item' as const,
+              }))}
+              minWidth={120}
               onChange={(item: { key: string; label: string } | null) => {
-                if (!item) return
-                const found = models.find((m) => m.key === item.key)
-                if (found) {
-                  setModel(found)
-                  setThinkingLevel(found.thinking ?? found.thinkingLevels?.[0] ?? '')
-                }
+                if (item) setThinkingLevel(item.key)
               }}
             />
-          </div>
+          )}
         </div>
 
         <div className="composer-bar-right">
@@ -248,40 +203,6 @@ export default function Composer({
           </Button>
         </div>
       </div>
-
-      {modelMenuOpen &&
-        modelPopupElement &&
-        hoveredModel &&
-        hoveredModelPanelTop !== null &&
-        hoveredModel.thinkingLevels?.length &&
-        createPortal(
-          <div
-            className="composer-thinking-panel composer-thinking-panel-portal"
-            style={{ top: hoveredModelPanelTop }}
-            onMouseEnter={cancelThinkingPanelHide}
-            onMouseLeave={scheduleThinkingPanelHide}
-          >
-            <div className="composer-thinking-title">Thinking</div>
-            <div className="composer-thinking-options">
-              {hoveredModel.thinkingLevels.map((level) => (
-                <button
-                  key={`${hoveredModel.key}-${level}`}
-                  type="button"
-                  className={`composer-thinking-option ${hoveredModel.key === model.key && thinkingLevel === level ? 'composer-thinking-option-active' : ''}`}
-                  onClick={() => {
-                    setModel(hoveredModel)
-                    setThinkingLevel(level)
-                    setModelMenuOpen(false)
-                    hideThinkingPanel()
-                  }}
-                >
-                  {level}
-                </button>
-              ))}
-            </div>
-          </div>,
-          modelPopupElement,
-        )}
     </div>
   )
 }

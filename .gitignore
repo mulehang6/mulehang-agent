@@ -48,3 +48,4 @@ bin/
 /.superpowers/
 logs/
 /.ai/mcp/
+/.air/mcp.json

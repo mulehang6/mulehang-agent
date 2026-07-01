@@ -1,15 +1,9 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-
 package com.agent.app.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,525 +14,763 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.zIndex
-import com.agent.app.DesktopProjectRootResolver
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelCapabilitiesResolver
 import com.agent.shared.config.ModelVariant
 import com.agent.shared.config.ProviderType
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
+import com.agent.shared.state.ConversationItem
 import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
 import com.agent.shared.state.ToolEventStatus
-import java.awt.FileDialog
-import java.awt.Frame
-import java.util.Locale
+import com.agent.shared.tool.parseUpdatePlanPreview
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.io.File
 import javax.swing.JFileChooser
+import javax.swing.filechooser.FileSystemView
 
 /**
- * codex-like 聊天主界面。
+ * 按原型重构后的桌面主界面。
  */
 @Composable
 fun ChatScreen(
     state: ChatWindowState,
 ) {
+    var activeRailView by remember { mutableStateOf(RightRailGlyph.CODE) }
+    var filterToolActivityOnly by remember { mutableStateOf(false) }
+    var railFeedback by remember { mutableStateOf<String?>(null) }
+    val activeConversation = state.ui.activeConversationOrNull
+
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF0B0C0E), Color(0xFF111316)),
-                ),
-            ),
+            .background(AppBackground),
     ) {
-        WorkspaceSidebar(
+        TaskSidebar(
             state = state,
             modifier = Modifier
-                .width(250.dp)
+                .width(280.dp)
                 .fillMaxHeight(),
         )
-        ChatWorkspacePanel(
-            state = state,
-            modifier = Modifier.weight(1f),
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+        ) {
+            TopHeader(state)
+            WorkspacePanel(
+                state = state,
+                activeRailView = activeRailView,
+                filterToolActivityOnly = filterToolActivityOnly,
+                railFeedback = railFeedback,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        ToolRail(
+            activeGlyph = if (filterToolActivityOnly) RightRailGlyph.FILTER else activeRailView,
+            onToolClick = { glyph ->
+                when (glyph) {
+                    RightRailGlyph.CODE,
+                    RightRailGlyph.TERMINAL,
+                    RightRailGlyph.HISTORY -> {
+                        activeRailView = glyph
+                        railFeedback = null
+                    }
+
+                    RightRailGlyph.UPLOAD -> {
+                        val selectedFiles = pickFiles()
+                        if (selectedFiles.isNotEmpty()) {
+                            state.attachFiles(selectedFiles)
+                            railFeedback = "Attached ${selectedFiles.size} file(s)."
+                        }
+                    }
+
+                    RightRailGlyph.DOWNLOAD -> {
+                        railFeedback = activeConversation
+                            ?.let(::exportConversationMarkdown)
+                            ?.let { "Saved transcript to $it" }
+                            ?: railFeedback
+                    }
+
+                    RightRailGlyph.COPY -> {
+                        val answer = activeConversation?.let(::latestAssistantAnswerText)
+                        if (!answer.isNullOrBlank()) {
+                            copyTextToClipboard(answer)
+                            railFeedback = "Copied latest answer."
+                        }
+                    }
+
+                    RightRailGlyph.FILTER -> {
+                        filterToolActivityOnly = !filterToolActivityOnly
+                        railFeedback = if (filterToolActivityOnly) {
+                            "Filtering tool activity."
+                        } else {
+                            "Showing all activity."
+                        }
+                    }
+                }
+            },
+            modifier = Modifier
+                .width(34.dp)
+                .fillMaxHeight(),
         )
     }
 }
 
 /**
- * 工作目录分组侧栏。
+ * 原型顶部标题栏。
  */
 @Composable
-private fun WorkspaceSidebar(
-    state: ChatWindowState,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF08090A), Color(0xFF0D0F11)),
-                ),
-            )
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+private fun TopHeader(state: ChatWindowState) {
+    val activeConversation = state.ui.activeConversationOrNull
+    val breadcrumb = activeConversation?.workspacePath ?: "workspace / none"
+    val actions = buildHeaderActions()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = AppHeaderBackground,
+        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
     ) {
         Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFF1F7DE8), AppAccent),
-                        ),
-                        shape = RoundedCornerShape(9.dp),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                RingHeaderActionButton(glyph = actions.left.glyph, inline = true)
+                Text(
+                    text = "Air",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = AppText,
                     ),
-            )
-            Text(
-                text = "Mulehang",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = AppText,
-                ),
-            )
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            NewConversationButton(
-                onClick = {
-                    state.ui.activeConversationOrNull?.workspacePath?.let(state::createConversationForWorkspace)
-                },
-                modifier = Modifier.weight(1f),
-            )
-            WorkspacePickerButton(
-                onClick = {
-                    pickWorkspaceDirectory()?.let(state::createConversationForWorkspace)
-                },
-            )
-        }
-        Text(
-            text = "BY WORKSPACE",
-            style = MaterialTheme.typography.labelSmall.copy(
-                color = AppMuted,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.4.sp,
-            ),
-        )
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(state.ui.workspaceGroups) { group ->
-                WorkspaceGroupCard(
-                    group = group,
-                    activeConversationId = state.ui.activeConversationId,
-                    onConversationSelected = state::selectConversation,
-                    onCreateConversation = state::createConversationForWorkspace,
                 )
+            }
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = breadcrumb,
+                    style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = activeConversation?.title ?: "No task selected",
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        color = AppText,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                actions.right.forEach { action ->
+                    RingHeaderActionButton(glyph = action.glyph, inline = true)
+                }
             }
         }
     }
 }
 
 /**
- * 打开工作目录选择器的侧栏按钮。
+ * 原型左侧 task 侧栏。
  */
 @Composable
-private fun WorkspacePickerButton(
-    onClick: () -> Unit,
+private fun TaskSidebar(
+    state: ChatWindowState,
+    modifier: Modifier = Modifier,
 ) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = AppPanelRaised,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
-    ) {
-        Text(
-            text = "Open",
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            color = AppMuted,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-            maxLines = 1,
+    var searchQuery by remember { mutableStateOf("") }
+    val startTaskInCurrentWorkspace: () -> Unit = {
+        val workspacePath = resolveWorkspaceForTaskCreation(
+            activeWorkspacePath = state.ui.activeConversationOrNull?.workspacePath,
+            forceDirectoryPicker = false,
+            pickWorkspaceDirectory = ::pickWorkspaceDirectory,
         )
+        if (workspacePath != null) {
+            state.createConversationForWorkspace(workspacePath)
+        }
+    }
+    val startTaskInSelectedWorkspace: () -> Unit = {
+        val workspacePath = resolveWorkspaceForTaskCreation(
+            activeWorkspacePath = state.ui.activeConversationOrNull?.workspacePath,
+            forceDirectoryPicker = true,
+            pickWorkspaceDirectory = ::pickWorkspaceDirectory,
+        )
+        if (workspacePath != null) {
+            state.createConversationForWorkspace(workspacePath)
+        }
+    }
+    val filteredSections = remember(state.ui.taskSections, searchQuery) {
+        state.ui.taskSections.map { section ->
+            section.copy(
+                tasks = section.tasks.filter { task ->
+                    searchQuery.isBlank() ||
+                            task.title.contains(searchQuery, ignoreCase = true) ||
+                            task.subtitle.contains(searchQuery, ignoreCase = true)
+                },
+            )
+        }
+    }
+    Column(
+        modifier = modifier
+            .background(AppSidebarBackground)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RingInputField(
+                modifier = Modifier.weight(1f),
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                singleLine = true,
+                placeholder = "Search tasks",
+                iconGlyph = HeaderGlyph.SEARCH,
+                borderless = true,
+            )
+            RingHeaderActionButton(
+                glyph = HeaderGlyph.ADD,
+                onClick = startTaskInSelectedWorkspace,
+                inline = true,
+            )
+        }
+        RingPrimaryButton(
+            text = "New Task",
+            onClick = startTaskInCurrentWorkspace,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            filteredSections.forEach { section ->
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = AppMuted,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                    ),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    section.tasks.forEach { task ->
+                        TaskListItem(
+                            task = task,
+                            selected = task.id == state.ui.activeTaskId,
+                            onClick = { state.selectConversation(task.id) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 /**
- * 单个工作目录分组卡片。
+ * 左侧 task 条目。
  */
 @Composable
-private fun WorkspaceGroupCard(
-    group: WorkspaceConversationGroupUiState,
-    activeConversationId: String,
-    onConversationSelected: (String) -> Unit,
-    onCreateConversation: (String) -> Unit,
+private fun TaskListItem(
+    task: ChatTaskListItemUiState,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
-    var hovered by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .onPointerEvent(PointerEventType.Enter) { hovered = true }
-            .onPointerEvent(PointerEventType.Exit) { hovered = false }
-            .background(
-                color = if (hovered) AppPanelHover else Color.Transparent,
-                shape = RoundedCornerShape(18.dp),
-            )
-            .border(
-                width = if (hovered) 1.dp else 0.dp,
-                color = AppLineSoft,
-                shape = RoundedCornerShape(18.dp),
-            )
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    val dotColor = if (task.group == ChatTaskGroup.DONE) AppSuccess else AppAccent
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) AppSelectedBackground else Color.Transparent,
+        border = null,
+        onClick = onClick,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = group.label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = AppText,
-                    ),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(dotColor, CircleShape),
                 )
                 Text(
-                    text = group.workspacePath,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = AppMuted,
+                    text = task.title,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = AppText,
+                        fontWeight = FontWeight.Medium,
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (hovered) {
-                Surface(
-                    onClick = { onCreateConversation(group.workspacePath) },
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0x332F3339),
-                ) {
-                    Text(
-                        text = "+",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        color = AppText,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-        }
-        group.conversations.forEach { conversation ->
-            Surface(
-                onClick = { onConversationSelected(conversation.id) },
-                shape = RoundedCornerShape(12.dp),
-                color = if (conversation.id == activeConversationId) {
-                    AppPanelHover
-                } else {
-                    Color.Transparent
-                },
-                border = if (conversation.id == activeConversationId) {
-                    androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft)
-                } else {
-                    null
-                },
-            ) {
-                Text(
-                    text = conversation.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 9.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(color = AppText),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = task.subtitle,
+                style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = task.stats,
+                style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+            )
         }
     }
 }
 
 /**
- * 主聊天工作区。
+ * 原型主工作区。
  */
 @Composable
-private fun ChatWorkspacePanel(
+private fun WorkspacePanel(
     state: ChatWindowState,
+    activeRailView: RightRailGlyph,
+    filterToolActivityOnly: Boolean,
+    railFeedback: String?,
     modifier: Modifier = Modifier,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
-    Column(
+    val conversationId = activeConversation?.id
+    val scrollState = remember(conversationId) { ScrollState(0) }
+    val isFollowingLatest = remember(conversationId) { mutableStateOf(true) }
+    val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
+
+    LaunchedEffect(scrollState.value) {
+        isFollowingLatest.value = scrollState.value >= scrollState.maxValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
+    }
+
+    LaunchedEffect(totalContentSize) {
+        if (isFollowingLatest.value) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
+    Surface(
         modifier = modifier
-            .fillMaxHeight()
-            .background(Color(0xFF111214)),
+            .fillMaxWidth()
+            .padding(16.dp),
+        shape = RoundedCornerShape(0.dp),
+        color = AppPanelBackground,
+        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 22.dp, vertical = 18.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = if (activeConversation?.items.isNullOrEmpty()) "Conversation / Empty" else "Conversation / Active",
-                style = MaterialTheme.typography.labelMedium.copy(
-                    color = AppMuted,
-                    letterSpacing = 1.1.sp,
-                ),
-            )
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = AppPanelRaised,
-                border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
+                if (activeConversation == null) {
+                    EmptyWorkspaceState()
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 720.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        if (railFeedback != null) {
+                            RailFeedbackCard(railFeedback)
+                        }
+                        when (activeRailView) {
+                            RightRailGlyph.CODE -> ConversationTimeline(activeConversation)
+                            RightRailGlyph.TERMINAL -> TerminalPanel(activeConversation, filterToolActivityOnly)
+                            RightRailGlyph.HISTORY -> HistoryPanel(activeConversation, filterToolActivityOnly)
+                            else -> ConversationTimeline(activeConversation)
+                        }
+                    }
+                }
+            }
+            FooterComposerSection(state)
+        }
+    }
+}
+
+/**
+ * 空任务态主区。
+ */
+@Composable
+private fun EmptyWorkspaceState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 72.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = "Create a task to start working.",
+            style = MaterialTheme.typography.headlineSmall.copy(
+                color = AppText,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        Text(
+            text = "The prototype layout is ready, but there is no active task yet.",
+            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+        )
+    }
+}
+
+/**
+ * 把挂起问题/审批显示在输入区上方，紧跟 composer 之上。
+ */
+@Composable
+private fun PendingCards(
+    conversation: ChatConversationUiState,
+    state: ChatWindowState,
+) {
+    conversation.pendingQuestion?.let { pending ->
+        QuestionCard(
+            pending = pending,
+            onOptionClick = state::answerPendingQuestion,
+            onSubmitText = state::answerPendingQuestion,
+        )
+    }
+    conversation.pendingApproval?.let { pending ->
+        ApprovalCard(
+            pending = pending,
+            onApprove = { state.answerPendingApproval(true) },
+            onReject = { state.answerPendingApproval(false) },
+        )
+    }
+}
+
+/**
+ * 完整会话时间线，按顺序渲染所有用户消息、助手回答、思考块和工具事件。
+ */
+@Composable
+private fun ConversationTimeline(conversation: ChatConversationUiState) {
+    if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
+        Text(
+            text = "Ready for a new task",
+            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+        )
+        return
+    }
+    val failedState = conversation.executionState as? ExecutionState.Failed
+    val hasFailedToolEvent = conversation.items.any {
+        it is ToolEventItem && it.status == ToolEventStatus.Failed
+    }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        conversation.items.forEach { item ->
+            when (item) {
+                is ChatMessageItem -> {
+                    if (item.message.role == ChatRole.User) {
+                        UserMessageCard(item.message.content)
+                    } else {
+                        AssistantMessageBlock(item.message.content)
+                    }
+                }
+
+                is ReasoningItem -> TimelineReasoningItem(item)
+                is ToolEventItem -> TimelineToolEvent(item)
+            }
+        }
+        if (conversation.executionState == ExecutionState.Running) {
+            buildSecondaryStatus(conversation)?.let { status ->
                 Text(
-                    text = "Workspace grouped by pwd",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    text = status,
                     style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                 )
             }
         }
-        state.errorMessage?.let { message ->
+        if (failedState != null && !hasFailedToolEvent) {
             Text(
-                text = message,
-                modifier = Modifier.padding(horizontal = 24.dp),
-                style = MaterialTheme.typography.bodySmall.copy(color = ComposerDanger),
+                text = "${failedState.error.title}: ${failedState.error.message}",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF2A1518), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = AppDanger,
+                    lineHeight = 18.sp,
+                ),
             )
         }
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+    }
+}
+
+/**
+ * 单条用户消息卡片。
+ */
+@Composable
+private fun UserMessageCard(content: String) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.8f),
+            shape = RoundedCornerShape(8.dp),
+            color = AppUserCardBackground,
         ) {
-            if (activeConversation == null || activeConversation.items.isEmpty()) {
-                LandingState(state.ui.activeWorkspaceLabel)
-            } else {
-                ConversationTimeline(activeConversation)
-            }
-            PendingInteractionOverlay(
-                activeConversation = activeConversation,
-                onQuestionOptionClick = state::answerPendingQuestion,
-                onQuestionSubmitText = state::answerPendingQuestion,
-                onApprovalApprove = { state.answerPendingApproval(true) },
-                onApprovalReject = { state.answerPendingApproval(false) },
-            )
-        }
-        ComposerPanel(state = state)
-    }
-}
-
-/**
- * 把 agent 的挂起询问/审批卡片固定覆盖在对话区域顶部，不参与时间线滚动。
- */
-@Composable
-private fun BoxScope.PendingInteractionOverlay(
-    activeConversation: ChatConversationUiState?,
-    onQuestionOptionClick: (String) -> Unit,
-    onQuestionSubmitText: (String) -> Unit,
-    onApprovalApprove: () -> Unit,
-    onApprovalReject: () -> Unit,
-) {
-    val pendingQuestion = activeConversation?.pendingQuestion
-    val pendingApproval = activeConversation?.pendingApproval
-    if (pendingQuestion == null && pendingApproval == null) return
-
-    Column(
-        modifier = Modifier
-            .align(Alignment.TopCenter)
-            .zIndex(1f)
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        pendingQuestion?.let { pending ->
-            QuestionCard(
-                pending = pending,
-                onOptionClick = onQuestionOptionClick,
-                onSubmitText = onQuestionSubmitText,
-            )
-        }
-        pendingApproval?.let { pending ->
-            ApprovalCard(
-                pending = pending,
-                onApprove = onApprovalApprove,
-                onReject = onApprovalReject,
+            Text(
+                text = content,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                style = MaterialTheme.typography.bodyMedium.copy(color = AppText),
             )
         }
     }
 }
 
 /**
- * 空态主区。
+ * 单条助手回答块。
  */
 @Composable
-private fun LandingState(workspaceLabel: String) {
+private fun AssistantMessageBlock(content: String) {
+    val paragraphs = content
+        .trim()
+        .takeIf(String::isNotBlank)
+        ?.split(Regex("\n\\s*\n"))
+        ?.map(String::trim)
+        ?.filter(String::isNotBlank)
+        ?: listOf("No assistant output yet for this task.")
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 34.dp, vertical = 32.dp),
-        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        paragraphs.forEach { paragraph ->
+            Text(
+                text = paragraph,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = AppText,
+                    lineHeight = 23.sp,
+                ),
+            )
+        }
+    }
+}
+
+/**
+ * 时间线中的思考块展示。
+ */
+@Composable
+private fun TimelineReasoningItem(item: ReasoningItem) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "围绕 $workspaceLabel 开始一段新对话。",
-            style = MaterialTheme.typography.headlineMedium.copy(
-                color = AppText,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-1.2).sp,
-            ),
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "保留 codex 风格的大留白，但起手就告诉用户可以围绕当前工作目录做代码审查、解释文件、修改代码和规划任务。",
-            style = MaterialTheme.typography.bodyLarge.copy(
+            text = buildReasoningHeadline(item),
+            style = MaterialTheme.typography.titleSmall.copy(
                 color = AppMuted,
-                lineHeight = 26.sp,
+                fontWeight = FontWeight.SemiBold,
             ),
         )
-        Spacer(modifier = Modifier.height(24.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            AbilityCard(title = "代码审查", description = "针对当前工作目录的改动做 review，优先找 bug 风险和漏测点。")
-            AbilityCard(title = "解释文件", description = "快速讲清某个目录、模块或函数在这个仓库里的职责。")
-            AbilityCard(title = "修改代码", description = "结合权限档位直接编辑工作区文件，不需要离开当前会话。")
-            AbilityCard(title = "规划任务", description = "先给计划，再进入实现，避免复杂需求直接把代码写乱。")
+        Text(
+            text = item.displayText,
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = AppMuted,
+                lineHeight = 20.sp,
+            ),
+        )
+    }
+}
+
+/**
+ * 时间线中的工具事件条目。
+ */
+@Composable
+private fun TimelineToolEvent(item: ToolEventItem) {
+    val kindLabel = buildToolEventKindLabel(item)
+    val preview = item.preview?.takeIf(String::isNotBlank)
+    val errorMessage = item.errorMessage?.takeIf(String::isNotBlank)
+    val isFailed = item.status == ToolEventStatus.Failed
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = buildToolEventHeadline(item),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = if (isFailed) AppDanger else AppText,
+                    fontWeight = FontWeight.Medium,
+                ),
+            )
+            if (kindLabel != null) {
+                Text(
+                    text = kindLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                )
+            }
+        }
+        if (preview != null && toolEventHasDetails(item)) {
+            Text(
+                text = preview,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = AppMuted,
+                    lineHeight = 18.sp,
+                ),
+            )
+        }
+        if (errorMessage != null) {
+            Text(
+                text = errorMessage,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF2A1518), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = AppDanger,
+                    lineHeight = 18.sp,
+                ),
+            )
         }
     }
 }
 
 /**
- * 能力入口卡片。
+ * 原型下方 plan + composer 区域。
  */
 @Composable
-private fun AbilityCard(
-    title: String,
-    description: String,
-) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = AppPanel,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
+private fun FooterComposerSection(state: ChatWindowState) {
+    val activeConversation = state.ui.activeConversationOrNull
+    val planCard = activeConversation?.let { extractPlanCard(it.items) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
+                .widthIn(max = 720.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (activeConversation != null) {
+                PendingCards(activeConversation, state)
+            }
+            if (planCard != null) {
+                PlanCard(
+                    title = planCard.title,
+                    entries = planCard.entries,
+                    modifier = Modifier.fillMaxWidth(0.6f),
+                )
+            }
+            ComposerPanel(
+                state = state,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
+ * 计划卡片。
+ */
+@Composable
+private fun PlanCard(
+    title: String,
+    entries: List<TaskPlanEntry>,
+    modifier: Modifier = Modifier,
+) {
+    RingIsland(
+        modifier = modifier,
+        color = AppSidebarBackground,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
+                style = MaterialTheme.typography.titleSmall.copy(
                     color = AppText,
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = AppMuted,
-                    lineHeight = 22.sp,
-                ),
-            )
-        }
-    }
-}
-
-/**
- * 对话态时间线。
- */
-@Composable
-private fun ConversationTimeline(
-    conversation: ChatConversationUiState,
-) {
-    val listState = rememberLazyListState()
-    var followLatest by remember(conversation.id) { mutableStateOf(true) }
-    var observedItemCount by remember(conversation.id) { mutableStateOf(conversation.items.size) }
-    val nextFollowLatest = nextAutoScrollFollowState(
-        currentFollowLatest = followLatest,
-        lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index,
-        totalItems = conversation.items.size,
-        previousTotalItems = observedItemCount,
-    )
-    LaunchedEffect(conversation.id, conversation.items.size, nextFollowLatest) {
-        if (conversation.items.isNotEmpty() && nextFollowLatest) {
-            listState.scrollToItem(timelineAutoScrollAnchorIndex(conversation.items.size))
-        }
-    }
-    SideEffect {
-        followLatest = nextFollowLatest
-        observedItemCount = conversation.items.size
-    }
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 34.dp, vertical = 18.dp),
-        state = listState,
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        items(conversation.items) { item ->
-            when (item) {
-                is ChatMessageItem -> ChatMessageBlock(item)
-                is ReasoningItem -> ReasoningBlock(item)
-                is ToolEventItem -> ToolEventBlock(item)
+            entries.forEach { entry ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.size(22.dp),
+                        shape = CircleShape,
+                        color = if (entry.active) AppAccent else AppChipBackground,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = entry.number.toString(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = if (entry.active) Color.White else AppMuted,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                        }
+                    }
+                    Text(
+                        text = entry.text,
+                        style = MaterialTheme.typography.bodyMedium.copy(color = AppText),
+                    )
+                }
             }
         }
-        item(key = "timeline-anchor-${conversation.id}") {
-            Spacer(modifier = Modifier.height(1.dp))
-        }
     }
 }
 
 /**
- * composer 面板。
+ * 原型 composer。
  */
 @Composable
-private fun ComposerPanel(state: ChatWindowState) {
+private fun ComposerPanel(
+    state: ChatWindowState,
+    modifier: Modifier = Modifier,
+) {
     val activeConversation = state.ui.activeConversationOrNull
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
@@ -547,192 +779,162 @@ private fun ComposerPanel(state: ChatWindowState) {
     val providerProfiles = groupProfilesByProvider(profiles)
     val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
+    val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
     var providerExpanded by remember { mutableStateOf(false) }
     var modelExpanded by remember { mutableStateOf(false) }
     var reasoningExpanded by remember { mutableStateOf(false) }
     var permissionExpanded by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    RingIsland(
+        modifier = modifier,
+        color = ComposerBackground,
     ) {
-        if (!activeConversation?.attachments.isNullOrEmpty()) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                activeConversation.attachments.forEach { attachment ->
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = AppPanelRaised,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (!activeConversation?.attachments.isNullOrEmpty()) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    activeConversation.attachments.forEach { attachment ->
+                        Surface(
+                            shape = RoundedCornerShape(999.dp),
+                            color = AppChipBackground,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .background(AppAccent, CircleShape),
-                            )
                             Text(
                                 text = attachment.name,
-                                style = MaterialTheme.typography.bodySmall.copy(color = AppText),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelSmall.copy(color = AppText),
                             )
                         }
                     }
                 }
             }
-        }
 
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = Color(0xFF05060B),
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppBlueLine),
-            shadowElevation = 4.dp,
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                OutlinedTextField(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onPreviewKeyEvent { event ->
-                            if (shouldSubmitComposerKey(event.key, event.type, event.isShiftPressed)) {
-                                state.sendDraft()
-                                true
+            RingInputField(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onPreviewKeyEvent { event ->
+                        if (shouldSubmitComposerKey(event.key, event.type, event.isShiftPressed)) {
+                            if (executionState.isStoppable()) {
+                                state.cancelActiveRun()
                             } else {
-                                false
+                                state.sendDraft()
                             }
-                        },
-                    value = state.ui.draft,
-                    onValueChange = state::updateDraft,
-                    minLines = 3,
-                    placeholder = {
-                        Text("Describe the task, paste code, or ask the agent to inspect the current workspace.")
+                            true
+                        } else {
+                            false
+                        }
                     },
-                    shape = RoundedCornerShape(20.dp),
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+                value = state.ui.draft,
+                onValueChange = state::updateDraft,
+                minLines = 3,
+                placeholder = "Ask anything...",
+                borderless = true,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    RingHeaderActionButton(
+                        glyph = HeaderGlyph.ADD,
+                        onClick = { state.attachFiles(pickFiles()) },
+                        inline = true,
+                    )
+                    RingSelectChip(
+                        label = selectedProfile?.providerLabel ?: currentProvider ?: "Provider",
+                        expanded = providerExpanded,
+                        onExpandedChange = { providerExpanded = !providerExpanded },
+                        modifier = Modifier.width(120.dp),
                     ) {
-                        IconPillButton(
-                            symbol = "+",
-                            onClick = { state.attachFiles(pickFiles()) },
-                        )
-                        DividerMark()
-
-                        SelectorChip(
-                            label = "Provider",
-                            value = selectedProfile?.providerLabel ?: currentProvider ?: "None",
-                            expanded = providerExpanded,
-                            onExpandedChange = { providerExpanded = !providerExpanded },
+                        providerProfiles.forEach { (_, providerModels) ->
+                            val first = providerModels.firstOrNull() ?: return@forEach
+                            DropdownMenuItem(
+                                text = { Text(first.providerLabel) },
+                                onClick = {
+                                    providerExpanded = false
+                                    state.selectProfile(first.id)
+                                },
+                            )
+                        }
+                    }
+                    RingSelectChip(
+                        label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "Model",
+                        expanded = modelExpanded,
+                        onExpandedChange = { modelExpanded = !modelExpanded },
+                        modifier = Modifier.width(152.dp),
+                    ) {
+                        currentProviderProfiles.forEach { profile ->
+                            DropdownMenuItem(
+                                text = { Text(profile.modelLabel ?: profile.model) },
+                                onClick = {
+                                    modelExpanded = false
+                                    state.selectProfile(profile.id)
+                                },
+                            )
+                        }
+                    }
+                    if (selectedVariants.isNotEmpty()) {
+                        RingSelectChip(
+                            label = activeConversation?.reasoningEffort?.name ?: "Reasoning",
+                            expanded = reasoningExpanded,
+                            onExpandedChange = { reasoningExpanded = !reasoningExpanded },
+                            modifier = Modifier.width(120.dp),
                         ) {
-                            providerProfiles.forEach { (providerId, providerModels) ->
+                            selectedVariants.forEach { variant ->
+                                val effort = variant.reasoningEffort ?: return@forEach
                                 DropdownMenuItem(
-                                    text = { Text(providerModels.firstOrNull()?.providerLabel ?: providerId) },
+                                    text = { Text(effort.name.lowercase().replaceFirstChar(Char::uppercase)) },
                                     onClick = {
-                                        providerExpanded = false
-                                        providerModels
-                                            .firstOrNull()
-                                            ?.let { profile -> state.selectProfile(profile.id) }
+                                        reasoningExpanded = false
+                                        state.updateReasoningEffort(effort)
                                     },
                                 )
-                            }
-                        }
-
-                        SelectorChip(
-                            label = "Model",
-                            value = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "None",
-                            expanded = modelExpanded,
-                            onExpandedChange = { modelExpanded = !modelExpanded },
-                        ) {
-                            currentProviderProfiles.forEach { profile ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column(modifier = Modifier.fillMaxWidth()) {
-                                            Text(profile.modelLabel ?: profile.model)
-                                            Text(
-                                                text = profile.model,
-                                                style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        modelExpanded = false
-                                        state.selectProfile(profile.id)
-                                    },
-                                )
-                            }
-                        }
-
-                        val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
-                        if (selectedVariants.isNotEmpty()) {
-                            val selectedReasoningValue = selectedVariants
-                                .firstOrNull { it.reasoningEffort == activeConversation?.reasoningEffort }
-                                ?.id
-                                ?: selectedVariants.first().id
-                            SelectorChip(
-                                label = "Thinking",
-                                value = selectedReasoningValue,
-                                expanded = reasoningExpanded,
-                                onExpandedChange = { reasoningExpanded = !reasoningExpanded },
-                            ) {
-                                selectedVariants.forEach { variant ->
-                                    val effort = variant.reasoningEffort ?: return@forEach
-                                    DropdownMenuItem(
-                                        text = { Text(variant.id) },
-                                        onClick = {
-                                            reasoningExpanded = false
-                                            state.updateReasoningEffort(effort)
-                                        },
-                                    )
-                                }
                             }
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RingSelectChip(
+                        label = permissionLabel(state.ui.permissionPreset),
+                        expanded = permissionExpanded,
+                        tone = permissionTone(state.ui.permissionPreset),
+                        onExpandedChange = { permissionExpanded = !permissionExpanded },
+                        modifier = Modifier.width(126.dp),
                     ) {
-                        ContextRingChip(activeConversation?.contextUsageFraction ?: 0f)
-                        SelectorChip(
-                            label = "Permission",
-                            value = permissionLabel(state.ui.permissionPreset),
-                            expanded = permissionExpanded,
-                            onExpandedChange = { permissionExpanded = !permissionExpanded },
-                        ) {
-                            PermissionPreset.entries.forEach { preset ->
-                                DropdownMenuItem(
-                                    text = { Text(permissionLabel(preset)) },
-                                    onClick = {
-                                        permissionExpanded = false
-                                        state.updatePermission(preset)
-                                    },
-                                )
-                            }
+                        PermissionPreset.entries.forEach { preset ->
+                            DropdownMenuItem(
+                                text = { Text(permissionLabel(preset)) },
+                                onClick = {
+                                    permissionExpanded = false
+                                    state.updatePermission(preset)
+                                },
+                            )
                         }
-                        DividerMark()
-                        IconPillButton(
-                            symbol = primaryActionVisual.symbol,
-                            danger = primaryActionVisual.danger,
-                            onClick = if (executionState == ExecutionState.Running) {
-                                state::cancelActiveRun
+                    }
+                    RingPrimaryButton(
+                        text = if (primaryActionVisual.danger) "Stop" else "Send",
+                        onClick = {
+                            if (executionState.isStoppable()) {
+                                state.cancelActiveRun()
                             } else {
-                                state::sendDraft
-                            },
-                        )
-                    }
+                                state.sendDraft()
+                            }
+                        },
+                        containerColor = if (primaryActionVisual.danger) AppDanger else AppAccent,
+                    )
                 }
             }
         }
@@ -740,386 +942,280 @@ private fun ComposerPanel(state: ChatWindowState) {
 }
 
 /**
- * 新建对话按钮。
+ * 右侧 rail 操作后的轻量反馈。
  */
 @Composable
-private fun NewConversationButton(
-    onClick: () -> Unit,
+private fun RailFeedbackCard(message: String) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = AppChipBackground,
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+        )
+    }
+}
+
+/**
+ * 终端视图。
+ */
+@Composable
+private fun TerminalPanel(
+    conversation: ChatConversationUiState,
+    filterToolActivityOnly: Boolean,
+) {
+    val entries = buildTerminalEntries(conversation, filterToolActivityOnly)
+    RingIsland(
+        modifier = Modifier.fillMaxWidth(),
+        color = AppSidebarBackground,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Terminal",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    color = AppText,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            )
+            entries.forEach { entry ->
+                Text(
+                    text = entry,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = AppText,
+                        lineHeight = 20.sp,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 历史视图。
+ */
+@Composable
+private fun HistoryPanel(
+    conversation: ChatConversationUiState,
+    filterToolActivityOnly: Boolean,
+) {
+    val entries = buildHistoryEntries(conversation, filterToolActivityOnly)
+    RingIsland(
+        modifier = Modifier.fillMaxWidth(),
+        color = AppSidebarBackground,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "History",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    color = AppText,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            )
+            entries.forEach { entry ->
+                Text(
+                    text = entry,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = AppText,
+                        lineHeight = 20.sp,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 右侧固定工具栏。
+ */
+@Composable
+private fun ToolRail(
+    activeGlyph: RightRailGlyph,
+    onToolClick: (RightRailGlyph) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(15.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = AppDark,
-            contentColor = Color(0xFFF8FAFC),
-        ),
+    val toolGroups = buildRightRailGroups()
+    Column(
+        modifier = modifier
+            .background(AppRailBackground)
+            .padding(top = 10.dp, bottom = 8.dp, start = 4.dp, end = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(text = "+ New conversation")
+        toolGroups.forEachIndexed { groupIndex, group ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                group.forEach { item ->
+                    RingRailActionButton(
+                        glyph = item.glyph,
+                        active = item.glyph == activeGlyph,
+                        onClick = { onToolClick(item.glyph) },
+                    )
+                }
+            }
+            if (groupIndex != toolGroups.lastIndex) {
+                Spacer(
+                    modifier = Modifier
+                        .width(18.dp)
+                        .height(1.dp)
+                        .background(AppLine),
+                )
+            }
+        }
     }
 }
 
 /**
- * 图标胶囊按钮。
+ * 回答区的标题。
  */
-@Composable
-private fun IconPillButton(
-    symbol: String,
-    danger: Boolean = false,
-    onClick: () -> Unit,
-) {
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (danger) ComposerDanger else AppDark,
-            contentColor = Color(0xFFF8FAFC),
-        ),
-        modifier = Modifier.size(36.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-    ) {
-        Text(text = symbol, fontWeight = FontWeight.Bold)
+internal fun buildAnswerTitle(conversation: ChatConversationUiState): String {
+    if (conversation.executionState == ExecutionState.Running) return "Updating plan..."
+    if (conversation.pendingApproval != null) return "Awaiting approval..."
+    if (conversation.pendingQuestion != null) return "Waiting for more input..."
+    return when (conversation.items.lastOrNull()) {
+        is ReasoningItem -> "Reasoning update"
+        is ToolEventItem -> "Tool activity"
+        is ChatMessageItem -> "Latest answer"
+        null -> "Ready for a new task"
     }
 }
 
 /**
- * 底栏分隔符。
+ * 把当前 task 的回答压成原型式段落块。
  */
-@Composable
-private fun DividerMark() {
-    Text(
-        text = "|",
-        color = AppMuted,
-        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+internal fun buildAnswerParagraphs(conversation: ChatConversationUiState): List<String> {
+    val assistant = conversation.items
+        .asReversed()
+        .filterIsInstance<ChatMessageItem>()
+        .firstOrNull { it.message.role == ChatRole.Assistant }
+        ?.message
+        ?.content
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    if (assistant != null) {
+        return assistant
+            .split(Regex("\n\\s*\n"))
+            .map(String::trim)
+            .filter(String::isNotBlank)
+    }
+    val reasoning = conversation.items
+        .asReversed()
+        .filterIsInstance<ReasoningItem>()
+        .firstOrNull()
+        ?.displayText
+        ?.trim()
+    if (!reasoning.isNullOrBlank()) {
+        return listOf(reasoning)
+    }
+    return listOf("No assistant output yet for this task.")
+}
+
+/**
+ * 构造回答区下方的次级状态文案。
+ */
+internal fun buildSecondaryStatus(conversation: ChatConversationUiState): String? = when {
+    conversation.pendingApproval != null -> conversation.pendingApproval.summary
+    conversation.pendingQuestion != null -> conversation.pendingQuestion.question
+    conversation.executionState == ExecutionState.Running -> "Working in ${buildWorkspaceLabel(conversation.workspacePath)}..."
+    else -> null
+}
+
+/**
+ * 计划卡片里的步骤条目。
+ */
+data class TaskPlanEntry(
+    val number: Int,
+    val text: String,
+    val active: Boolean = false,
+)
+
+/**
+ * 从真实 update_plan 工具事件中提取出的 plan 卡片。
+ */
+data class PlanCardUiState(
+    val title: String,
+    val entries: List<TaskPlanEntry>,
+)
+
+private data class UpdatePlanPayload(
+    val explanation: String? = null,
+    val plan: List<UpdatePlanStepPayload> = emptyList(),
+)
+
+private data class UpdatePlanStepPayload(
+    val step: String,
+    val status: String,
+)
+
+/**
+ * 仅当 agent 真实调用 update_plan 且携带 plan 数据时，才显示 Plan 卡片。
+ */
+internal fun extractPlanCard(items: List<ConversationItem>): PlanCardUiState? {
+    val payload = items
+        .asReversed()
+        .filterIsInstance<ToolEventItem>()
+        .filter { it.toolName == "update_plan" && !it.preview.isNullOrBlank() }
+        .firstNotNullOfOrNull { it.preview?.let(::parseUpdatePlanPayload) }
+        ?: return null
+    if (payload.plan.isEmpty()) return null
+    return PlanCardUiState(
+        title = "Plan",
+        entries = payload.plan.mapIndexed { index, step ->
+            TaskPlanEntry(
+                number = index + 1,
+                text = step.step,
+                active = step.status == "in_progress",
+            )
+        },
     )
 }
 
 /**
- * 通用下拉选择胶囊。
+ * 解析 update_plan 的工具参数预览。
  */
-@Composable
-private fun SelectorChip(
-    label: String,
-    value: String,
-    expanded: Boolean,
-    onExpandedChange: () -> Unit,
-    menuContent: @Composable () -> Unit,
-) {
-    Box {
-        Surface(
-            onClick = onExpandedChange,
-            shape = RoundedCornerShape(14.dp),
-            color = AppPanelRaised,
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = AppMuted,
-                        letterSpacing = 0.8.sp,
-                    ),
-                )
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.bodySmall.copy(color = AppText),
-                )
-            }
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = onExpandedChange,
-        ) {
-            menuContent()
-        }
-    }
-}
-
-/**
- * 上下文占用圆环胶囊。
- */
-@Composable
-private fun ContextRingChip(
-    usageFraction: Float,
-) {
-    var hovered by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-    Box(
-        modifier = Modifier
-            .onPointerEvent(PointerEventType.Enter) { hovered = true }
-            .onPointerEvent(PointerEventType.Exit) { hovered = false },
-    ) {
-        Surface(
-            shape = RoundedCornerShape(999.dp),
-            color = AppPanelRaised,
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppLineSoft),
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Canvas(modifier = Modifier.size(18.dp)) {
-                    val strokeWidth = size.minDimension * 0.22f
-                    val inset = strokeWidth / 2f
-                    val sweepAngle = contextRingSweepAngle(usageFraction)
-                    drawArc(
-                        color = Color(0xFF3A3E46),
-                        startAngle = 0f,
-                        sweepAngle = 360f,
-                        useCenter = false,
-                        topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                        size = androidx.compose.ui.geometry.Size(
-                            width = size.width - strokeWidth,
-                            height = size.height - strokeWidth,
-                        ),
-                        style = Stroke(width = strokeWidth),
-                    )
-                    if (sweepAngle > 0f) {
-                        drawArc(
-                            color = AppAccent,
-                            startAngle = -90f,
-                            sweepAngle = sweepAngle,
-                            useCenter = false,
-                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                            size = androidx.compose.ui.geometry.Size(
-                                width = size.width - strokeWidth,
-                                height = size.height - strokeWidth,
-                            ),
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                        )
-                    }
-                }
-                Text(
-                    text = buildContextUsageLabel(usageFraction),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        color = AppText,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                )
-            }
-        }
-        if (hovered) {
-            Popup(
-                alignment = Alignment.TopCenter,
-                offset = with(density) { IntOffset(0, -42.dp.roundToPx()) },
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = AppPanelRaised,
-                    shadowElevation = 6.dp,
-                ) {
-                    Text(
-                        text = buildContextTooltip(usageFraction),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelSmall.copy(color = AppText),
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 按消息角色渲染聊天正文。
- */
-@Composable
-private fun ChatMessageBlock(item: ChatMessageItem) {
-    when (item.message.role) {
-        ChatRole.System -> Text(
-            text = buildChatMessageText(item),
-            style = MaterialTheme.typography.bodySmall.copy(
-                color = AppMuted,
-                lineHeight = 20.sp,
-            ),
-        )
-
-        ChatRole.User -> Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            BubbleBlock(
-                text = buildChatMessageText(item),
-                containerColor = AppDark,
-                contentColor = Color(0xFFF8FAFC),
-            )
-        }
-
-        ChatRole.Assistant -> BubbleBlock(
-            text = buildChatMessageText(item),
-            containerColor = AppPanel,
-            contentColor = AppText,
-            borderColor = AppLineSoft,
-        )
-    }
-}
-
-/**
- * 展示默认展开的思考块。
- */
-@Composable
-private fun ReasoningBlock(item: ReasoningItem) {
-    BubbleBlock(
-        containerColor = Color(0xFF202329),
-        contentColor = Color(0xFFD3D7DE),
-        borderColor = AppLineSoft,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = buildReasoningHeadline(item),
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = AppMuted,
-                ),
-            )
-            if (item.expanded) {
-                Text(
-                    text = item.displayText,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 13.sp,
-                        lineHeight = 22.sp,
-                        color = Color(0xFFD3D7DE),
-                    ),
-                )
-            }
-        }
-    }
-}
-
-/**
- * 展示工具调用等轻量时间线事件。
- */
-@Composable
-private fun ToolEventBlock(item: ToolEventItem) {
-    val expandable = toolEventHasDetails(item)
-    var expanded by remember(item.toolName, item.status, item.preview) { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (expandable) {
-                        Modifier.clickable { expanded = !expanded }
-                    } else {
-                        Modifier
-                    },
-                ),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = buildToolEventHeadline(item),
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    color = AppMuted,
-                ),
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                buildToolEventKindLabel(item)?.let { kindLabel ->
-                    Text(
-                        text = kindLabel,
-                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
-                    )
-                }
-                if (expandable) {
-                    Text(
-                        text = if (expanded) "收起" else "展开",
-                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
-                    )
-                }
-            }
-        }
-        if (expanded) {
-            Text(
-                text = item.preview.orEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 14.dp),
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = Color(0xFFD3D7DE),
-                    lineHeight = 20.sp,
-                ),
-            )
-        }
-    }
-}
-
-/**
- * 渲染整行圆角消息块。
- */
-@Composable
-private fun BubbleBlock(
-    text: String,
-    containerColor: Color,
-    contentColor: Color,
-    borderColor: Color? = null,
-) {
-    BubbleBlock(
-        containerColor = containerColor,
-        contentColor = contentColor,
-        borderColor = borderColor,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge.copy(
-                fontSize = 14.sp,
-                lineHeight = 24.sp,
-                color = contentColor,
-            ),
-        )
-    }
-}
-
-/**
- * 渲染支持自定义内容的整行圆角消息块。
- */
-@Composable
-private fun BubbleBlock(
-    containerColor: Color,
-    contentColor: Color,
-    borderColor: Color? = null,
-    content: @Composable () -> Unit,
-) {
-    val shape = RoundedCornerShape(18.dp)
-    val borderModifier = if (borderColor != null) {
-        Modifier.border(width = 1.dp, color = borderColor, shape = shape)
+private fun parseUpdatePlanPayload(preview: String): UpdatePlanPayload? = runCatching {
+    val parsedPreview = parseUpdatePlanPreview(preview) ?: return@runCatching null
+    if (parsedPreview.plan.isEmpty()) {
+        null
     } else {
-        Modifier
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(borderModifier)
-            .background(color = containerColor, shape = shape)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-    ) {
-        ProvideTextStyle(
-            value = MaterialTheme.typography.bodyLarge.copy(color = contentColor),
-            content = content,
+        UpdatePlanPayload(
+            explanation = parsedPreview.explanation,
+            plan = parsedPreview.plan.map { step ->
+                UpdatePlanStepPayload(
+                    step = step.step,
+                    status = step.status,
+                )
+            },
         )
     }
+}.getOrNull()
+
+/**
+ * 工具事件标题。
+ */
+internal fun buildToolEventHeadline(item: ToolEventItem): String = when (item.status) {
+    ToolEventStatus.Status -> item.preview.orEmpty().ifBlank { item.toolName }
+    ToolEventStatus.Failed -> "失败: ${item.toolName}"
+    else -> item.toolName
 }
 
 /**
- * 生成工具事件主行标题。
- */
-internal fun buildToolEventHeadline(item: ToolEventItem): String =
-    if (item.status == ToolEventStatus.Status) item.preview.orEmpty().ifBlank { "Status" } else item.toolName
-
-/**
- * 生成工具事件的轻量类型标签。
+ * 工具事件种类标签。
  */
 internal fun buildToolEventKindLabel(item: ToolEventItem): String? = when (item.status) {
     ToolEventStatus.Started -> "输入"
     ToolEventStatus.Finished -> "输出"
     ToolEventStatus.Status -> null
+    ToolEventStatus.Failed -> "错误"
 }
 
 /**
@@ -1162,7 +1258,7 @@ internal fun modelVariantsFor(profile: ConfigProfile): List<ModelVariant> =
     ModelCapabilitiesResolver.resolve(profile).variants.values.toList()
 
 /**
- * 按配置 providerId 分组模型，避免同类 OpenAI-compatible provider 被混在一起。
+ * 按配置 providerId 分组模型。
  */
 internal fun groupProfilesByProvider(profiles: List<ConfigProfile>): Map<String, List<ConfigProfile>> =
     profiles.groupBy { it.providerId }
@@ -1188,10 +1284,18 @@ internal data class ComposerPrimaryActionVisual(
 )
 
 /**
+ * 判断当前执行状态是否可被 composer 停止，覆盖运行、等待输入和等待审批。
+ */
+internal fun ExecutionState.isStoppable(): Boolean =
+    this == ExecutionState.Running ||
+            this == ExecutionState.WaitingForUserInput ||
+            this == ExecutionState.WaitingForApproval
+
+/**
  * 根据执行状态生成 composer 主按钮视觉。
  */
 internal fun buildComposerPrimaryActionVisual(executionState: ExecutionState): ComposerPrimaryActionVisual =
-    if (executionState == ExecutionState.Running) {
+    if (executionState.isStoppable()) {
         ComposerPrimaryActionVisual(symbol = "■", danger = true)
     } else {
         ComposerPrimaryActionVisual(symbol = "↑", danger = false)
@@ -1239,120 +1343,246 @@ internal fun nextAutoScrollFollowState(
 }
 
 /**
- * 时间线自动滚动时使用的尾部锚点索引。
+ * 时间线自动滚动锚点。
  */
-internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int = totalItems.coerceAtLeast(0)
+internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int =
+    totalItems.coerceAtLeast(0)
 
 /**
- * 生成适合上下文圆环显示的小百分比文案。
+ * 仅在 Enter 抬起且未按住 Shift 时发送 composer。
+ */
+internal fun shouldSubmitComposerKey(
+    key: Key,
+    eventType: KeyEventType,
+    isShiftPressed: Boolean,
+): Boolean = key == Key.Enter && eventType == KeyEventType.KeyUp && !isShiftPressed
+
+/**
+ * 上下文占比格式化。
  */
 private fun formatContextUsagePercent(usageFraction: Float): String {
-    val percent = usageFraction.coerceIn(0f, 1f) * 100f
-    return when {
-        percent <= 0f -> "0%"
-        percent < 0.1f -> "<0.1%"
-        percent < 10f -> String.format(Locale.US, "%.1f%%", percent)
-        else -> "${percent.toInt()}%"
+    val clamped = usageFraction.coerceIn(0f, 1f)
+    if (clamped in 0f..0.001f && clamped > 0f) {
+        return "<0.1%"
+    }
+    return "${(clamped * 100).toInt()}%"
+}
+
+/**
+ * 选择权限文案。
+ */
+private fun permissionLabel(permissionPreset: PermissionPreset): String = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> "Ask permission"
+    PermissionPreset.AUTO -> "Auto"
+    PermissionPreset.EDIT_ALLOW -> "Edit allow"
+    PermissionPreset.PLAN -> "Plan"
+    PermissionPreset.BRAVE -> "Brave"
+}
+
+/**
+ * 权限色调。
+ */
+private fun permissionTone(permissionPreset: PermissionPreset): Color = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> AppChipBackground
+    PermissionPreset.AUTO -> Color(0xFF204B8F)
+    PermissionPreset.EDIT_ALLOW -> Color(0xFF66511C)
+    PermissionPreset.PLAN -> Color(0xFF434750)
+    PermissionPreset.BRAVE -> Color(0xFF652E36)
+}
+
+/**
+ * 打开文件选择器。
+ */
+private fun pickFiles(): List<String> {
+    val chooser = JFileChooser(FileSystemView.getFileSystemView().defaultDirectory).apply {
+        isMultiSelectionEnabled = true
+        fileSelectionMode = JFileChooser.FILES_ONLY
+    }
+    return if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+        chooser.selectedFiles.map(File::getAbsolutePath)
+    } else {
+        emptyList()
     }
 }
 
 /**
- * 判断 composer 键盘事件是否应触发发送；Shift+Enter 保留给多行输入。
+ * 打开工作目录选择器。
  */
-internal fun shouldSubmitComposerKey(
-    key: Key,
-    type: KeyEventType,
-    isShiftPressed: Boolean,
-): Boolean =
-    key == Key.Enter && type == KeyEventType.KeyUp && !isShiftPressed
+private fun pickWorkspaceDirectory(): String? {
+    val chooser = JFileChooser(FileSystemView.getFileSystemView().defaultDirectory).apply {
+        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+    }
+    return if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+        chooser.selectedFile?.absolutePath
+    } else {
+        null
+    }
+}
 
 /**
- * 权限档位的展示文案。
+ * 决定新任务应落在哪个工作区；可按需强制走目录选择器。
  */
-private fun permissionLabel(permissionPreset: PermissionPreset): String = when (permissionPreset) {
-    PermissionPreset.AUTO -> "auto"
-    PermissionPreset.DEFAULT -> "default"
-    PermissionPreset.EDIT_ALLOW -> "edit allow"
-    PermissionPreset.PLAN -> "plan"
-    PermissionPreset.BRAVE -> "brave"
+internal fun resolveWorkspaceForTaskCreation(
+    activeWorkspacePath: String?,
+    forceDirectoryPicker: Boolean,
+    pickWorkspaceDirectory: () -> String?,
+): String? = if (forceDirectoryPicker || activeWorkspacePath.isNullOrBlank()) {
+    pickWorkspaceDirectory()
+} else {
+    activeWorkspacePath
 }
+
+/**
+ * 构造终端视图条目。
+ */
+private fun buildTerminalEntries(
+    conversation: ChatConversationUiState,
+    filterToolActivityOnly: Boolean,
+): List<String> {
+    val entries = conversation.items.mapNotNull { item ->
+        when (item) {
+            is ChatMessageItem -> if (filterToolActivityOnly) {
+                null
+            } else {
+                val prefix = if (item.message.role == ChatRole.User) "$" else "assistant>"
+                "$prefix ${item.message.content.trim()}"
+            }
+
+            is ReasoningItem -> if (filterToolActivityOnly) null else "thinking> ${item.displayText.trim()}"
+            is ToolEventItem -> "tool> ${item.toolName}${
+                item.preview?.takeIf(String::isNotBlank)?.let { ": $it" } ?: ""
+            }"
+        }
+    }
+    return entries.ifEmpty { listOf(if (filterToolActivityOnly) "No tool activity yet." else "No timeline events yet.") }
+}
+
+/**
+ * 构造历史视图条目。
+ */
+private fun buildHistoryEntries(
+    conversation: ChatConversationUiState,
+    filterToolActivityOnly: Boolean,
+): List<String> {
+    val entries = conversation.history.flatMap { message ->
+        when (message) {
+            is com.agent.shared.agent.AgentConversationHistoryMessage.User -> if (filterToolActivityOnly) {
+                emptyList()
+            } else {
+                listOf("user> ${message.content}")
+            }
+
+            is com.agent.shared.agent.AgentConversationHistoryMessage.Assistant -> {
+                message.parts.mapNotNull { part ->
+                    when (part) {
+                        is com.agent.shared.agent.AgentConversationHistoryPart.Text -> if (filterToolActivityOnly) null else "assistant> ${part.text}"
+                        is com.agent.shared.agent.AgentConversationHistoryPart.Reasoning -> if (filterToolActivityOnly) null else "reasoning> ${part.summary ?: part.rawText.orEmpty()}"
+                        is com.agent.shared.agent.AgentConversationHistoryPart.ToolCall -> "tool-call> ${part.name}${part.argumentsPreview?.let { ": $it" } ?: ""}"
+                        is com.agent.shared.agent.AgentConversationHistoryPart.ToolResult -> "tool-result> ${part.name}${part.resultPreview?.let { ": $it" } ?: ""}"
+                    }
+                }
+            }
+        }
+    }
+    return entries.ifEmpty { listOf(if (filterToolActivityOnly) "No tool history yet." else "No structured history yet.") }
+}
+
+/**
+ * 提取最后一条助手正文，用于复制动作。
+ */
+private fun latestAssistantAnswerText(conversation: ChatConversationUiState): String? =
+    conversation.items
+        .asReversed()
+        .filterIsInstance<ChatMessageItem>()
+        .firstOrNull { it.message.role == ChatRole.Assistant }
+        ?.message
+        ?.content
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+
+/**
+ * 把文本写入系统剪贴板。
+ */
+private fun copyTextToClipboard(text: String) {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+}
+
+/**
+ * 导出当前会话为 markdown。
+ */
+private fun exportConversationMarkdown(conversation: ChatConversationUiState): String? = runCatching {
+    val chooser = JFileChooser(FileSystemView.getFileSystemView().defaultDirectory).apply {
+        dialogTitle = "Save transcript"
+        selectedFile = File("${sanitizeFileName(conversation.title)}.md")
+    }
+    if (chooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) {
+        return null
+    }
+    val target = chooser.selectedFile.let { file ->
+        if (file.extension.equals("md", ignoreCase = true)) file else File(file.parentFile, "${file.name}.md")
+    }
+    writeConversationMarkdown(target, buildConversationMarkdown(conversation))
+    target.absolutePath
+}.getOrNull()
+
+/**
+ * 使用 UTF-8 将 markdown 导出到磁盘，避免平台默认编码破坏 Unicode 内容。
+ */
+internal fun writeConversationMarkdown(target: File, markdown: String) {
+    target.writeText(markdown, Charsets.UTF_8)
+}
+
+/**
+ * 生成会话 markdown。
+ */
+internal fun buildConversationMarkdown(conversation: ChatConversationUiState): String = buildString {
+    appendLine("# ${conversation.title}")
+    appendLine()
+    appendLine("- Workspace: ${conversation.workspacePath}")
+    appendLine("- Status: ${conversation.executionState}")
+    appendLine()
+    conversation.items.forEach { item ->
+        when (item) {
+            is ChatMessageItem -> {
+                appendLine("## ${if (item.message.role == ChatRole.User) "User" else "Assistant"}")
+                appendLine(item.message.content)
+            }
+
+            is ReasoningItem -> {
+                appendLine("## Reasoning")
+                appendLine(item.displayText)
+            }
+
+            is ToolEventItem -> {
+                appendLine("## Tool `${item.toolName}`")
+                item.preview?.takeIf(String::isNotBlank)?.let(::appendLine)
+                item.errorMessage?.takeIf(String::isNotBlank)?.let {
+                    appendLine("> **Error:** $it")
+                }
+            }
+        }
+        appendLine()
+    }
+}
+
+/**
+ * 生成安全导出文件名。
+ */
+private fun sanitizeFileName(title: String): String =
+    title.replace(Regex("""[\\/:*?"<>|]"""), "-")
 
 private const val TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS = 1
 
 private const val MIN_VISIBLE_CONTEXT_SWEEP_ANGLE = 6f
 
-private val ComposerDanger = Color(0xFFE6476B)
-
 /**
- * 选择本地附件文件。
+ * 估算单个时间线项的字符总量，用作自动跟随滚动的内容指纹。
  */
-private fun pickFiles(): List<String> {
-    val dialog = FileDialog(null as Frame?, "Select attachments", FileDialog.LOAD).apply {
-        isMultipleMode = true
-        isVisible = true
-    }
-    return dialog.files?.map { it.absolutePath }.orEmpty()
+private fun itemContentSize(item: ConversationItem): Int = when (item) {
+    is ChatMessageItem -> item.message.content.length
+    is ReasoningItem -> (item.rawText ?: item.displayText).length
+    is ToolEventItem -> (item.preview ?: "").length + item.toolName.length + (item.errorMessage ?: "").length
 }
 
-/**
- * 选择一个本地工作目录，并按桌面项目根目录规则规范化路径。
- */
-private fun pickWorkspaceDirectory(): String? {
-    val chooser = JFileChooser().apply {
-        dialogTitle = "Select workspace"
-        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-        isAcceptAllFileFilterUsed = false
-    }
-    if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
-        return null
-    }
-    return chooser.selectedFile
-        ?.toPath()
-        ?.let(DesktopProjectRootResolver::resolve)
-        ?.toString()
-}
+private const val TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX = 200
 
-/**
- * 页面主文字色。
- */
-private val AppText = Color(0xFFF2F4F8)
-
-/**
- * 页面次级文字色。
- */
-private val AppMuted = Color(0xFFA3A7AE)
-
-/**
- * 页面深色按钮色。
- */
-private val AppDark = Color(0xFF1F7DE8)
-
-/**
- * 页面柔和描边色。
- */
-private val AppLineSoft = Color(0xFF34373D)
-
-/**
- * 页面强调色。
- */
-private val AppAccent = Color(0xFF1FA982)
-
-/**
- * 参考图里的浮层面板色。
- */
-private val AppPanel = Color(0xFF17191D)
-
-/**
- * 参考图里的悬浮控件面板色。
- */
-private val AppPanelRaised = Color(0xFF24272D)
-
-/**
- * 参考图里的选中和 hover 面板色。
- */
-private val AppPanelHover = Color(0xFF2F3339)
-
-/**
- * 参考图里的输入聚焦蓝色描边。
- */
-private val AppBlueLine = Color(0xFF1F7DE8)

@@ -101,11 +101,39 @@ data class WorkspaceConversationGroupUiState(
 )
 
 /**
+ * 原型侧栏中的 task 分组。
+ */
+enum class ChatTaskGroup {
+    RUNNING,
+    DONE,
+}
+
+/**
+ * 原型侧栏中的单个 task 展示模型。
+ */
+data class ChatTaskListItemUiState(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val stats: String,
+    val group: ChatTaskGroup,
+)
+
+/**
+ * 原型侧栏中的 task 分组展示模型。
+ */
+data class ChatTaskSectionUiState(
+    val group: ChatTaskGroup,
+    val title: String,
+    val tasks: List<ChatTaskListItemUiState>,
+)
+
+/**
  * 整个聊天窗口的 UI 状态。
  */
 data class ChatWindowUiState(
-    val workspaceGroups: List<WorkspaceConversationGroupUiState>,
-    val activeConversationId: String,
+    val tasks: List<ChatConversationUiState>,
+    val activeTaskId: String,
     val draft: String = "",
     val selectedProfileId: String? = null,
     val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
@@ -120,18 +148,54 @@ data class ChatWindowUiState(
      * 当前激活的对话线程；未选择工作区时返回 null。
      */
     val activeConversationOrNull: ChatConversationUiState?
-        get() = workspaceGroups
-            .asSequence()
-            .flatMap { it.conversations.asSequence() }
-            .firstOrNull { it.id == activeConversationId }
+        get() = tasks.firstOrNull { it.id == activeTaskId }
+
+    /**
+     * 与旧测试兼容的活动会话 id 别名。
+     */
+    val activeConversationId: String
+        get() = activeTaskId
+
+    /**
+     * 与旧 workspace-first 辅助逻辑兼容的按工作目录分组视图。
+     */
+    val workspaceGroups: List<WorkspaceConversationGroupUiState>
+        get() = tasks
+            .groupBy { it.workspacePath }
+            .map { (workspacePath, conversations) ->
+                WorkspaceConversationGroupUiState(
+                    workspacePath = workspacePath,
+                    label = buildWorkspaceLabel(workspacePath),
+                    conversations = conversations,
+                )
+            }
 
     /**
      * 当前激活线程所属的工作目录标签。
      */
     val activeWorkspaceLabel: String
-        get() = workspaceGroups.firstOrNull { group ->
-            group.conversations.any { it.id == activeConversationId }
-        }?.label ?: "请选择工作区"
+        get() = activeConversationOrNull?.workspacePath?.let(::buildWorkspaceLabel) ?: "请选择工作区"
+
+    /**
+     * 原型 task-first 侧栏展示数据。
+     */
+    val taskSections: List<ChatTaskSectionUiState>
+        get() = listOf(
+            ChatTaskSectionUiState(
+                group = ChatTaskGroup.RUNNING,
+                title = "Running",
+                tasks = tasks
+                    .filter { taskGroupFor(it) == ChatTaskGroup.RUNNING }
+                    .map(::toTaskListItem),
+            ),
+            ChatTaskSectionUiState(
+                group = ChatTaskGroup.DONE,
+                title = "Done",
+                tasks = tasks
+                    .filter { taskGroupFor(it) == ChatTaskGroup.DONE }
+                    .map(::toTaskListItem),
+            ),
+        )
 }
 
 /**
@@ -146,6 +210,9 @@ class ChatWindowState(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
+    private var activeRunConversationId: String? = null
+    private var pendingQuestionConversationId: String? = null
+    private var pendingApprovalConversationId: String? = null
     private var snapshot by mutableStateOf(snapshot)
 
     /**
@@ -191,7 +258,13 @@ class ChatWindowState(
             ?.takeIf { profileId -> snapshot.profiles.any { it.id == profileId } }
             ?: snapshot.activeProfile?.id
             ?: snapshot.profiles.firstOrNull()?.id
-        ui = ui.copy(selectedProfileId = selectedProfileId)
+        val selectedProfile = snapshot.profiles.firstOrNull { it.id == selectedProfileId } ?: snapshot.activeProfile
+        ui = ui.copy(
+            selectedProfileId = selectedProfileId,
+            tasks = ui.tasks.map { conversation ->
+                conversation.withRecalculatedContextUsage(selectedProfile?.let(::contextWindowFor))
+            },
+        )
     }
 
     /**
@@ -206,7 +279,7 @@ class ChatWindowState(
      */
     fun selectConversation(conversationId: String) {
         if (findConversationOrNull(conversationId) != null) {
-            ui = ui.copy(activeConversationId = conversationId)
+            ui = ui.copy(activeTaskId = conversationId)
         }
     }
 
@@ -216,33 +289,20 @@ class ChatWindowState(
     fun createConversationForWorkspace(workspacePath: String) {
         onWorkspaceSelected(workspacePath)
         val conversation = newConversation(workspacePath, activeContextWindow())
-        val existingGroup = ui.workspaceGroups.firstOrNull { it.workspacePath == workspacePath }
-        val updatedGroups = if (existingGroup == null) {
-            ui.workspaceGroups + WorkspaceConversationGroupUiState(
-                workspacePath = workspacePath,
-                label = buildWorkspaceLabel(workspacePath),
-                conversations = listOf(conversation),
-            )
-        } else {
-            ui.workspaceGroups.map { group ->
-                if (group.workspacePath == workspacePath) {
-                    group.copy(
-                        conversations = if (shouldReplaceActiveEmptyConversation(workspacePath)) {
-                            group.conversations.map { existing ->
-                                if (existing.id == ui.activeConversationId) conversation else existing
-                            }
-                        } else {
-                            listOf(conversation) + group.conversations
-                        },
-                    )
+        val updatedTasks = if (shouldReplaceActiveEmptyConversation(workspacePath)) {
+            ui.tasks.map { existing ->
+                if (existing.id == ui.activeTaskId) {
+                    conversation
                 } else {
-                    group
+                    existing
                 }
             }
+        } else {
+            listOf(conversation) + ui.tasks
         }
         ui = ui.copy(
-            workspaceGroups = updatedGroups,
-            activeConversationId = conversation.id,
+            tasks = updatedTasks,
+            activeTaskId = conversation.id,
             draft = "",
         )
     }
@@ -285,12 +345,8 @@ class ChatWindowState(
         if (selectedProfile != null) {
             ui = ui.copy(
                 selectedProfileId = profileId,
-                workspaceGroups = ui.workspaceGroups.map { group ->
-                    group.copy(
-                        conversations = group.conversations.map { conversation ->
-                            conversation.withRecalculatedContextUsage(contextWindowFor(selectedProfile))
-                        },
-                    )
+                tasks = ui.tasks.map { conversation ->
+                    conversation.withRecalculatedContextUsage(contextWindowFor(selectedProfile))
                 },
             )
         }
@@ -319,11 +375,16 @@ class ChatWindowState(
     fun cancelActiveRun() {
         activeRunJob?.cancel()
         activeRunJob = null
+        clearPendingOwnership(ui.activeTaskId)
         mutateActiveConversation { conversation ->
-            if (conversation.executionState != ExecutionState.Running) {
-                conversation
+            if (conversation.executionState.isStoppable()) {
+                conversation.copy(
+                    executionState = ExecutionState.Idle,
+                    pendingQuestion = null,
+                    pendingApproval = null,
+                )
             } else {
-                conversation.copy(executionState = ExecutionState.Idle)
+                conversation
             }
         }
     }
@@ -333,7 +394,9 @@ class ChatWindowState(
      */
     fun answerPendingQuestion(answer: String) {
         if (!toolInteractionCoordinator.submitQuestion(answer)) return
-        mutateActiveConversation { conversation ->
+        val targetConversationId = resolvePendingQuestionConversationId() ?: return
+        pendingQuestionConversationId = null
+        mutateConversation(targetConversationId) { conversation ->
             conversation.copy(
                 pendingQuestion = null,
                 executionState = ExecutionState.Running,
@@ -346,7 +409,9 @@ class ChatWindowState(
      */
     fun answerPendingApproval(approved: Boolean) {
         if (!toolInteractionCoordinator.submitApproval(approved)) return
-        mutateActiveConversation { conversation ->
+        val targetConversationId = resolvePendingApprovalConversationId() ?: return
+        pendingApprovalConversationId = null
+        mutateConversation(targetConversationId) { conversation ->
             conversation.copy(
                 pendingApproval = null,
                 executionState = ExecutionState.Running,
@@ -366,6 +431,21 @@ class ChatWindowState(
             return
         }
 
+        val targetConversationId = ui.activeTaskId
+        if (activeRunConversationId != null) {
+            mutateConversation(targetConversationId) { conversation ->
+                conversation.copy(
+                    executionState = ExecutionState.Failed(
+                        AppError(
+                            title = "已有任务在执行",
+                            message = "请等待当前任务完成，或先停止当前任务再启动新的 task。",
+                        ),
+                    ),
+                )
+            }
+            return
+        }
+
         val profile = activeProfile
         if (profile == null) {
             mutateActiveConversation { conversation ->
@@ -381,7 +461,6 @@ class ChatWindowState(
             return
         }
 
-        val targetConversationId = ui.activeConversationId
         val sourceConversation = findConversation(targetConversationId)
         val requestHistory = sourceConversation.history
         val reasoningEffort = supportedReasoningEffort(
@@ -409,6 +488,7 @@ class ChatWindowState(
         }
         ui = ui.copy(draft = "")
 
+        activeRunConversationId = targetConversationId
         activeRunJob = scope.launch {
             try {
                 sendMessageUseCase(
@@ -424,25 +504,35 @@ class ChatWindowState(
                     applyAgentEvent(targetConversationId, event)
                 }
             } catch (_: CancellationException) {
+                clearPendingOwnership(targetConversationId)
                 mutateConversation(targetConversationId) { conversation ->
-                    if (conversation.executionState == ExecutionState.Running) {
-                        conversation.copy(executionState = ExecutionState.Idle)
+                    if (conversation.executionState.isStoppable()) {
+                        conversation.copy(
+                            executionState = ExecutionState.Idle,
+                            pendingQuestion = null,
+                            pendingApproval = null,
+                        )
                     } else {
                         conversation
                     }
                 }
             } catch (exception: Exception) {
                 mutateConversation(targetConversationId) { conversation ->
-                    conversation.copy(
+                    val reason = exception.message ?: "执行过程中发生未知错误。"
+                    val withToolFailure = attachFailureToTimeline(conversation, reason)
+                    withToolFailure.copy(
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "发送失败",
-                                message = exception.message ?: "执行过程中发生未知错误。",
+                                message = reason,
                             ),
                         ),
                     )
                 }
             } finally {
+                if (activeRunConversationId == targetConversationId) {
+                    activeRunConversationId = null
+                }
                 activeRunJob = null
             }
         }
@@ -525,6 +615,8 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.QuestionRequested -> mutateConversation(conversationId) { conversation ->
+                pendingQuestionConversationId = conversationId
+                pendingApprovalConversationId = null
                 conversation.copy(
                     pendingQuestion = PendingQuestionUiState(
                         requestId = event.request.requestId,
@@ -538,6 +630,8 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.ApprovalRequested -> mutateConversation(conversationId) { conversation ->
+                pendingApprovalConversationId = conversationId
+                pendingQuestionConversationId = null
                 conversation.copy(
                     pendingApproval = PendingApprovalUiState(
                         requestId = event.request.requestId,
@@ -585,6 +679,7 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.Completed -> mutateConversation(conversationId) { conversation ->
+                clearPendingOwnership(conversationId)
                 completeAssistantMessage(conversation, event.text).copy(
                     pendingQuestion = null,
                     pendingApproval = null,
@@ -592,8 +687,10 @@ class ChatWindowState(
             }
 
             is AgentStreamEvent.Failed -> mutateConversation(conversationId) { conversation ->
+                clearPendingOwnership(conversationId)
                 val closedConversation = closeStreamingReasoning(conversation)
-                closedConversation.copy(
+                val withToolFailure = attachFailureToTimeline(closedConversation, event.reason)
+                withToolFailure.copy(
                     executionState = ExecutionState.Failed(
                         AppError(
                             title = "Agent 执行失败",
@@ -618,19 +715,11 @@ class ChatWindowState(
         transform: (ChatConversationUiState) -> ChatConversationUiState,
     ) {
         ui = ui.copy(
-            workspaceGroups = ui.workspaceGroups.map { group ->
-                if (group.conversations.none { it.id == conversationId }) {
-                    group
+            tasks = ui.tasks.map { conversation ->
+                if (conversation.id == conversationId) {
+                    transform(conversation)
                 } else {
-                    group.copy(
-                        conversations = group.conversations.map { conversation ->
-                            if (conversation.id == conversationId) {
-                                transform(conversation)
-                            } else {
-                                conversation
-                            }
-                        },
-                    )
+                    conversation
                 }
             },
         )
@@ -640,7 +729,33 @@ class ChatWindowState(
      * 更新当前活动会话。
      */
     private fun mutateActiveConversation(transform: (ChatConversationUiState) -> ChatConversationUiState) {
-        mutateConversation(ui.activeConversationId, transform)
+        mutateConversation(ui.activeTaskId, transform)
+    }
+
+    /**
+     * 找到当前挂起问题所属的会话；记录缺失时退回到真正挂起该问题的线程。
+     */
+    private fun resolvePendingQuestionConversationId(): String? =
+        pendingQuestionConversationId
+            ?: ui.tasks.firstOrNull { it.pendingQuestion != null }?.id
+
+    /**
+     * 找到当前挂起审批所属的会话；记录缺失时退回到真正挂起该审批的线程。
+     */
+    private fun resolvePendingApprovalConversationId(): String? =
+        pendingApprovalConversationId
+            ?: ui.tasks.firstOrNull { it.pendingApproval != null }?.id
+
+    /**
+     * 当指定会话结束或失败后，清理挂起请求的归属记录。
+     */
+    private fun clearPendingOwnership(conversationId: String) {
+        if (pendingQuestionConversationId == conversationId) {
+            pendingQuestionConversationId = null
+        }
+        if (pendingApprovalConversationId == conversationId) {
+            pendingApprovalConversationId = null
+        }
     }
 
     /**
@@ -654,10 +769,8 @@ class ChatWindowState(
     /**
      * 查找指定对话，如果不存在则返回空。
      */
-    private fun findConversationOrNull(conversationId: String): ChatConversationUiState? = ui.workspaceGroups
-        .asSequence()
-        .flatMap { group -> group.conversations.asSequence() }
-        .firstOrNull { it.id == conversationId }
+    private fun findConversationOrNull(conversationId: String): ChatConversationUiState? =
+        ui.tasks.firstOrNull { it.id == conversationId }
 
     /**
      * 将文本增量拼接到当前正在生成的助手消息。
@@ -723,6 +836,49 @@ class ChatWindowState(
                 contextWindow = activeContextWindow(),
             ),
         )
+    }
+
+    /**
+     * 将 agent 失败原因就地附加到时间线中最后一个尚未被 Finished 闭合的 Started 工具事件；
+     * 如果不存在这样的工具事件，则追加一条独立的 Failed 工具事件，
+     * 使错误信息在工具事件卡片内展示而非面板顶部。
+     *
+     * 通过检查最后一个 Started 事件之后是否存在 Finished 事件来避免误伤历史轮次
+     * 中已经成功完成的工具调用。
+     */
+    private fun attachFailureToTimeline(
+        conversation: ChatConversationUiState,
+        reason: String,
+    ): ChatConversationUiState {
+        val lastStartedIndex = conversation.items.indexOfLast { item ->
+            item is ToolEventItem && item.status == ToolEventStatus.Started
+        }
+        val hasFinishedAfterLastStarted = lastStartedIndex >= 0 && conversation.items
+            .drop(lastStartedIndex + 1)
+            .any { it is ToolEventItem && it.status == ToolEventStatus.Finished }
+        return if (lastStartedIndex >= 0 && !hasFinishedAfterLastStarted) {
+            val updatedItems = conversation.items.toMutableList()
+            val started = updatedItems[lastStartedIndex] as ToolEventItem
+            updatedItems[lastStartedIndex] = started.copy(
+                status = ToolEventStatus.Failed,
+                errorMessage = reason,
+            )
+            conversation.copy(items = updatedItems)
+        } else {
+            val nextItems = conversation.items + ToolEventItem(
+                toolName = "error",
+                status = ToolEventStatus.Failed,
+                errorMessage = reason,
+            )
+            conversation.copy(
+                items = nextItems,
+                contextUsageFraction = estimateContextUsage(
+                    items = nextItems,
+                    attachmentCount = conversation.attachments.size,
+                    contextWindow = activeContextWindow(),
+                ),
+            )
+        }
     }
 
     /**
@@ -916,25 +1072,18 @@ private fun initialUiState(
 ): ChatWindowUiState {
     if (projectPath.isBlank()) {
         return ChatWindowUiState(
-            workspaceGroups = emptyList(),
-            activeConversationId = "",
+            tasks = emptyList(),
+            activeTaskId = "",
             selectedProfileId = snapshot.activeProfile?.id ?: snapshot.profiles.firstOrNull()?.id,
         )
     }
-    val workspacePath = projectPath
     val initialConversation = newConversation(
-        workspacePath = workspacePath,
+        workspacePath = projectPath,
         contextWindow = snapshot.activeProfile?.let(::resolveContextWindow),
     )
     return ChatWindowUiState(
-        workspaceGroups = listOf(
-            WorkspaceConversationGroupUiState(
-                workspacePath = workspacePath,
-                label = buildWorkspaceLabel(workspacePath),
-                conversations = listOf(initialConversation),
-            ),
-        ),
-        activeConversationId = initialConversation.id,
+        tasks = listOf(initialConversation),
+        activeTaskId = initialConversation.id,
         selectedProfileId = snapshot.activeProfile?.id ?: snapshot.profiles.firstOrNull()?.id,
     )
 }
@@ -1008,6 +1157,66 @@ internal fun buildConversationTitle(prompt: String): String {
 }
 
 /**
+ * 根据当前会话是否仍在执行，推导原型侧栏中的 task 分组。
+ */
+internal fun taskGroupFor(conversation: ChatConversationUiState): ChatTaskGroup =
+    if (
+        conversation.executionState == ExecutionState.Running ||
+        conversation.executionState == ExecutionState.WaitingForUserInput ||
+        conversation.executionState == ExecutionState.WaitingForApproval ||
+        (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle)
+    ) {
+        ChatTaskGroup.RUNNING
+    } else {
+        ChatTaskGroup.DONE
+    }
+
+/**
+ * 将真实会话映射为原型侧栏中的 task 列表项。
+ */
+internal fun toTaskListItem(conversation: ChatConversationUiState): ChatTaskListItemUiState {
+    val title = conversation.title.ifBlank { DEFAULT_CONVERSATION_TITLE }
+    val subtitle = buildTaskSubtitle(conversation)
+    val stats = buildTaskStats(conversation)
+    return ChatTaskListItemUiState(
+        id = conversation.id,
+        title = title,
+        subtitle = subtitle,
+        stats = stats,
+        group = taskGroupFor(conversation),
+    )
+}
+
+/**
+ * 从真实会话中提炼 task 副标题，优先展示最近的用户意图。
+ */
+internal fun buildTaskSubtitle(conversation: ChatConversationUiState): String =
+    conversation.items
+        .asReversed()
+        .filterIsInstance<ChatMessageItem>()
+        .firstOrNull { it.message.role == ChatRole.User }
+        ?.message
+        ?.content
+        ?.lineSequence()
+        ?.firstOrNull(String::isNotBlank)
+        ?.trim()
+        ?.take(TASK_SUBTITLE_MAX_LENGTH)
+        ?: conversation.workspacePath
+
+/**
+ * 为 task 列表生成轻量统计文案。
+ */
+internal fun buildTaskStats(conversation: ChatConversationUiState): String = buildString {
+    append(conversation.items.size)
+    append(" items")
+    if (conversation.attachments.isNotEmpty()) {
+        append(" · ")
+        append(conversation.attachments.size)
+        append(" files")
+    }
+}
+
+/**
  * 判断会话是否仍是未使用过的默认空会话。
  */
 private fun ChatConversationUiState.isEmptyDefaultConversation(): Boolean =
@@ -1025,6 +1234,8 @@ private fun ChatConversationUiState.isEmptyDefaultConversation(): Boolean =
 private const val DEFAULT_CONVERSATION_TITLE = "新对话"
 
 private const val CONVERSATION_TITLE_MAX_LENGTH = 24
+
+private const val TASK_SUBTITLE_MAX_LENGTH = 52
 
 private const val CHARS_PER_TOKEN_ESTIMATE = 4
 

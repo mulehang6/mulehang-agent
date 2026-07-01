@@ -18,4 +18,9 @@ enum class ToolEventStatus {
      * 非工具的中间状态文本。
      */
     Status,
+
+    /**
+     * 工具调用或 agent 执行失败，应就地展示错误信息。
+     */
+    Failed,
 }

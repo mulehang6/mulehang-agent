@@ -14,6 +14,7 @@ import com.agent.shared.config.ConfigLayer
 import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.ModelLimit
 import com.agent.shared.config.ProviderType
+import com.agent.shared.state.AppError
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationItem
@@ -21,6 +22,7 @@ import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.PermissionPreset
 import com.agent.shared.state.ReasoningItem
 import com.agent.shared.state.ToolEventItem
+import com.agent.shared.state.ToolEventStatus
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -122,6 +124,132 @@ class ChatWindowStateTest {
         advanceUntilIdle()
 
         assertEquals("Agent 执行失败: invalid api key", state.errorMessage)
+    }
+
+    /**
+     * Agent 在工具调用进行中失败时，应将错误就地附加到最后一个 Started 工具事件，
+     * 使其变为 Failed 状态并携带 errorMessage，而非在面板顶部单独展示。
+     */
+    @Test
+    fun `should attach failure to last started tool event`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.ToolCallStarted(
+                    toolCallId = "call-1",
+                    name = "read_file",
+                    argumentsPreview = """{"path":"README.md"}""",
+                ),
+                AgentStreamEvent.Failed("file not found"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        val toolEvent = state.state.items.lastOrNull { it is ToolEventItem } as? ToolEventItem
+        assertEquals(ToolEventStatus.Failed, toolEvent?.status)
+        assertEquals("read_file", toolEvent?.toolName)
+        assertEquals("file not found", toolEvent?.errorMessage)
+        assertEquals("Agent 执行失败: file not found", state.errorMessage)
+    }
+
+    /**
+     * Agent 在没有任何工具调用进行中失败时，应追加一条独立的 Failed 工具事件，
+     * 使错误信息仍在时间线中可见。
+     */
+    @Test
+    fun `should append standalone failed tool event when no started tool exists`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
+                AgentStreamEvent.Started,
+                AgentStreamEvent.Failed("invalid api key"),
+            )
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        val failedEvent = state.state.items.lastOrNull { it is ToolEventItem } as? ToolEventItem
+        assertEquals(ToolEventStatus.Failed, failedEvent?.status)
+        assertEquals("invalid api key", failedEvent?.errorMessage)
+    }
+
+    /**
+     * 上一轮已完成的工具调用不应被下一轮的 Failed 事件误伤。
+     * 复现：第一轮 ToolCallStarted + ToolCallFinished + Completed，
+     * 第二轮在新工具调用之前直接 Failed。
+     * 此时 indexOfLast 会命中上一轮旧的 Started，但该 Started 后已有 Finished，
+     * 所以应追加独立 Failed 事件，而不是改写历史成功工具事件。
+     */
+    @Test
+    fun `should not mark previous turn finished tool event as failed`() = runTest(dispatcher) {
+        var callCount = 0
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = when (callCount++) {
+                0 -> flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.ToolCallStarted(
+                        toolCallId = "call-1",
+                        name = "read_file",
+                        argumentsPreview = """{"path":"README.md"}""",
+                    ),
+                    AgentStreamEvent.ToolCallFinished(
+                        toolCallId = "call-1",
+                        name = "read_file",
+                        resultPreview = "ok",
+                    ),
+                    AgentStreamEvent.Completed("done"),
+                )
+
+                else -> flowOf(
+                    AgentStreamEvent.Started,
+                    AgentStreamEvent.Failed("network timeout"),
+                )
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("first")
+        advanceUntilIdle()
+        state.send("second")
+        advanceUntilIdle()
+
+        val toolEvents = state.state.items.filterIsInstance<ToolEventItem>()
+        // 第一轮的 Started 和 Finished 应保持原样
+        val startedEvent = toolEvents[0]
+        val finishedEvent = toolEvents[1]
+        assertEquals(ToolEventStatus.Started, startedEvent.status)
+        assertEquals(ToolEventStatus.Finished, finishedEvent.status)
+        assertEquals(null, startedEvent.errorMessage)
+        // 应追加一条独立 Failed 事件，而非改写历史 Started
+        val failedEvent = toolEvents.last()
+        assertEquals(ToolEventStatus.Failed, failedEvent.status)
+        assertEquals("network timeout", failedEvent.errorMessage)
+        assertEquals("error", failedEvent.toolName)
     }
 
     /**
@@ -478,6 +606,129 @@ class ChatWindowStateTest {
     }
 
     /**
+     * task-first 侧栏应把仍在进行中的线程和已完成线程拆到两个分组。
+     */
+    @Test
+    fun `should expose running and done task sections from task list`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(streamingGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("first")
+        advanceUntilIdle()
+        state.createConversationForWorkspace("E:\\abc\\def")
+
+        val sections = state.ui.taskSections.associateBy { it.group }
+        assertEquals(1, sections[ChatTaskGroup.RUNNING]?.tasks?.size)
+        assertEquals(1, sections[ChatTaskGroup.DONE]?.tasks?.size)
+        assertEquals("新对话", sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.title)
+        assertEquals("first", sections[ChatTaskGroup.DONE]?.tasks?.single()?.title)
+    }
+
+    /**
+     * 等待用户输入和等待审批仍属于进行中的任务，不应被归入 Done。
+     */
+    @Test
+    fun `should keep waiting tasks in running section`() {
+        assertEquals(
+            ChatTaskGroup.RUNNING,
+            taskGroupFor(
+                ChatConversationUiState(
+                    id = "waiting-question",
+                    title = "Question",
+                    workspacePath = "E:\\abc\\def",
+                    items = listOf(ChatMessageItem(com.agent.shared.state.ChatMessage(ChatRole.User, "pending"))),
+                    executionState = ExecutionState.WaitingForUserInput,
+                ),
+            ),
+        )
+        assertEquals(
+            ChatTaskGroup.RUNNING,
+            taskGroupFor(
+                ChatConversationUiState(
+                    id = "waiting-approval",
+                    title = "Approval",
+                    workspacePath = "E:\\abc\\def",
+                    items = listOf(ChatMessageItem(com.agent.shared.state.ChatMessage(ChatRole.User, "pending"))),
+                    executionState = ExecutionState.WaitingForApproval,
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 空线程但执行已失败时应归入 Done，而非 Running。
+     * 复现：sendDraft 的并发保护会在无 item 时直接设为 Failed。
+     */
+    @Test
+    fun `should classify empty failed conversation as done`() {
+        assertEquals(
+            ChatTaskGroup.DONE,
+            taskGroupFor(
+                ChatConversationUiState(
+                    id = "failed-empty",
+                    title = "Failed",
+                    workspacePath = "E:\\abc\\def",
+                    items = emptyList(),
+                    executionState = ExecutionState.Failed(AppError("已有任务在执行", "请等待")),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 空线程且空闲时应归入 Running，表示可接收输入。
+     */
+    @Test
+    fun `should classify empty idle conversation as running`() {
+        assertEquals(
+            ChatTaskGroup.RUNNING,
+            taskGroupFor(
+                ChatConversationUiState(
+                    id = "empty-idle",
+                    title = "新对话",
+                    workspacePath = "E:\\abc\\def",
+                    items = emptyList(),
+                    executionState = ExecutionState.Idle,
+                ),
+            ),
+        )
+    }
+
+    /**
+     * task-first 主导航切换时，应同步更新活动 task 与活动工作区标签。
+     */
+    @Test
+    fun `should switch active task when selecting another conversation`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(streamingGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("seed")
+        advanceUntilIdle()
+        val firstConversationId = state.ui.activeConversationId
+        state.createConversationForWorkspace("E:\\abc\\ghi")
+        val secondConversationId = state.ui.activeConversationId
+
+        state.selectConversation(firstConversationId)
+
+        assertEquals(firstConversationId, state.ui.activeTaskId)
+        assertEquals("def", state.ui.activeWorkspaceLabel)
+        state.selectConversation(secondConversationId)
+        assertEquals("ghi", state.ui.activeWorkspaceLabel)
+    }
+
+    /**
      * 刷新配置快照不应清空已经打开的多个工作区会话。
      */
     @Test
@@ -500,9 +751,41 @@ class ChatWindowStateTest {
             ),
         )
 
-        assertEquals(listOf("def", "ghi"), state.ui.workspaceGroups.map { it.label })
+        assertEquals(listOf("ghi", "def"), state.ui.workspaceGroups.map { it.label })
         assertEquals(activeConversationId, state.ui.activeConversationId)
         assertEquals("openai:gpt-4.1-mini", state.activeProfile?.id)
+    }
+
+    /**
+     * snapshot 刷新后如果 profile context limit 变化，会话占比应立即重算。
+     */
+    @Test
+    fun `should recalculate context usage when session snapshot reloads current profile`() = runTest(dispatcher) {
+        val initialProfile = profile(
+            model = "deepseek-v4-pro",
+            limit = ModelLimit(context = 100, output = 20),
+        )
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(initialProfile),
+                activeProfile = initialProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("a".repeat(80))
+        advanceUntilIdle()
+        state.updateSessionSnapshot(
+            AppSessionSnapshot(
+                profiles = listOf(
+                    initialProfile.copy(limit = ModelLimit(context = 200, output = 20)),
+                ),
+                activeProfile = initialProfile.copy(limit = ModelLimit(context = 200, output = 20)),
+            ),
+        )
+
+        assertEquals(0.1f, state.ui.activeConversation.contextUsageFraction)
     }
 
     /**
@@ -815,6 +1098,46 @@ class ChatWindowStateTest {
     }
 
     /**
+     * 当前交互桥仍是单轮挂起模型时，应明确禁止第二个 task 并发发送。
+     */
+    @Test
+    fun `should reject concurrent send from another task while one run is active`() = runTest(dispatcher) {
+        val started = CompletableDeferred<Unit>()
+        val capturedRequests = mutableListOf<AgentRunRequest>()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                capturedRequests += request
+                emit(AgentStreamEvent.Started)
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("task-a")
+        advanceUntilIdle()
+        state.createConversationForWorkspace("E:\\abc\\ghi")
+        state.send("task-b")
+        advanceUntilIdle()
+
+        assertEquals(1, capturedRequests.size)
+        assertEquals("task-a", capturedRequests.single().prompt)
+        assertEquals(
+            "已有任务在执行: 请等待当前任务完成，或先停止当前任务再启动新的 task。",
+            state.errorMessage,
+        )
+        assertEquals(ExecutionState.Running, state.findConversation(state.ui.tasks.last().id).executionState)
+        assertTrue(started.isCompleted)
+    }
+
+    /**
      * ask_user 期间应保持同一轮次挂起，回答后继续执行而不是新开一轮。
      */
     @Test
@@ -857,6 +1180,54 @@ class ChatWindowStateTest {
         assertEquals(null, state.ui.activeConversation.pendingQuestion)
         val assistantItem = state.state.items.last() as ChatMessageItem
         assertEquals("selected: Option A", assistantItem.message.content)
+    }
+
+    /**
+     * 回答挂起问题时，应定向恢复原会话，而不是当前选中的其他 task。
+     */
+    @Test
+    fun `should resume question on owning conversation even after switching tasks`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                val question = QuestionRequest(
+                    requestId = "q1",
+                    toolCallId = "call-1",
+                    question = "Pick one",
+                    options = listOf("Option A", "Option B"),
+                )
+                emit(AgentStreamEvent.QuestionRequested(question))
+                val answer = coordinator.requestQuestion(question)
+                emit(AgentStreamEvent.Completed("selected: $answer"))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("start")
+        advanceUntilIdle()
+        val ownerConversationId = state.ui.activeConversationId
+        state.createConversationForWorkspace("E:\\abc\\ghi")
+        val otherConversationId = state.ui.activeConversationId
+
+        state.answerPendingQuestion("Option A")
+        advanceUntilIdle()
+
+        val ownerConversation = state.findConversation(ownerConversationId)
+        val otherConversation = state.findConversation(otherConversationId)
+        assertEquals(ExecutionState.Idle, ownerConversation.executionState)
+        assertEquals(null, ownerConversation.pendingQuestion)
+        assertEquals("selected: Option A", (ownerConversation.items.last() as ChatMessageItem).message.content)
+        assertEquals(ExecutionState.Idle, otherConversation.executionState)
+        assertEquals(null, otherConversation.pendingQuestion)
     }
 
     /**
@@ -934,6 +1305,151 @@ class ChatWindowStateTest {
         assertEquals(null, state.ui.activeConversation.pendingApproval)
         val assistantItem = state.state.items.last() as ChatMessageItem
         assertEquals("approved: true", assistantItem.message.content)
+    }
+
+    /**
+     * 提交审批时，应只恢复发起审批请求的会话。
+     */
+    @Test
+    fun `should resume approval on owning conversation even after switching tasks`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                val approval = ApprovalRequest(
+                    requestId = "a1",
+                    toolName = "run_powershell",
+                    summary = "执行 PowerShell 7 脚本",
+                    payloadPreview = "Get-Location",
+                )
+                emit(AgentStreamEvent.ApprovalRequested(approval))
+                val approved = coordinator.requestApproval(approval)
+                emit(AgentStreamEvent.Completed("approved: $approved"))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("run command")
+        advanceUntilIdle()
+        val ownerConversationId = state.ui.activeConversationId
+        state.createConversationForWorkspace("E:\\abc\\ghi")
+        val otherConversationId = state.ui.activeConversationId
+
+        state.answerPendingApproval(true)
+        advanceUntilIdle()
+
+        val ownerConversation = state.findConversation(ownerConversationId)
+        val otherConversation = state.findConversation(otherConversationId)
+        assertEquals(ExecutionState.Idle, ownerConversation.executionState)
+        assertEquals(null, ownerConversation.pendingApproval)
+        assertEquals("approved: true", (ownerConversation.items.last() as ChatMessageItem).message.content)
+        assertEquals(ExecutionState.Idle, otherConversation.executionState)
+        assertEquals(null, otherConversation.pendingApproval)
+    }
+
+    /**
+     * 取消正在等待用户输入的轮次时，应清理挂起状态、释放运行槽位并恢复空闲态。
+     */
+    @Test
+    fun `should cancel waiting for user input and clear pending state`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                emit(
+                    AgentStreamEvent.QuestionRequested(
+                        QuestionRequest(
+                            requestId = "q1",
+                            toolCallId = "call-1",
+                            question = "Pick one",
+                            options = listOf("Option A", "Option B"),
+                        )
+                    )
+                )
+                awaitCancellation()
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("start")
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.WaitingForUserInput, state.ui.activeConversation.executionState)
+        assertEquals("Pick one", state.ui.activeConversation.pendingQuestion?.question)
+
+        state.cancelActiveRun()
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(null, state.ui.activeConversation.pendingQuestion)
+
+        state.send("after cancel")
+        advanceUntilIdle()
+
+        val lastItem = state.ui.activeConversation.items.last() as ChatMessageItem
+        assertEquals(ChatRole.User, lastItem.message.role)
+        assertEquals("after cancel", lastItem.message.content)
+    }
+
+    /**
+     * 取消正在等待审批的轮次时，应清理挂起状态、释放运行槽位并恢复空闲态。
+     */
+    @Test
+    fun `should cancel waiting for approval and clear pending state`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                emit(
+                    AgentStreamEvent.ApprovalRequested(
+                        ApprovalRequest(
+                            requestId = "a1",
+                            toolName = "run_powershell",
+                            summary = "执行 PowerShell 脚本",
+                            payloadPreview = "Get-Location",
+                        )
+                    )
+                )
+                awaitCancellation()
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("run command")
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.WaitingForApproval, state.ui.activeConversation.executionState)
+        assertEquals("run_powershell", state.ui.activeConversation.pendingApproval?.toolName)
+
+        state.cancelActiveRun()
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(null, state.ui.activeConversation.pendingApproval)
     }
 
     private fun profile(

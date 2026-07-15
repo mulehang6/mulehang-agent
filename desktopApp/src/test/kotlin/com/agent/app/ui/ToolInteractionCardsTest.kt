@@ -1,5 +1,7 @@
 package com.agent.app.ui
 
+import com.agent.app.chat.state.PendingApprovalUiState
+import com.agent.app.chat.state.PendingQuestionUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

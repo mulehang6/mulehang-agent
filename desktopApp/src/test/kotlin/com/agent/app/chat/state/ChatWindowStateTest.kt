@@ -1,5 +1,7 @@
-package com.agent.app.ui
+package com.agent.app.chat.state
 
+import com.agent.app.ui.DesktopToolInteractionCoordinator
+import com.agent.app.ui.groupProfilesByProvider
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentGateway

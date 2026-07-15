@@ -1,5 +1,9 @@
 package com.agent.app.ui
 
+import com.agent.app.chat.state.ChatConversationUiState
+import com.agent.app.chat.state.ChatTaskGroup
+import com.agent.app.chat.state.ChatTaskListItemUiState
+import com.agent.app.chat.state.ChatWindowState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement

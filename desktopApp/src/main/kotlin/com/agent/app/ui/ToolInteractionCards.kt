@@ -1,5 +1,7 @@
 package com.agent.app.ui
 
+import com.agent.app.chat.state.PendingApprovalUiState
+import com.agent.app.chat.state.PendingQuestionUiState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

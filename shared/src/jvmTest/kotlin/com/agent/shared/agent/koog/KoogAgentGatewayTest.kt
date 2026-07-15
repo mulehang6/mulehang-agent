@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.agent.koog
 
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart

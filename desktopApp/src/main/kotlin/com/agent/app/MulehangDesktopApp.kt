@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
 import com.agent.app.ui.ChatScreen
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
-import com.agent.shared.agent.KoogAgentGateway
+import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository

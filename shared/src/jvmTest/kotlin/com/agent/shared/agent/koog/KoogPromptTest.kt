@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.agent.koog
 
 import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
 import com.agent.shared.agent.api.ReasoningEffort

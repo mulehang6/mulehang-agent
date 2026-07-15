@@ -1,6 +1,6 @@
 @file:Suppress("UnstableApiUsage")
 
-package com.agent.shared.agent
+package com.agent.shared.agent.koog
 
 import ai.koog.http.client.ktor.KtorKoogHttpClient
 import kotlinx.serialization.json.Json

@@ -5,7 +5,7 @@ package com.agent.shared.agent.provider.deepseek
 import ai.koog.http.client.KoogHttpClient
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.base.AbstractOpenAILLMClient
-import com.agent.shared.agent.DesktopKoogHttpClientFactoryProvider
+import com.agent.shared.agent.koog.DesktopKoogHttpClientFactoryProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 

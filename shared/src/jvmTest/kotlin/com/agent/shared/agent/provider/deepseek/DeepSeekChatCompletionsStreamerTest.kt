@@ -11,7 +11,7 @@ import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
-import com.agent.shared.agent.appendAssistantMessageToPrompt
+import com.agent.shared.agent.koog.appendAssistantMessageToPrompt
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentRunRequest

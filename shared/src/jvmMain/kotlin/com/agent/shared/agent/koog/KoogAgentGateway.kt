@@ -136,13 +136,6 @@ private fun runLegacyStream(
                             ),
                         )
                     }
-                    emit(
-                        AgentStreamEvent.ToolCallFinished(
-                            toolCallId = frame.id,
-                            name = frame.name,
-                            resultPreview = frame.content.toPreview(),
-                        ),
-                    )
                 }
 
                 is StreamFrame.ReasoningDelta -> emit(

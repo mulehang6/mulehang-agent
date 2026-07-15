@@ -474,6 +474,37 @@ ok
     }
 
     /**
+     * 空白 system 消息不应生成缺少 content 的 DeepSeek 消息。
+     */
+    @Test
+    fun `should omit blank system message from deepseek request`() {
+        val prompt = Prompt(
+            messages = listOf(
+                Message.System(
+                    content = "   ",
+                    metaInfo = RequestMetaInfo.create(clock = KoogClock.System),
+                ),
+                Message.User(
+                    content = "question",
+                    metaInfo = RequestMetaInfo.create(clock = KoogClock.System),
+                ),
+            ),
+            id = "blank-system-prompt",
+        )
+
+        val request = buildDeepSeekRequest(
+            prompt = prompt,
+            config = deepSeekProfile(),
+            reasoningEffort = null,
+        )
+
+        assertEquals(
+            listOf(DeepSeekChatMessage(role = "user", content = "question")),
+            request.messages,
+        )
+    }
+
+    /**
      * gateway 当前 prompt 中的 assistant/tool 历史和工具 schema 应被写入 DeepSeek 请求体。
      */
     @Test

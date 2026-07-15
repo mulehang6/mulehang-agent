@@ -69,10 +69,13 @@ internal fun ChatHeader(state: ChatWindowState) {
                 )
                 Text(
                     text = activeConversation?.title ?: "No task selected",
+                    modifier = Modifier.padding(start = 12.dp),
                     style = MaterialTheme.typography.titleSmall.copy(
                         color = AppText,
                         fontWeight = FontWeight.SemiBold,
                     ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

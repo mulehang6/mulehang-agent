@@ -103,12 +103,10 @@ private fun serializeAssistantParts(parts: List<AgentConversationHistoryPart>): 
  * 将 Koog prompt 中的消息展平为 DeepSeek/OpenAI 兼容消息。
  */
 private fun toDeepSeekPromptMessages(message: Message): List<DeepSeekChatMessage> = when (message) {
-    is Message.System -> listOf(
-        DeepSeekChatMessage(
-            role = "system",
-            content = message.textContent().takeIf { it.isNotBlank() },
-        ),
-    )
+    is Message.System -> message.textContent()
+        .takeIf { it.isNotBlank() }
+        ?.let { listOf(DeepSeekChatMessage(role = "system", content = it)) }
+        ?: emptyList()
 
     is Message.User -> message.parts.toDeepSeekUserMessages()
     is Message.Assistant -> listOfNotNull(message.toDeepSeekAssistantMessage())

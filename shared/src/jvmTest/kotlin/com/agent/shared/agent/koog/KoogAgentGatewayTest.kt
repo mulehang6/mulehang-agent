@@ -265,10 +265,10 @@ class KoogAgentGatewayTest {
     }
 
     /**
-     * 流式文本与工具调用 frame 应被转换为应用层事件流。
+     * 工具调用参数完成时只公告调用开始，不应把参数伪装成执行结果。
      */
     @Test
-    fun `should map stream frames into text and tool events`() = runTest {
+    fun `should map tool call arguments without reporting a finished result`() = runTest {
         val gateway = KoogAgentGateway(
             streamRunner = { _ ->
                 flowOf(
@@ -291,7 +291,7 @@ class KoogAgentGatewayTest {
             ),
         ).toList()
 
-        assertEquals(6, events.size)
+        assertEquals(5, events.size)
         assertEquals(AgentStreamEvent.Started, events[0])
         assertEquals(AgentStreamEvent.TextDelta("hel"), events[1])
         assertEquals(
@@ -302,16 +302,8 @@ class KoogAgentGatewayTest {
             ),
             events[2],
         )
-        assertEquals(
-            AgentStreamEvent.ToolCallFinished(
-                toolCallId = "call-1",
-                name = "read_file",
-                resultPreview = """{"path":"README.md"}""",
-            ),
-            events[3],
-        )
-        assertEquals(AgentStreamEvent.TextDelta("lo"), events[4])
-        assertEquals(AgentStreamEvent.Completed("hello"), events[5])
+        assertEquals(AgentStreamEvent.TextDelta("lo"), events[3])
+        assertEquals(AgentStreamEvent.Completed("hello"), events[4])
     }
 
     /**
@@ -539,7 +531,7 @@ class KoogAgentGatewayTest {
      * 工具内部通过 runBlocking 等待审批时，审批事件也应先被 UI 侧消费到，而不是卡死主线程。
      */
     @Test
-    @Suppress("RunBlocking")
+    @Suppress("RunBlockingInSuspendFunction")
     fun `should emit approval requested before blocking tool resumes`() = runTest {
         val interactionBridge = object : DesktopToolInteractionBridge {
             private val approvalDeferred = CompletableDeferred<Boolean>()

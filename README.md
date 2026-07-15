@@ -6,13 +6,15 @@
 
 仓库当前主线只有两部分：
 
-1. `shared/`：配置、状态、Koog 接入与应用用例
-2. `desktopApp/`：Desktop UI 与窗口生命周期
+1. `shared/`：按 `agent`、`chat`、`session`、`settings`、`tool` 功能域组织跨平台契约与 JVM 实现
+2. `desktopApp/`：按 `bootstrap`、`chat`、`tool`、`design`、`platform` 功能域组织 Desktop UI 与窗口生命周期
 
 ## 文档入口
 
-1. `docs/superpowers/specs/2026-05-26-kmp-desktop-reset-design.md`
-2. `docs/superpowers/plans/2026-05-26-kmp-desktop-reset-implementation-plan.md`
+1. `docs/superpowers/specs/2026-07-15-project-package-structure-refactor-design.md`
+2. `docs/superpowers/plans/2026-07-15-project-package-structure-refactor-implementation-plan.md`
+3. `docs/superpowers/specs/2026-05-26-kmp-desktop-reset-design.md`
+4. `docs/superpowers/plans/2026-05-26-kmp-desktop-reset-implementation-plan.md`
 
 ## 本地配置
 

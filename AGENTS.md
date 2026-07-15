@@ -18,7 +18,9 @@
 1. `docs/superpowers/specs/2026-05-26-kmp-desktop-reset-design.md`
 2. `docs/superpowers/plans/2026-05-26-kmp-desktop-reset-implementation-plan.md`
 3. `docs/superpowers/specs/2026-06-27-kmp-default-structure-alignment-design.md`
-4. 涉及 Ring UI 原型时读取 `docs/superpowers/specs/2026-06-28-air-ring-ui-prototype1-design.md` 与 `docs/summary/2026-06-28-air-ring-ui-prototype-summary.md`
+4. `docs/superpowers/specs/2026-07-15-project-package-structure-refactor-design.md`
+5. `docs/superpowers/plans/2026-07-15-project-package-structure-refactor-implementation-plan.md`
+6. 涉及 Ring UI 原型时读取 `docs/superpowers/specs/2026-06-28-air-ring-ui-prototype1-design.md` 与 `docs/summary/2026-06-28-air-ring-ui-prototype-summary.md`
 
 使用 IDEA MCP 读取项目结构、源码、符号、问题和运行配置；写改文件优先使用 `functions.apply_patch`。Shell 仅用于构建、测试、lint、脚本或 IDEA MCP 没有对应能力的检查，命令必须使用 PowerShell 语法。不要启动 Desktop 应用、Vite 开发服务器或其他长期运行服务。
 
@@ -57,7 +59,7 @@ pnpm lint
 - 文件系统、环境变量、PowerShell、JVM 网络客户端、Koog 具体装配等平台实现放入 `shared/src/jvmMain`。
 - Compose 状态、窗口行为和展示逻辑放入 `desktopApp`；不要把 UI 类型泄漏到 `shared` 的领域模型。
 - `desktopApp` 可以依赖 `shared`，`shared` 不得反向依赖 `desktopApp`。
-- 保持现有 `agent`、`application`、`config`、`state`、`tool` 分包职责；新文件放入最接近其职责的包，不为单次使用创建额外抽象层。
+- `shared` 保持现有 `agent`、`chat`、`session`、`settings`、`tool` 功能域职责，`desktopApp` 保持 `bootstrap`、`chat`、`tool`、`design`、`platform` 功能域职责；新文件放入最接近其职责的包，不为单次使用创建额外抽象层。
 - 涉及 Koog 或 Provider API 时先查阅当前官方文档或可靠的一手资料，不凭记忆假设接口；当前 `shared` 使用 Koog `1.0.0`。
 
 ## 编码与注释规范

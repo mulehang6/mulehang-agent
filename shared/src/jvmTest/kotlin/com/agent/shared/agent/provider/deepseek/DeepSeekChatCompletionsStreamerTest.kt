@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.agent.provider.deepseek
 
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolParameterDescriptor
@@ -11,6 +11,7 @@ import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
+import com.agent.shared.agent.appendAssistantMessageToPrompt
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentRunRequest
@@ -91,6 +92,24 @@ class DeepSeekChatCompletionsStreamerTest {
         ).toList()
 
         assertEquals("low", capturedRequest?.reasoningEffort)
+    }
+
+    /**
+     * AgentRunRequest 映射入口应保留模型、推理强度与当前用户消息。
+     */
+    @Test
+    fun `should build deepseek request from agent run request`() {
+        val request = buildDeepSeekRequest(
+            AgentRunRequest(
+                prompt = "你好",
+                profile = deepSeekProfile(),
+                reasoningEffort = ReasoningEffort.LOW,
+            ),
+        )
+
+        assertEquals("deepseek-v4-flash", request.model)
+        assertEquals("low", request.reasoningEffort)
+        assertEquals(listOf(DeepSeekChatMessage(role = "user", content = "你好")), request.messages)
     }
 
     /**
@@ -252,6 +271,33 @@ ok
     }
 
     /**
+     * 解码器应忽略扩展字段，并保留 DeepSeek reasoning delta 与 nullable defaults。
+     */
+    @Test
+    fun `should decode deepseek chunk with reasoning content`() {
+        val chunk = DeepSeekResponseDecoder.decode(
+            """
+            {
+              "id": "chatcmpl-decode",
+              "created": 42,
+              "model": "deepseek-v4-flash",
+              "unknown": "ignored",
+              "choices": [
+                {
+                  "index": 0,
+                  "delta": {"reasoning_content": "先分析"}
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("先分析", chunk.choices.single().delta.reasoningContent)
+        assertNull(chunk.choices.single().delta.content)
+        assertNull(chunk.usage)
+    }
+
+    /**
      * reasoning_content、tool_calls 与 content 应分别映射成 reasoning/tool/text frame，并在结束时补 reasoning complete。
      */
     @Test
@@ -359,7 +405,6 @@ ok
      */
     @Test
     fun `should keep streamed assistant tool call before tool result in deepseek request`() {
-        val streamer = DeepSeekChatCompletionsStreamer()
         val initialPrompt = Prompt(
             messages = listOf(
                 Message.User(
@@ -396,7 +441,7 @@ ok
             }
         }
 
-        val request = streamer.buildRequest(
+        val request = buildDeepSeekRequest(
             prompt = promptWithToolResult,
             config = deepSeekProfile(),
             reasoningEffort = ReasoningEffort.HIGH,
@@ -433,8 +478,6 @@ ok
      */
     @Test
     fun `should build deepseek request from prompt and tools`() {
-        val streamer = DeepSeekChatCompletionsStreamer()
-
         val prompt = Prompt(
             messages = listOf(
                 Message.System(
@@ -491,7 +534,7 @@ ok
             ),
         )
 
-        val request = streamer.buildRequest(
+        val request = buildDeepSeekRequest(
             prompt = prompt,
             config = deepSeekProfile(),
             reasoningEffort = ReasoningEffort.HIGH,

@@ -1,5 +1,7 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.interaction
 
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.QuestionRequest
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest

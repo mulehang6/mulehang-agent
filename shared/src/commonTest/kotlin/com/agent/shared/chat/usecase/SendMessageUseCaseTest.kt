@@ -10,7 +10,7 @@ import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ProviderType
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf

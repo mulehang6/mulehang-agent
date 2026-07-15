@@ -1,6 +1,6 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.policy
 
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.model.PermissionPreset
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue

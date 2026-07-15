@@ -1,6 +1,6 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.policy
 
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.model.PermissionPreset
 
 /**
  * 桌面本地工具的权限矩阵。

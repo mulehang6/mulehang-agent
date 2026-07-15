@@ -3,7 +3,11 @@ package com.agent.shared.agent
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionRequest
+import com.agent.shared.tool.policy.DesktopToolPolicy
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 

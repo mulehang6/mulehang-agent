@@ -1,4 +1,4 @@
-package com.agent.shared.state
+package com.agent.shared.tool.model
 
 /**
  * 会话使用的权限档位。

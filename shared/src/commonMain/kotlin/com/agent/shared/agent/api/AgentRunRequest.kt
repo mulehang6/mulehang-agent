@@ -1,7 +1,7 @@
 package com.agent.shared.agent.api
 
 import com.agent.shared.settings.model.ConfigProfile
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.model.PermissionPreset
 
 /**
  * 描述一次消息发送所需的最小运行参数。

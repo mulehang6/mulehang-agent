@@ -27,6 +27,10 @@ import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.agent.prompt.buildLlmModel
 import com.agent.shared.agent.prompt.buildPromptParams
 import com.agent.shared.agent.prompt.isDeepSeekChatCompletionsProfile
+import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.tool.interaction.RejectingDesktopToolInteractionBridge
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.QuestionRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers

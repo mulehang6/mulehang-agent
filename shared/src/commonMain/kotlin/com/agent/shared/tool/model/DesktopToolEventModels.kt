@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.model
 
 /**
  * `ask_user` 发起的问题请求。

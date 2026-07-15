@@ -1,7 +1,5 @@
 package com.agent.app.ui
 
-import com.agent.shared.agent.ApprovalRequest
-import com.agent.shared.agent.QuestionRequest
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentGateway
@@ -22,7 +20,9 @@ import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ProviderType
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionRequest
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi

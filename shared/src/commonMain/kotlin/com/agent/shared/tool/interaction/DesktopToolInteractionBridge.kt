@@ -1,4 +1,7 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.interaction
+
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.QuestionRequest
 
 /**
  * 桌面工具层与 UI 层之间的挂起恢复桥。

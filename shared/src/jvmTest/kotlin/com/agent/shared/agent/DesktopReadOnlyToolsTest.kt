@@ -1,6 +1,6 @@
 package com.agent.shared.agent
 
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.model.PermissionPreset
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals

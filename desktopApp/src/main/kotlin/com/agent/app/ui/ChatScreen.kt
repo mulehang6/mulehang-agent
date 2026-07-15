@@ -54,8 +54,8 @@ import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
-import com.agent.shared.state.PermissionPreset
-import com.agent.shared.tool.parseUpdatePlanPreview
+import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.plan.parseUpdatePlanPreview
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.io.File

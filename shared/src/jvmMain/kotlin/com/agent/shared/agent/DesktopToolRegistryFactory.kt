@@ -1,7 +1,8 @@
 package com.agent.shared.agent
 
 import ai.koog.agents.core.tools.ToolRegistry
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.tool.model.PermissionPreset
 
 /**
  * 根据当前会话上下文创建桌面工具注册表。

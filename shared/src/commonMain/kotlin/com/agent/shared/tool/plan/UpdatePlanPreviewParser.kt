@@ -1,4 +1,4 @@
-package com.agent.shared.tool
+package com.agent.shared.tool.plan
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull

@@ -1,8 +1,8 @@
 package com.agent.app.ui
 
-import com.agent.shared.agent.ApprovalRequest
-import com.agent.shared.agent.DesktopToolInteractionBridge
-import com.agent.shared.agent.QuestionRequest
+import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.QuestionRequest
 import kotlinx.coroutines.CompletableDeferred
 
 /**

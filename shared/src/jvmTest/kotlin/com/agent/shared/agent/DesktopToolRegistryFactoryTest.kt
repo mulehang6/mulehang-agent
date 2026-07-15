@@ -1,6 +1,9 @@
 package com.agent.shared.agent
 
-import com.agent.shared.state.PermissionPreset
+import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

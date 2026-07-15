@@ -1,7 +1,7 @@
 package com.agent.shared.agent.api
 
-import com.agent.shared.agent.ApprovalRequest
-import com.agent.shared.agent.QuestionRequest
+import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.QuestionRequest
 
 /**
  * UI 可消费的 agent 流式事件。

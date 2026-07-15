@@ -4,6 +4,10 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
+import com.agent.shared.agent.api.AgentConversationHistoryMessage
+import com.agent.shared.agent.api.AgentConversationHistoryPart
+import com.agent.shared.agent.api.AgentRunRequest
+import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType

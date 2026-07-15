@@ -1,28 +1,28 @@
 package com.agent.app.ui
 
-import com.agent.shared.agent.AgentGateway
-import com.agent.shared.agent.AgentConversationHistoryMessage
-import com.agent.shared.agent.AgentConversationHistoryPart
-import com.agent.shared.agent.AgentRunRequest
-import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ApprovalRequest
 import com.agent.shared.agent.QuestionRequest
-import com.agent.shared.agent.ReasoningEffort
-import com.agent.shared.application.AppSessionSnapshot
-import com.agent.shared.application.SendMessageUseCase
+import com.agent.shared.agent.api.AgentConversationHistoryMessage
+import com.agent.shared.agent.api.AgentConversationHistoryPart
+import com.agent.shared.agent.api.AgentGateway
+import com.agent.shared.agent.api.AgentRunRequest
+import com.agent.shared.agent.api.AgentStreamEvent
+import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.chat.model.AppError
+import com.agent.shared.chat.model.ChatMessageItem
+import com.agent.shared.chat.model.ChatRole
+import com.agent.shared.chat.model.ConversationItem
+import com.agent.shared.chat.model.ExecutionState
+import com.agent.shared.chat.model.ReasoningItem
+import com.agent.shared.chat.model.ToolEventItem
+import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.chat.usecase.SendMessageUseCase
+import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ProviderType
-import com.agent.shared.state.AppError
-import com.agent.shared.state.ChatMessageItem
-import com.agent.shared.state.ChatRole
-import com.agent.shared.state.ConversationItem
-import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.PermissionPreset
-import com.agent.shared.state.ReasoningItem
-import com.agent.shared.state.ToolEventItem
-import com.agent.shared.state.ToolEventStatus
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -642,7 +642,7 @@ class ChatWindowStateTest {
                     id = "waiting-question",
                     title = "Question",
                     workspacePath = "E:\\abc\\def",
-                    items = listOf(ChatMessageItem(com.agent.shared.state.ChatMessage(ChatRole.User, "pending"))),
+                    items = listOf(ChatMessageItem(com.agent.shared.chat.model.ChatMessage(ChatRole.User, "pending"))),
                     executionState = ExecutionState.WaitingForUserInput,
                 ),
             ),
@@ -654,7 +654,7 @@ class ChatWindowStateTest {
                     id = "waiting-approval",
                     title = "Approval",
                     workspacePath = "E:\\abc\\def",
-                    items = listOf(ChatMessageItem(com.agent.shared.state.ChatMessage(ChatRole.User, "pending"))),
+                    items = listOf(ChatMessageItem(com.agent.shared.chat.model.ChatMessage(ChatRole.User, "pending"))),
                     executionState = ExecutionState.WaitingForApproval,
                 ),
             ),

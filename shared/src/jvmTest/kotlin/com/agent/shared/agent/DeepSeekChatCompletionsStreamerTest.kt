@@ -11,6 +11,10 @@ import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
+import com.agent.shared.agent.api.AgentConversationHistoryMessage
+import com.agent.shared.agent.api.AgentConversationHistoryPart
+import com.agent.shared.agent.api.AgentRunRequest
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType

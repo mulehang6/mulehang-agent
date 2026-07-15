@@ -47,14 +47,14 @@ import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
 import com.agent.shared.settings.resolver.ModelVariant
-import com.agent.shared.state.ChatMessageItem
-import com.agent.shared.state.ChatRole
-import com.agent.shared.state.ConversationItem
-import com.agent.shared.state.ExecutionState
+import com.agent.shared.chat.model.ChatMessageItem
+import com.agent.shared.chat.model.ChatRole
+import com.agent.shared.chat.model.ConversationItem
+import com.agent.shared.chat.model.ExecutionState
+import com.agent.shared.chat.model.ReasoningItem
+import com.agent.shared.chat.model.ToolEventItem
+import com.agent.shared.chat.model.ToolEventStatus
 import com.agent.shared.state.PermissionPreset
-import com.agent.shared.state.ReasoningItem
-import com.agent.shared.state.ToolEventItem
-import com.agent.shared.state.ToolEventStatus
 import com.agent.shared.tool.parseUpdatePlanPreview
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
@@ -1466,19 +1466,19 @@ private fun buildHistoryEntries(
 ): List<String> {
     val entries = conversation.history.flatMap { message ->
         when (message) {
-            is com.agent.shared.agent.AgentConversationHistoryMessage.User -> if (filterToolActivityOnly) {
+            is com.agent.shared.agent.api.AgentConversationHistoryMessage.User -> if (filterToolActivityOnly) {
                 emptyList()
             } else {
                 listOf("user> ${message.content}")
             }
 
-            is com.agent.shared.agent.AgentConversationHistoryMessage.Assistant -> {
+            is com.agent.shared.agent.api.AgentConversationHistoryMessage.Assistant -> {
                 message.parts.mapNotNull { part ->
                     when (part) {
-                        is com.agent.shared.agent.AgentConversationHistoryPart.Text -> if (filterToolActivityOnly) null else "assistant> ${part.text}"
-                        is com.agent.shared.agent.AgentConversationHistoryPart.Reasoning -> if (filterToolActivityOnly) null else "reasoning> ${part.summary ?: part.rawText.orEmpty()}"
-                        is com.agent.shared.agent.AgentConversationHistoryPart.ToolCall -> "tool-call> ${part.name}${part.argumentsPreview?.let { ": $it" } ?: ""}"
-                        is com.agent.shared.agent.AgentConversationHistoryPart.ToolResult -> "tool-result> ${part.name}${part.resultPreview?.let { ": $it" } ?: ""}"
+                        is com.agent.shared.agent.api.AgentConversationHistoryPart.Text -> if (filterToolActivityOnly) null else "assistant> ${part.text}"
+                        is com.agent.shared.agent.api.AgentConversationHistoryPart.Reasoning -> if (filterToolActivityOnly) null else "reasoning> ${part.summary ?: part.rawText.orEmpty()}"
+                        is com.agent.shared.agent.api.AgentConversationHistoryPart.ToolCall -> "tool-call> ${part.name}${part.argumentsPreview?.let { ": $it" } ?: ""}"
+                        is com.agent.shared.agent.api.AgentConversationHistoryPart.ToolResult -> "tool-result> ${part.name}${part.resultPreview?.let { ": $it" } ?: ""}"
                     }
                 }
             }

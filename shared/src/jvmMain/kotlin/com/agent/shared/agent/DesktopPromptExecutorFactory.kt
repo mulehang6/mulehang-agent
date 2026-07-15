@@ -8,6 +8,7 @@ import ai.koog.prompt.executor.clients.anthropic.AnthropicClientSettings
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
+import com.agent.shared.agent.prompt.buildOpenAIClientSettings
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ProviderType

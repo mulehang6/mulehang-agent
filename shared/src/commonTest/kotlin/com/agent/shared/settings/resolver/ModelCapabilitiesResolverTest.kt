@@ -1,6 +1,6 @@
 package com.agent.shared.settings.resolver
 
-import com.agent.shared.agent.ReasoningEffort
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ModelLimit

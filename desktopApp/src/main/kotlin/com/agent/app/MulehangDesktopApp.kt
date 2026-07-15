@@ -11,11 +11,11 @@ import com.agent.app.ui.ChatScreen
 import com.agent.app.ui.ChatWindowState
 import com.agent.app.ui.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.KoogAgentGateway
-import com.agent.shared.application.AppSessionSnapshot
-import com.agent.shared.application.DesktopAppSessionRepository
-import com.agent.shared.application.LoadAppSessionUseCase
-import com.agent.shared.application.SendMessageUseCase
-import com.agent.shared.state.DesktopUiStateStore
+import com.agent.shared.chat.usecase.SendMessageUseCase
+import com.agent.shared.session.AppSessionSnapshot
+import com.agent.shared.session.DesktopAppSessionRepository
+import com.agent.shared.session.DesktopUiStateStore
+import com.agent.shared.session.LoadAppSessionUseCase
 import java.nio.file.Path
 import java.nio.file.Paths
 

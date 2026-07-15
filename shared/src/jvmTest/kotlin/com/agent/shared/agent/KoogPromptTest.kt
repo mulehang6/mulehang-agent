@@ -1,6 +1,7 @@
 package com.agent.shared.agent
 
 import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType

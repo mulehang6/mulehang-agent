@@ -18,6 +18,15 @@ import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
+import com.agent.shared.agent.api.AgentConversationHistoryMessage
+import com.agent.shared.agent.api.AgentConversationHistoryPart
+import com.agent.shared.agent.api.AgentGateway
+import com.agent.shared.agent.api.AgentRunRequest
+import com.agent.shared.agent.api.AgentStreamEvent
+import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.prompt.buildLlmModel
+import com.agent.shared.agent.prompt.buildPromptParams
+import com.agent.shared.agent.prompt.isDeepSeekChatCompletionsProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers

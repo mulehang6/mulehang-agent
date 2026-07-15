@@ -14,6 +14,11 @@ import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
+import com.agent.shared.agent.api.AgentConversationHistoryMessage
+import com.agent.shared.agent.api.AgentConversationHistoryPart
+import com.agent.shared.agent.api.AgentRunRequest
+import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.prompt.buildOpenAIClientSettings
 import com.agent.shared.settings.model.ConfigProfile
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow

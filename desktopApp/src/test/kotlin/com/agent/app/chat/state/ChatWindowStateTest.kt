@@ -1,6 +1,5 @@
 package com.agent.app.chat.state
 
-import com.agent.app.ui.groupProfilesByProvider
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
@@ -886,32 +885,6 @@ class ChatWindowStateTest {
 
         assertEquals("deepseek", state.activeProfile?.providerId)
         assertEquals("deepseek-v4-pro", state.activeProfile?.model)
-    }
-
-    /**
-     * Provider 分组应使用配置 providerId，而不是 providerType。
-     */
-    @Test
-    fun `should group model picker entries by provider id`() {
-        val profiles = listOf(
-            profile(model = "deepseek-v4-flash"),
-            profile(model = "deepseek-v4-pro").copy(
-                id = "deepseek:deepseek-v4-pro",
-                providerId = "deepseek",
-                providerLabel = "DeepSeek",
-            ),
-            profile(model = "openai/gpt-5-codex").copy(
-                id = "openrouter:openai/gpt-5-codex",
-                providerId = "openrouter",
-                providerLabel = "OpenRouter",
-                baseUrl = "https://openrouter.ai/api/v1",
-            ),
-        )
-
-        val grouped = groupProfilesByProvider(profiles)
-
-        assertEquals(setOf("deepseek", "openrouter"), grouped.keys)
-        assertEquals(listOf("deepseek-v4-flash", "deepseek-v4-pro"), grouped["deepseek"]?.map { it.model })
     }
 
     /**

@@ -4,8 +4,21 @@ import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatTaskGroup
 import com.agent.app.chat.state.ChatTaskListItemUiState
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
+import com.agent.app.chat.export.buildConversationMarkdown
+import com.agent.app.chat.export.sanitizeFileName
+import com.agent.app.chat.export.writeConversationMarkdown
+import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
+import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
+import com.agent.app.chat.presentation.buildReasoningHeadline
+import com.agent.app.chat.presentation.buildSecondaryStatus
+import com.agent.app.chat.presentation.buildToolEventHeadline
+import com.agent.app.chat.presentation.buildToolEventKindLabel
+import com.agent.app.chat.presentation.groupProfilesByProvider
+import com.agent.app.chat.presentation.itemContentSize
+import com.agent.app.chat.presentation.modelVariantsFor
+import com.agent.app.chat.presentation.resolveWorkspaceForTaskCreation
+import com.agent.app.chat.presentation.toolEventHasDetails
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -49,10 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agent.shared.settings.model.ConfigProfile
-import com.agent.shared.settings.model.ProviderType
-import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
-import com.agent.shared.settings.resolver.ModelVariant
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationItem
@@ -1081,61 +1090,6 @@ private fun ToolRail(
 }
 
 /**
- * 回答区的标题。
- */
-internal fun buildAnswerTitle(conversation: ChatConversationUiState): String {
-    if (conversation.executionState == ExecutionState.Running) return "Updating plan..."
-    if (conversation.pendingApproval != null) return "Awaiting approval..."
-    if (conversation.pendingQuestion != null) return "Waiting for more input..."
-    return when (conversation.items.lastOrNull()) {
-        is ReasoningItem -> "Reasoning update"
-        is ToolEventItem -> "Tool activity"
-        is ChatMessageItem -> "Latest answer"
-        null -> "Ready for a new task"
-    }
-}
-
-/**
- * 把当前 task 的回答压成原型式段落块。
- */
-internal fun buildAnswerParagraphs(conversation: ChatConversationUiState): List<String> {
-    val assistant = conversation.items
-        .asReversed()
-        .filterIsInstance<ChatMessageItem>()
-        .firstOrNull { it.message.role == ChatRole.Assistant }
-        ?.message
-        ?.content
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
-    if (assistant != null) {
-        return assistant
-            .split(Regex("\n\\s*\n"))
-            .map(String::trim)
-            .filter(String::isNotBlank)
-    }
-    val reasoning = conversation.items
-        .asReversed()
-        .filterIsInstance<ReasoningItem>()
-        .firstOrNull()
-        ?.displayText
-        ?.trim()
-    if (!reasoning.isNullOrBlank()) {
-        return listOf(reasoning)
-    }
-    return listOf("No assistant output yet for this task.")
-}
-
-/**
- * 构造回答区下方的次级状态文案。
- */
-internal fun buildSecondaryStatus(conversation: ChatConversationUiState): String? = when {
-    conversation.pendingApproval != null -> conversation.pendingApproval.summary
-    conversation.pendingQuestion != null -> conversation.pendingQuestion.question
-    conversation.executionState == ExecutionState.Running -> "Working in ${buildWorkspaceLabel(conversation.workspacePath)}..."
-    else -> null
-}
-
-/**
  * 计划卡片里的步骤条目。
  */
 data class TaskPlanEntry(
@@ -1206,141 +1160,6 @@ private fun parseUpdatePlanPayload(preview: String): UpdatePlanPayload? = runCat
 }.getOrNull()
 
 /**
- * 工具事件标题。
- */
-internal fun buildToolEventHeadline(item: ToolEventItem): String = when (item.status) {
-    ToolEventStatus.Status -> item.preview.orEmpty().ifBlank { item.toolName }
-    ToolEventStatus.Failed -> "失败: ${item.toolName}"
-    else -> item.toolName
-}
-
-/**
- * 工具事件种类标签。
- */
-internal fun buildToolEventKindLabel(item: ToolEventItem): String? = when (item.status) {
-    ToolEventStatus.Started -> "输入"
-    ToolEventStatus.Finished -> "输出"
-    ToolEventStatus.Status -> null
-    ToolEventStatus.Failed -> "错误"
-}
-
-/**
- * 判断工具事件是否存在可展开的详情文本。
- */
-internal fun toolEventHasDetails(item: ToolEventItem): Boolean =
-    item.status != ToolEventStatus.Status && !item.preview.isNullOrBlank()
-
-/**
- * 聊天消息正文直接显示内容，不再拼接角色前缀。
- */
-internal fun buildChatMessageText(item: ChatMessageItem): String = item.message.content
-
-/**
- * 思考块标题固定保留 Thinking 文案。
- */
-internal fun buildReasoningHeadline(item: ReasoningItem): String =
-    if (item.isStreaming) "Thinking: 思考中..." else "Thinking:"
-
-/**
- * provider 类型的展示文案。
- */
-internal fun providerLabel(providerType: ProviderType): String = when (providerType) {
-    ProviderType.OPENAI_RESPONSES -> "OpenAI"
-    ProviderType.OPENAI_CHAT_COMPLETIONS -> "OpenAI Compatible"
-    ProviderType.ANTHROPIC -> "Anthropic"
-    ProviderType.GOOGLE -> "Google"
-}
-
-/**
- * 返回 profile 支持的模型变体。
- */
-internal fun modelVariantsFor(profile: ConfigProfile): List<ModelVariant> =
-    ModelCapabilitiesResolver.resolve(profile).variants.values.toList()
-
-/**
- * 按配置 providerId 分组模型。
- */
-internal fun groupProfilesByProvider(profiles: List<ConfigProfile>): Map<String, List<ConfigProfile>> =
-    profiles.groupBy { it.providerId }
-
-/**
- * 生成上下文圆环 hover 文案。
- */
-internal fun buildContextTooltip(usageFraction: Float): String =
-    "${formatContextUsagePercent(usageFraction)} used"
-
-/**
- * 生成上下文圆环旁的可见百分比文案。
- */
-internal fun buildContextUsageLabel(usageFraction: Float): String =
-    formatContextUsagePercent(usageFraction)
-
-/**
- * composer 主按钮的展示状态。
- */
-internal data class ComposerPrimaryActionVisual(
-    val symbol: String,
-    val danger: Boolean,
-)
-
-/**
- * 根据执行状态生成 composer 主按钮视觉。
- */
-internal fun buildComposerPrimaryActionVisual(executionState: ExecutionState): ComposerPrimaryActionVisual =
-    if (executionState.isStoppable()) {
-        ComposerPrimaryActionVisual(symbol = "■", danger = true)
-    } else {
-        ComposerPrimaryActionVisual(symbol = "↑", danger = false)
-    }
-
-/**
- * 将上下文占比换算为圆环 sweep angle，并为非零占用保留最小可见弧度。
- */
-internal fun contextRingSweepAngle(usageFraction: Float): Float {
-    val clampedFraction = usageFraction.coerceIn(0f, 1f)
-    if (clampedFraction <= 0f) return 0f
-    if (clampedFraction >= 1f) return 360f
-    return (clampedFraction * 360f).coerceAtLeast(MIN_VISIBLE_CONTEXT_SWEEP_ANGLE)
-}
-
-/**
- * 仅当用户仍停在底部附近时，才让时间线自动跟随最新内容。
- */
-internal fun shouldAutoScrollToLatest(
-    lastVisibleIndex: Int?,
-    totalItems: Int,
-    trailingThreshold: Int = TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS,
-): Boolean {
-    if (lastVisibleIndex == null) {
-        return true
-    }
-    val threshold = trailingThreshold.coerceAtLeast(0)
-    return lastVisibleIndex >= timelineAutoScrollAnchorIndex(totalItems) - threshold
-}
-
-/**
- * 根据当前滚动位置和是否刚追加内容，决定是否继续保持“跟随最新内容”。
- */
-internal fun nextAutoScrollFollowState(
-    currentFollowLatest: Boolean,
-    lastVisibleIndex: Int?,
-    totalItems: Int,
-    previousTotalItems: Int,
-    trailingThreshold: Int = TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS,
-): Boolean {
-    if (shouldAutoScrollToLatest(lastVisibleIndex, totalItems, trailingThreshold)) {
-        return true
-    }
-    return currentFollowLatest && totalItems > previousTotalItems
-}
-
-/**
- * 时间线自动滚动锚点。
- */
-internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int =
-    totalItems.coerceAtLeast(0)
-
-/**
  * 仅在 Enter 抬起且未按住 Shift 时发送 composer。
  */
 internal fun shouldSubmitComposerKey(
@@ -1348,17 +1167,6 @@ internal fun shouldSubmitComposerKey(
     eventType: KeyEventType,
     isShiftPressed: Boolean,
 ): Boolean = key == Key.Enter && eventType == KeyEventType.KeyUp && !isShiftPressed
-
-/**
- * 上下文占比格式化。
- */
-private fun formatContextUsagePercent(usageFraction: Float): String {
-    val clamped = usageFraction.coerceIn(0f, 1f)
-    if (clamped in 0f..0.001f && clamped > 0f) {
-        return "<0.1%"
-    }
-    return "${(clamped * 100).toInt()}%"
-}
 
 /**
  * 选择权限文案。
@@ -1409,19 +1217,6 @@ private fun pickWorkspaceDirectory(): String? {
     } else {
         null
     }
-}
-
-/**
- * 决定新任务应落在哪个工作区；可按需强制走目录选择器。
- */
-internal fun resolveWorkspaceForTaskCreation(
-    activeWorkspacePath: String?,
-    forceDirectoryPicker: Boolean,
-    pickWorkspaceDirectory: () -> String?,
-): String? = if (forceDirectoryPicker || activeWorkspacePath.isNullOrBlank()) {
-    pickWorkspaceDirectory()
-} else {
-    activeWorkspacePath
 }
 
 /**
@@ -1516,65 +1311,4 @@ private fun exportConversationMarkdown(conversation: ChatConversationUiState): S
     writeConversationMarkdown(target, buildConversationMarkdown(conversation))
     target.absolutePath
 }.getOrNull()
-
-/**
- * 使用 UTF-8 将 markdown 导出到磁盘，避免平台默认编码破坏 Unicode 内容。
- */
-internal fun writeConversationMarkdown(target: File, markdown: String) {
-    target.writeText(markdown, Charsets.UTF_8)
-}
-
-/**
- * 生成会话 markdown。
- */
-internal fun buildConversationMarkdown(conversation: ChatConversationUiState): String = buildString {
-    appendLine("# ${conversation.title}")
-    appendLine()
-    appendLine("- Workspace: ${conversation.workspacePath}")
-    appendLine("- Status: ${conversation.executionState}")
-    appendLine()
-    conversation.items.forEach { item ->
-        when (item) {
-            is ChatMessageItem -> {
-                appendLine("## ${if (item.message.role == ChatRole.User) "User" else "Assistant"}")
-                appendLine(item.message.content)
-            }
-
-            is ReasoningItem -> {
-                appendLine("## Reasoning")
-                appendLine(item.displayText)
-            }
-
-            is ToolEventItem -> {
-                appendLine("## Tool `${item.toolName}`")
-                item.preview?.takeIf(String::isNotBlank)?.let(::appendLine)
-                item.errorMessage?.takeIf(String::isNotBlank)?.let {
-                    appendLine("> **Error:** $it")
-                }
-            }
-        }
-        appendLine()
-    }
-}
-
-/**
- * 生成安全导出文件名。
- */
-private fun sanitizeFileName(title: String): String =
-    title.replace(Regex("""[\\/:*?"<>|]"""), "-")
-
-private const val TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS = 1
-
-private const val MIN_VISIBLE_CONTEXT_SWEEP_ANGLE = 6f
-
-/**
- * 估算单个时间线项的字符总量，用作自动跟随滚动的内容指纹。
- */
-private fun itemContentSize(item: ConversationItem): Int = when (item) {
-    is ChatMessageItem -> item.message.content.length
-    is ReasoningItem -> (item.rawText ?: item.displayText).length
-    is ToolEventItem -> (item.preview ?: "").length + item.toolName.length + (item.errorMessage ?: "").length
-}
-
-private const val TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX = 200
 

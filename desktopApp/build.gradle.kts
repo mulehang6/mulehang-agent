@@ -22,7 +22,7 @@ tasks.test {
 
 compose.desktop {
     application {
-        mainClass = "com.agent.app.MainKt"
+        mainClass = "com.agent.app.bootstrap.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)

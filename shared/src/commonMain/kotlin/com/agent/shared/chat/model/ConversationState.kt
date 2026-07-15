@@ -1,0 +1,12 @@
+package com.agent.shared.chat.model
+
+/**
+ * 窗口级会话状态。
+ */
+data class ConversationState(
+    val items: List<ConversationItem> = emptyList(),
+    val executionState: ExecutionState = ExecutionState.Idle,
+    val activeProfileId: String? = null,
+    val streamingAssistantItemIndex: Int? = null,
+    val streamingReasoningItemIndex: Int? = null,
+)

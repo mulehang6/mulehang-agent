@@ -1,0 +1,21 @@
+package com.agent.shared.settings.resolver
+
+import com.agent.shared.settings.model.ConfigProfile
+
+/**
+ * 根据记忆状态与启用列表选择当前活动 profile。
+ */
+object ProfileSelectionResolver {
+
+    /**
+     * 选择当前可用的活动 profile。
+     */
+    fun selectActiveProfile(
+        profiles: List<ConfigProfile>,
+        rememberedProfileId: String?,
+    ): ConfigProfile? {
+        val enabledProfiles = profiles.filter { it.enabled }
+        return enabledProfiles.firstOrNull { it.id == rememberedProfileId }
+            ?: enabledProfiles.firstOrNull()
+    }
+}

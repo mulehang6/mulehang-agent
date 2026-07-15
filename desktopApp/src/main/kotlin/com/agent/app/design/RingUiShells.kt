@@ -1,4 +1,4 @@
-package com.agent.app.ui
+package com.agent.app.design
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background

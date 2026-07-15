@@ -1,4 +1,4 @@
-package com.agent.app.ui
+package com.agent.app.tool.component
 
 import com.agent.app.chat.state.PendingApprovalUiState
 import com.agent.app.chat.state.PendingQuestionUiState

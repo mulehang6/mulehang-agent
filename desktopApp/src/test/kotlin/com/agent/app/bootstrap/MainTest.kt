@@ -1,4 +1,4 @@
-package com.agent.app
+package com.agent.app.bootstrap
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

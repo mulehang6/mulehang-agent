@@ -1,4 +1,4 @@
-package com.agent.app
+package com.agent.app.bootstrap
 
 import java.nio.file.Files
 import kotlin.test.Test

@@ -1,9 +1,13 @@
-package com.agent.app.ui
+package com.agent.app.chat.component
 
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
+import com.agent.app.design.HeaderGlyph
+import com.agent.app.design.RightRailGlyph
+import com.agent.app.design.buildHeaderActions
+import com.agent.app.design.buildRightRailGroups
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ToolEventItem

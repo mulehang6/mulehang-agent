@@ -1,4 +1,4 @@
-package com.agent.app
+package com.agent.app.bootstrap
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -7,7 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import com.agent.app.ui.ChatScreen
+import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway

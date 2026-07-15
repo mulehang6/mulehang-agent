@@ -1,4 +1,4 @@
-package com.agent.app
+package com.agent.app.bootstrap
 
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application

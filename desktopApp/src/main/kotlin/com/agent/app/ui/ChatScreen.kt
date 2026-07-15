@@ -43,10 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ModelCapabilitiesResolver
-import com.agent.shared.config.ModelVariant
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
+import com.agent.shared.settings.resolver.ModelVariant
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
 import com.agent.shared.state.ConversationItem

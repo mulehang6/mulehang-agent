@@ -1,6 +1,9 @@
-package com.agent.shared.config
+package com.agent.shared.settings.resolver
 
 import com.agent.shared.agent.ReasoningEffort
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ModelLimit
+import com.agent.shared.settings.model.ProviderType
 
 /**
  * 单个模型变体，表示 UI 可选项以及发送链路需要写入的 provider 参数。

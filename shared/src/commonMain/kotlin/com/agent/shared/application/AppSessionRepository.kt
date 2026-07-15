@@ -1,6 +1,6 @@
 package com.agent.shared.application
 
-import com.agent.shared.config.ConfigProfile
+import com.agent.shared.settings.model.ConfigProfile
 
 /**
  * 屏蔽配置与 UI 状态持久化实现细节的仓库接口。

@@ -5,9 +5,9 @@ import ai.koog.prompt.executor.clients.openai.OpenAIResponsesParams
 import ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort as KoogReasoningEffort
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
-import com.agent.shared.config.ConfigLayer
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ProviderType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

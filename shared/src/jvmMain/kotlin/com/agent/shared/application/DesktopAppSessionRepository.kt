@@ -1,9 +1,9 @@
 package com.agent.shared.application
 
-import com.agent.shared.config.ConfigProfile
 import com.agent.shared.config.DesktopEnvironmentOverrides
 import com.agent.shared.config.DesktopPathResolver
 import com.agent.shared.config.DesktopSettingsRepository
+import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.state.DesktopUiStateStore
 import java.nio.file.Path
 import java.nio.file.Paths

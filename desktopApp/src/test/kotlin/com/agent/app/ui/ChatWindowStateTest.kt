@@ -10,10 +10,10 @@ import com.agent.shared.agent.QuestionRequest
 import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
-import com.agent.shared.config.ConfigLayer
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ModelLimit
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ModelLimit
+import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.state.AppError
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole

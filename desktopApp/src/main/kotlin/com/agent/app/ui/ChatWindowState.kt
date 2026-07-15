@@ -10,8 +10,8 @@ import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ReasoningEffort
 import com.agent.shared.application.AppSessionSnapshot
 import com.agent.shared.application.SendMessageUseCase
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ModelCapabilitiesResolver
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
 import com.agent.shared.state.AppError
 import com.agent.shared.state.ChatMessage
 import com.agent.shared.state.ChatMessageItem

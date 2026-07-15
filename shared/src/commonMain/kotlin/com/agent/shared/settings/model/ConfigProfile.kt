@@ -1,4 +1,4 @@
-package com.agent.shared.config
+package com.agent.shared.settings.model
 
 /**
  * 合并用户级、项目级与环境变量覆盖后的最终 profile。

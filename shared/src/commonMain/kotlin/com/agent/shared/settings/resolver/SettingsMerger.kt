@@ -1,4 +1,12 @@
-package com.agent.shared.config
+package com.agent.shared.settings.resolver
+
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ModelLimit
+import com.agent.shared.settings.model.ModelProfile
+import com.agent.shared.settings.model.ProviderProfile
+import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.model.SettingsDocument
 
 /**
  * 负责把用户级、项目级与环境变量覆盖合并为最终 profile 列表。

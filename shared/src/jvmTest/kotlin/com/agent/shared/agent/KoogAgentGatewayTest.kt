@@ -4,9 +4,9 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
-import com.agent.shared.config.ConfigLayer
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ProviderType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.flow

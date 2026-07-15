@@ -8,9 +8,9 @@ import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLMProvider
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.params.LLMParams
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ProviderType
-import com.agent.shared.exceptions.IllegalConfigExceptions
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.IllegalConfigExceptions
+import com.agent.shared.settings.model.ProviderType
 import ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort as KoogReasoningEffort
 
 /**

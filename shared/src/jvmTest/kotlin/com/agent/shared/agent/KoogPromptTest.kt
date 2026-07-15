@@ -1,9 +1,9 @@
 package com.agent.shared.agent
 
 import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
-import com.agent.shared.config.ConfigLayer
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ProviderType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

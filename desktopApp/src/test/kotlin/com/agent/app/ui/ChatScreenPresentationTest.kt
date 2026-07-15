@@ -6,10 +6,10 @@ import com.agent.shared.state.ChatMessage
 import com.agent.shared.state.ChatMessageItem
 import com.agent.shared.state.ChatRole
 import com.agent.shared.agent.ReasoningEffort
-import com.agent.shared.config.ConfigLayer
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ModelVariant
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.resolver.ModelVariant
 import com.agent.shared.state.AppError
 import com.agent.shared.state.ExecutionState
 import com.agent.shared.state.ReasoningItem

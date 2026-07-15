@@ -1,4 +1,4 @@
-package com.agent.shared.config
+package com.agent.shared.settings.model
 
 import kotlinx.serialization.Serializable
 

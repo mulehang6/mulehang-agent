@@ -1,6 +1,6 @@
 package com.agent.shared.agent
 
-import com.agent.shared.config.ConfigProfile
+import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.state.PermissionPreset
 
 /**

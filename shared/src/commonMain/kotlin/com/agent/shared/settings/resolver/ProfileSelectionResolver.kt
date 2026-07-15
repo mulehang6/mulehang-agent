@@ -1,4 +1,6 @@
-package com.agent.shared.config
+package com.agent.shared.settings.resolver
+
+import com.agent.shared.settings.model.ConfigProfile
 
 /**
  * 根据记忆状态与启用列表选择当前活动 profile。

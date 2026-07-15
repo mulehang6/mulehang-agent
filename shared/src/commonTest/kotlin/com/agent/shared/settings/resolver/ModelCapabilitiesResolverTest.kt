@@ -1,6 +1,10 @@
-package com.agent.shared.config
+package com.agent.shared.settings.resolver
 
 import com.agent.shared.agent.ReasoningEffort
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ModelLimit
+import com.agent.shared.settings.model.ProviderType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

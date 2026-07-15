@@ -8,9 +8,9 @@ import ai.koog.prompt.executor.clients.anthropic.AnthropicClientSettings
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ProviderType
-import com.agent.shared.exceptions.IllegalConfigExceptions
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.IllegalConfigExceptions
+import com.agent.shared.settings.model.ProviderType
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
 

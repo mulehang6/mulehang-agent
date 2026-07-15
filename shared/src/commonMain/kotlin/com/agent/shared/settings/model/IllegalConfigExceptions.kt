@@ -1,4 +1,4 @@
-package com.agent.shared.exceptions
+package com.agent.shared.settings.model
 
 /**
  * 表示配置内容无法用于当前执行链路。

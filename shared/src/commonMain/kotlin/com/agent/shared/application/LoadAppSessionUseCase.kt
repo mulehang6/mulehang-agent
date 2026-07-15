@@ -1,6 +1,6 @@
 package com.agent.shared.application
 
-import com.agent.shared.config.ProfileSelectionResolver
+import com.agent.shared.settings.resolver.ProfileSelectionResolver
 
 /**
  * 应用会话加载用例骨架。

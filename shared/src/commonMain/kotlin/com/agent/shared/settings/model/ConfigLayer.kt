@@ -1,4 +1,4 @@
-package com.agent.shared.config
+package com.agent.shared.settings.model
 
 /**
  * 配置来源层级。

@@ -6,10 +6,10 @@ import com.agent.shared.agent.AgentConversationHistoryPart
 import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
 import com.agent.shared.agent.ReasoningEffort
-import com.agent.shared.config.ConfigLayer
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.config.ModelLimit
-import com.agent.shared.config.ProviderType
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ModelLimit
+import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.state.PermissionPreset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

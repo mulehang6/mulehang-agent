@@ -3,8 +3,8 @@ package com.agent.shared.application
 import com.agent.shared.agent.AgentGateway
 import com.agent.shared.agent.AgentRunRequest
 import com.agent.shared.agent.AgentStreamEvent
-import com.agent.shared.config.ConfigProfile
-import com.agent.shared.exceptions.IllegalConfigExceptions
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.IllegalConfigExceptions
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

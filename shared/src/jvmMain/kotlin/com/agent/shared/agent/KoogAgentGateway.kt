@@ -509,7 +509,7 @@ internal fun Message.Assistant.finalTextForReactLoop(): String? {
  * 构建 agent 基础 prompt，只承载 provider 参数，不预写用户正文。
  */
 internal fun buildAgentPrompt(
-    profile: com.agent.shared.config.ConfigProfile,
+    profile: com.agent.shared.settings.model.ConfigProfile,
     reasoningEffort: ReasoningEffort?,
 ): Prompt = Prompt.build(
     id = "mulehang-chat",

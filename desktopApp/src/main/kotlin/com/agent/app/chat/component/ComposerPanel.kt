@@ -117,7 +117,7 @@ private fun PendingCards(
  * 原型 composer。
  */
 @Composable
-internal fun ComposerPanel(
+private fun ComposerPanel(
     state: ChatWindowState,
     modifier: Modifier = Modifier,
 ) {

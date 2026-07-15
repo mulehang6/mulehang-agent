@@ -4,6 +4,8 @@ import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatTaskGroup
 import com.agent.app.chat.state.ChatTaskListItemUiState
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.app.chat.state.buildWorkspaceLabel
+import com.agent.app.chat.state.isStoppable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -1240,12 +1242,6 @@ internal fun buildReasoningHeadline(item: ReasoningItem): String =
     if (item.isStreaming) "Thinking: 思考中..." else "Thinking:"
 
 /**
- * 将工作目录映射为侧栏分组标题。
- */
-internal fun buildWorkspaceLabel(path: String): String =
-    path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/')
-
-/**
  * provider 类型的展示文案。
  */
 internal fun providerLabel(providerType: ProviderType): String = when (providerType) {
@@ -1286,14 +1282,6 @@ internal data class ComposerPrimaryActionVisual(
     val symbol: String,
     val danger: Boolean,
 )
-
-/**
- * 判断当前执行状态是否可被 composer 停止，覆盖运行、等待输入和等待审批。
- */
-internal fun ExecutionState.isStoppable(): Boolean =
-    this == ExecutionState.Running ||
-            this == ExecutionState.WaitingForUserInput ||
-            this == ExecutionState.WaitingForApproval
 
 /**
  * 根据执行状态生成 composer 主按钮视觉。

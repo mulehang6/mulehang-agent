@@ -125,6 +125,12 @@ class AgentEventReducerTest {
             streamingAssistantItemIndex = 0,
             streamingReasoningItemIndex = 1,
             streamingAssistantHistoryIndex = 0,
+            pendingQuestion = PendingQuestionUiState(
+                requestId = "question-1",
+                question = "Continue?",
+                options = listOf("Yes", "No"),
+                allowFreeText = false,
+            ),
         )
 
         val result = reduceAgentEvent(
@@ -141,6 +147,8 @@ class AgentEventReducerTest {
         assertNull(result.streamingAssistantItemIndex)
         assertNull(result.streamingReasoningItemIndex)
         assertNull(result.streamingAssistantHistoryIndex)
+        assertNull(result.pendingQuestion)
+        assertNull(result.pendingApproval)
         assertEquals(
             listOf(AgentConversationHistoryPart.Text("final")),
             (result.history.single() as AgentConversationHistoryMessage.Assistant).parts,
@@ -156,6 +164,13 @@ class AgentEventReducerTest {
             ),
             executionState = ExecutionState.Running,
             streamingReasoningItemIndex = 0,
+            pendingApproval = PendingApprovalUiState(
+                requestId = "approval-1",
+                toolName = "read_file",
+                summary = "Read README",
+                targetPath = "README.md",
+                payloadPreview = null,
+            ),
         )
 
         val result = reduceAgentEvent(
@@ -181,6 +196,8 @@ class AgentEventReducerTest {
         assertNull(result.streamingAssistantItemIndex)
         assertNull(result.streamingReasoningItemIndex)
         assertNull(result.streamingAssistantHistoryIndex)
+        assertNull(result.pendingQuestion)
+        assertNull(result.pendingApproval)
     }
 
     private fun conversation(
@@ -190,6 +207,8 @@ class AgentEventReducerTest {
         streamingAssistantItemIndex: Int? = null,
         streamingReasoningItemIndex: Int? = null,
         streamingAssistantHistoryIndex: Int? = null,
+        pendingQuestion: PendingQuestionUiState? = null,
+        pendingApproval: PendingApprovalUiState? = null,
     ): ChatConversationUiState = ChatConversationUiState(
         id = "conversation",
         title = "Title",
@@ -200,5 +219,7 @@ class AgentEventReducerTest {
         streamingAssistantItemIndex = streamingAssistantItemIndex,
         streamingReasoningItemIndex = streamingReasoningItemIndex,
         streamingAssistantHistoryIndex = streamingAssistantHistoryIndex,
+        pendingQuestion = pendingQuestion,
+        pendingApproval = pendingApproval,
     )
 }

@@ -3,8 +3,7 @@ package com.agent.app.chat.state
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.agent.app.ui.DesktopToolInteractionCoordinator
-import com.agent.app.ui.isStoppable
+import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent

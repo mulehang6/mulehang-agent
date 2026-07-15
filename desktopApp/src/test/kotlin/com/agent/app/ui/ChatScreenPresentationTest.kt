@@ -1,6 +1,8 @@
 package com.agent.app.ui
 
 import com.agent.app.chat.state.ChatConversationUiState
+import com.agent.app.chat.state.buildWorkspaceLabel
+import com.agent.app.chat.state.isStoppable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import com.agent.shared.agent.api.ReasoningEffort

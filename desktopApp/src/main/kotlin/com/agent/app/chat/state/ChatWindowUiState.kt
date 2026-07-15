@@ -1,6 +1,5 @@
 package com.agent.app.chat.state
 
-import com.agent.app.ui.buildWorkspaceLabel
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.ChatMessageItem
@@ -176,6 +175,20 @@ data class ChatWindowUiState(
             ),
         )
 }
+
+/**
+ * 判断当前执行状态是否可被 composer 停止，覆盖运行、等待输入和等待审批。
+ */
+internal fun ExecutionState.isStoppable(): Boolean =
+    this == ExecutionState.Running ||
+            this == ExecutionState.WaitingForUserInput ||
+            this == ExecutionState.WaitingForApproval
+
+/**
+ * 将工作目录映射为侧栏分组标题。
+ */
+internal fun buildWorkspaceLabel(path: String): String =
+    path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/')
 
 /**
  * 根据当前会话是否仍在执行，推导原型侧栏中的 task 分组。

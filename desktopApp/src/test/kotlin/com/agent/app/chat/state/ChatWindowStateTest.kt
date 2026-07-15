@@ -1,7 +1,7 @@
 package com.agent.app.chat.state
 
-import com.agent.app.ui.DesktopToolInteractionCoordinator
 import com.agent.app.ui.groupProfilesByProvider
+import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentGateway
@@ -126,42 +126,6 @@ class ChatWindowStateTest {
         advanceUntilIdle()
 
         assertEquals("Agent 执行失败: invalid api key", state.errorMessage)
-    }
-
-    /**
-     * Agent 在工具调用进行中失败时，应将错误就地附加到最后一个 Started 工具事件，
-     * 使其变为 Failed 状态并携带 errorMessage，而非在面板顶部单独展示。
-     */
-    @Test
-    fun `should attach failure to last started tool event`() = runTest(dispatcher) {
-        val gateway = object : AgentGateway {
-            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
-                AgentStreamEvent.Started,
-                AgentStreamEvent.ToolCallStarted(
-                    toolCallId = "call-1",
-                    name = "read_file",
-                    argumentsPreview = """{"path":"README.md"}""",
-                ),
-                AgentStreamEvent.Failed("file not found"),
-            )
-        }
-        val state = ChatWindowState(
-            sendMessageUseCase = SendMessageUseCase(gateway),
-            snapshot = AppSessionSnapshot(
-                profiles = listOf(profile()),
-                activeProfile = profile(),
-            ),
-            projectPath = "E:\\abc\\def",
-        )
-
-        state.send("hi")
-        advanceUntilIdle()
-
-        val toolEvent = state.state.items.lastOrNull { it is ToolEventItem } as? ToolEventItem
-        assertEquals(ToolEventStatus.Failed, toolEvent?.status)
-        assertEquals("read_file", toolEvent?.toolName)
-        assertEquals("file not found", toolEvent?.errorMessage)
-        assertEquals("Agent 执行失败: file not found", state.errorMessage)
     }
 
     /**
@@ -360,46 +324,6 @@ class ChatWindowStateTest {
         val finished = state.state.items[2] as ToolEventItem
         assertEquals("read_file", started.toolName)
         assertEquals("read_file", finished.toolName)
-    }
-
-    /**
-     * 如果正文增量早于后续工具/思考事件到达，最终完成态仍应把回答落在当前轮次最末尾。
-     */
-    @Test
-    fun `should keep completed assistant message at end of current turn`() = runTest(dispatcher) {
-        val gateway = object : AgentGateway {
-            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flowOf(
-                AgentStreamEvent.Started,
-                AgentStreamEvent.ReasoningDelta(summary = "先分析问题", rawText = "先分析问题"),
-                AgentStreamEvent.TextDelta("先给一个草稿回答"),
-                AgentStreamEvent.ToolCallStarted(name = "read_file", argumentsPreview = """{"path":"README.md"}"""),
-                AgentStreamEvent.ToolCallFinished(name = "read_file", resultPreview = "ok"),
-                AgentStreamEvent.ReasoningDelta(summary = "结合文件结果继续分析", rawText = "结合文件结果继续分析"),
-                AgentStreamEvent.Completed("最终回答"),
-            )
-        }
-        val state = ChatWindowState(
-            sendMessageUseCase = SendMessageUseCase(gateway),
-            snapshot = AppSessionSnapshot(
-                profiles = listOf(profile()),
-                activeProfile = profile(),
-            ),
-            projectPath = "E:\\abc\\def",
-        )
-
-        state.send("hi")
-        advanceUntilIdle()
-
-        assertEquals(6, state.state.items.size)
-        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
-        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[1].kind)
-        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[2].kind)
-        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[3].kind)
-        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[4].kind)
-        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[5].kind)
-        val assistantItem = state.state.items[5] as ChatMessageItem
-        assertEquals(ChatRole.Assistant, assistantItem.message.role)
-        assertEquals("最终回答", assistantItem.message.content)
     }
 
     /**

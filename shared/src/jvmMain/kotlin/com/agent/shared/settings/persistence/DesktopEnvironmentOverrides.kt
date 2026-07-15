@@ -1,4 +1,4 @@
-package com.agent.shared.config
+package com.agent.shared.settings.persistence
 
 /**
  * 提供桌面环境下的环境变量覆盖。

@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.runtime
 
 import java.nio.charset.MalformedInputException
 import java.nio.file.Files

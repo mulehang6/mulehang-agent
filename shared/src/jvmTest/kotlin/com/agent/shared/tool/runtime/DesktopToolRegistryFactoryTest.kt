@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.runtime
 
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest

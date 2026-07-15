@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.runtime
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

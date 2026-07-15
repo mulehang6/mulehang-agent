@@ -1,4 +1,4 @@
-package com.agent.shared.config
+package com.agent.shared.settings.persistence
 
 import java.nio.file.Files
 import kotlin.test.Test

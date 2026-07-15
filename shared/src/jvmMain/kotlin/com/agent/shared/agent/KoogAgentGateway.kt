@@ -31,6 +31,7 @@ import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.interaction.RejectingDesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.QuestionRequest
+import com.agent.shared.tool.runtime.DesktopToolRegistryFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers

@@ -1,4 +1,4 @@
-package com.agent.shared.agent
+package com.agent.shared.tool.runtime
 
 import ai.koog.agents.core.tools.ToolRegistry
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge

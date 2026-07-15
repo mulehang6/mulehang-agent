@@ -1,8 +1,8 @@
 package com.agent.shared.session
 
-import com.agent.shared.config.DesktopEnvironmentOverrides
-import com.agent.shared.config.DesktopPathResolver
-import com.agent.shared.config.DesktopSettingsRepository
+import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
+import com.agent.shared.settings.persistence.DesktopPathResolver
+import com.agent.shared.settings.persistence.DesktopSettingsRepository
 import com.agent.shared.settings.model.ConfigProfile
 import java.nio.file.Path
 import java.nio.file.Paths

@@ -11,7 +11,7 @@ kotlin {
             implementation("io.github.oshai:kotlin-logging:8.0.03")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-            implementation("ai.koog:koog-agents:1.0.0")
+            implementation("ai.koog:koog-agents:1.1.1")
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

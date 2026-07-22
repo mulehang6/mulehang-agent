@@ -1,7 +1,6 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,7 +23,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppPanelBackground
 import com.agent.app.design.AppText
@@ -78,7 +76,6 @@ internal fun EmbeddedTerminalPanel(
 
     Column(
         modifier = modifier
-            .border(1.dp, AppLine, RoundedCornerShape(10.dp))
             .clip(RoundedCornerShape(10.dp))
             .background(AppPanelBackground),
     ) {
@@ -117,6 +114,7 @@ internal fun EmbeddedTerminalPanel(
                     factory = { terminal },
                     modifier = Modifier.fillMaxSize(),
                     background = Color(0xFF17181A),
+                    update = { synchronizeTerminalInteropBackground(it) },
                 )
             } else {
                 Text(
@@ -126,6 +124,17 @@ internal fun EmbeddedTerminalPanel(
                 )
             }
         }
+    }
+}
+
+/**
+ * 将终端背景同步到 Swing 祖先链，避免互操作区域异步扩张时露出窗口默认亮色。
+ */
+internal fun synchronizeTerminalInteropBackground(component: java.awt.Component) {
+    val background = AwtColor(23, 24, 26)
+    generateSequence(component) { current -> current.parent }.forEach { current ->
+        current.background = background
+        current.repaint()
     }
 }
 

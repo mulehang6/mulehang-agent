@@ -221,6 +221,28 @@ class ChatScreenPresentationTest {
     }
 
     /**
+     * 终端到窗口根面板的祖先链必须使用终端背景色，避免异步扩张帧露出默认亮色。
+     */
+    @Test
+    fun `should synchronize terminal background through swing interop ancestors`() {
+        val windowRoot = JPanel()
+        val composeHost = JPanel()
+        val interopHost = JPanel()
+        val terminal = JPanel()
+        windowRoot.add(composeHost)
+        composeHost.add(interopHost)
+        interopHost.add(terminal)
+
+        synchronizeTerminalInteropBackground(terminal)
+
+        val terminalBackground = java.awt.Color(23, 24, 26)
+        assertEquals(
+            listOf(terminalBackground, terminalBackground, terminalBackground, terminalBackground),
+            listOf(terminal.background, interopHost.background, composeHost.background, windowRoot.background),
+        )
+    }
+
+    /**
      * 分隔线拖动后的终端高度必须同时保护主区域和终端的可用空间。
      */
     @Test

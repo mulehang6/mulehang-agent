@@ -12,24 +12,36 @@ import java.nio.file.Paths
 /**
  * 桌面应用入口。
  */
-fun main(args: Array<String>): Unit = application {
-    val initialProjectRoot = resolveInitialProjectRoot(args)
-    val screenSize = Toolkit.getDefaultToolkit().screenSize
-    val defaultTransform = GraphicsEnvironment.getLocalGraphicsEnvironment()
-        .defaultScreenDevice
-        .defaultConfiguration
-        .defaultTransform
-    val windowState = rememberWindowState(
-        width = calculateWindowSizeDp(screenPixels = screenSize.width, uiScale = defaultTransform.scaleX.toFloat()).dp,
-        height = calculateWindowSizeDp(screenPixels = screenSize.height, uiScale = defaultTransform.scaleY.toFloat()).dp,
-    )
-    Window(
-        onCloseRequest = ::exitApplication,
-        state = windowState,
-        title = "mulehang-agent",
-    ) {
-        MulehangDesktopApp(initialProjectRoot)
+fun main(args: Array<String>) {
+    configureDesktopRendering()
+    application {
+        val initialProjectRoot = resolveInitialProjectRoot(args)
+        val screenSize = Toolkit.getDefaultToolkit().screenSize
+        val defaultTransform = GraphicsEnvironment.getLocalGraphicsEnvironment()
+            .defaultScreenDevice
+            .defaultConfiguration
+            .defaultTransform
+        val windowState = rememberWindowState(
+            width = calculateWindowSizeDp(screenPixels = screenSize.width, uiScale = defaultTransform.scaleX.toFloat()).dp,
+            height = calculateWindowSizeDp(screenPixels = screenSize.height, uiScale = defaultTransform.scaleY.toFloat()).dp,
+        )
+        Window(
+            onCloseRequest = ::exitApplication,
+            state = windowState,
+            title = "mulehang-agent",
+        ) {
+            MulehangDesktopApp(initialProjectRoot)
+        }
     }
+}
+
+internal const val COMPOSE_INTEROP_BLENDING_PROPERTY = "compose.interop.blending"
+
+/**
+ * 在 Compose 初始化前启用 Swing 互操作同层合成，避免动态裁剪区域闪烁。
+ */
+internal fun configureDesktopRendering() {
+    System.setProperty(COMPOSE_INTEROP_BLENDING_PROPERTY, "true")
 }
 
 /**

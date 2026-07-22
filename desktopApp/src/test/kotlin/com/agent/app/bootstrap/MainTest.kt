@@ -9,6 +9,27 @@ import kotlin.test.assertEquals
 class MainTest {
 
     /**
+     * SwingPanel 与 Compose 同层合成应在创建窗口前启用，避免动态裁剪边缘闪烁。
+     */
+    @Test
+    fun `should enable compose interop blending before application starts`() {
+        val previous = System.getProperty(COMPOSE_INTEROP_BLENDING_PROPERTY)
+        try {
+            System.clearProperty(COMPOSE_INTEROP_BLENDING_PROPERTY)
+
+            configureDesktopRendering()
+
+            assertEquals("true", System.getProperty(COMPOSE_INTEROP_BLENDING_PROPERTY))
+        } finally {
+            if (previous == null) {
+                System.clearProperty(COMPOSE_INTEROP_BLENDING_PROPERTY)
+            } else {
+                System.setProperty(COMPOSE_INTEROP_BLENDING_PROPERTY, previous)
+            }
+        }
+    }
+
+    /**
      * 屏幕物理像素在高 DPI 下应先按缩放系数换算为逻辑 dp，再乘以目标占比。
      */
     @Test

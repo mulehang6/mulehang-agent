@@ -4,3 +4,6 @@
 [submodule "vendor/kilocode"]
 	path = vendor/kilocode
 	url = https://github.com/Kilo-Org/kilocode.git
+[submodule "vendor/liquid-glass"]
+	path = vendor/liquid-glass
+	url = https://github.com/samasante/liquid-glass.git

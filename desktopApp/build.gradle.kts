@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.compose.material3:material3:1.9.0")
+    implementation("org.jetbrains.runtime:jbr-api:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
     implementation("org.jetbrains.jediterm:jediterm-core:3.66")
     implementation("org.jetbrains.jediterm:jediterm-ui:3.66")

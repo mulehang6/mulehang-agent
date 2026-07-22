@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +32,9 @@ import com.agent.app.design.RingRailActionButton
 import com.agent.app.design.buildRightRailGroups
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
+
+internal const val TOOL_RAIL_WIDTH_DP = 48
+internal const val TOOL_RAIL_TOP_PADDING_DP = 16
 
 /**
  * 右侧 rail 操作后的轻量反馈。
@@ -102,8 +106,10 @@ internal fun ToolRail(
     val toolGroups = buildRightRailGroups()
     Column(
         modifier = modifier
+            .width(TOOL_RAIL_WIDTH_DP.dp)
+            .fillMaxHeight()
             .background(AppRailBackground)
-            .padding(top = 10.dp, bottom = 8.dp, start = 4.dp, end = 4.dp),
+            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 8.dp, start = 4.dp, end = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

@@ -7,6 +7,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.window.WindowScope
+import androidx.compose.ui.window.WindowState
 import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppAccent
@@ -31,7 +33,13 @@ import java.nio.file.Paths
  * 根 composable，负责加载桌面会话快照并装配窗口状态。
  */
 @Composable
-fun MulehangDesktopApp(initialProjectRoot: Path?) {
+internal fun WindowScope.MulehangDesktopApp(
+    initialProjectRoot: Path?,
+    desktopWindowState: WindowState,
+    windowChromeMode: WindowChromeMode,
+    onCloseRequest: () -> Unit,
+) {
+    val nativeTitleBarHandle = rememberNativeWindowTitleBar(windowChromeMode)
     val userHome = remember { Paths.get(System.getProperty("user.home")) }
     val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
     val projectRootState = remember {
@@ -81,6 +89,14 @@ fun MulehangDesktopApp(initialProjectRoot: Path?) {
             onError = Color.White,
         ),
     ) {
-        ChatScreen(windowState)
+        ChatScreen(
+            state = windowState,
+            desktopWindowState = desktopWindowState,
+            windowChromeMode = windowChromeMode,
+            onTitleBarClientPointerEvent = nativeTitleBarHandle?.let { handle ->
+                { handle.forceClientArea() }
+            },
+            onCloseRequest = onCloseRequest,
+        )
     }
 }

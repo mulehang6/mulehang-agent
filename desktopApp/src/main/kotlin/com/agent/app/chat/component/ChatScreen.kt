@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -39,6 +40,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowScope
+import androidx.compose.ui.window.WindowState
+import com.agent.app.bootstrap.WindowChromeMode
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AirSidebarSurface
 import com.agent.app.design.AppBackground
@@ -54,8 +58,12 @@ internal const val SIDEBAR_VISIBLE_BY_DEFAULT = false
  * 按原型重构后的桌面主界面。
  */
 @Composable
-fun ChatScreen(
+internal fun WindowScope.ChatScreen(
     state: ChatWindowState,
+    desktopWindowState: WindowState,
+    windowChromeMode: WindowChromeMode,
+    onTitleBarClientPointerEvent: (() -> Unit)?,
+    onCloseRequest: () -> Unit,
 ) {
     var terminalVisible by remember { mutableStateOf(false) }
     var sidebarVisible by remember { mutableStateOf(SIDEBAR_VISIBLE_BY_DEFAULT) }
@@ -103,20 +111,24 @@ fun ChatScreen(
                     }
                 },
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .captureWorkspaceBackdrop(workspaceBackdropState),
             ) {
-                Column(
+                ChatHeader(
+                    sidebarVisible = sidebarVisible,
+                    onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                    windowState = desktopWindowState,
+                    windowChromeMode = windowChromeMode,
+                    onTitleBarClientPointerEvent = onTitleBarClientPointerEvent,
+                    onCloseRequest = onCloseRequest,
+                )
+                Row(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight(),
+                        .fillMaxWidth(),
                 ) {
-                    ChatHeader(
-                        sidebarVisible = sidebarVisible,
-                        onToggleSidebar = { sidebarVisible = !sidebarVisible },
-                    )
                     WorkspacePanel(
                         state = state,
                         activeRailView = RightRailGlyph.CODE,
@@ -126,28 +138,28 @@ fun ChatScreen(
                         compact = compact,
                         modifier = Modifier.weight(1f),
                     )
-                }
-                if (!compact) {
-                    ToolRail(
-                        activeGlyph = resolveActiveRailGlyph(
-                            activeRailView = RightRailGlyph.CODE,
-                            filterToolActivityOnly = false,
-                            terminalVisible = terminalVisible,
-                        ),
-                        onToolClick = { glyph ->
-                            if (glyph == RightRailGlyph.TERMINAL) {
-                                if (activeConversation == null) {
-                                    railFeedback = "请先选择工作区"
-                                } else {
-                                    terminalVisible = !terminalVisible
-                                    railFeedback = null
+                    if (!compact) {
+                        ToolRail(
+                            activeGlyph = resolveActiveRailGlyph(
+                                activeRailView = RightRailGlyph.CODE,
+                                filterToolActivityOnly = false,
+                                terminalVisible = terminalVisible,
+                            ),
+                            onToolClick = { glyph ->
+                                if (glyph == RightRailGlyph.TERMINAL) {
+                                    if (activeConversation == null) {
+                                        railFeedback = "请先选择工作区"
+                                    } else {
+                                        terminalVisible = !terminalVisible
+                                        railFeedback = null
+                                    }
                                 }
-                            }
-                        },
-                        modifier = Modifier
-                            .width(42.dp)
-                            .fillMaxHeight(),
-                    )
+                            },
+                            modifier = Modifier
+                                .width(TOOL_RAIL_WIDTH_DP.dp)
+                                .fillMaxHeight(),
+                        )
+                    }
                 }
             }
             val sidebarEdgeGapDp = if (compact) 8.dp else 12.dp

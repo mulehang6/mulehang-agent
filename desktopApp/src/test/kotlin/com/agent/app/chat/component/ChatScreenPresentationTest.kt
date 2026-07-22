@@ -9,7 +9,11 @@ import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.AirSidebarStyle
+import com.agent.app.design.AppHeaderBackground
+import com.agent.app.design.AppRailBackground
 import com.agent.app.design.AppWorkspaceBackground
+import com.agent.app.design.COMPOSER_PRIMARY_GLYPH_SIZE_DP
+import com.agent.app.design.RAIL_ACTION_SIZE_DP
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.SELECT_POPUP_FOCUSABLE
 import com.agent.app.design.SELECT_TOOLTIP_DELAY_MILLIS
@@ -24,6 +28,8 @@ import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import java.awt.event.MouseEvent
+import java.awt.image.BufferedImage
 import javax.swing.BorderFactory
 import javax.swing.JPanel
 
@@ -31,6 +37,112 @@ import javax.swing.JPanel
  * 验证仍与 ChatScreen Compose 组件同包的展示规则。
  */
 class ChatScreenPresentationTest {
+
+    /**
+     * JBR 原生标题栏中的菜单必须先由 AWT 客户区命中组件接收事件，再触发 Compose 侧栏动作。
+     */
+    @Test
+    fun `should route native title bar menu click through awt hit target`() {
+        var clientAreaRequests = 0
+        var clicks = 0
+        val hitTarget = createNativeTitleBarMenuHitTarget(
+            onClientMouseEvent = { clientAreaRequests += 1 },
+            onClick = { clicks += 1 },
+        ).apply {
+            setSize(36, 36)
+        }
+
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_ENTERED))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_MOVED))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1))
+
+        assertEquals(4, clientAreaRequests)
+        assertEquals(1, clicks)
+    }
+
+    /**
+     * Swing 互操作命中组件必须使用标题栏底色，不能在菜单四周露出默认白色画布。
+     */
+    @Test
+    fun `should paint native title bar menu host with header background`() {
+        val hitTarget = createNativeTitleBarMenuHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        )
+
+        assertEquals(java.awt.Color(0x1E, 0x1F, 0x22), hitTarget.background)
+    }
+
+    /**
+     * SwingPanel 外层宿主也必须同步标题栏底色，避免组件边缘露出 Look & Feel 的浅色背景。
+     */
+    @Test
+    fun `should synchronize native title bar menu interop host background`() {
+        val interopHost = JPanel().apply {
+            background = java.awt.Color(0xEE, 0xEE, 0xEE)
+        }
+        val hitTarget = createNativeTitleBarMenuHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        )
+        interopHost.add(hitTarget)
+
+        hitTarget.updateActions(
+            onClientMouseEvent = {},
+            onClick = {},
+            tooltip = "显示任务侧栏",
+        )
+
+        assertEquals(java.awt.Color(0x1E, 0x1F, 0x22), interopHost.background)
+    }
+
+    /**
+     * 高 DPI 混合模式下宿主需向左覆盖一个逻辑像素，但菜单内容应保持原位。
+     */
+    @Test
+    fun `should cover native title bar menu interop seam without moving content`() {
+        val interopHost = JPanel().apply {
+            layout = null
+            setBounds(12, 6, 36, 36)
+        }
+        val hitTarget = createNativeTitleBarMenuHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        ).apply {
+            setBounds(0, 0, 36, 36)
+        }
+        interopHost.add(hitTarget)
+
+        coverNativeTitleBarMenuInteropSeam(hitTarget)
+
+        assertEquals(java.awt.Rectangle(11, 6, 37, 36), interopHost.bounds)
+        assertEquals(java.awt.Rectangle(1, 0, 36, 36), hitTarget.bounds)
+    }
+
+    /**
+     * 菜单默认态应融入标题栏，既没有圆角填充，也没有按钮描边。
+     */
+    @Test
+    fun `should keep native title bar menu idle surface unselected`() {
+        val hitTarget = createNativeTitleBarMenuHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        ).apply {
+            setSize(36, 36)
+        }
+        val image = BufferedImage(36, 36, BufferedImage.TYPE_INT_ARGB)
+        val graphics = image.createGraphics()
+        try {
+            hitTarget.paint(graphics)
+        } finally {
+            graphics.dispose()
+        }
+        val headerRgb = java.awt.Color(0x1E, 0x1F, 0x22).rgb
+
+        assertEquals(headerRgb, image.getRGB(4, 18))
+        assertEquals(headerRgb, image.getRGB(18, 4))
+    }
 
     /**
      * pwd 分组标题应只显示末级目录名。
@@ -421,4 +533,59 @@ class ChatScreenPresentationTest {
         assertEquals(true, isCompactDesktopLayout(900))
         assertEquals(false, isCompactDesktopLayout(1200))
     }
+
+    /**
+     * 终端入口应使用 IDEA 风格右侧栏的宽度和点击区域。
+     */
+    @Test
+    fun `should expose idea style right rail metrics`() {
+        assertEquals(48, TOOL_RAIL_WIDTH_DP)
+        assertEquals(40, RAIL_ACTION_SIZE_DP)
+    }
+
+    /**
+     * 右侧栏应从标题栏下方开始，并与标题栏使用同一底色、与主工作区保持顶部节奏。
+     */
+    @Test
+    fun `should align the right rail with the workspace below the title bar`() {
+        assertEquals(16, TOOL_RAIL_TOP_PADDING_DP)
+        assertEquals(AppHeaderBackground, AppRailBackground)
+    }
+
+    /**
+     * Composer 主动作和终端关闭按钮应匹配各自点击区域。
+     */
+    @Test
+    fun `should expose readable composer and terminal action metrics`() {
+        assertEquals(18, COMPOSER_PRIMARY_GLYPH_SIZE_DP)
+        assertEquals(36, TERMINAL_CLOSE_BUTTON_SIZE_DP)
+    }
+
+    /**
+     * 任务分组与工作区路径不应使用过小字号。
+     */
+    @Test
+    fun `should expose readable task sidebar typography`() {
+        assertEquals(13, TASK_SECTION_TITLE_FONT_SIZE_SP)
+        assertEquals(13, TASK_PATH_FONT_SIZE_SP)
+    }
 }
+
+/**
+ * 构造发送给原生标题栏菜单命中组件的测试鼠标事件。
+ */
+private fun mouseEvent(
+    source: JPanel,
+    id: Int,
+    button: Int = MouseEvent.NOBUTTON,
+): MouseEvent = MouseEvent(
+    source,
+    id,
+    System.currentTimeMillis(),
+    0,
+    18,
+    18,
+    1,
+    false,
+    button,
+)

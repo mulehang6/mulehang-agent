@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +43,9 @@ import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.RingInputField
 import com.agent.app.design.RingPrimaryButton
 import com.agent.app.platform.pickWorkspaceDirectory
+
+internal const val TASK_SECTION_TITLE_FONT_SIZE_SP = 13
+internal const val TASK_PATH_FONT_SIZE_SP = 13
 
 /**
  * 原型左侧 task 侧栏。
@@ -120,10 +124,12 @@ internal fun TaskSidebar(
             filteredSections.forEach { section ->
                 Text(
                     text = section.title,
-                    style = MaterialTheme.typography.labelSmall.copy(
+                    style = MaterialTheme.typography.bodySmall.copy(
                         color = AppMuted,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
+                        fontSize = TASK_SECTION_TITLE_FONT_SIZE_SP.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.2.sp,
                     ),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -160,8 +166,8 @@ private fun TaskListItem(
         onClick = onClick,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -184,7 +190,12 @@ private fun TaskListItem(
             }
             Text(
                 text = task.subtitle,
-                style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = AppMuted.copy(alpha = 0.92f),
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = TASK_PATH_FONT_SIZE_SP.sp,
+                    lineHeight = 18.sp,
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

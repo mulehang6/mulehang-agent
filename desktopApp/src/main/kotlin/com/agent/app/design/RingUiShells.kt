@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -58,6 +57,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
@@ -118,6 +118,9 @@ internal enum class RightRailGlyph {
     COPY,
     FILTER,
 }
+
+internal const val RAIL_ACTION_SIZE_DP = 40
+internal const val COMPOSER_PRIMARY_GLYPH_SIZE_DP = 18
 
 /**
  * 右侧 rail 的按钮展示模型。
@@ -270,7 +273,7 @@ internal fun RingPrimaryButton(
                 RingGlyphIcon(
                     glyph = iconGlyph,
                     tint = Color.White,
-                    size = 18.dp,
+                    size = COMPOSER_PRIMARY_GLYPH_SIZE_DP.dp,
                 )
             } else {
                 Text(text)
@@ -463,8 +466,7 @@ internal fun RingRailActionButton(
         val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(120))
         Box(
             modifier = Modifier
-                .width(34.dp)
-                .height(34.dp)
+                .size(RAIL_ACTION_SIZE_DP.dp)
                 .graphicsLayer(scaleX = scale, scaleY = scale)
                 .background(
                     color = when {
@@ -571,13 +573,13 @@ private val RightRailGlyph.tooltip: String
 internal fun RingGlyphIcon(
     glyph: HeaderGlyph,
     tint: Color = AppText,
-    size: androidx.compose.ui.unit.Dp = 16.dp,
+    size: Dp = 16.dp,
 ) {
     Box(
         modifier = Modifier.size(size),
         contentAlignment = Alignment.Center,
     ) {
-        HeaderGlyphIcon(glyph = glyph, tint = tint)
+        HeaderGlyphIcon(glyph = glyph, tint = tint, canvasSize = size)
     }
 }
 
@@ -588,8 +590,9 @@ internal fun RingGlyphIcon(
 private fun HeaderGlyphIcon(
     glyph: HeaderGlyph,
     tint: Color,
+    canvasSize: Dp = 16.dp,
 ) {
-    Canvas(modifier = Modifier.size(16.dp)) {
+    Canvas(modifier = Modifier.size(canvasSize)) {
         val strokeWidth = 1.8.dp.toPx()
         when (glyph) {
             HeaderGlyph.MENU -> {
@@ -1156,7 +1159,7 @@ internal val AppHoverBackground = Color(0xFF35383E)
 internal val AppUserCardBackground = Color(0xFF43454A)
 internal val AppChipBackground = Color(0xFF43454A)
 internal val ComposerBackground = Color(0xFF2B2D30)
-internal val AppRailBackground = Color(0xFF24262B)
+internal val AppRailBackground = AppHeaderBackground
 internal val AppLine = Color(0xFF393B40)
 internal val AppText = Color(0xFFFFFFFF)
 internal val AppMuted = Color(0xFF9DA0A8)

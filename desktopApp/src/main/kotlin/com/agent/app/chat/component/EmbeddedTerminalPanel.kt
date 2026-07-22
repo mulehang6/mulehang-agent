@@ -55,6 +55,8 @@ import javax.swing.SwingUtilities
 import javax.swing.event.ChangeListener
 import javax.swing.plaf.basic.BasicScrollBarUI
 
+internal const val TERMINAL_CLOSE_BUTTON_SIZE_DP = 36
+
 /**
  * 在主工作区底部承载当前目录的交互式 PowerShell 终端。
  */
@@ -93,14 +95,14 @@ internal fun EmbeddedTerminalPanel(
             )
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(TERMINAL_CLOSE_BUTTON_SIZE_DP.dp)
                     .clickable(onClick = onClose)
                     .semantics { contentDescription = "关闭终端" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "×",
-                    style = MaterialTheme.typography.titleMedium.copy(color = AppMuted),
+                    style = MaterialTheme.typography.titleLarge.copy(color = AppMuted),
                 )
             }
         }

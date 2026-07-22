@@ -6,11 +6,18 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+repositories {
+    maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies")
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation("org.jetbrains.compose.material3:material3:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+    implementation("org.jetbrains.jediterm:jediterm-core:3.66")
+    implementation("org.jetbrains.jediterm:jediterm-ui:3.66")
+    implementation("org.jetbrains.pty4j:pty4j:0.13.12")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

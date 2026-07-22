@@ -159,6 +159,23 @@ class ChatWindowState(
     }
 
     /**
+     * 从当前会话输入区移除指定路径的附件并重新估算上下文占用。
+     */
+    fun removeAttachment(path: String) {
+        mutateActiveConversation { conversation ->
+            val attachments = conversation.attachments.filterNot { it.path == path }
+            conversation.copy(
+                attachments = attachments,
+                contextUsageFraction = estimateContextUsage(
+                    items = conversation.items,
+                    attachmentCount = attachments.size,
+                    contextWindow = activeContextWindow(),
+                ),
+            )
+        }
+    }
+
+    /**
      * 调整当前会话的权限档位。
      */
     fun updatePermission(permissionPreset: PermissionPreset) {

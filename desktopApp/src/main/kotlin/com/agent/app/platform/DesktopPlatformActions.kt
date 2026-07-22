@@ -1,7 +1,5 @@
 package com.agent.app.platform
 
-import java.awt.Toolkit
-import java.awt.datatransfer.StringSelection
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileSystemView
@@ -36,23 +34,6 @@ internal fun pickWorkspaceDirectory(): String? {
 }
 
 /**
- * 打开对话记录保存选择器并返回用户选择的文件。
+ * 构造内嵌终端默认使用的 Windows PowerShell 命令。
  */
-internal fun pickTranscriptSaveFile(defaultFileName: String): File? {
-    val chooser = JFileChooser(FileSystemView.getFileSystemView().defaultDirectory).apply {
-        dialogTitle = "Save transcript"
-        selectedFile = File(defaultFileName)
-    }
-    return if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
-        chooser.selectedFile
-    } else {
-        null
-    }
-}
-
-/**
- * 把文本写入系统剪贴板。
- */
-internal fun copyTextToClipboard(text: String) {
-    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
-}
+internal fun buildPowerShellCommand(): List<String> = listOf("powershell.exe", "-NoLogo")

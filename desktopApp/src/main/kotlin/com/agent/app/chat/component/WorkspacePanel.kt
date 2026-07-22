@@ -2,7 +2,9 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,16 +20,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 import com.agent.app.chat.presentation.itemContentSize
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppPanelBackground
+import com.agent.app.design.AppChipBackground
+import com.agent.app.design.AppLine
 import com.agent.app.design.AppText
+import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.RightRailGlyph
+import com.agent.app.design.RingPrimaryButton
+import com.agent.shared.chat.model.ExecutionState
 
 /**
  * 原型主工作区。
@@ -37,7 +42,9 @@ internal fun WorkspacePanel(
     state: ChatWindowState,
     activeRailView: RightRailGlyph,
     filterToolActivityOnly: Boolean,
-    railFeedback: String?,
+    terminalVisible: Boolean,
+    onCloseTerminal: () -> Unit,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
@@ -52,51 +59,74 @@ internal fun WorkspacePanel(
 
     LaunchedEffect(totalContentSize) {
         if (isFollowingLatest.value) {
-            scrollState.animateScrollTo(scrollState.maxValue)
+            scrollState.scrollTo(scrollState.maxValue)
         }
     }
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        shape = RoundedCornerShape(0.dp),
-        color = AppPanelBackground,
-        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
+            .padding(if (compact) 8.dp else 16.dp),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 32.dp, vertical = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                if (activeConversation == null) {
-                    EmptyWorkspaceState()
-                } else {
+        ResizableWorkspaceLayout(
+            terminalVisible = terminalVisible && activeConversation != null,
+            compact = compact,
+            modifier = Modifier.fillMaxSize(),
+            workspace = { workspaceModifier ->
+                Surface(
+                    modifier = workspaceModifier,
+                    shape = RoundedCornerShape(14.dp),
+                    color = AppWorkspaceBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.42f)),
+                ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .widthIn(max = 720.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (railFeedback != null) {
-                            RailFeedbackCard(railFeedback)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .verticalScroll(scrollState)
+                                .padding(horizontal = if (compact) 16.dp else 32.dp, vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            if (
+                                activeConversation == null ||
+                                (activeConversation.items.isEmpty() && activeConversation.executionState == ExecutionState.Idle)
+                            ) {
+                                EmptyWorkspaceState(state)
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .widthIn(max = 720.dp),
+                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    when (activeRailView) {
+                                        RightRailGlyph.CODE -> ConversationTimeline(activeConversation)
+                                        RightRailGlyph.HISTORY -> HistoryPanel(
+                                            activeConversation,
+                                            filterToolActivityOnly
+                                        )
+
+                                        else -> ConversationTimeline(activeConversation)
+                                    }
+                                }
+                            }
                         }
-                        when (activeRailView) {
-                            RightRailGlyph.CODE -> ConversationTimeline(activeConversation)
-                            RightRailGlyph.TERMINAL -> TerminalPanel(activeConversation, filterToolActivityOnly)
-                            RightRailGlyph.HISTORY -> HistoryPanel(activeConversation, filterToolActivityOnly)
-                            else -> ConversationTimeline(activeConversation)
-                        }
+                        FooterComposerSection(state, compact)
                     }
                 }
-            }
-            FooterComposerSection(state)
-        }
+            },
+            terminal = { terminalModifier ->
+                EmbeddedTerminalPanel(
+                    workspacePath = activeConversation?.workspacePath.orEmpty(),
+                    onClose = onCloseTerminal,
+                    modifier = terminalModifier,
+                )
+            },
+        )
     }
 }
 
@@ -104,7 +134,7 @@ internal fun WorkspacePanel(
  * 空任务态主区。
  */
 @Composable
-private fun EmptyWorkspaceState() {
+private fun EmptyWorkspaceState(state: ChatWindowState) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -113,15 +143,39 @@ private fun EmptyWorkspaceState() {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "Create a task to start working.",
+            text = "从一个任务开始",
             style = MaterialTheme.typography.headlineSmall.copy(
                 color = AppText,
                 fontWeight = FontWeight.SemiBold,
             ),
         )
         Text(
-            text = "The prototype layout is ready, but there is no active task yet.",
+            text = "选择工作区后，告诉 MH Agent 你想推进什么。",
             style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
         )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EmptyStateAction("审查改动", "审查当前工作区的改动，优先指出高风险问题。", state)
+            EmptyStateAction("解释项目", "解释这个项目的结构、入口和关键数据流。", state)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EmptyStateAction("规划任务", "为这个需求制定一份可执行的实施计划。", state)
+            EmptyStateAction("修复问题", "定位并修复当前项目中的问题。", state)
+        }
     }
+}
+
+/**
+ * 空态中的高价值起步动作，点击后只填充草稿，不自动发送。
+ */
+@Composable
+private fun EmptyStateAction(
+    label: String,
+    prompt: String,
+    state: ChatWindowState,
+) {
+    RingPrimaryButton(
+        text = label,
+        onClick = { state.updateDraft(prompt) },
+        containerColor = AppChipBackground,
+    )
 }

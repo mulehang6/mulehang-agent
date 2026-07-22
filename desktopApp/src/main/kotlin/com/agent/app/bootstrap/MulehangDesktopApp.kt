@@ -9,6 +9,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.app.design.AppAccent
+import com.agent.app.design.AppBackground
+import com.agent.app.design.AppChipBackground
+import com.agent.app.design.AppDanger
+import com.agent.app.design.AppMuted
+import com.agent.app.design.AppSidebarBackground
+import com.agent.app.design.AppSuccess
+import com.agent.app.design.AppText
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.chat.usecase.SendMessageUseCase
@@ -59,18 +67,18 @@ fun MulehangDesktopApp(initialProjectRoot: Path?) {
 
     MaterialTheme(
         colorScheme = darkColorScheme(
-            background = Color(0xFF0B0C0E),
-            surface = Color(0xFF17191D),
-            surfaceVariant = Color(0xFF24272D),
-            primary = Color(0xFF1F7DE8),
-            secondary = Color(0xFF1FA982),
-            error = Color(0xFFE6476B),
-            onBackground = Color(0xFFF2F4F8),
-            onSurface = Color(0xFFF2F4F8),
-            onSurfaceVariant = Color(0xFFA3A7AE),
-            onPrimary = Color(0xFFF8FAFC),
-            onSecondary = Color(0xFFF8FAFC),
-            onError = Color(0xFFF8FAFC),
+            background = AppBackground,
+            surface = AppSidebarBackground,
+            surfaceVariant = AppChipBackground,
+            primary = AppAccent,
+            secondary = AppSuccess,
+            error = AppDanger,
+            onBackground = AppText,
+            onSurface = AppText,
+            onSurfaceVariant = AppMuted,
+            onPrimary = Color.White,
+            onSecondary = Color.White,
+            onError = Color.White,
         ),
     ) {
         ChatScreen(windowState)

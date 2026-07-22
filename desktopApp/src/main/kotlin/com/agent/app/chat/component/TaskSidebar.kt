@@ -35,7 +35,6 @@ import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSelectedBackground
-import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.design.HeaderGlyph
@@ -50,6 +49,7 @@ import com.agent.app.platform.pickWorkspaceDirectory
 @Composable
 internal fun TaskSidebar(
     state: ChatWindowState,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -86,8 +86,7 @@ internal fun TaskSidebar(
     }
     Column(
         modifier = modifier
-            .background(AppSidebarBackground)
-            .padding(12.dp),
+            .padding(if (compact) 8.dp else 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -96,7 +95,7 @@ internal fun TaskSidebar(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 singleLine = true,
-                placeholder = "Search tasks",
+                placeholder = "搜索任务",
                 iconGlyph = HeaderGlyph.SEARCH,
                 borderless = true,
             )
@@ -104,10 +103,11 @@ internal fun TaskSidebar(
                 glyph = HeaderGlyph.ADD,
                 onClick = startTaskInSelectedWorkspace,
                 inline = true,
+                tooltip = "在其他工作区新建任务",
             )
         }
         RingPrimaryButton(
-            text = "New Task",
+            text = "新建任务",
             onClick = startTaskInCurrentWorkspace,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -132,6 +132,7 @@ internal fun TaskSidebar(
                             task = task,
                             selected = task.id == state.ui.activeTaskId,
                             onClick = { state.selectConversation(task.id) },
+                            compact = compact,
                         )
                     }
                 }
@@ -148,6 +149,7 @@ private fun TaskListItem(
     task: ChatTaskListItemUiState,
     selected: Boolean,
     onClick: () -> Unit,
+    compact: Boolean,
 ) {
     val dotColor = if (task.group == ChatTaskGroup.DONE) AppSuccess else AppAccent
     Surface(
@@ -186,10 +188,12 @@ private fun TaskListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = task.stats,
-                style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
-            )
+            if (!compact) {
+                Text(
+                    text = task.stats,
+                    style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                )
+            }
         }
     }
 }

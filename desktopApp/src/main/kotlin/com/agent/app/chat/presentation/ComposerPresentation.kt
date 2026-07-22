@@ -1,6 +1,7 @@
 package com.agent.app.chat.presentation
 
 import com.agent.app.chat.state.isStoppable
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType
@@ -30,10 +31,16 @@ internal fun groupProfilesByProvider(profiles: List<ConfigProfile>): Map<String,
     profiles.groupBy { it.providerId }
 
 /**
+ * 为独立推理强度选择器生成易读标签。
+ */
+internal fun reasoningControlLabel(reasoningEffort: ReasoningEffort?): String =
+    reasoningEffort?.name?.lowercase()?.replaceFirstChar(Char::uppercase) ?: "推理强度"
+
+/**
  * 生成上下文圆环 hover 文案。
  */
 internal fun buildContextTooltip(usageFraction: Float): String =
-    "${formatContextUsagePercent(usageFraction)} used"
+    "已使用 ${formatContextUsagePercent(usageFraction)} 上下文"
 
 /**
  * 生成上下文圆环旁的可见百分比文案。

@@ -736,6 +736,26 @@ class ChatWindowStateTest {
     }
 
     /**
+     * 用户应能从当前输入区移除误选附件。
+     */
+    @Test
+    fun `should remove attachment from active conversation draft`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        state.attachFiles(listOf("D:\\tmp\\ChatScreen.kt", "D:\\tmp\\design.png"))
+
+        state.removeAttachment("D:\\tmp\\ChatScreen.kt")
+
+        assertEquals(listOf("design.png"), state.ui.activeConversation.attachments.map { it.name })
+    }
+
+    /**
      * 发送动作只能影响当前激活的会话，不应回写到其他线程。
      */
     @Test

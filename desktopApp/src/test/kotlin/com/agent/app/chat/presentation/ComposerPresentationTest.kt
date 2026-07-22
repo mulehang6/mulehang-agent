@@ -15,6 +15,15 @@ import kotlin.test.assertEquals
 class ComposerPresentationTest {
 
     /**
+     * 独立推理强度控件应显示易读标签，并为缺失能力提供明确占位文案。
+     */
+    @Test
+    fun `should format standalone reasoning control label`() {
+        assertEquals("High", reasoningControlLabel(ReasoningEffort.HIGH))
+        assertEquals("推理强度", reasoningControlLabel(null))
+    }
+
+    /**
      * provider 标签和 reasoning 档位应来自 profile 能力解析。
      */
     @Test
@@ -65,8 +74,8 @@ class ComposerPresentationTest {
      */
     @Test
     fun `should keep context usage value inside tooltip text only`() {
-        assertEquals("58% used", buildContextTooltip(0.58f))
-        assertEquals("<0.1% used", buildContextTooltip(0.00002f))
+        assertEquals("已使用 58% 上下文", buildContextTooltip(0.58f))
+        assertEquals("已使用 <0.1% 上下文", buildContextTooltip(0.00002f))
     }
 
     /**

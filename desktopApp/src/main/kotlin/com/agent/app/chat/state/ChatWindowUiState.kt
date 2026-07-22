@@ -161,14 +161,14 @@ data class ChatWindowUiState(
         get() = listOf(
             ChatTaskSectionUiState(
                 group = ChatTaskGroup.RUNNING,
-                title = "Running",
+                title = "进行中",
                 tasks = tasks
                     .filter { taskGroupFor(it) == ChatTaskGroup.RUNNING }
                     .map(::toTaskListItem),
             ),
             ChatTaskSectionUiState(
                 group = ChatTaskGroup.DONE,
-                title = "Done",
+                title = "已完成",
                 tasks = tasks
                     .filter { taskGroupFor(it) == ChatTaskGroup.DONE }
                     .map(::toTaskListItem),
@@ -242,11 +242,11 @@ internal fun buildTaskSubtitle(conversation: ChatConversationUiState): String =
  */
 internal fun buildTaskStats(conversation: ChatConversationUiState): String = buildString {
     append(conversation.items.size)
-    append(" items")
+    append(" 项")
     if (conversation.attachments.isNotEmpty()) {
         append(" · ")
         append(conversation.attachments.size)
-        append(" files")
+        append(" 个附件")
     }
 }
 

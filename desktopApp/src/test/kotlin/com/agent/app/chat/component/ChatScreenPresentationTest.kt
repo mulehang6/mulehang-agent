@@ -2,18 +2,30 @@ package com.agent.app.chat.component
 
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.design.HeaderGlyph
+import com.agent.app.design.AirSidebarStyle
+import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.RightRailGlyph
+import com.agent.app.design.SELECT_POPUP_FOCUSABLE
+import com.agent.app.design.SELECT_TOOLTIP_DELAY_MILLIS
 import com.agent.app.design.buildHeaderActions
 import com.agent.app.design.buildRightRailGroups
+import com.agent.app.design.desiredSelectExpandedState
+import com.agent.app.design.workspaceBackdropOffset
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import javax.swing.BorderFactory
+import javax.swing.JPanel
 
 /**
  * 验证仍与 ChatScreen Compose 组件同包的展示规则。
@@ -77,7 +89,8 @@ class ChatScreenPresentationTest {
 
         assertEquals(listOf("Inspect files", "Refactor UI"), visible?.entries?.map { it.text })
         assertEquals(2, visible?.entries?.size)
-        assertEquals(true, visible?.entries?.last()?.active)
+        assertEquals(TaskPlanStatus.COMPLETED, visible?.entries?.first()?.status)
+        assertEquals(TaskPlanStatus.IN_PROGRESS, visible?.entries?.last()?.status)
         assertEquals(null, hidden)
     }
 
@@ -97,7 +110,10 @@ class ChatScreenPresentationTest {
         )
 
         assertEquals(listOf("Inspect \"Ring\" tokens", "Port sidebar"), planCard?.entries?.map { it.text })
-        assertEquals(listOf(false, true), planCard?.entries?.map { it.active })
+        assertEquals(
+            listOf(TaskPlanStatus.COMPLETED, TaskPlanStatus.IN_PROGRESS),
+            planCard?.entries?.map { it.status },
+        )
     }
 
     /**
@@ -121,24 +137,244 @@ class ChatScreenPresentationTest {
         )
 
         assertEquals(listOf("Inspect files", "Port Ring UI"), planCard?.entries?.map { it.text })
-        assertEquals(listOf(false, true), planCard?.entries?.map { it.active })
+        assertEquals(
+            listOf(TaskPlanStatus.COMPLETED, TaskPlanStatus.IN_PROGRESS),
+            planCard?.entries?.map { it.status },
+        )
     }
 
     /**
-     * 右侧 rail 应保持三段分组，并且只有第一个 code 按钮默认高亮。
+     * 右侧 rail 只保留终端入口，关闭终端时不默认高亮。
      */
     @Test
-    fun `should expose grouped right rail buttons with only first item active`() {
+    fun `should expose terminal as the only right rail button`() {
         val groups = buildRightRailGroups()
 
-        assertEquals(listOf(3, 2, 2), groups.map { it.size })
-        assertEquals(RightRailGlyph.CODE, groups.first().first().glyph)
-        assertEquals(RightRailGlyph.UPLOAD, groups[1].first().glyph)
-        assertEquals(true, groups.first().first().active)
+        assertEquals(listOf(1), groups.map { it.size })
+        assertEquals(RightRailGlyph.TERMINAL, groups.single().single().glyph)
+        assertEquals(false, groups.single().single().active)
+    }
+
+    /**
+     * 底部终端打开时，rail 应优先高亮终端按钮。
+     */
+    @Test
+    fun `should select terminal rail button while terminal panel is open`() {
         assertEquals(
-            1,
-            groups.flatten().count { it.active },
+            RightRailGlyph.TERMINAL,
+            resolveActiveRailGlyph(
+                activeRailView = RightRailGlyph.CODE,
+                filterToolActivityOnly = false,
+                terminalVisible = true,
+            ),
         )
+        assertEquals(
+            RightRailGlyph.CODE,
+            resolveActiveRailGlyph(
+                activeRailView = RightRailGlyph.CODE,
+                filterToolActivityOnly = false,
+                terminalVisible = false,
+            ),
+        )
+    }
+
+    /**
+     * 终端应使用指定的 Maple Mono 半粗 Nerd Font 字体。
+     */
+    @Test
+    fun `should use maple mono semibold terminal font`() {
+        val font = terminalFont()
+
+        assertEquals("Maple Mono NF CN SemiBold", font.name)
+        assertEquals(14, font.size)
+    }
+
+    /**
+     * 只有缓冲内容超过可见范围时才显示终端滚动条。
+     */
+    @Test
+    fun `should show terminal scrollbar only for overflowing content`() {
+        assertEquals(false, shouldShowTerminalScrollbar(minimum = 0, maximum = 24, extent = 24))
+        assertEquals(true, shouldShowTerminalScrollbar(minimum = 0, maximum = 40, extent = 24))
+    }
+
+    /**
+     * JediTerm 根组件与内部画布都不能保留 Look & Feel 注入的亮色边框。
+     */
+    @Test
+    fun `should keep the terminal tree free from late swing borders`() {
+        val root = JPanel()
+        val existingChild = JPanel()
+        root.add(existingChild)
+
+        installSwingBorderCleanup(root)
+
+        existingChild.border = BorderFactory.createLineBorder(java.awt.Color.WHITE)
+        val lateChild = JPanel().apply {
+            border = BorderFactory.createLineBorder(java.awt.Color.WHITE)
+        }
+        root.add(lateChild)
+
+        assertNull(root.border)
+        assertNull(existingChild.border)
+        assertNull(lateChild.border)
+    }
+
+    /**
+     * 分隔线拖动后的终端高度必须同时保护主区域和终端的可用空间。
+     */
+    @Test
+    fun `should clamp terminal height to split pane bounds`() {
+        assertEquals(180f, clampTerminalHeight(-20f, 800f, 180f, 280f))
+        assertEquals(520f, clampTerminalHeight(700f, 800f, 180f, 280f))
+        assertEquals(310f, clampTerminalHeight(310f, 800f, 180f, 280f))
+        assertEquals(120f, clampTerminalHeight(200f, 320f, 180f, 200f))
+    }
+
+    /**
+     * 浮动侧栏宽度随紧凑布局收敛，但不参与主工作区宽度计算。
+     */
+    @Test
+    fun `should resolve air sidebar width independently from workspace`() {
+        assertEquals(224, airSidebarWidthDp(compact = true))
+        assertEquals(292, airSidebarWidthDp(compact = false))
+    }
+
+    /**
+     * Air 侧栏应使用真实磨砂所需的模糊、染色和低对比边界参数。
+     */
+    @Test
+    fun `should use air sidebar glass material tokens`() {
+        assertEquals(12, AirSidebarStyle.cornerRadiusDp)
+        assertEquals(16, AirSidebarStyle.shadowElevationDp)
+        assertEquals(22f, AirSidebarStyle.blurRadiusPx)
+        assertEquals(0.78f, AirSidebarStyle.tintAlpha)
+        assertEquals(0.075f, AirSidebarStyle.borderAlpha)
+        assertEquals(Color(0xFF1D1F21), AirSidebarStyle.fallbackColor)
+        assertEquals(Color(0xFF151719), AppWorkspaceBackground)
+    }
+
+    /**
+     * 玻璃副本必须按工作区与侧栏的根坐标差对齐到原始屏幕位置。
+     */
+    @Test
+    fun `should align workspace backdrop inside sidebar coordinates`() {
+        assertEquals(
+            Offset(-12f, -8f),
+            workspaceBackdropOffset(
+                workspaceOrigin = Offset(0f, 48f),
+                sidebarOrigin = Offset(12f, 56f),
+            ),
+        )
+        assertEquals(
+            Offset(-8f, -56f),
+            workspaceBackdropOffset(
+                workspaceOrigin = Offset.Zero,
+                sidebarOrigin = Offset(8f, 56f),
+            ),
+        )
+    }
+
+    /**
+     * 侧栏应从左侧完整移出窗口，而不是在原位置渐显。
+     */
+    @Test
+    fun `should place hidden sidebar beyond left edge`() {
+        assertEquals(-304, sidebarHiddenOffsetPx(sidebarWidthPx = 292, edgeGapPx = 12))
+    }
+
+    /**
+     * 侧栏默认关闭；打开后只响应面板外部的点击。
+     */
+    @Test
+    fun `should dismiss visible sidebar only for outside pointer`() {
+        val bounds = Rect(left = 12f, top = 56f, right = 304f, bottom = 800f)
+
+        assertEquals(false, SIDEBAR_VISIBLE_BY_DEFAULT)
+        assertEquals(
+            false,
+            shouldDismissSidebar(
+                sidebarVisibleAtPointerPress = true,
+                sidebarVisibleOnRelease = true,
+                sidebarBounds = bounds,
+                pointerPosition = Offset(120f, 120f),
+            ),
+        )
+        assertEquals(
+            true,
+            shouldDismissSidebar(
+                sidebarVisibleAtPointerPress = true,
+                sidebarVisibleOnRelease = true,
+                sidebarBounds = bounds,
+                pointerPosition = Offset(600f, 120f),
+            ),
+        )
+        assertEquals(
+            false,
+            shouldDismissSidebar(
+                sidebarVisibleAtPointerPress = false,
+                sidebarVisibleOnRelease = true,
+                sidebarBounds = bounds,
+                pointerPosition = Offset(600f, 120f),
+            ),
+        )
+    }
+
+    /**
+     * 已打开菜单时点击其他触发器应直接切换，再次点击同一触发器才关闭。
+     */
+    @Test
+    fun `should switch composer menus in one click`() {
+        assertEquals(false, SELECT_POPUP_FOCUSABLE)
+        assertEquals(
+            ComposerMenu.MODEL,
+            nextComposerMenu(ComposerMenu.PROVIDER, ComposerMenu.MODEL),
+        )
+        assertEquals(null, nextComposerMenu(ComposerMenu.MODEL, ComposerMenu.MODEL))
+        assertEquals(ComposerMenu.PERMISSION, nextComposerMenu(null, ComposerMenu.PERMISSION))
+        assertEquals(null, dismissComposerMenu(ComposerMenu.PROVIDER, ComposerMenu.PROVIDER))
+        assertEquals(
+            ComposerMenu.MODEL,
+            dismissComposerMenu(ComposerMenu.MODEL, ComposerMenu.PROVIDER),
+        )
+        assertEquals(
+            false,
+            desiredSelectExpandedState(
+                expandedAtPointerPress = true,
+                expandedAtClick = false,
+            ),
+        )
+        assertEquals(
+            true,
+            desiredSelectExpandedState(
+                expandedAtPointerPress = false,
+                expandedAtClick = false,
+            ),
+        )
+        assertEquals(
+            false,
+            desiredSelectExpandedState(
+                expandedAtPointerPress = null,
+                expandedAtClick = true,
+            ),
+        )
+    }
+
+    /**
+     * Composer 主动作使用矢量发送/停止图标，不再直接渲染文字箭头。
+     */
+    @Test
+    fun `should resolve composer primary action glyph`() {
+        assertEquals(HeaderGlyph.SEND, composerPrimaryActionGlyph(danger = false))
+        assertEquals(HeaderGlyph.STOP, composerPrimaryActionGlyph(danger = true))
+    }
+
+    /**
+     * Composer 下拉框说明需要延迟出现，避免快速经过控件时产生视觉噪声。
+     */
+    @Test
+    fun `should delay composer select tooltips`() {
+        assertEquals(1500L, SELECT_TOOLTIP_DELAY_MILLIS)
     }
 
     /**
@@ -153,5 +389,14 @@ class ChatScreenPresentationTest {
             listOf(HeaderGlyph.SHARE, HeaderGlyph.SETTINGS, HeaderGlyph.HELP),
             actions.right.map { it.glyph },
         )
+    }
+
+    /**
+     * 窄窗口应切换为紧凑布局，避免固定侧栏和工具 rail 挤压聊天区。
+     */
+    @Test
+    fun `should use compact layout below desktop width threshold`() {
+        assertEquals(true, isCompactDesktopLayout(900))
+        assertEquals(false, isCompactDesktopLayout(1200))
     }
 }

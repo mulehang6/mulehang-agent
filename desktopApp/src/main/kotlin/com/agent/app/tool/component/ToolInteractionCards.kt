@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -25,6 +23,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agent.app.design.AppAccent
+import com.agent.app.design.AppChipBackground
+import com.agent.app.design.AppDanger
+import com.agent.app.design.AppLine
+import com.agent.app.design.AppMuted
+import com.agent.app.design.AppPanelBackground
+import com.agent.app.design.AppSidebarBackground
+import com.agent.app.design.AppSuccess
+import com.agent.app.design.AppText
+import com.agent.app.design.RingPrimaryButton
 
 /**
  * 问题卡片的展示模型。
@@ -80,8 +88,8 @@ fun QuestionCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = Color(0xFF17191D),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF34373D)),
+        color = AppSidebarBackground,
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -90,14 +98,14 @@ fun QuestionCard(
             Text(
                 text = "Agent 需要补充信息",
                 style = MaterialTheme.typography.labelLarge.copy(
-                    color = Color(0xFFA3A7AE),
+                    color = AppMuted,
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
             Text(
                 text = model.title,
                 style = MaterialTheme.typography.bodyLarge.copy(
-                    color = Color(0xFFF2F4F8),
+                    color = AppText,
                     lineHeight = 24.sp,
                 ),
             )
@@ -107,16 +115,11 @@ fun QuestionCard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     model.options.forEach { option ->
-                        Button(
+                        RingPrimaryButton(
+                            text = option,
                             onClick = { onOptionClick(option) },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1F7DE8),
-                                contentColor = Color(0xFFF8FAFC),
-                            ),
-                        ) {
-                            Text(option)
-                        }
+                            containerColor = AppAccent,
+                        )
                     }
                 }
             }
@@ -129,17 +132,12 @@ fun QuestionCard(
                     minLines = 2,
                     shape = RoundedCornerShape(16.dp),
                 )
-                Button(
+                RingPrimaryButton(
+                    text = "提交",
                     onClick = { onSubmitText(draft.trim()) },
                     enabled = draft.isNotBlank(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1FA982),
-                        contentColor = Color(0xFFF8FAFC),
-                    ),
-                ) {
-                    Text("提交")
-                }
+                    containerColor = AppSuccess,
+                )
             }
         }
     }
@@ -170,21 +168,21 @@ fun ApprovalCard(
             Text(
                 text = "Agent 需要执行确认",
                 style = MaterialTheme.typography.labelLarge.copy(
-                    color = Color(0xFFE6476B),
+                    color = AppDanger,
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
             Text(
                 text = model.title,
                 style = MaterialTheme.typography.bodyLarge.copy(
-                    color = Color(0xFFF2F4F8),
+                    color = AppText,
                     lineHeight = 24.sp,
                 ),
             )
             model.targetPath?.takeIf { it.isNotBlank() }?.let { path ->
                 Text(
                     text = path,
-                    style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFFA3A7AE)),
+                    style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                 )
             }
             model.payloadPreview?.takeIf { it.isNotBlank() }?.let { preview ->
@@ -192,35 +190,25 @@ fun ApprovalCard(
                     text = preview,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF262A30), RoundedCornerShape(14.dp))
+                        .background(AppPanelBackground, RoundedCornerShape(14.dp))
                         .padding(12.dp),
                     style = MaterialTheme.typography.bodySmall.copy(
-                        color = Color(0xFFD3D7DE),
+                        color = AppText,
                         lineHeight = 20.sp,
                     ),
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
+                RingPrimaryButton(
+                    text = "允许",
                     onClick = onApprove,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1F7DE8),
-                        contentColor = Color(0xFFF8FAFC),
-                    ),
-                ) {
-                    Text("允许")
-                }
-                Button(
+                    containerColor = AppAccent,
+                )
+                RingPrimaryButton(
+                    text = "拒绝",
                     onClick = onReject,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2F3339),
-                        contentColor = Color(0xFFA3A7AE),
-                    ),
-                ) {
-                    Text("拒绝")
-                }
+                    containerColor = AppChipBackground,
+                )
             }
         }
     }

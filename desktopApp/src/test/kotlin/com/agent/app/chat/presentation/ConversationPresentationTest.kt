@@ -31,8 +31,8 @@ class ConversationPresentationTest {
      */
     @Test
     fun `should keep thinking headline for reasoning block`() {
-        assertEquals("Thinking: 思考中...", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
-        assertEquals("Thinking:", buildReasoningHeadline(ReasoningItem(isStreaming = false)))
+        assertEquals("正在思考…", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
+        assertEquals("思考过程", buildReasoningHeadline(ReasoningItem(isStreaming = false)))
     }
 
     /**
@@ -147,5 +147,30 @@ class ConversationPresentationTest {
             errorMessage = "network timeout",
         )
         assertEquals(false, toolEventHasDetails(failedItem))
+    }
+
+    /**
+     * 运行中和失败的工具事件需要主动暴露上下文，完成态默认保持紧凑。
+     */
+    @Test
+    fun `should expand running and failed tool events by default`() {
+        assertEquals(
+            true,
+            shouldExpandToolEventByDefault(
+                ToolEventItem("read_file", ToolEventStatus.Started, preview = "input"),
+            ),
+        )
+        assertEquals(
+            true,
+            shouldExpandToolEventByDefault(
+                ToolEventItem("read_file", ToolEventStatus.Failed, preview = "input", errorMessage = "failed"),
+            ),
+        )
+        assertEquals(
+            false,
+            shouldExpandToolEventByDefault(
+                ToolEventItem("read_file", ToolEventStatus.Finished, preview = "output"),
+            ),
+        )
     }
 }

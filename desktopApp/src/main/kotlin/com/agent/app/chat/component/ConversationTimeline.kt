@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,6 +27,7 @@ import com.agent.app.chat.presentation.buildSecondaryStatus
 import com.agent.app.chat.presentation.buildToolEventHeadline
 import com.agent.app.chat.presentation.buildToolEventKindLabel
 import com.agent.app.chat.presentation.toolEventHasDetails
+import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppMuted
@@ -41,7 +47,7 @@ import com.agent.shared.chat.model.ToolEventStatus
 internal fun ConversationTimeline(conversation: ChatConversationUiState) {
     if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
         Text(
-            text = "Ready for a new task",
+            text = "可以开始新的任务",
             style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
         )
         return
@@ -97,7 +103,10 @@ internal fun ConversationTimeline(conversation: ChatConversationUiState) {
  */
 @Composable
 private fun UserMessageCard(content: String) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
         Surface(
             modifier = Modifier.fillMaxWidth(0.8f),
             shape = RoundedCornerShape(8.dp),
@@ -145,24 +154,28 @@ private fun AssistantMessageBlock(content: String) {
  */
 @Composable
 private fun TimelineReasoningItem(item: ReasoningItem) {
+    var expanded by remember(item.isStreaming) { mutableStateOf(item.isStreaming) }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
             text = buildReasoningHeadline(item),
+            modifier = Modifier.clickable { expanded = !expanded },
             style = MaterialTheme.typography.titleSmall.copy(
                 color = AppMuted,
                 fontWeight = FontWeight.SemiBold,
             ),
         )
-        Text(
-            text = item.displayText,
-            style = MaterialTheme.typography.bodySmall.copy(
-                color = AppMuted,
-                lineHeight = 20.sp,
-            ),
-        )
+        if (expanded) {
+            Text(
+                text = item.displayText,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = AppMuted,
+                    lineHeight = 20.sp,
+                ),
+            )
+        }
     }
 }
 
@@ -175,11 +188,16 @@ private fun TimelineToolEvent(item: ToolEventItem) {
     val preview = item.preview?.takeIf(String::isNotBlank)
     val errorMessage = item.errorMessage?.takeIf(String::isNotBlank)
     val isFailed = item.status == ToolEventStatus.Failed
+    val hasDetails = toolEventHasDetails(item)
+    var expanded by remember(item.toolName, item.status, item.preview) {
+        mutableStateOf(shouldExpandToolEventByDefault(item))
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Row(
+            modifier = if (hasDetails) Modifier.clickable { expanded = !expanded } else Modifier,
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -196,8 +214,14 @@ private fun TimelineToolEvent(item: ToolEventItem) {
                     style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
                 )
             }
+            if (hasDetails) {
+                Text(
+                    text = if (expanded) "⌃" else "⌄",
+                    style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                )
+            }
         }
-        if (preview != null && toolEventHasDetails(item)) {
+        if (preview != null && hasDetails && expanded) {
             Text(
                 text = preview,
                 style = MaterialTheme.typography.bodySmall.copy(

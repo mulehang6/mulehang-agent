@@ -24,8 +24,13 @@ Kotlin 使用 4 空格、尾随逗号、无制表符；类型为 `PascalCase`，
 
 测试使用 `kotlin.test` 与 JUnit 5，协程测试使用 `kotlinx-coroutines-test`。测试文件以被测对象命名，例如 `SettingsMergerTest.kt`；新功能与缺陷修复必须覆盖错误分支和状态流转。
 
+每个类及函数都应该写上适当长度的注释
+
 ## 配置、文档与交付
 
 配置优先级为环境变量、`.mulehang/settings.json`、`~/.mulehang/settings.json`、默认值。禁止提交密钥、Token、用户配置、日志或真实路径；新增配置项同步更新示例文件并只使用占位值。
 
 设计和实施计划分别置于 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`。未经明确授权不得提交。提交采用 `feat(agent): 添加流式回退指导` 格式；PR 使用中文说明目的、实现和验证，视觉变化附截图。
+
+## 其他
+- 涉及到界面UI相关工作，使用 emil-design-eng

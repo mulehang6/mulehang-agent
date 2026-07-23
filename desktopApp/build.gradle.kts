@@ -19,6 +19,8 @@ dependencies {
     implementation("org.jetbrains.jediterm:jediterm-core:3.66")
     implementation("org.jetbrains.jediterm:jediterm-ui:3.66")
     implementation("org.jetbrains.pty4j:pty4j:0.13.12")
+    implementation("net.java.dev.jna:jna:5.14.0")
+    implementation("net.java.dev.jna:jna-platform:5.14.0")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

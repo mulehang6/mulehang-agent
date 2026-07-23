@@ -119,7 +119,7 @@ internal enum class RightRailGlyph {
     FILTER,
 }
 
-internal const val RAIL_ACTION_SIZE_DP = 48
+internal const val RAIL_ACTION_SIZE_DP = 40
 internal const val RAIL_GLYPH_SIZE_DP = 24
 internal const val COMPOSER_PRIMARY_GLYPH_SIZE_DP = 18
 

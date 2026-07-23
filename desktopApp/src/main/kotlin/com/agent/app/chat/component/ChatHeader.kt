@@ -205,7 +205,7 @@ internal fun synchronizeNativeTitleBarMenuInteropBackground(component: NativeTit
 }
 
 /**
- * 将 Swing 宿主向左及向上扩展一个逻辑像素，并保持菜单内容原位，覆盖全屏切换后的高 DPI 混合清除缝。
+ * 将 Swing 宿主向左扩展一个逻辑像素，并保持菜单内容原位，覆盖全屏切换后的高 DPI 混合清除缝。
  */
 internal fun coverNativeTitleBarMenuInteropSeam(component: NativeTitleBarMenuHitTarget) {
     val host = component.parent as? JComponent ?: return
@@ -215,15 +215,15 @@ internal fun coverNativeTitleBarMenuInteropSeam(component: NativeTitleBarMenuHit
 
     val expandedBounds = Rectangle(
         hostBounds.x - NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX,
-        hostBounds.y - NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX,
-        hostBounds.width + NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX * 2,
-        hostBounds.height + NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX * 2,
+        hostBounds.y,
+        hostBounds.width + NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX,
+        hostBounds.height,
     )
     host.putClientProperty(NATIVE_TITLE_BAR_MENU_CORRECTED_BOUNDS_KEY, expandedBounds)
     host.bounds = expandedBounds
     component.setBounds(
         NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX,
-        NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX,
+        0,
         hostBounds.width,
         hostBounds.height,
     )

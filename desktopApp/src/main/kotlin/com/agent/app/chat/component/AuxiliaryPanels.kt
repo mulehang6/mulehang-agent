@@ -34,7 +34,7 @@ import com.agent.app.design.buildRightRailGroups
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 
-internal const val TOOL_RAIL_WIDTH_DP = 60
+internal const val TOOL_RAIL_WIDTH_DP = 48
 internal const val TOOL_RAIL_TOP_PADDING_DP = 16
 
 /**
@@ -125,7 +125,7 @@ internal fun ToolRail(
             .width(TOOL_RAIL_WIDTH_DP.dp)
             .fillMaxHeight()
             .background(AppRailBackground)
-            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 8.dp, start = 8.dp, end = 8.dp),
+            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 8.dp, start = 4.dp, end = 4.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
         Column(

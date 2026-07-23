@@ -129,6 +129,13 @@ internal fun WindowScope.ChatScreen(
                         .weight(1f)
                         .fillMaxWidth(),
                 ) {
+                    if (!compact) {
+                        ToolRailPlaceholder(
+                            modifier = Modifier
+                                .width(TOOL_RAIL_WIDTH_DP.dp)
+                                .fillMaxHeight(),
+                        )
+                    }
                     WorkspacePanel(
                         state = state,
                         activeRailView = RightRailGlyph.CODE,

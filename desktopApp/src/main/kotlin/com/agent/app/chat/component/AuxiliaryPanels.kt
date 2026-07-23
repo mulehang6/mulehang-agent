@@ -3,6 +3,7 @@ package com.agent.app.chat.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,8 +34,23 @@ import com.agent.app.design.buildRightRailGroups
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 
-internal const val TOOL_RAIL_WIDTH_DP = 48
+internal const val TOOL_RAIL_WIDTH_DP = 60
 internal const val TOOL_RAIL_TOP_PADDING_DP = 16
+
+/**
+ * 桌面布局左侧的预留工具区，与右侧工具区保持相同宽度。
+ */
+@Composable
+internal fun ToolRailPlaceholder(
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .width(TOOL_RAIL_WIDTH_DP.dp)
+            .fillMaxHeight()
+            .background(AppRailBackground),
+    )
+}
 
 /**
  * 右侧 rail 操作后的轻量反馈。
@@ -104,35 +120,39 @@ internal fun ToolRail(
     modifier: Modifier = Modifier,
 ) {
     val toolGroups = buildRightRailGroups()
-    Column(
+    Box(
         modifier = modifier
             .width(TOOL_RAIL_WIDTH_DP.dp)
             .fillMaxHeight()
             .background(AppRailBackground)
-            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 8.dp, start = 4.dp, end = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 8.dp, start = 8.dp, end = 8.dp),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        toolGroups.forEachIndexed { groupIndex, group ->
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                group.forEach { item ->
-                    RingRailActionButton(
-                        glyph = item.glyph,
-                        active = item.glyph == activeGlyph,
-                        onClick = { onToolClick(item.glyph) },
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            toolGroups.forEachIndexed { groupIndex, group ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    group.forEach { item ->
+                        RingRailActionButton(
+                            glyph = item.glyph,
+                            active = item.glyph == activeGlyph,
+                            onClick = { onToolClick(item.glyph) },
+                        )
+                    }
+                }
+                if (groupIndex != toolGroups.lastIndex) {
+                    Spacer(
+                        modifier = Modifier
+                            .width(18.dp)
+                            .height(1.dp)
+                            .background(AppLine),
                     )
                 }
-            }
-            if (groupIndex != toolGroups.lastIndex) {
-                Spacer(
-                    modifier = Modifier
-                        .width(18.dp)
-                        .height(1.dp)
-                        .background(AppLine),
-                )
             }
         }
     }

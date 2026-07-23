@@ -119,7 +119,8 @@ internal enum class RightRailGlyph {
     FILTER,
 }
 
-internal const val RAIL_ACTION_SIZE_DP = 40
+internal const val RAIL_ACTION_SIZE_DP = 48
+internal const val RAIL_GLYPH_SIZE_DP = 24
 internal const val COMPOSER_PRIMARY_GLYPH_SIZE_DP = 18
 
 /**
@@ -911,10 +912,10 @@ private fun RightRailGlyphIcon(
     tint: Color,
 ) {
     Box(
-        modifier = Modifier.size(20.dp),
+        modifier = Modifier.size(RAIL_GLYPH_SIZE_DP.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(20.dp)) {
+        Canvas(modifier = Modifier.size(RAIL_GLYPH_SIZE_DP.dp)) {
             val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
             val width = size.width
             val height = size.height

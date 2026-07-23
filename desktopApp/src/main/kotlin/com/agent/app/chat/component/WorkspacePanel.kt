@@ -66,7 +66,10 @@ internal fun WorkspacePanel(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(if (compact) 8.dp else 16.dp),
+            .padding(
+                horizontal = if (compact) 8.dp else 0.dp,
+                vertical = if (compact) 8.dp else 16.dp,
+            ),
     ) {
         ResizableWorkspaceLayout(
             terminalVisible = terminalVisible && activeConversation != null,

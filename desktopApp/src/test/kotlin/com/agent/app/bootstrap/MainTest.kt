@@ -4,8 +4,12 @@ package com.agent.app.bootstrap
 
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowDecoration
+import java.awt.Point
+import java.awt.Rectangle
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * 验证桌面窗口初始尺寸换算规则。
@@ -83,5 +87,18 @@ class MainTest {
         handle.forceClientArea()
 
         assertEquals(true, requestedClientArea)
+    }
+
+    /**
+     * 原生标题栏仅应接管窗口顶部范围内的鼠标事件。
+     */
+    @Test
+    fun `should identify points inside native title bar`() {
+        val windowBounds = Rectangle(100, 200, 800, 600)
+
+        assertTrue(isNativeTitleBarPoint(Point(100, 200), windowBounds, 48))
+        assertTrue(isNativeTitleBarPoint(Point(899, 247), windowBounds, 48))
+        assertFalse(isNativeTitleBarPoint(Point(900, 220), windowBounds, 48))
+        assertFalse(isNativeTitleBarPoint(Point(400, 248), windowBounds, 48))
     }
 }

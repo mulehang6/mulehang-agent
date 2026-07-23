@@ -11,9 +11,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.WindowDecoration
 import androidx.compose.ui.window.WindowScope
 import com.jetbrains.JBR
+import java.awt.AWTEvent
+import java.awt.Component
 import java.awt.Frame
+import java.awt.Point
+import java.awt.Rectangle
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
+import java.awt.event.MouseEvent
+import javax.swing.RootPaneContainer
 
 internal const val APP_TITLE_BAR_HEIGHT_DP = 48
+private val NATIVE_WINDOW_BACKGROUND = java.awt.Color(0x1E, 0x1F, 0x22)
 
 /**
  * 桌面窗口可使用的标题栏实现。
@@ -49,6 +58,17 @@ internal fun isNativeWindowDecorationsSupported(): Boolean =
 internal fun nativeTitleBarHeightPx(): Float = APP_TITLE_BAR_HEIGHT_DP.toFloat()
 
 /**
+ * 判断屏幕坐标是否落在窗口的原生标题栏范围内。
+ */
+internal fun isNativeTitleBarPoint(
+    screenPoint: Point,
+    windowBounds: Rectangle,
+    titleBarHeightPx: Int,
+): Boolean =
+    screenPoint.x in windowBounds.x until windowBounds.x + windowBounds.width &&
+            screenPoint.y in windowBounds.y until windowBounds.y + titleBarHeightPx
+
+/**
  * 将 Compose 标题栏交互桥接到 JBR 的逐事件命中测试。
  */
 internal class NativeTitleBarHandle(
@@ -74,6 +94,7 @@ internal fun WindowScope.rememberNativeWindowTitleBar(mode: WindowChromeMode): N
         }
 
         val frame = window as? Frame ?: return@DisposableEffect onDispose { }
+        configureNativeWindowBackground(frame)
         val decorations = runCatching { JBR.getWindowDecorations() }.getOrNull()
             ?: return@DisposableEffect onDispose { }
         val titleBar = runCatching {
@@ -87,12 +108,62 @@ internal fun WindowScope.rememberNativeWindowTitleBar(mode: WindowChromeMode): N
         if (titleBar != null) {
             handle = NativeTitleBarHandle(titleBar::forceHitTest)
         }
+        val dragListener = titleBar?.let { configuredTitleBar ->
+            AWTEventListener { event ->
+                val mouseEvent = event as? MouseEvent ?: return@AWTEventListener
+                if (mouseEvent.id == MouseEvent.MOUSE_EXITED) return@AWTEventListener
+                val source = mouseEvent.component ?: return@AWTEventListener
+                if (!source.belongsTo(frame)) return@AWTEventListener
+                val screenPoint = runCatching { mouseEvent.locationOnScreen }.getOrNull()
+                    ?: return@AWTEventListener
+                if (
+                    isNativeTitleBarPoint(
+                        screenPoint = screenPoint,
+                        windowBounds = frame.bounds,
+                        titleBarHeightPx = nativeTitleBarHeightPx().toInt(),
+                    )
+                ) {
+                    configuredTitleBar.forceHitTest(false)
+                }
+            }
+        }
+        dragListener?.let { listener ->
+            Toolkit.getDefaultToolkit().addAWTEventListener(
+                listener,
+                AWTEvent.MOUSE_EVENT_MASK or AWTEvent.MOUSE_MOTION_EVENT_MASK,
+            )
+        }
         onDispose {
             handle = null
+            dragListener?.let(Toolkit.getDefaultToolkit()::removeAWTEventListener)
             if (titleBar != null) {
                 runCatching { decorations.setCustomTitleBar(frame, null) }
             }
         }
     }
     return handle
+}
+
+/**
+ * 同步 AWT 宿主背景，避免最大化后客户区边缘暴露默认浅色底色。
+ */
+private fun configureNativeWindowBackground(frame: Frame) {
+    frame.background = NATIVE_WINDOW_BACKGROUND
+    (frame as? RootPaneContainer)?.apply {
+        rootPane.background = NATIVE_WINDOW_BACKGROUND
+        rootPane.isOpaque = true
+        contentPane.background = NATIVE_WINDOW_BACKGROUND
+    }
+}
+
+/**
+ * 判断鼠标事件源是否属于当前窗口，避免影响同一进程的其他窗口。
+ */
+private fun Component.belongsTo(frame: Frame): Boolean {
+    var current: Component? = this
+    while (current != null) {
+        if (current === frame) return true
+        current = current.parent
+    }
+    return false
 }

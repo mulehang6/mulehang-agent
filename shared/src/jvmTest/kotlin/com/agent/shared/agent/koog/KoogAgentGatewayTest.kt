@@ -591,6 +591,27 @@ class KoogAgentGatewayTest {
         assertEquals(AgentStreamEvent.Completed("approved"), events[2])
     }
 
+    /**
+     * 终端工具事件应从 Koog 的参数预览中抽取模型传入的操作意图。
+     */
+    @Test
+    fun `should extract terminal operation intent from tool arguments`() {
+        assertEquals(
+            "列出当前目录内容",
+            extractToolOperationIntent(
+                toolName = "run_powershell",
+                argumentsPreview = "{script=Get-ChildItem, operation_intent=列出当前目录内容}",
+            ),
+        )
+        assertEquals(
+            null,
+            extractToolOperationIntent(
+                toolName = "read_file",
+                argumentsPreview = "{path=README.md}",
+            ),
+        )
+    }
+
     private fun openAiProfile(): ConfigProfile = ConfigProfile(
         id = "openai-main",
         providerType = ProviderType.OPENAI_RESPONSES,

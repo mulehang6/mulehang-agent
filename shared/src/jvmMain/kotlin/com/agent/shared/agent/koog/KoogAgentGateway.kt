@@ -74,13 +74,18 @@ class KoogAgentGateway(
     private fun eventEmittingBridge(
         emitEvent: suspend (AgentStreamEvent) -> Unit,
     ): DesktopToolInteractionBridge = object : DesktopToolInteractionBridge {
+        override fun isApprovalAutoApproved(request: ApprovalRequest): Boolean =
+            interactionBridge.isApprovalAutoApproved(request)
+
         override suspend fun requestQuestion(request: QuestionRequest): String {
             emitEvent(AgentStreamEvent.QuestionRequested(request))
             return interactionBridge.requestQuestion(request)
         }
 
         override suspend fun requestApproval(request: ApprovalRequest): Boolean {
-            emitEvent(AgentStreamEvent.ApprovalRequested(request))
+            if (!interactionBridge.isApprovalAutoApproved(request)) {
+                emitEvent(AgentStreamEvent.ApprovalRequested(request))
+            }
             return interactionBridge.requestApproval(request)
         }
     }

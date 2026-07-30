@@ -100,13 +100,72 @@ class AgentEventReducerTest {
         assertFalse((result.items[0] as ReasoningItem).isStreaming)
         assertNull(result.streamingReasoningItemIndex)
         assertEquals(
-            ToolEventItem("read_file", ToolEventStatus.Started, "README.md"),
+            ToolEventItem(
+                toolName = "read_file",
+                status = ToolEventStatus.Started,
+                preview = "README.md",
+                toolCallId = "call-1",
+            ),
             result.items[1],
         )
         assertEquals(
             AgentConversationHistoryPart.ToolCall("call-1", "read_file", "README.md"),
             (result.history.single() as AgentConversationHistoryMessage.Assistant).parts.single(),
         )
+    }
+
+    /**
+     * PowerShell 工具事件必须保留模型声明的操作意图，供时间线卡片展示。
+     */
+    @Test
+    fun `terminal tool start keeps operation intent in the timeline`() {
+        val result = reduceAgentEvent(
+            conversation(),
+            AgentStreamEvent.ToolCallStarted(
+                toolCallId = "call-terminal",
+                name = "run_powershell",
+                argumentsPreview = "Get-ChildItem",
+                operationIntent = "列出当前目录内容",
+            ),
+            contextWindow = 100,
+        )
+
+        assertEquals(
+            "列出当前目录内容",
+            (result.items.single() as ToolEventItem).operationIntent,
+        )
+    }
+
+    /**
+     * 同一次工具调用的完成事件必须回填到已有输入卡片，而不是追加第二张输出卡片。
+     */
+    @Test
+    fun `tool finish merges output into its matching input card`() {
+        val started = reduceAgentEvent(
+            conversation(),
+            AgentStreamEvent.ToolCallStarted(
+                toolCallId = "call-1",
+                name = "grep_code",
+                argumentsPreview = "{pattern=TODO}",
+            ),
+            contextWindow = 100,
+        )
+
+        val result = reduceAgentEvent(
+            started,
+            AgentStreamEvent.ToolCallFinished(
+                toolCallId = "call-1",
+                name = "grep_code",
+                resultPreview = "src/App.kt:12",
+            ),
+            contextWindow = 100,
+        )
+
+        assertEquals(1, result.items.filterIsInstance<ToolEventItem>().size)
+        val item = result.items.single() as ToolEventItem
+        assertEquals(ToolEventStatus.Finished, item.status)
+        assertEquals("{pattern=TODO}", item.preview)
+        assertEquals("src/App.kt:12", item.resultPreview)
     }
 
     @Test

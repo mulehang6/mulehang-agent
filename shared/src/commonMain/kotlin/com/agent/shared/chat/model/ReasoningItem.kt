@@ -8,6 +8,8 @@ data class ReasoningItem(
     val rawText: String? = null,
     val expanded: Boolean = true,
     val isStreaming: Boolean = true,
+    val startedAtMillis: Long = System.currentTimeMillis(),
+    val durationMillis: Long? = null,
 ) : ConversationItem {
     override val kind: ConversationItem.Kind = ConversationItem.Kind.Reasoning
 

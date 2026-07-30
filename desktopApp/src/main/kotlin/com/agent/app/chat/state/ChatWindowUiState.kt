@@ -87,14 +87,23 @@ enum class ChatTaskGroup {
 }
 
 /**
+ * 侧栏任务右侧的即时状态标识。
+ */
+enum class ChatTaskStatus {
+    NEW,
+    RUNNING,
+    DONE,
+}
+
+/**
  * 原型侧栏中的单个 task 展示模型。
  */
 data class ChatTaskListItemUiState(
     val id: String,
     val title: String,
     val subtitle: String,
-    val stats: String,
     val group: ChatTaskGroup,
+    val status: ChatTaskStatus,
 )
 
 /**
@@ -104,6 +113,15 @@ data class ChatTaskSectionUiState(
     val group: ChatTaskGroup,
     val title: String,
     val tasks: List<ChatTaskListItemUiState>,
+)
+
+/**
+ * 侧栏中的工作区分组，内部再按任务状态拆分。
+ */
+data class WorkspaceTaskSectionUiState(
+    val workspacePath: String,
+    val label: String,
+    val sections: List<ChatTaskSectionUiState>,
 )
 
 /**
@@ -174,6 +192,35 @@ data class ChatWindowUiState(
                     .map(::toTaskListItem),
             ),
         )
+
+    /**
+     * 供侧栏使用的工作区优先分组视图。
+     */
+    val workspaceTaskSections: List<WorkspaceTaskSectionUiState>
+        get() = tasks
+            .groupBy { it.workspacePath }
+            .map { (workspacePath, conversations) ->
+                WorkspaceTaskSectionUiState(
+                    workspacePath = workspacePath,
+                    label = buildWorkspaceLabel(workspacePath),
+                    sections = listOf(
+                        ChatTaskSectionUiState(
+                            group = ChatTaskGroup.RUNNING,
+                            title = "进行中",
+                            tasks = conversations
+                                .filter { taskGroupFor(it) == ChatTaskGroup.RUNNING }
+                                .map(::toTaskListItem),
+                        ),
+                        ChatTaskSectionUiState(
+                            group = ChatTaskGroup.DONE,
+                            title = "已完成",
+                            tasks = conversations
+                                .filter { taskGroupFor(it) == ChatTaskGroup.DONE }
+                                .map(::toTaskListItem),
+                        ),
+                    ),
+                )
+            }
 }
 
 /**
@@ -206,18 +253,26 @@ internal fun taskGroupFor(conversation: ChatConversationUiState): ChatTaskGroup 
     }
 
 /**
+ * 新建空白会话使用虚线占位标识，执行中与完成态使用各自的状态标识。
+ */
+internal fun taskStatusFor(conversation: ChatConversationUiState): ChatTaskStatus = when {
+    conversation.isEmptyDefaultConversation() -> ChatTaskStatus.NEW
+    taskGroupFor(conversation) == ChatTaskGroup.RUNNING -> ChatTaskStatus.RUNNING
+    else -> ChatTaskStatus.DONE
+}
+
+/**
  * 将真实会话映射为原型侧栏中的 task 列表项。
  */
 internal fun toTaskListItem(conversation: ChatConversationUiState): ChatTaskListItemUiState {
     val title = conversation.title.ifBlank { DEFAULT_CONVERSATION_TITLE }
     val subtitle = buildTaskSubtitle(conversation)
-    val stats = buildTaskStats(conversation)
     return ChatTaskListItemUiState(
         id = conversation.id,
         title = title,
         subtitle = subtitle,
-        stats = stats,
         group = taskGroupFor(conversation),
+        status = taskStatusFor(conversation),
     )
 }
 
@@ -236,18 +291,5 @@ internal fun buildTaskSubtitle(conversation: ChatConversationUiState): String =
         ?.trim()
         ?.take(TASK_SUBTITLE_MAX_LENGTH)
         ?: conversation.workspacePath
-
-/**
- * 为 task 列表生成轻量统计文案。
- */
-internal fun buildTaskStats(conversation: ChatConversationUiState): String = buildString {
-    append(conversation.items.size)
-    append(" 项")
-    if (conversation.attachments.isNotEmpty()) {
-        append(" · ")
-        append(conversation.attachments.size)
-        append(" 个附件")
-    }
-}
 
 private const val TASK_SUBTITLE_MAX_LENGTH = 52

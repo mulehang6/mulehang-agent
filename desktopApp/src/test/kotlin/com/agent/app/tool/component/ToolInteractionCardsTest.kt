@@ -48,4 +48,23 @@ class ToolInteractionCardsTest {
         assertEquals("write_file", model.toolName)
         assertEquals("E:\\repo\\notes.txt", model.targetPath)
     }
+
+    /**
+     * PowerShell 审批卡必须将原始命令与操作意图拆开呈现。
+     */
+    @Test
+    fun `powershell approval card should expose operation intent and raw command`() {
+        val pending = PendingApprovalUiState(
+            requestId = "terminal-1",
+            toolName = "run_powershell",
+            summary = "列出当前目录内容",
+            targetPath = null,
+            payloadPreview = "Get-ChildItem",
+        )
+
+        val model = buildApprovalCardModel(pending)
+
+        assertEquals("列出当前目录内容", model.operationIntent)
+        assertEquals("Get-ChildItem", model.rawCommand)
+    }
 }

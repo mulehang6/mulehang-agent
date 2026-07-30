@@ -8,6 +8,13 @@ import com.agent.shared.tool.model.QuestionRequest
  */
 interface DesktopToolInteractionBridge {
     /**
+     * 判断同类工具是否已获得本轮会话内的持续授权。
+     *
+     * 默认保持逐次确认，避免非桌面实现意外放宽权限。
+     */
+    fun isApprovalAutoApproved(request: ApprovalRequest): Boolean = false
+
+    /**
      * 请求用户回答一个问题，并在提交后恢复。
      */
     suspend fun requestQuestion(request: QuestionRequest): String

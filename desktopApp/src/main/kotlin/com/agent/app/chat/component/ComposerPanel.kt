@@ -1,5 +1,11 @@
 package com.agent.app.chat.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -53,10 +59,12 @@ import com.agent.app.design.RingPrimaryButton
 import com.agent.app.design.RingSelectChip
 import com.agent.app.design.RingTooltip
 import com.agent.app.platform.pickFiles
-import com.agent.app.tool.component.ApprovalCard
 import com.agent.app.tool.component.QuestionCard
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
+
+internal const val PENDING_CARD_ENTER_DURATION_MILLIS = 180
+internal const val PENDING_CARD_EXIT_DURATION_MILLIS = 120
 
 /**
  * Composer 底部可互斥展开的菜单。
@@ -103,7 +111,12 @@ internal fun FooterComposerSection(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = if (compact) 12.dp else 32.dp, vertical = if (compact) 12.dp else 20.dp),
+            .padding(
+                start = if (compact) 12.dp else 32.dp,
+                top = 0.dp,
+                end = if (compact) 12.dp else 32.dp,
+                bottom = if (compact) 12.dp else 20.dp,
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -113,9 +126,6 @@ internal fun FooterComposerSection(
                 .widthIn(max = 720.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (activeConversation != null) {
-                PendingCards(activeConversation, state)
-            }
             if (planCard != null) {
                 PlanCard(
                     title = planCard.title,
@@ -133,26 +143,28 @@ internal fun FooterComposerSection(
 }
 
 /**
- * 把挂起问题/审批显示在输入区上方，紧跟 composer 之上。
+ * 在时间线之上叠加展示挂起问题；审批直接显示在对应工具调用卡片内。
  */
 @Composable
-private fun PendingCards(
+internal fun PendingInteractionCards(
     conversation: ChatConversationUiState,
     state: ChatWindowState,
 ) {
-    conversation.pendingQuestion?.let { pending ->
-        QuestionCard(
-            pending = pending,
-            onOptionClick = state::answerPendingQuestion,
-            onSubmitText = state::answerPendingQuestion,
-        )
-    }
-    conversation.pendingApproval?.let { pending ->
-        ApprovalCard(
-            pending = pending,
-            onApprove = { state.answerPendingApproval(true) },
-            onReject = { state.answerPendingApproval(false) },
-        )
+    val pendingQuestion = conversation.pendingQuestion
+    AnimatedVisibility(
+        visible = pendingQuestion != null,
+        enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
+                slideInVertically(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) { height -> height / 8 },
+        exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
+                slideOutVertically(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) { height -> -height / 12 },
+    ) {
+        pendingQuestion?.let { pending ->
+            QuestionCard(
+                pending = pending,
+                onOptionClick = state::answerPendingQuestion,
+                onSubmitText = state::answerPendingQuestion,
+            )
+        }
     }
 }
 

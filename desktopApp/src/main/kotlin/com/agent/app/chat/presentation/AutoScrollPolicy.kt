@@ -48,7 +48,13 @@ internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int =
 internal fun itemContentSize(item: ConversationItem): Int = when (item) {
     is ChatMessageItem -> item.message.content.length
     is ReasoningItem -> (item.rawText ?: item.displayText).length
-    is ToolEventItem -> (item.preview ?: "").length + item.toolName.length + (item.errorMessage ?: "").length
+    is ToolEventItem -> listOf(
+        item.preview,
+        item.toolName,
+        item.operationIntent,
+        item.resultPreview,
+        item.errorMessage,
+    ).sumOf { content -> content?.length ?: 0 }
 }
 
 internal const val TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX = 200

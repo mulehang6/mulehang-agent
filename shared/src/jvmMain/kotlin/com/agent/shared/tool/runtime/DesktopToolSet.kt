@@ -99,12 +99,12 @@ class DesktopToolSet(
         @LLMDescription("Absolute or relative path to the file.") path: String,
         @LLMDescription("Full file content.") content: String,
     ): String {
-        ensureWriteApproval(
+        if (!ensureWriteApproval(
             toolName = "write_file",
             summary = "写入工作区文件",
             targetPath = path,
             payloadPreview = content.take(240),
-        )
+        )) return USER_DECLINED_TOOL_MESSAGE
         return readWriteTools.writeFile(path, content)
     }
 
@@ -118,12 +118,12 @@ class DesktopToolSet(
         @LLMDescription("Text to replace.") oldText: String,
         @LLMDescription("Replacement text.") newText: String,
     ): String {
-        ensureWriteApproval(
+        if (!ensureWriteApproval(
             toolName = "edit_file",
             summary = "定点编辑工作区文件",
             targetPath = path,
             payloadPreview = "${oldText.take(80)} -> ${newText.take(80)}",
-        )
+        )) return USER_DECLINED_TOOL_MESSAGE
         return readWriteTools.editFile(path, oldText, newText)
     }
 
@@ -134,11 +134,15 @@ class DesktopToolSet(
     @LLMDescription("Run a PowerShell 7 script.")
     fun run_powershell(
         @LLMDescription("PowerShell script text.") script: String,
+        @LLMDescription("Short Chinese description of the command's intended operation. Must explain what the command will do.")
+        @Suppress("LocalVariableName") operation_intent: String,
     ): String {
-        ensureExecuteApproval(
-            summary = buildPowerShellApprovalSummary(script),
-            payloadPreview = script.take(240),
-        )
+        val operationIntent = operation_intent.trim()
+        check(operationIntent.isNotBlank()) { "执行 PowerShell 时必须说明操作意图。" }
+        if (!ensureExecuteApproval(
+            summary = operationIntent,
+            payloadPreview = script,
+        )) return USER_DECLINED_TOOL_MESSAGE
         return powerShellTool.execute(DesktopPowerShellTool.Args(script = script))
     }
 
@@ -186,12 +190,12 @@ class DesktopToolSet(
         summary: String,
         targetPath: String,
         payloadPreview: String?,
-    ) {
+    ): Boolean {
         check(!DesktopToolPolicy.isWriteDenied(permissionPreset)) {
             "当前 permission preset=$permissionPreset，禁止修改工作区文件。"
         }
         if (DesktopToolPolicy.canAutoApproveWrite(permissionPreset)) {
-            return
+            return true
         }
         val approved = runBlocking {
             interactionBridge.requestApproval(
@@ -204,7 +208,7 @@ class DesktopToolSet(
                 ),
             )
         }
-        check(approved) { "用户拒绝执行写入操作。" }
+        return approved
     }
 
     /**
@@ -213,12 +217,12 @@ class DesktopToolSet(
     private fun ensureExecuteApproval(
         summary: String,
         payloadPreview: String?,
-    ) {
+    ): Boolean {
         check(!DesktopToolPolicy.isExecuteDenied(permissionPreset)) {
             "当前 permission preset=$permissionPreset，禁止执行命令。"
         }
         if (DesktopToolPolicy.canAutoApproveExecute(permissionPreset)) {
-            return
+            return true
         }
         val approved = runBlocking {
             interactionBridge.requestApproval(
@@ -230,24 +234,10 @@ class DesktopToolSet(
                 ),
             )
         }
-        check(approved) { "用户拒绝执行命令。" }
+        return approved
+    }
+
+    private companion object {
+        const val USER_DECLINED_TOOL_MESSAGE = "用户已拒绝执行此操作。"
     }
 }
-
-/**
- * 为 PowerShell 审批卡片生成可读标题，优先使用脚本第一行。
- */
-internal fun buildPowerShellApprovalSummary(script: String): String {
-    val headline = script
-        .lineSequence()
-        .map { line -> line.trim().replace(Regex("\\s+"), " ") }
-        .firstOrNull(String::isNotBlank)
-        .orEmpty()
-        .take(POWERSHELL_APPROVAL_HEADLINE_MAX_LENGTH)
-    return headline
-        .takeIf(String::isNotBlank)
-        ?.let { "执行 PowerShell: $it" }
-        ?: "执行 PowerShell 7 脚本"
-}
-
-private const val POWERSHELL_APPROVAL_HEADLINE_MAX_LENGTH = 80

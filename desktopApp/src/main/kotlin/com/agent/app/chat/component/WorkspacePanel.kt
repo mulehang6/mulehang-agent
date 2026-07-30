@@ -1,25 +1,41 @@
 package com.agent.app.chat.component
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
@@ -33,6 +49,7 @@ import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.RingPrimaryButton
 import com.agent.shared.chat.model.ExecutionState
+import kotlinx.coroutines.launch
 
 /**
  * 原型主工作区。
@@ -51,6 +68,9 @@ internal fun WorkspacePanel(
     val conversationId = activeConversation?.id
     val scrollState = remember(conversationId) { ScrollState(0) }
     val isFollowingLatest = remember(conversationId) { mutableStateOf(true) }
+    val questionOverlayHeightPx = remember(conversationId) { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
 
     LaunchedEffect(scrollState.value) {
@@ -59,6 +79,24 @@ internal fun WorkspacePanel(
 
     LaunchedEffect(totalContentSize) {
         if (isFollowingLatest.value) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+
+    LaunchedEffect(scrollState.maxValue) {
+        if (shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest.value)) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+
+    LaunchedEffect(activeConversation?.pendingQuestion?.requestId) {
+        if (activeConversation?.pendingQuestion == null) {
+            questionOverlayHeightPx.value = 0
+        }
+    }
+
+    LaunchedEffect(questionOverlayHeightPx.value, activeConversation?.pendingQuestion?.requestId) {
+        if (activeConversation?.pendingQuestion != null && isFollowingLatest.value) {
             scrollState.scrollTo(scrollState.maxValue)
         }
     }
@@ -85,35 +123,128 @@ internal fun WorkspacePanel(
                     Column(
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxWidth()
-                                .verticalScroll(scrollState)
-                                .padding(horizontal = if (compact) 16.dp else 32.dp, vertical = 24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                                .fillMaxWidth(),
                         ) {
-                            if (
-                                activeConversation == null ||
-                                (activeConversation.items.isEmpty() && activeConversation.executionState == ExecutionState.Idle)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(scrollState)
+                                    .padding(horizontal = if (compact) 16.dp else 32.dp, vertical = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(18.dp),
                             ) {
-                                EmptyWorkspaceState(state)
-                            } else {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .widthIn(max = 720.dp),
-                                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                                if (
+                                    activeConversation == null ||
+                                    (activeConversation.items.isEmpty() && activeConversation.executionState == ExecutionState.Idle)
                                 ) {
-                                    when (activeRailView) {
-                                        RightRailGlyph.CODE -> ConversationTimeline(activeConversation)
-                                        RightRailGlyph.HISTORY -> HistoryPanel(
-                                            activeConversation,
-                                            filterToolActivityOnly
-                                        )
+                                    EmptyWorkspaceState(state)
+                                } else {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .widthIn(max = 720.dp),
+                                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                                    ) {
+                                        when (activeRailView) {
+                                            RightRailGlyph.CODE -> ConversationTimeline(
+                                                conversation = activeConversation,
+                                                onApprovalResponse = state::answerPendingApproval,
+                                            )
+                                            RightRailGlyph.HISTORY -> HistoryPanel(
+                                                activeConversation,
+                                                filterToolActivityOnly
+                                            )
 
-                                        else -> ConversationTimeline(activeConversation)
+                                            else -> ConversationTimeline(
+                                                conversation = activeConversation,
+                                                onApprovalResponse = state::answerPendingApproval,
+                                            )
+                                        }
+                                        if (activeConversation.pendingQuestion != null) {
+                                            Spacer(
+                                                modifier = Modifier.height(
+                                                    with(density) { questionOverlayHeightPx.value.toDp() },
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            if (shouldShowTimelineScrollbar(scrollState.maxValue)) {
+                                CompositionLocalProvider(
+                                    LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
+                                        unhoverColor = Color(0xFF747983),
+                                        hoverColor = Color(0xFFB8BEC8),
+                                    ),
+                                ) {
+                                    VerticalScrollbar(
+                                        adapter = rememberScrollbarAdapter(scrollState),
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .fillMaxHeight()
+                                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                                    )
+                                }
+                            }
+                            activeConversation
+                                ?.takeIf { it.pendingQuestion != null }
+                                ?.let { conversation ->
+                                    Column(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomCenter)
+                                            .fillMaxWidth()
+                                            .padding(horizontal = if (compact) 12.dp else 32.dp)
+                                            .widthIn(max = 720.dp)
+                                            .onSizeChanged { questionOverlayHeightPx.value = it.height },
+                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        PendingInteractionCards(conversation, state)
+                                    }
+                                }
+                            if (
+                                activeConversation != null &&
+                                activeConversation.pendingQuestion == null &&
+                                shouldShowScrollToBottomButton(isFollowingLatest.value)
+                            ) {
+                                Surface(
+                                    onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(end = 28.dp, bottom = 20.dp)
+                                        .size(52.dp),
+                                    shape = CircleShape,
+                                    color = AppChipBackground,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, AppLine),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Canvas(modifier = Modifier.size(22.dp)) {
+                                            val stroke = 2.dp.toPx()
+                                            val tint = AppMuted
+                                            drawLine(
+                                                color = tint,
+                                                start = Offset(size.width * 0.5f, size.height * 0.16f),
+                                                end = Offset(size.width * 0.5f, size.height * 0.75f),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round,
+                                            )
+                                            drawLine(
+                                                color = tint,
+                                                start = Offset(size.width * 0.25f, size.height * 0.53f),
+                                                end = Offset(size.width * 0.5f, size.height * 0.78f),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round,
+                                            )
+                                            drawLine(
+                                                color = tint,
+                                                start = Offset(size.width * 0.75f, size.height * 0.53f),
+                                                end = Offset(size.width * 0.5f, size.height * 0.78f),
+                                                strokeWidth = stroke,
+                                                cap = StrokeCap.Round,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -132,6 +263,22 @@ internal fun WorkspacePanel(
         )
     }
 }
+
+/**
+ * 仅在用户未跟随最新输出时显示回到底部动作。
+ */
+internal fun shouldShowScrollToBottomButton(isFollowingLatest: Boolean): Boolean = !isFollowingLatest
+
+/**
+ * 底部输入区因审批或提问卡片扩高时，决定是否保持时间线贴住最新输出。
+ */
+internal fun shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest: Boolean): Boolean =
+    isFollowingLatest
+
+/**
+ * 主内容实际溢出时才显示垂直滚动条。
+ */
+internal fun shouldShowTimelineScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
 
 /**
  * 空任务态主区。

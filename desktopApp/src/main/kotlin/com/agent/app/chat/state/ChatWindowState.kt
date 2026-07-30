@@ -3,6 +3,7 @@ package com.agent.app.chat.state
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentRunRequest
@@ -109,6 +110,40 @@ class ChatWindowState(
         if (findConversationOrNull(conversationId) != null) {
             ui = ui.copy(activeTaskId = conversationId)
         }
+    }
+
+    /**
+     * 重命名指定对话；空白标题保持原样，避免产生无法辨识的侧栏条目。
+     */
+    fun renameConversation(conversationId: String, title: String) {
+        val normalizedTitle = title.trim()
+        if (normalizedTitle.isBlank()) return
+        mutateConversation(conversationId) { conversation ->
+            conversation.copy(title = normalizedTitle)
+        }
+    }
+
+    /**
+     * 删除指定对话；删除当前对话时切换到剩余的第一条对话。
+     */
+    fun deleteConversation(conversationId: String) {
+        if (findConversationOrNull(conversationId) == null) return
+        if (activeRunConversationId == conversationId) {
+            activeRunJob?.cancel()
+            activeRunJob = null
+            activeRunConversationId = null
+        }
+        clearPendingOwnership(conversationId)
+        val remainingTasks = ui.tasks.filterNot { it.id == conversationId }
+        val nextActiveTaskId = if (ui.activeTaskId == conversationId) {
+            remainingTasks.firstOrNull()?.id.orEmpty()
+        } else {
+            ui.activeTaskId
+        }
+        ui = ui.copy(
+            tasks = remainingTasks,
+            activeTaskId = nextActiveTaskId,
+        )
     }
 
     /**
@@ -250,10 +285,14 @@ class ChatWindowState(
     }
 
     /**
-     * 提交当前挂起审批，并恢复同一轮 agent 执行。
+     * 提交当前挂起审批；拒绝时停止当前 agent 轮次，其余选择恢复同一轮执行。
      */
-    fun answerPendingApproval(approved: Boolean) {
-        if (!toolInteractionCoordinator.submitApproval(approved)) return
+    fun answerPendingApproval(response: ApprovalResponse) {
+        if (!toolInteractionCoordinator.submitApproval(response)) return
+        if (response == ApprovalResponse.REJECT_AND_STOP) {
+            cancelActiveRun()
+            return
+        }
         val targetConversationId = resolvePendingApprovalConversationId() ?: return
         pendingApprovalConversationId = null
         mutateConversation(targetConversationId) { conversation ->
@@ -262,6 +301,15 @@ class ChatWindowState(
                 executionState = ExecutionState.Running,
             )
         }
+    }
+
+    /**
+     * 兼容既有二元审批调用。
+     */
+    fun answerPendingApproval(approved: Boolean) {
+        answerPendingApproval(
+            if (approved) ApprovalResponse.APPROVE_ONCE else ApprovalResponse.REJECT_AND_STOP,
+        )
     }
 
     /**

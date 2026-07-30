@@ -2,6 +2,7 @@ package com.agent.app.tool.component
 
 import com.agent.app.chat.state.PendingApprovalUiState
 import com.agent.app.chat.state.PendingQuestionUiState
+import com.agent.app.tool.interaction.ApprovalResponse
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,8 @@ data class ApprovalCardModel(
     val toolName: String,
     val targetPath: String?,
     val payloadPreview: String?,
+    val operationIntent: String?,
+    val rawCommand: String?,
 )
 
 /**
@@ -70,6 +73,8 @@ internal fun buildApprovalCardModel(pending: PendingApprovalUiState): ApprovalCa
     toolName = pending.toolName,
     targetPath = pending.targetPath,
     payloadPreview = pending.payloadPreview,
+    operationIntent = pending.summary.takeIf { pending.toolName == "run_powershell" },
+    rawCommand = pending.payloadPreview.takeIf { pending.toolName == "run_powershell" },
 )
 
 /**
@@ -185,7 +190,7 @@ fun ApprovalCard(
                     style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                 )
             }
-            model.payloadPreview?.takeIf { it.isNotBlank() }?.let { preview ->
+            (model.rawCommand ?: model.payloadPreview)?.takeIf { it.isNotBlank() }?.let { preview ->
                 Text(
                     text = preview,
                     modifier = Modifier
@@ -210,6 +215,45 @@ fun ApprovalCard(
                     containerColor = AppChipBackground,
                 )
             }
+        }
+    }
+}
+
+/**
+ * 直接嵌入工具调用卡片的审批动作区，不再生成独立审批浮层。
+ */
+@Composable
+fun InlineToolApprovalActions(
+    onResponse: (ApprovalResponse) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "需要执行确认",
+            style = MaterialTheme.typography.labelLarge.copy(
+                color = AppDanger,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RingPrimaryButton(
+                text = "同意",
+                onClick = { onResponse(ApprovalResponse.APPROVE_ONCE) },
+                containerColor = AppAccent,
+            )
+            RingPrimaryButton(
+                text = "此类命令都同意",
+                onClick = { onResponse(ApprovalResponse.APPROVE_TOOL_TYPE) },
+                containerColor = AppChipBackground,
+            )
+            RingPrimaryButton(
+                text = "拒绝并停止",
+                onClick = { onResponse(ApprovalResponse.REJECT_AND_STOP) },
+                containerColor = AppChipBackground,
+            )
         }
     }
 }

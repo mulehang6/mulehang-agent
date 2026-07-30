@@ -44,11 +44,13 @@ internal suspend fun runWithKoogAgent(
         .install {
             handleEvents {
                 onToolCallStarting { context ->
+                    val argumentsPreview = context.toolArgs.toString().toPreview()
                     emitEvent(
                         AgentStreamEvent.ToolCallStarted(
                             toolCallId = context.toolCallId,
                             name = context.toolName,
-                            argumentsPreview = context.toolArgs.toString().toPreview(),
+                            argumentsPreview = argumentsPreview,
+                            operationIntent = extractToolOperationIntent(context.toolName, argumentsPreview),
                         ),
                     )
                 }
@@ -75,6 +77,21 @@ internal suspend fun runWithKoogAgent(
         .build()
     return agent.run(request.prompt, null)
 }
+
+/**
+ * 从 Koog 的工具参数预览中提取终端工具的模型操作意图；其他工具不附加该字段。
+ */
+internal fun extractToolOperationIntent(toolName: String, argumentsPreview: String): String? {
+    if (toolName != "run_powershell") return null
+    return OPERATION_INTENT_ARGUMENT_PATTERN.find(argumentsPreview)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+}
+
+private val OPERATION_INTENT_ARGUMENT_PATTERN =
+    Regex("\\\"?operation_intent\\\"?\\s*[=:]\\s*[\\\"']?([^,}\\n\\\"']+)")
 
 /**
  * 构建带流式 LLM 节点的单轮策略，保留 Koog 的工具执行节点与生命周期事件。

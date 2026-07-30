@@ -121,7 +121,7 @@ internal enum class RightRailGlyph {
 
 internal const val RAIL_ACTION_SIZE_DP = 40
 internal const val RAIL_GLYPH_SIZE_DP = 24
-internal const val COMPOSER_PRIMARY_GLYPH_SIZE_DP = 18
+internal const val COMPOSER_PRIMARY_GLYPH_SIZE_DP = 24
 
 /**
  * 右侧 rail 的按钮展示模型。

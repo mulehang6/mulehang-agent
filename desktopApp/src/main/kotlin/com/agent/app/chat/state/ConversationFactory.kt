@@ -70,6 +70,6 @@ internal fun ChatConversationUiState.isEmptyDefaultConversation(): Boolean =
             pendingApproval == null &&
             executionState == ExecutionState.Idle
 
-internal const val DEFAULT_CONVERSATION_TITLE = "新对话"
+internal const val DEFAULT_CONVERSATION_TITLE = "新建对话"
 
 private const val CONVERSATION_TITLE_MAX_LENGTH = 24

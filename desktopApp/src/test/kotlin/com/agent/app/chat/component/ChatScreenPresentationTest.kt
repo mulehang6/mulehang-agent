@@ -557,17 +557,61 @@ class ChatScreenPresentationTest {
      */
     @Test
     fun `should expose readable composer and terminal action metrics`() {
-        assertEquals(18, COMPOSER_PRIMARY_GLYPH_SIZE_DP)
+        assertEquals(24, COMPOSER_PRIMARY_GLYPH_SIZE_DP)
         assertEquals(36, TERMINAL_CLOSE_BUTTON_SIZE_DP)
     }
 
     /**
-     * 任务分组与工作区路径不应使用过小字号。
+     * 问题和审批卡片必须共享短促且不突兀的进出场时长。
+     */
+    @Test
+    fun `should use calm pending interaction card motion timings`() {
+        assertEquals(180, PENDING_CARD_ENTER_DURATION_MILLIS)
+        assertEquals(120, PENDING_CARD_EXIT_DURATION_MILLIS)
+    }
+
+    /**
+     * 工具详情箭头在收起与展开状态之间必须提供明确的方向提示。
+     */
+    @Test
+    fun `should rotate tool event chevron when details expand`() {
+        assertEquals(0f, toolEventChevronRotation(expanded = false))
+        assertEquals(180f, toolEventChevronRotation(expanded = true))
+    }
+
+    /**
+     * 用户离开底部时应显示一键回到最新输出的按钮。
+     */
+    @Test
+    fun `should show scroll to bottom button only away from latest output`() {
+        assertEquals(true, shouldShowScrollToBottomButton(isFollowingLatest = false))
+        assertEquals(false, shouldShowScrollToBottomButton(isFollowingLatest = true))
+    }
+
+    /**
+     * 底部操作卡片撑高输入区时，原本跟随最新输出的时间线仍应保持在底部。
+     */
+    @Test
+    fun `should keep timeline at bottom when viewport height changes`() {
+        assertEquals(true, shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest = true))
+        assertEquals(false, shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest = false))
+    }
+
+    /**
+     * 主内容超过可视区域时才显示滚动条。
+     */
+    @Test
+    fun `should show timeline scrollbar only when content overflows`() {
+        assertEquals(false, shouldShowTimelineScrollbar(maxScrollValue = 0))
+        assertEquals(true, shouldShowTimelineScrollbar(maxScrollValue = 1))
+    }
+
+    /**
+     * 任务状态分组标题不应使用过小字号。
      */
     @Test
     fun `should expose readable task sidebar typography`() {
         assertEquals(13, TASK_SECTION_TITLE_FONT_SIZE_SP)
-        assertEquals(13, TASK_PATH_FONT_SIZE_SP)
     }
 }
 

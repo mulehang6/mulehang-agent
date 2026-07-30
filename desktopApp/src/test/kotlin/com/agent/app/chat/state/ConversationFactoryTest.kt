@@ -25,7 +25,7 @@ class ConversationFactoryTest {
     fun `new conversation preserves the default empty conversation semantics`() {
         val result = newConversation("E:\\workspace", contextWindow = 100)
 
-        assertEquals("新对话", result.title)
+        assertEquals("新建对话", result.title)
         assertEquals("E:\\workspace", result.workspacePath)
         assertEquals(ExecutionState.Idle, result.executionState)
         assertEquals(0f, result.contextUsageFraction)

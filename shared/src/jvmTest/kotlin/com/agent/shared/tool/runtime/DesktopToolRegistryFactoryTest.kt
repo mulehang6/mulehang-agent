@@ -43,10 +43,10 @@ class DesktopToolRegistryFactoryTest {
     }
 
     /**
-     * PowerShell 审批标题应带上脚本首行，避免所有运行脚本请求都显示同一个固定标题。
+     * PowerShell 审批请求应保留模型显式传入的操作意图，而不是从命令文本猜测。
      */
     @Test
-    fun `powershell approval summary should include script headline`() {
+    fun `powershell approval summary should use explicit operation intent`() {
         var capturedApproval: ApprovalRequest? = null
         val toolSet = DesktopToolSet(
             workspacePath = "D:\\repo",
@@ -61,23 +61,39 @@ class DesktopToolRegistryFactoryTest {
             },
         )
 
-        assertFailsWith<IllegalStateException> {
-            toolSet.run_powershell("Get-Location\nGet-ChildItem")
-        }
+        val result = toolSet.run_powershell(
+            script = "Get-Location\nGet-ChildItem",
+            operation_intent = "查看当前工作目录和文件列表",
+        )
 
-        assertEquals("执行 PowerShell: Get-Location", capturedApproval?.summary)
+        assertEquals("用户已拒绝执行此操作。", result)
+        assertEquals("查看当前工作目录和文件列表", capturedApproval?.summary)
     }
 
     /**
-     * PowerShell 审批标题生成应折叠空白并在空脚本时回退到稳定默认值。
+     * PowerShell 命令没有可读意图时，不得向用户发起缺少上下文的审批请求。
      */
     @Test
-    fun `powershell approval summary builder should normalize script text`() {
-        assertEquals(
-            "执行 PowerShell: Get-ChildItem -Force",
-            buildPowerShellApprovalSummary("  Get-ChildItem   -Force  ")
+    fun `powershell should reject blank operation intent before requesting approval`() {
+        var approvalRequested = false
+        val toolSet = DesktopToolSet(
+            workspacePath = "D:\\repo",
+            permissionPreset = PermissionPreset.DEFAULT,
+            interactionBridge = object : DesktopToolInteractionBridge {
+                override suspend fun requestQuestion(request: QuestionRequest): String = "answer"
+
+                override suspend fun requestApproval(request: ApprovalRequest): Boolean {
+                    approvalRequested = true
+                    return true
+                }
+            },
         )
-        assertEquals("执行 PowerShell 7 脚本", buildPowerShellApprovalSummary("  \n  "))
+
+        assertFailsWith<IllegalStateException> {
+            toolSet.run_powershell(script = "Get-Location", operation_intent = " ")
+        }
+
+        assertEquals(false, approvalRequested)
     }
 }
 

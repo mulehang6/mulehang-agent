@@ -1,6 +1,7 @@
 package com.agent.app.chat.state
 
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
+import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentGateway
@@ -204,13 +205,11 @@ class ChatWindowStateTest {
         advanceUntilIdle()
 
         val toolEvents = state.state.items.filterIsInstance<ToolEventItem>()
-        // 第一轮的 Started 和 Finished 应保持原样
-        val startedEvent = toolEvents[0]
-        val finishedEvent = toolEvents[1]
-        assertEquals(ToolEventStatus.Started, startedEvent.status)
+        // 第一轮输入与输出应合并为一张完成卡片。
+        val finishedEvent = toolEvents[0]
         assertEquals(ToolEventStatus.Finished, finishedEvent.status)
-        assertEquals(null, startedEvent.errorMessage)
-        // 应追加一条独立 Failed 事件，而非改写历史 Started
+        assertEquals(null, finishedEvent.errorMessage)
+        // 应追加一条独立 Failed 事件，而非改写历史完成卡片。
         val failedEvent = toolEvents.last()
         assertEquals(ToolEventStatus.Failed, failedEvent.status)
         assertEquals("network timeout", failedEvent.errorMessage)
@@ -314,15 +313,13 @@ class ChatWindowStateTest {
         state.send("hi")
         advanceUntilIdle()
 
-        assertEquals(4, state.state.items.size)
+        assertEquals(3, state.state.items.size)
         assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
         assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[1].kind)
-        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[2].kind)
-        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[3].kind)
-        val started = state.state.items[1] as ToolEventItem
-        val finished = state.state.items[2] as ToolEventItem
-        assertEquals("read_file", started.toolName)
-        assertEquals("read_file", finished.toolName)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[2].kind)
+        val toolEvent = state.state.items[1] as ToolEventItem
+        assertEquals("read_file", toolEvent.toolName)
+        assertEquals("ok", toolEvent.resultPreview)
     }
 
     /**
@@ -354,16 +351,15 @@ class ChatWindowStateTest {
         state.send("hi")
         advanceUntilIdle()
 
-        assertEquals(6, state.state.items.size)
+        assertEquals(5, state.state.items.size)
         assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[0].kind)
         assertEquals(ConversationItem.Kind.Reasoning, state.state.items[1].kind)
         assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[2].kind)
-        assertEquals(ConversationItem.Kind.ToolEvent, state.state.items[3].kind)
-        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[4].kind)
-        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[5].kind)
+        assertEquals(ConversationItem.Kind.Reasoning, state.state.items[3].kind)
+        assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[4].kind)
 
         val firstReasoning = state.state.items[1] as ReasoningItem
-        val secondReasoning = state.state.items[4] as ReasoningItem
+        val secondReasoning = state.state.items[3] as ReasoningItem
         assertEquals("先分析问题继续分析", firstReasoning.displayText)
         assertEquals("先分析问题的原始内容继续分析的原始内容", firstReasoning.rawText)
         assertEquals(true, firstReasoning.expanded)
@@ -527,7 +523,7 @@ class ChatWindowStateTest {
             "重构 ChatWindowState",
             buildConversationTitle("  重构 ChatWindowState\n避免重复的新对话  "),
         )
-        assertEquals("新对话", buildConversationTitle("   "))
+        assertEquals("新建对话", buildConversationTitle("   "))
     }
 
     /**
@@ -551,7 +547,7 @@ class ChatWindowStateTest {
         val sections = state.ui.taskSections.associateBy { it.group }
         assertEquals(1, sections[ChatTaskGroup.RUNNING]?.tasks?.size)
         assertEquals(1, sections[ChatTaskGroup.DONE]?.tasks?.size)
-        assertEquals("新对话", sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.title)
+        assertEquals("新建对话", sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.title)
         assertEquals("first", sections[ChatTaskGroup.DONE]?.tasks?.single()?.title)
     }
 
@@ -1227,6 +1223,52 @@ class ChatWindowStateTest {
     }
 
     /**
+     * 拒绝审批后应停止当前 agent 轮次，并让用户可以从 composer 开始下一轮。
+     */
+    @Test
+    fun `should stop the agent run after rejecting an approval`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        var requests = 0
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                if (requests++ == 0) {
+                    val approval = ApprovalRequest(
+                        requestId = "a-stop",
+                        toolName = "run_powershell",
+                        summary = "执行 PowerShell 脚本",
+                    )
+                    emit(AgentStreamEvent.ApprovalRequested(approval))
+                    coordinator.requestApproval(approval)
+                }
+                emit(AgentStreamEvent.Completed("done"))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("run command")
+        advanceUntilIdle()
+        state.answerPendingApproval(ApprovalResponse.REJECT_AND_STOP)
+        advanceUntilIdle()
+
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(null, state.ui.activeConversation.pendingApproval)
+
+        state.send("next instruction")
+        advanceUntilIdle()
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals("done", (state.ui.activeConversation.items.last() as ChatMessageItem).message.content)
+    }
+
+    /**
      * 提交审批时，应只恢复发起审批请求的会话。
      */
     @Test
@@ -1369,6 +1411,31 @@ class ChatWindowStateTest {
 
         assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
         assertEquals(null, state.ui.activeConversation.pendingApproval)
+    }
+
+    /**
+     * 侧栏重命名和删除应只影响被选中的对话，并在删除当前项后切换到剩余对话。
+     */
+    @Test
+    fun `should rename and delete a conversation from sidebar actions`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        val renamedConversationId = state.ui.activeConversationId
+
+        state.renameConversation(renamedConversationId, "改名后的任务")
+        assertEquals("改名后的任务", state.findConversation(renamedConversationId).title)
+        state.createConversationForWorkspace("E:\\abc\\def")
+        val survivingConversationId = state.ui.activeConversationId
+        state.deleteConversation(renamedConversationId)
+
+        assertEquals(listOf(survivingConversationId), state.ui.tasks.map { it.id })
+        assertEquals(survivingConversationId, state.ui.activeConversationId)
     }
 
     private fun profile(

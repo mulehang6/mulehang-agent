@@ -1,18 +1,46 @@
 package com.agent.app.chat.presentation
 
+import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
+import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * 验证聊天时间线展示文案的最小规则。
  */
 class ConversationPresentationTest {
+
+    /**
+     * 运行中的会话不应在时间线末尾重复显示工作目录状态。
+     */
+    @Test
+    fun `should not render running workspace status`() {
+        assertNull(
+            buildSecondaryStatus(
+                ChatConversationUiState(
+                    id = "conversation",
+                    title = "Title",
+                    workspacePath = "D:\\repo\\mulehang-agent",
+                    executionState = ExecutionState.Running,
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 已完成思考应使用易读的整秒耗时文案。
+     */
+    @Test
+    fun `should format completed reasoning duration in seconds`() {
+        assertEquals("已思考 2 秒", buildReasoningDurationLabel(2_001))
+    }
 
     /**
      * 聊天正文应直接显示内容，不再拼接角色前缀。
@@ -27,12 +55,15 @@ class ConversationPresentationTest {
     }
 
     /**
-     * 思考块标题应保留 Thinking 文案，并区分流式中与完成态。
+     * 流式思考显示 Thinking，完成后在原位置显示耗时。
      */
     @Test
-    fun `should keep thinking headline for reasoning block`() {
-        assertEquals("正在思考…", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
-        assertEquals("思考过程", buildReasoningHeadline(ReasoningItem(isStreaming = false)))
+    fun `should replace thinking headline with completed duration`() {
+        assertEquals("Thinking...", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
+        assertEquals(
+            "已思考 2 秒",
+            buildReasoningHeadline(ReasoningItem(isStreaming = false, durationMillis = 2_001)),
+        )
     }
 
     /**
@@ -86,7 +117,7 @@ class ConversationPresentationTest {
      * 只有带输入输出预览的工具事件才需要展开详情。
      */
     @Test
-    fun `should only expand tool events that have preview details`() {
+    fun `should expose expandable input details even when the input is empty`() {
         assertEquals(
             true,
             toolEventHasDetails(
@@ -108,7 +139,7 @@ class ConversationPresentationTest {
             ),
         )
         assertEquals(
-            false,
+            true,
             toolEventHasDetails(
                 ToolEventItem(
                     toolName = "read_file",
@@ -139,29 +170,69 @@ class ConversationPresentationTest {
      * Failed 状态的工具事件在缺少 preview 时不应展开详情。
      */
     @Test
-    fun `should not expand details for failed tool event without preview`() {
+    fun `should display readable empty input text instead of brackets`() {
         val failedItem = ToolEventItem(
             toolName = "error",
             status = ToolEventStatus.Failed,
             preview = null,
             errorMessage = "network timeout",
         )
-        assertEquals(false, toolEventHasDetails(failedItem))
+        assertEquals("无输入参数", toolEventDetailText(failedItem))
+    }
+
+    /**
+     * 工具收起时应紧跟工具名展示非空输入，避免把输入藏在展开区。
+     */
+    @Test
+    fun `should expose non blank tool input inline`() {
+        assertEquals(
+            "{\"path\":\"README.md\"}",
+            buildToolEventInlineInput(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Started,
+                    preview = "{\"path\":\"README.md\"}",
+                ),
+            ),
+        )
+        assertNull(
+            buildToolEventInlineInput(
+                ToolEventItem(toolName = "list_dir", status = ToolEventStatus.Started, preview = ""),
+            ),
+        )
+    }
+
+    /**
+     * 终端工具的内联输入只显示原始命令，操作意图由卡片上方单独呈现。
+     */
+    @Test
+    fun `should omit terminal operation intent from inline command`() {
+        assertEquals(
+            "Get-ChildItem env: | Format-Table -AutoSize",
+            buildToolEventInlineInput(
+                ToolEventItem(
+                    toolName = "run_powershell",
+                    status = ToolEventStatus.Started,
+                    preview = """{"script":"Get-ChildItem env: | Format-Table -AutoSize","operation_intent":"查看所有环境变量（只读操作）"}""",
+                    operationIntent = "查看所有环境变量（只读操作）",
+                ),
+            ),
+        )
     }
 
     /**
      * 运行中和失败的工具事件需要主动暴露上下文，完成态默认保持紧凑。
      */
     @Test
-    fun `should expand running and failed tool events by default`() {
+    fun `should keep every tool event collapsed by default`() {
         assertEquals(
-            true,
+            false,
             shouldExpandToolEventByDefault(
                 ToolEventItem("read_file", ToolEventStatus.Started, preview = "input"),
             ),
         )
         assertEquals(
-            true,
+            false,
             shouldExpandToolEventByDefault(
                 ToolEventItem("read_file", ToolEventStatus.Failed, preview = "input", errorMessage = "failed"),
             ),

@@ -1,5 +1,7 @@
 package com.agent.app.chat.presentation
 
+import com.agent.shared.chat.model.ToolEventItem
+import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -52,5 +54,23 @@ class AutoScrollPolicyTest {
                 previousTotalItems = 6,
             ),
         )
+    }
+
+    /**
+     * 工具运行完成后新增的意图和输出也必须触发时间线跟随。
+     */
+    @Test
+    fun `should include tool intent and output in timeline content fingerprint`() {
+        val started = ToolEventItem(
+            toolName = "run_powershell",
+            status = ToolEventStatus.Started,
+            preview = "Get-ChildItem",
+        )
+        val finished = started.copy(
+            operationIntent = "列出 Kotlin 源文件",
+            resultPreview = "shared/src/commonMain/kotlin/A.kt",
+        )
+
+        assertEquals(true, itemContentSize(finished) > itemContentSize(started))
     }
 }

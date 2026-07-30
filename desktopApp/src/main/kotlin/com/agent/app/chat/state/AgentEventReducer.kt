@@ -32,6 +32,8 @@ internal fun reduceAgentEvent(
             toolName = event.name,
             status = ToolEventStatus.Started,
             preview = event.argumentsPreview,
+            operationIntent = event.operationIntent,
+            toolCallId = event.toolCallId,
             contextWindow = contextWindow,
         ),
         id = event.toolCallId,
@@ -40,11 +42,11 @@ internal fun reduceAgentEvent(
     )
 
     is AgentStreamEvent.ToolCallFinished -> appendAssistantToolResultHistory(
-        appendToolEvent(
+        completeToolEvent(
             conversation = conversation,
+            toolCallId = event.toolCallId,
             toolName = event.name,
-            status = ToolEventStatus.Finished,
-            preview = event.resultPreview,
+            resultPreview = event.resultPreview,
             contextWindow = contextWindow,
         ),
         id = event.toolCallId,
@@ -177,6 +179,8 @@ private fun appendToolEvent(
     toolName: String,
     status: ToolEventStatus,
     preview: String?,
+    operationIntent: String? = null,
+    toolCallId: String? = null,
     contextWindow: Int?,
 ): ChatConversationUiState {
     val normalizedConversation = closeStreamingReasoning(conversation)
@@ -184,6 +188,8 @@ private fun appendToolEvent(
         toolName = toolName,
         status = status,
         preview = preview,
+        operationIntent = operationIntent,
+        toolCallId = toolCallId,
     )
     return normalizedConversation.copy(
         items = nextItems,
@@ -193,6 +199,44 @@ private fun appendToolEvent(
             contextWindow = contextWindow,
         ),
     )
+}
+
+/**
+ * 将工具输出回填到同一次调用的输入卡片；缺失输入事件时才创建仅含输出的卡片。
+ */
+private fun completeToolEvent(
+    conversation: ChatConversationUiState,
+    toolCallId: String?,
+    toolName: String,
+    resultPreview: String?,
+    contextWindow: Int?,
+): ChatConversationUiState {
+    val matchedIndex = conversation.items.indexOfLast { candidate ->
+        candidate is ToolEventItem && candidate.status == ToolEventStatus.Started &&
+                (candidate.toolCallId == toolCallId || (toolCallId == null && candidate.toolName == toolName))
+    }
+    if (matchedIndex < 0) {
+        return appendToolEvent(
+            conversation = conversation,
+            toolName = toolName,
+            status = ToolEventStatus.Finished,
+            preview = null,
+            toolCallId = toolCallId,
+            contextWindow = contextWindow,
+        ).let { updated ->
+            val items = updated.items.toMutableList()
+            val event = items.last() as ToolEventItem
+            items[items.lastIndex] = event.copy(resultPreview = resultPreview)
+            updated.copy(items = items)
+        }
+    }
+    val items = conversation.items.toMutableList()
+    val started = items[matchedIndex] as ToolEventItem
+    items[matchedIndex] = started.copy(
+        status = ToolEventStatus.Finished,
+        resultPreview = resultPreview,
+    )
+    return conversation.copy(items = items)
 }
 
 /**
@@ -291,6 +335,7 @@ private fun completeReasoning(
                 rawText = rawText ?: summary,
                 expanded = true,
                 isStreaming = false,
+                durationMillis = 0L,
             )
             return conversation.copy(
                 items = nextItems,
@@ -308,6 +353,7 @@ private fun completeReasoning(
         rawText = rawText ?: existingItem.rawText,
         expanded = true,
         isStreaming = false,
+        durationMillis = (System.currentTimeMillis() - existingItem.startedAtMillis).coerceAtLeast(0L),
     )
     return conversation.copy(
         items = updatedItems,
@@ -391,7 +437,11 @@ private fun closeStreamingReasoning(source: ChatConversationUiState): ChatConver
     )
     if (!reasoningItem.isStreaming) return source.copy(streamingReasoningItemIndex = null)
     val updatedItems = source.items.toMutableList()
-    updatedItems[reasoningIndex] = reasoningItem.copy(isStreaming = false, expanded = true)
+    updatedItems[reasoningIndex] = reasoningItem.copy(
+        isStreaming = false,
+        expanded = true,
+        durationMillis = (System.currentTimeMillis() - reasoningItem.startedAtMillis).coerceAtLeast(0L),
+    )
     return source.copy(
         items = updatedItems,
         streamingReasoningItemIndex = null,

@@ -34,3 +34,4 @@ Kotlin 使用 4 空格、尾随逗号、无制表符；类型为 `PascalCase`，
 
 ## 其他
 - 涉及到界面UI相关工作，使用 emil-design-eng
+- git 提交格式：type(scope): summary, type和scope英文，summary中文

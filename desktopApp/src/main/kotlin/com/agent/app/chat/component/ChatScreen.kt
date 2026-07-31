@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,7 +66,8 @@ internal fun WindowScope.ChatScreen(
     onTitleBarClientPointerEvent: (() -> Unit)?,
     onCloseRequest: () -> Unit,
 ) {
-    var terminalVisible by remember { mutableStateOf(false) }
+    var terminalTabs by remember { mutableStateOf(TerminalTabsState()) }
+    val terminalSessions = remember { TerminalSessionStore() }
     var sidebarVisible by remember { mutableStateOf(SIDEBAR_VISIBLE_BY_DEFAULT) }
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
     var railFeedback by remember { mutableStateOf<String?>(null) }
@@ -73,6 +75,10 @@ internal fun WindowScope.ChatScreen(
     var sidebarOrigin by remember { mutableStateOf(Offset.Zero) }
     val workspaceBackdropState = rememberWorkspaceBackdropState()
     val activeConversation = state.ui.activeConversationOrNull
+
+    DisposableEffect(terminalSessions) {
+        onDispose { terminalSessions.closeAll() }
+    }
 
     LaunchedEffect(railFeedback) {
         if (railFeedback != null) {
@@ -140,8 +146,25 @@ internal fun WindowScope.ChatScreen(
                         state = state,
                         activeRailView = RightRailGlyph.CODE,
                         filterToolActivityOnly = false,
-                        terminalVisible = terminalVisible,
-                        onCloseTerminal = { terminalVisible = false },
+                        terminalTabs = terminalTabs,
+                        terminalSessions = terminalSessions,
+                        onSelectTerminalTab = { tabId ->
+                            terminalTabs = terminalTabs.selectTab(tabId)
+                        },
+                        onAddTerminalTab = {
+                            activeConversation?.let { conversation ->
+                                terminalTabs = terminalTabs.addTab(conversation.workspacePath)
+                                terminalSessions.create(terminalTabs.tabs.last())
+                            }
+                        },
+                        onCloseTerminalTab = { tabId ->
+                            terminalSessions.close(tabId)
+                            terminalTabs = terminalTabs.closeTab(tabId)
+                        },
+                        onCloseOtherTerminalTabs = { keptTabId ->
+                            terminalSessions.closeAllExcept(keptTabId)
+                            terminalTabs = terminalTabs.retainOnly(keptTabId)
+                        },
                         compact = compact,
                         modifier = Modifier.weight(1f),
                     )
@@ -150,14 +173,23 @@ internal fun WindowScope.ChatScreen(
                             activeGlyph = resolveActiveRailGlyph(
                                 activeRailView = RightRailGlyph.CODE,
                                 filterToolActivityOnly = false,
-                                terminalVisible = terminalVisible,
+                                terminalVisible = terminalTabs.hasActiveTab(),
                             ),
                             onToolClick = { glyph ->
                                 if (glyph == RightRailGlyph.TERMINAL) {
                                     if (activeConversation == null) {
                                         railFeedback = "请先选择工作区"
                                     } else {
-                                        terminalVisible = !terminalVisible
+                                        when (terminalIconAction(terminalTabs.hasActiveTab())) {
+                                            TerminalIconAction.CREATE_TAB -> {
+                                                terminalTabs = terminalTabs.addTab(activeConversation.workspacePath)
+                                                terminalSessions.create(terminalTabs.tabs.last())
+                                            }
+
+                                            TerminalIconAction.FOCUS_ACTIVE_TAB -> {
+                                                terminalSessions.focusActiveIfNeeded(terminalTabs.activeTabId)
+                                            }
+                                        }
                                         railFeedback = null
                                     }
                                 }

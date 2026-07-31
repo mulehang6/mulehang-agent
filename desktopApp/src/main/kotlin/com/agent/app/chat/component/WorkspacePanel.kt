@@ -59,8 +59,12 @@ internal fun WorkspacePanel(
     state: ChatWindowState,
     activeRailView: RightRailGlyph,
     filterToolActivityOnly: Boolean,
-    terminalVisible: Boolean,
-    onCloseTerminal: () -> Unit,
+    terminalTabs: TerminalTabsState,
+    terminalSessions: TerminalSessionStore,
+    onSelectTerminalTab: (Long) -> Unit,
+    onAddTerminalTab: () -> Unit,
+    onCloseTerminalTab: (Long) -> Unit,
+    onCloseOtherTerminalTabs: (Long) -> Unit,
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -110,7 +114,7 @@ internal fun WorkspacePanel(
             ),
     ) {
         ResizableWorkspaceLayout(
-            terminalVisible = terminalVisible && activeConversation != null,
+            terminalVisible = terminalTabs.hasActiveTab() && activeConversation != null,
             compact = compact,
             modifier = Modifier.fillMaxSize(),
             workspace = { workspaceModifier ->
@@ -255,8 +259,12 @@ internal fun WorkspacePanel(
             },
             terminal = { terminalModifier ->
                 EmbeddedTerminalPanel(
-                    workspacePath = activeConversation?.workspacePath.orEmpty(),
-                    onClose = onCloseTerminal,
+                    tabs = terminalTabs,
+                    sessions = terminalSessions,
+                    onSelectTab = onSelectTerminalTab,
+                    onAddTab = onAddTerminalTab,
+                    onCloseTab = onCloseTerminalTab,
+                    onCloseOtherTabs = onCloseOtherTerminalTabs,
                     modifier = terminalModifier,
                 )
             },

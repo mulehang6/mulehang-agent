@@ -291,6 +291,17 @@ class ChatScreenPresentationTest {
     }
 
     /**
+     * 终端标签右键菜单应提供创建和关闭会话所需的最小操作。
+     */
+    @Test
+    fun `should expose terminal tab context menu actions`() {
+        assertEquals(
+            listOf("新建终端", "关闭当前终端", "关闭其他终端"),
+            terminalTabContextMenuLabels(),
+        )
+    }
+
+    /**
      * 终端应使用指定的 Maple Mono 半粗 Nerd Font 字体。
      */
     @Test
@@ -553,12 +564,30 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * Composer 主动作和终端关闭按钮应匹配各自点击区域。
+     * Composer 主动作、终端标签和关闭按钮应保持可辨识的点击尺寸。
      */
     @Test
     fun `should expose readable composer and terminal action metrics`() {
         assertEquals(24, COMPOSER_PRIMARY_GLYPH_SIZE_DP)
-        assertEquals(36, TERMINAL_CLOSE_BUTTON_SIZE_DP)
+        assertEquals(30, TERMINAL_TAB_HEIGHT_DP)
+        assertEquals(24, TERMINAL_CLOSE_BUTTON_SIZE_DP)
+    }
+
+    /**
+     * 终端操作图标只在悬浮时发光，默认不应保留额外背景框。
+     */
+    @Test
+    fun `should glow terminal action icons without hover surface`() {
+        assertEquals(0f, terminalActionGlowAlpha(hovered = false))
+        assertEquals(0.55f, terminalActionGlowAlpha(hovered = true))
+    }
+
+    /**
+     * 终端操作悬浮反馈应在短促过渡中显现，而非瞬时切换。
+     */
+    @Test
+    fun `should use brief terminal hover transition`() {
+        assertEquals(140, TERMINAL_HOVER_TRANSITION_DURATION_MILLIS)
     }
 
     /**

@@ -172,6 +172,41 @@ class AgentEventReducerTest {
         assertEquals("src/App.kt:12\nfun main() = Unit", items.single().resultDisplay)
     }
 
+    /**
+     * 流式正文后续出现工具或思考事件时，正文必须持续停留在时间线末尾。
+     */
+    @Test
+    fun `subsequent timeline events keep the streaming answer at the end`() {
+        val afterTool = reduceAgentEvent(
+            conversation(
+                items = listOf(ChatMessageItem(ChatMessage(ChatRole.Assistant, "draft"))),
+                streamingAssistantItemIndex = 0,
+            ),
+            AgentStreamEvent.ToolCallStarted(
+                toolCallId = "call-1",
+                name = "read_file",
+                argumentsPreview = "README.md",
+            ),
+            contextWindow = 100,
+        )
+
+        val afterReasoning = reduceAgentEvent(
+            afterTool,
+            AgentStreamEvent.ReasoningDelta(summary = "checking", rawText = "checking"),
+            contextWindow = 100,
+        )
+        val result = reduceAgentEvent(
+            afterReasoning,
+            AgentStreamEvent.ReasoningDelta(summary = " again", rawText = " again"),
+            contextWindow = 100,
+        )
+
+        assertEquals("read_file", (result.items[0] as ToolEventItem).toolName)
+        assertEquals("checking again", (result.items[1] as ReasoningItem).summaryText)
+        assertEquals("draft", (result.items[2] as ChatMessageItem).message.content)
+        assertEquals(2, result.streamingAssistantItemIndex)
+    }
+
     @Test
     fun `completed moves the streaming answer to the end without duplicate text`() {
         val conversation = conversation(

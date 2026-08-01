@@ -192,11 +192,12 @@ private fun appendToolEvent(
         operationIntent = operationIntent,
         toolCallId = toolCallId,
     )
-    return normalizedConversation.copy(
-        items = nextItems,
+    val nextConversation = normalizedConversation.copy(items = nextItems)
+    val reorderedConversation = moveStreamingAssistantToEnd(nextConversation)
+    return reorderedConversation.copy(
         contextUsageFraction = estimateContextUsage(
-            items = nextItems,
-            attachmentCount = normalizedConversation.attachments.size,
+            items = reorderedConversation.items,
+            attachmentCount = reorderedConversation.attachments.size,
             contextWindow = contextWindow,
         ),
     )
@@ -302,7 +303,7 @@ private fun appendReasoningDelta(
             expanded = true,
             isStreaming = true,
         )
-        conversation.copy(
+        moveStreamingAssistantToEnd(conversation.copy(
             items = nextItems,
             streamingReasoningItemIndex = conversation.items.size,
             contextUsageFraction = estimateContextUsage(
@@ -310,7 +311,7 @@ private fun appendReasoningDelta(
                 attachmentCount = conversation.attachments.size,
                 contextWindow = contextWindow,
             ),
-        )
+        ))
     } else {
         val existingItem = conversation.items[currentIndex] as? ReasoningItem ?: return conversation
         val updatedItems = conversation.items.toMutableList()
@@ -320,8 +321,28 @@ private fun appendReasoningDelta(
             expanded = true,
             isStreaming = true,
         )
-        conversation.copy(items = updatedItems)
+        moveStreamingAssistantToEnd(conversation.copy(items = updatedItems))
     }
+}
+
+/**
+ * 将仍在生成的助手正文保持在时间线末尾，避免后续事件使其临时显示在旧位置。
+ */
+private fun moveStreamingAssistantToEnd(source: ChatConversationUiState): ChatConversationUiState {
+    val currentIndex = source.streamingAssistantItemIndex ?: return source
+    if (currentIndex == source.items.lastIndex) return source
+    val streamingItem = source.items.getOrNull(currentIndex) as? ChatMessageItem ?: return source
+    val updatedItems = source.items.toMutableList().apply {
+        removeAt(currentIndex)
+        add(streamingItem)
+    }
+    return source.copy(
+        items = updatedItems,
+        streamingAssistantItemIndex = updatedItems.lastIndex,
+        streamingReasoningItemIndex = source.streamingReasoningItemIndex?.let { reasoningIndex ->
+            if (reasoningIndex > currentIndex) reasoningIndex - 1 else reasoningIndex
+        },
+    )
 }
 
 /**

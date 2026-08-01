@@ -36,7 +36,6 @@ class DesktopToolRegistryFactoryTest {
                 "edit_file",
                 "run_powershell",
                 "ask_user",
-                "say_to_user",
             ),
             names,
         )

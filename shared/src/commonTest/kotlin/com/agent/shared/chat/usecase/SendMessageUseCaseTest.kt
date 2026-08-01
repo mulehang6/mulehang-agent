@@ -8,6 +8,7 @@ import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.tool.model.PermissionPreset
@@ -18,6 +19,8 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 
 /**
  * 验证发送消息用例的事件流转。
@@ -182,6 +185,27 @@ class SendMessageUseCaseTest {
 
         assertEquals("D:\\repo", capturedRequest?.workspacePath)
         assertEquals(PermissionPreset.DEFAULT, capturedRequest?.permissionPreset)
+    }
+
+    /** 缺失密钥的默认或模拟 profile 不能进入网络 Agent。 */
+    @Test
+    fun `should reject request when configured profile has no api key`() = runTest {
+        var gatewayInvoked = false
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                gatewayInvoked = true
+                return flowOf(AgentStreamEvent.Started, AgentStreamEvent.Completed("unexpected"))
+            }
+        }
+
+        assertFailsWith<IllegalConfigExceptions> {
+            SendMessageUseCase(gateway).invoke(
+                prompt = "hi",
+                profile = profile().copy(apiKey = " "),
+            ).toList()
+        }
+
+        assertFalse(gatewayInvoked)
     }
 
     private fun profile(): ConfigProfile = ConfigProfile(

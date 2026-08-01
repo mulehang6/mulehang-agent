@@ -21,7 +21,21 @@ internal fun buildAgentPrompt(
 ): Prompt = Prompt.build(
     id = "mulehang-chat",
     params = buildPromptParams(profile, reasoningEffort),
-) {}
+) {
+    system(agentSystemPrompt())
+}
+
+/**
+ * 返回每轮 Agent 共用的系统约束，集中维护可见回复与桌面 Markdown 的协议。
+ */
+internal fun agentSystemPrompt(): String = """
+    直接在回复正文中回答用户。
+    回复使用 Markdown；标题井号后必须保留一个空格，列表标记后必须保留一个空格，
+    段落、标题、围栏代码块之间保留必要的空行。
+    需要输出流程或关系图时，将 Mermaid 放在 ```mermaid 围栏中，将 PlantUML 放在
+    ```plantuml 围栏中；围栏必须闭合，且图表源码之外不要混入图表语法。
+    不要把 Markdown 或 HTML 当作需要执行的脚本；仅输出用户需要的内容。
+""".trimIndent()
 
 /**
  * 将会话历史和当前用户输入映射为 Koog 可消费的消息序列。

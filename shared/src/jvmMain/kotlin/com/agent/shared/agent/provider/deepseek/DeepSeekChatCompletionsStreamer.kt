@@ -79,11 +79,11 @@ internal class DeepSeekChatCompletionsStreamer(
 
         chunkRunner(deepSeekRequest, config).collect { chunk ->
             chunk.choices.firstOrNull()?.let { choice ->
-                choice.delta.reasoningContent?.takeIf { it.isNotBlank() }?.let { reasoning ->
+                choice.delta.reasoningContent?.takeIf { it.isNotEmpty() }?.let { reasoning ->
                     reasoningBuffers.getOrPut(choice.index) { StringBuilder() }.append(reasoning)
                     emit(StreamFrame.ReasoningDelta(text = reasoning, index = choice.index))
                 }
-                choice.delta.content?.takeIf { it.isNotBlank() }?.let { content ->
+                choice.delta.content?.takeIf { it.isNotEmpty() }?.let { content ->
                     emit(StreamFrame.TextDelta(text = content, index = choice.index))
                 }
                 choice.delta.toolCalls.orEmpty().forEachIndexed { toolIndex, toolCall ->

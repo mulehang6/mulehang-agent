@@ -401,6 +401,38 @@ ok
     }
 
     /**
+     * SSE 分片中的空格和换行属于正文的一部分，不能在映射 StreamFrame 时丢失。
+     */
+    @Test
+    fun `should preserve whitespace only content and reasoning chunks`() = runTest {
+        val streamer = DeepSeekChatCompletionsStreamer(
+            chunkRunner = { _, _ ->
+                flowOf(
+                    chunk(content = "#"),
+                    chunk(content = " "),
+                    chunk(content = "标题"),
+                    chunk(content = "\n\n"),
+                    chunk(content = "正文"),
+                    chunk(reasoningContent = "先"),
+                    chunk(reasoningContent = " "),
+                    chunk(reasoningContent = "分析"),
+                )
+            },
+        )
+
+        val frames = streamer.stream(prompt = "你好", config = deepSeekProfile()).toList()
+
+        assertEquals(
+            "# 标题\n\n正文",
+            frames.filterIsInstance<StreamFrame.TextDelta>().joinToString(separator = "") { it.text },
+        )
+        assertEquals(
+            "先 分析",
+            frames.filterIsInstance<StreamFrame.ReasoningDelta>().joinToString(separator = "") { it.text.orEmpty() },
+        )
+    }
+
+    /**
      * DeepSeek 偶尔会把工具实参再包进字符串类型的 `arguments` 字段；适配器必须解包，
      * 否则 Koog 无法找到工具要求的顶层参数。
      */
@@ -669,5 +701,24 @@ ok
         model = "deepseek-v4-flash",
         enabled = true,
         layer = ConfigLayer.PROJECT,
+    )
+
+    /** 创建只承载单个 DeepSeek 流分片的测试数据。 */
+    private fun chunk(
+        content: String? = null,
+        reasoningContent: String? = null,
+    ): DeepSeekChatCompletionChunk = DeepSeekChatCompletionChunk(
+        id = "chatcmpl-whitespace",
+        created = 1L,
+        model = "deepseek-v4-flash",
+        choices = listOf(
+            DeepSeekChatChoice(
+                index = 0,
+                delta = DeepSeekChatDelta(
+                    content = content,
+                    reasoningContent = reasoningContent,
+                ),
+            ),
+        ),
     )
 }

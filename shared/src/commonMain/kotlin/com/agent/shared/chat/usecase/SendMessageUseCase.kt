@@ -45,6 +45,10 @@ class SendMessageUseCase(
             log.warn { "profile id 为空" }
             throw IllegalConfigExceptions { "profile id 不能为空" }
         }
+        if (request.profile.apiKey.isBlank()) {
+            log.warn { "profile ${request.profile.id} 未配置 API key" }
+            throw IllegalConfigExceptions { "profile ${request.profile.id} 未配置 API key，无法发送请求" }
+        }
         log.info { buildAgentRunRequestDiagnostic(request) }
         agentGateway.run(request).collect(::emit)
     }

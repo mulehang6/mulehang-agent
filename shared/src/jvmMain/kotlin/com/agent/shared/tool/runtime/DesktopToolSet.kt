@@ -161,15 +161,6 @@ class DesktopToolSet(
     }
 
     /**
-     * 向用户展示一段说明。
-     */
-    @Tool
-    @LLMDescription("Show a message to the user.")
-    fun say_to_user(
-        @LLMDescription("Message shown to the user.") message: String,
-    ): String = message
-
-    /**
      * 向用户发起问题请求。
      */
     @Tool

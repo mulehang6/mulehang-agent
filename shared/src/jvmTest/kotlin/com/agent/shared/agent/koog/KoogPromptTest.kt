@@ -6,6 +6,7 @@ import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType
 import kotlin.test.Test
+import ai.koog.prompt.message.Message
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -15,7 +16,7 @@ import kotlin.test.assertTrue
 class KoogPromptTest {
 
     /**
-     * agent 基础 prompt 只应承载参数，不应提前写入用户正文。
+     * agent 基础 prompt 应包含统一系统约束，但不应提前写入用户正文。
      */
     @Test
     fun `should build agent prompt without duplicating user message`() {
@@ -24,7 +25,8 @@ class KoogPromptTest {
             reasoningEffort = ReasoningEffort.HIGH,
         )
 
-        assertTrue(prompt.messages.isEmpty())
+        assertEquals(1, prompt.messages.size)
+        assertTrue(prompt.messages.single() is Message.System)
         val params = prompt.params as? OpenAIChatParams
         assertEquals(ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort.HIGH, params?.reasoningEffort)
     }

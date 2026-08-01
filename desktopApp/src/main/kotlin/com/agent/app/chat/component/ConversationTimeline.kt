@@ -5,12 +5,21 @@ package com.agent.app.chat.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -20,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,18 +66,20 @@ import com.agent.app.chat.presentation.buildReasoningHeadline
 import com.agent.app.chat.presentation.buildSecondaryStatus
 import com.agent.app.chat.presentation.buildToolEventInlineInput
 import com.agent.app.chat.presentation.buildToolEventHeadline
+import com.agent.app.chat.presentation.buildToolEventOperationIntent
+import com.agent.app.chat.presentation.isTerminalToolEvent
+import com.agent.app.chat.presentation.shouldShowToolEventHeadline
 import com.agent.app.chat.presentation.toolEventHasDetails
+import com.agent.app.chat.presentation.toolEventOutputChunks
+import com.agent.app.chat.presentation.toolEventOutputText
 import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.chat.state.ChatConversationUiState
-import com.agent.app.chat.state.PendingApprovalUiState
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppPanelBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.AppUserCardBackground
-import com.agent.app.tool.interaction.ApprovalResponse
-import com.agent.app.tool.component.InlineToolApprovalActions
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ExecutionState
@@ -81,7 +93,6 @@ import com.agent.shared.chat.model.ToolEventStatus
 @Composable
 internal fun ConversationTimeline(
     conversation: ChatConversationUiState,
-    onApprovalResponse: (ApprovalResponse) -> Unit = {},
 ) {
     if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
         Text(
@@ -98,12 +109,7 @@ internal fun ConversationTimeline(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        val pendingApprovalToolIndex = conversation.pendingApproval?.let { pending ->
-            conversation.items.indexOfLast { item ->
-                item is ToolEventItem && item.toolName == pending.toolName
-            }
-        }
-        conversation.items.forEachIndexed { index, item ->
+        conversation.items.forEach { item ->
             when (item) {
                 is ChatMessageItem -> {
                     if (item.message.role == ChatRole.User) {
@@ -114,11 +120,7 @@ internal fun ConversationTimeline(
                 }
 
                 is ReasoningItem -> TimelineReasoningItem(item)
-                is ToolEventItem -> TimelineToolEvent(
-                    item = item,
-                    pendingApproval = conversation.pendingApproval.takeIf { index == pendingApprovalToolIndex },
-                    onApprovalResponse = onApprovalResponse,
-                )
+                is ToolEventItem -> TimelineToolEvent(item)
             }
         }
         if (conversation.executionState == ExecutionState.Running) {
@@ -318,19 +320,20 @@ private fun TimelineReasoningItem(item: ReasoningItem) {
 @Composable
 private fun TimelineToolEvent(
     item: ToolEventItem,
-    pendingApproval: PendingApprovalUiState?,
-    onApprovalResponse: (ApprovalResponse) -> Unit,
 ) {
     val errorMessage = item.errorMessage?.takeIf(String::isNotBlank)
     val isFailed = item.status == ToolEventStatus.Failed
-    val isTerminalTool = item.toolName == "run_powershell"
-    val hasDetails = toolEventHasDetails(item) || pendingApproval != null
-    var expanded by remember(item.toolName, item.status, item.preview, item.operationIntent) {
+    val isTerminalTool = isTerminalToolEvent(item)
+    val hasDetails = toolEventHasDetails(item)
+    val inlineInput = buildToolEventInlineInput(item)
+    val outputChunks = remember(item.resultPreview, item.resultDisplay) { toolEventOutputChunks(item) }
+    val outputListState = rememberLazyListState()
+    var expanded by remember(toolEventExpansionIdentity(item)) {
         mutableStateOf(shouldExpandToolEventByDefault(item))
     }
     var chevronHovered by remember { mutableStateOf(false) }
     val chevronRotation by animateFloatAsState(
-        targetValue = toolEventChevronRotation(expanded || pendingApproval != null),
+        targetValue = toolEventChevronRotation(expanded),
         animationSpec = tween(durationMillis = 160),
         label = "tool-event-chevron",
     )
@@ -338,14 +341,6 @@ private fun TimelineToolEvent(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (isTerminalTool) {
-            item.operationIntent?.takeIf(String::isNotBlank)?.let { intent ->
-                Text(
-                    text = intent,
-                    style = MaterialTheme.typography.bodyMedium.copy(color = AppText),
-                )
-            }
-        }
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(10.dp),
@@ -365,19 +360,24 @@ private fun TimelineToolEvent(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = buildToolEventHeadline(item),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = if (isFailed) AppDanger else AppText,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                    )
-                    buildToolEventInlineInput(item)?.let { input ->
+                    if (shouldShowToolEventHeadline(item)) {
+                        Text(
+                            text = buildToolEventHeadline(item),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = if (isFailed) AppDanger else AppText,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        )
+                    }
+                    inlineInput?.let { input ->
                         Text(
                             text = input,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = if (isTerminalTool) AppText else AppMuted,
+                                fontFamily = if (isTerminalTool) FontFamily.Monospace else FontFamily.Default,
+                            ),
                         )
                     }
                 }
@@ -407,27 +407,71 @@ private fun TimelineToolEvent(
                 }
             }
             AnimatedVisibility(
-                visible = expanded || pendingApproval != null,
+                visible = expanded,
                 enter = expandVertically(tween(durationMillis = 180)) + fadeIn(tween(durationMillis = 150)),
                 exit = shrinkVertically(tween(durationMillis = 120)) + fadeOut(tween(durationMillis = 100)),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (pendingApproval != null) {
-                        InlineToolApprovalActions(onResponse = onApprovalResponse)
-                    }
-                    item.resultPreview?.let { output ->
-                        Text(
-                            text = output.ifBlank { "无输出内容" },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF17181A), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = AppMuted,
-                                fontSize = 14.sp,
-                                lineHeight = 21.sp,
-                            ),
-                        )
+                    toolEventOutputText(item)?.let {
+                        if (outputChunks.isEmpty()) {
+                            Text(
+                                text = "无输出内容",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF17181A), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    color = AppMuted,
+                                    fontSize = 14.sp,
+                                    lineHeight = 21.sp,
+                                ),
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 320.dp)
+                                    .background(Color(0xFF17181A), RoundedCornerShape(6.dp)),
+                            ) {
+                                LazyColumn(
+                                    state = outputListState,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                ) {
+                                    items(outputChunks) { chunk ->
+                                        Text(
+                                            text = chunk,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                color = AppMuted,
+                                                fontSize = 14.sp,
+                                                lineHeight = 21.sp,
+                                            ),
+                                        )
+                                    }
+                                }
+                                if (
+                                    shouldShowToolOutputScrollbar(
+                                        canScrollForward = outputListState.canScrollForward ||
+                                            outputListState.canScrollBackward,
+                                    )
+                                ) {
+                                    CompositionLocalProvider(
+                                        LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
+                                            unhoverColor = Color(0xFF747983),
+                                            hoverColor = Color(0xFFB8BEC8),
+                                        ),
+                                    ) {
+                                        VerticalScrollbar(
+                                            adapter = rememberScrollbarAdapter(outputListState),
+                                            modifier = Modifier
+                                                .align(Alignment.CenterEnd)
+                                                .fillMaxHeight()
+                                                .padding(vertical = 4.dp, horizontal = 2.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     if (errorMessage != null) {
                         Text(
@@ -444,12 +488,37 @@ private fun TimelineToolEvent(
                     }
                 }
             }
+            }
+        }
+        if (isTerminalTool) {
+            buildToolEventOperationIntent(item)?.let { intent ->
+                Text(
+                    text = intent,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = AppText,
+                        lineHeight = 23.sp,
+                    ),
+                )
+            }
         }
     }
-}
 }
 
 /**
  * 返回工具详情箭头的旋转角度，展开时朝上，收起时朝下。
  */
 internal fun toolEventChevronRotation(expanded: Boolean): Float = if (expanded) 180f else 0f
+
+/**
+ * 返回决定工具卡片展开状态归属的稳定字段，结果文本更新不应重置用户的展开选择。
+ */
+internal fun toolEventExpansionIdentity(item: ToolEventItem): List<Any?> = listOf(
+    item.toolCallId,
+    item.toolName,
+    item.preview,
+)
+
+/**
+ * 工具输出列表存在可滚动内容时显示滚动条，避免短输出产生无意义的视觉噪声。
+ */
+internal fun shouldShowToolOutputScrollbar(canScrollForward: Boolean): Boolean = canScrollForward

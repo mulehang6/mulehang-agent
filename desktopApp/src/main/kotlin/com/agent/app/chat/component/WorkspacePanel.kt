@@ -76,6 +76,12 @@ internal fun WorkspacePanel(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
+    val hasPendingInteraction = activeConversation?.let { conversation ->
+        shouldShowPendingInteractionOverlay(
+            hasPendingQuestion = conversation.pendingQuestion != null,
+            hasPendingApproval = conversation.pendingApproval != null,
+        )
+    } ?: false
 
     LaunchedEffect(scrollState.value) {
         isFollowingLatest.value = scrollState.value >= scrollState.maxValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
@@ -93,14 +99,18 @@ internal fun WorkspacePanel(
         }
     }
 
-    LaunchedEffect(activeConversation?.pendingQuestion?.requestId) {
-        if (activeConversation?.pendingQuestion == null) {
+    LaunchedEffect(activeConversation?.pendingQuestion?.requestId, activeConversation?.pendingApproval?.requestId) {
+        if (!hasPendingInteraction) {
             questionOverlayHeightPx.value = 0
         }
     }
 
-    LaunchedEffect(questionOverlayHeightPx.value, activeConversation?.pendingQuestion?.requestId) {
-        if (activeConversation?.pendingQuestion != null && isFollowingLatest.value) {
+    LaunchedEffect(
+        questionOverlayHeightPx.value,
+        activeConversation?.pendingQuestion?.requestId,
+        activeConversation?.pendingApproval?.requestId,
+    ) {
+        if (hasPendingInteraction && isFollowingLatest.value) {
             scrollState.scrollTo(scrollState.maxValue)
         }
     }
@@ -155,7 +165,6 @@ internal fun WorkspacePanel(
                                         when (activeRailView) {
                                             RightRailGlyph.CODE -> ConversationTimeline(
                                                 conversation = activeConversation,
-                                                onApprovalResponse = state::answerPendingApproval,
                                             )
                                             RightRailGlyph.HISTORY -> HistoryPanel(
                                                 activeConversation,
@@ -164,10 +173,9 @@ internal fun WorkspacePanel(
 
                                             else -> ConversationTimeline(
                                                 conversation = activeConversation,
-                                                onApprovalResponse = state::answerPendingApproval,
                                             )
                                         }
-                                        if (activeConversation.pendingQuestion != null) {
+                                        if (hasPendingInteraction) {
                                             Spacer(
                                                 modifier = Modifier.height(
                                                     with(density) { questionOverlayHeightPx.value.toDp() },
@@ -194,7 +202,12 @@ internal fun WorkspacePanel(
                                 }
                             }
                             activeConversation
-                                ?.takeIf { it.pendingQuestion != null }
+                                ?.takeIf {
+                                    shouldShowPendingInteractionOverlay(
+                                        hasPendingQuestion = it.pendingQuestion != null,
+                                        hasPendingApproval = it.pendingApproval != null,
+                                    )
+                                }
                                 ?.let { conversation ->
                                     Column(
                                         modifier = Modifier
@@ -210,7 +223,7 @@ internal fun WorkspacePanel(
                                 }
                             if (
                                 activeConversation != null &&
-                                activeConversation.pendingQuestion == null &&
+                                !hasPendingInteraction &&
                                 shouldShowScrollToBottomButton(isFollowingLatest.value)
                             ) {
                                 Surface(
@@ -282,6 +295,14 @@ internal fun shouldShowScrollToBottomButton(isFollowingLatest: Boolean): Boolean
  */
 internal fun shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest: Boolean): Boolean =
     isFollowingLatest
+
+/**
+ * 提问或审批挂起时都应在 composer 上方展示独立交互卡片。
+ */
+internal fun shouldShowPendingInteractionOverlay(
+    hasPendingQuestion: Boolean,
+    hasPendingApproval: Boolean,
+): Boolean = hasPendingQuestion || hasPendingApproval
 
 /**
  * 主内容实际溢出时才显示垂直滚动条。

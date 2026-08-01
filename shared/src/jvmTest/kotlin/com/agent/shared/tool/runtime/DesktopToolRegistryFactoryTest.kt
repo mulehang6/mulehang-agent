@@ -7,6 +7,7 @@ import com.agent.shared.tool.model.QuestionRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * 验证首批桌面工具是否都已注册。
@@ -36,7 +37,6 @@ class DesktopToolRegistryFactoryTest {
                 "run_powershell",
                 "ask_user",
                 "say_to_user",
-                "exit",
             ),
             names,
         )
@@ -94,6 +94,42 @@ class DesktopToolRegistryFactoryTest {
         }
 
         assertEquals(false, approvalRequested)
+    }
+
+    /**
+     * Agent 命令应固定在当前工作区执行，并把取消状态交给底层执行器。
+     */
+    @Test
+    fun `powershell should use workspace directory and cancellation signal`() {
+        var capturedArgs: DesktopPowerShellTool.Args? = null
+        val tool = DesktopPowerShellTool(
+            shellVersionProbe = { "7.5.1" },
+            commandRunner = { args ->
+                capturedArgs = args
+                DesktopPowerShellTool.ExecutionResult(
+                    exitCode = 0,
+                    stdout = "ok",
+                    stderr = "",
+                )
+            },
+        )
+        val toolSet = DesktopToolSet(
+            workspacePath = "D:\\workspace",
+            permissionPreset = PermissionPreset.DEFAULT,
+            interactionBridge = fakeBridge(),
+            isCancelled = { true },
+            powerShellTool = tool,
+        )
+
+        toolSet.run_powershell(
+            script = "Get-Location",
+            operation_intent = "查看当前工作目录",
+        )
+
+        val args = requireNotNull(capturedArgs)
+        assertEquals("D:\\workspace", args.workingDirectory)
+        assertTrue(args.isCancelled())
+        assertEquals(DesktopPowerShellTool.DEFAULT_TIMEOUT_MILLIS, args.timeoutMillis)
     }
 }
 

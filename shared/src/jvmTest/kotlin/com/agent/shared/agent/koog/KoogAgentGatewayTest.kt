@@ -4,6 +4,8 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.serialization.JSONObject
+import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentRunRequest
@@ -610,6 +612,55 @@ class KoogAgentGatewayTest {
                 argumentsPreview = "{path=README.md}",
             ),
         )
+    }
+
+    /**
+     * 长终端参数必须先按结构读取字段再生成预览，字段顺序不应影响卡片的命令和操作意图。
+     */
+    @Test
+    fun `should build terminal card fields before truncating long arguments`() {
+        val script =
+            """1..5000 | ForEach-Object { Write-Output ("out-" + ${'$'}_); """ +
+                    """[Console]::Error.WriteLine("err-" + ${'$'}_) }"""
+        val intent = "循环输出 1 到 5000，每次迭代向标准输出写入 out-N，向标准错误写入 err-N"
+        val argumentOrders = listOf(
+            linkedMapOf(
+                "script" to JSONPrimitive(script),
+                "operation_intent" to JSONPrimitive(intent),
+            ),
+            linkedMapOf(
+                "operation_intent" to JSONPrimitive(intent),
+                "script" to JSONPrimitive(script),
+            ),
+        )
+
+        argumentOrders.forEach { entries ->
+            val event = buildToolCallStartedEvent(
+                toolCallId = "call-terminal",
+                toolName = "run_powershell",
+                arguments = JSONObject(entries),
+            )
+
+            assertEquals(script.take(120), event.argumentsPreview)
+            assertEquals(intent, event.operationIntent)
+        }
+    }
+
+    /**
+     * 工具事件需同时提供给 UI 的完整输出和给后续模型上下文的紧凑预览。
+     */
+    @Test
+    fun `should retain complete tool result separately from model preview`() {
+        val result = "out-1\nout-2\nout-3"
+
+        val event = buildToolCallFinishedEvent(
+            toolCallId = "call-terminal",
+            toolName = "run_powershell",
+            result = result,
+        )
+
+        assertEquals("out-1 out-2 out-3", event.resultPreview)
+        assertEquals(result, event.resultDisplay)
     }
 
     private fun openAiProfile(): ConfigProfile = ConfigProfile(

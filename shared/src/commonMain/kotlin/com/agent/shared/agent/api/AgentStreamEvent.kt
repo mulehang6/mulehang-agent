@@ -34,6 +34,7 @@ sealed interface AgentStreamEvent {
         val toolCallId: String? = null,
         val name: String,
         val resultPreview: String? = null,
+        val resultDisplay: String? = null,
     ) : AgentStreamEvent
 
     /**

@@ -11,6 +11,7 @@ import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * 验证聊天时间线展示文案的最小规则。
@@ -203,6 +204,69 @@ class ConversationPresentationTest {
     }
 
     /**
+     * 完成的工具事件仍应保留原工具名和输入预览，输出仅在展开区展示。
+     */
+    @Test
+    fun `should keep completed tool event compact with its original input`() {
+        val item = ToolEventItem(
+            toolName = "run_powershell",
+            status = ToolEventStatus.Finished,
+            preview = """{"script":"Get-Location"}""",
+            resultPreview = "stdout: completed",
+        )
+
+        assertEquals("run_powershell", buildToolEventHeadline(item))
+        assertEquals("Get-Location", buildToolEventInlineInput(item))
+    }
+
+    /**
+     * PowerShell 卡片收起时仅保留命令本身，不额外显示工具名。
+     */
+    @Test
+    fun `should hide powershell tool name and retain its command in compact header`() {
+        val item = ToolEventItem(
+            toolName = "run_powershell",
+            status = ToolEventStatus.Finished,
+            preview = """{"script":"Get-Location; Get-ChildItem","operation_intent":"查看当前目录"}""",
+        )
+
+        assertEquals(false, shouldShowToolEventHeadline(item))
+        assertEquals("Get-Location; Get-ChildItem", buildToolEventInlineInput(item))
+    }
+
+    /**
+     * 终端工具名称在事件流中缺失时，仍需依据参数识别它，避免把意图与 JSON 一同塞入卡片。
+     */
+    @Test
+    fun `should recognize terminal payload when event tool name is generic`() {
+        val item = ToolEventItem(
+            toolName = "tool",
+            status = ToolEventStatus.Started,
+            preview = """{"operation_intent":"循环输出 1 到 5000","script":"1..5000 | ForEach-Object { Write-Output ${'$'}_ }"}""",
+        )
+
+        assertEquals(false, shouldShowToolEventHeadline(item))
+        assertEquals(
+            "1..5000 | ForEach-Object { Write-Output ${'$'}_ }",
+            buildToolEventInlineInput(item),
+        )
+    }
+
+    /**
+     * Koog 的工具参数预览使用 Kotlin Map 文本格式时，终端卡片仍应只显示实际脚本。
+     */
+    @Test
+    fun `should extract powershell command from koog map preview`() {
+        val item = ToolEventItem(
+            toolName = "run_powershell",
+            status = ToolEventStatus.Finished,
+            preview = "{operation_intent=执行脚本, script=& \"${'$'}PWD/script.ps1\", timeout_ms=120000}",
+        )
+
+        assertEquals("& \"${'$'}PWD/script.ps1\"", buildToolEventInlineInput(item))
+    }
+
+    /**
      * 终端工具的内联输入只显示原始命令，操作意图由卡片上方单独呈现。
      */
     @Test
@@ -243,5 +307,53 @@ class ConversationPresentationTest {
                 ToolEventItem("read_file", ToolEventStatus.Finished, preview = "output"),
             ),
         )
+    }
+
+    /**
+     * 工具卡片展开时应优先显示完整输出，缺失时才回退到短预览。
+     */
+    @Test
+    fun `should prefer complete tool output for expanded details`() {
+        assertEquals(
+            "line-1\nline-2",
+            toolEventOutputText(
+                ToolEventItem(
+                    toolName = "run_powershell",
+                    status = ToolEventStatus.Finished,
+                    resultPreview = "line-1",
+                    resultDisplay = "line-1\nline-2",
+                ),
+            ),
+        )
+        assertEquals(
+            "line-1",
+            toolEventOutputText(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Finished,
+                    resultPreview = "line-1",
+                ),
+            ),
+        )
+    }
+
+    /**
+     * 超长终端输出必须拆成受限文本块，供惰性列表只渲染可见内容。
+     */
+    @Test
+    fun `should split complete tool output into bounded display chunks`() {
+        val longLine = "x".repeat(2_500)
+        val chunks = toolEventOutputChunks(
+            ToolEventItem(
+                toolName = "run_powershell",
+                status = ToolEventStatus.Finished,
+                resultDisplay = "first\n$longLine\nlast",
+            ),
+        )
+
+        assertEquals("first", chunks.first())
+        assertEquals("last", chunks.last())
+        assertEquals(4, chunks.size)
+        assertTrue(chunks.all { it.length <= 2_000 })
     }
 }

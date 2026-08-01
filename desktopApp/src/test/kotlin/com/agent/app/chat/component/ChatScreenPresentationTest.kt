@@ -609,6 +609,24 @@ class ChatScreenPresentationTest {
     }
 
     /**
+     * 工具结果抵达后，既有卡片的展开状态标识不得随结果文本改变而改变。
+     */
+    @Test
+    fun `should keep tool expansion identity when result display arrives`() {
+        val pending = ToolEventItem(
+            toolName = "run_powershell",
+            status = ToolEventStatus.Started,
+            toolCallId = "call-1",
+        )
+        val completed = pending.copy(
+            status = ToolEventStatus.Finished,
+            resultDisplay = "stdout: completed",
+        )
+
+        assertEquals(toolEventExpansionIdentity(pending), toolEventExpansionIdentity(completed))
+    }
+
+    /**
      * 用户离开底部时应显示一键回到最新输出的按钮。
      */
     @Test
@@ -627,12 +645,40 @@ class ChatScreenPresentationTest {
     }
 
     /**
+     * 等待执行审批也应像追问一样在 composer 上方展示独立交互卡片。
+     */
+    @Test
+    fun `should show pending interaction overlay for approval as well as question`() {
+        assertEquals(
+            true,
+            shouldShowPendingInteractionOverlay(hasPendingQuestion = false, hasPendingApproval = true),
+        )
+        assertEquals(
+            true,
+            shouldShowPendingInteractionOverlay(hasPendingQuestion = true, hasPendingApproval = false),
+        )
+        assertEquals(
+            false,
+            shouldShowPendingInteractionOverlay(hasPendingQuestion = false, hasPendingApproval = false),
+        )
+    }
+
+    /**
      * 主内容超过可视区域时才显示滚动条。
      */
     @Test
     fun `should show timeline scrollbar only when content overflows`() {
         assertEquals(false, shouldShowTimelineScrollbar(maxScrollValue = 0))
         assertEquals(true, shouldShowTimelineScrollbar(maxScrollValue = 1))
+    }
+
+    /**
+     * 工具输出区域仅在内容超出其最大可见高度时才应显示滚动条。
+     */
+    @Test
+    fun `should show tool output scrollbar only when content overflows`() {
+        assertEquals(false, shouldShowToolOutputScrollbar(canScrollForward = false))
+        assertEquals(true, shouldShowToolOutputScrollbar(canScrollForward = true))
     }
 
     /**

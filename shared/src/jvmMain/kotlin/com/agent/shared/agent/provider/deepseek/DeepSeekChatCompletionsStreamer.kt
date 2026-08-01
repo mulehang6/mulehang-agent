@@ -14,6 +14,10 @@ import com.agent.shared.settings.model.ConfigProfile
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * DeepSeek chat-completions 的专用流式适配器。
@@ -88,7 +92,7 @@ internal class DeepSeekChatCompletionsStreamer(
                             id = toolCall.id,
                             index = toolCall.index ?: toolIndex,
                             name = toolCall.function?.name,
-                            content = toolCall.function?.arguments,
+                            content = unwrapDeepSeekToolArguments(toolCall.function?.arguments),
                         ),
                     )
                 }
@@ -118,6 +122,21 @@ internal class DeepSeekChatCompletionsStreamer(
             }
         }
         emit(StreamFrame.End(finishReason = finishReason, metaInfo = metaInfo ?: ResponseMetaInfo.Empty))
+    }
+
+    /**
+     * 解开 DeepSeek 偶发的 `{"arguments":"{...}"}` 工具参数包装，只接受内层 JSON 对象。
+     */
+    private fun unwrapDeepSeekToolArguments(arguments: String?): String? {
+        val wrappedArguments = runCatching {
+            Json.parseToJsonElement(arguments ?: return null)
+                .jsonObject["arguments"]
+                ?.jsonPrimitive
+                ?.content
+        }.getOrNull() ?: return arguments
+        return wrappedArguments.takeIf {
+            runCatching { Json.parseToJsonElement(it) is JsonObject }.getOrDefault(false)
+        } ?: arguments
     }
 
     /**

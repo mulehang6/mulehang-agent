@@ -19,12 +19,14 @@ class DesktopToolSet(
     workspacePath: String,
     private val permissionPreset: PermissionPreset,
     private val interactionBridge: DesktopToolInteractionBridge,
+    private val isCancelled: () -> Boolean = { false },
+    private val powerShellTool: DesktopPowerShellTool = DesktopPowerShellTool(),
 ) : ToolSet {
+    private val workspacePath = workspacePath
     private val fileSupport = DesktopFileToolSupport(workspacePath)
     private val readWriteTools = DesktopReadWriteTools(fileSupport)
     private val globTool = DesktopGlobTool()
     private val grepTool = DesktopGrepTool()
-    private val powerShellTool = DesktopPowerShellTool()
 
     /**
      * 读取文件内容。
@@ -136,14 +138,26 @@ class DesktopToolSet(
         @LLMDescription("PowerShell script text.") script: String,
         @LLMDescription("Short Chinese description of the command's intended operation. Must explain what the command will do.")
         @Suppress("LocalVariableName") operation_intent: String,
+        @LLMDescription("Optional timeout in milliseconds. Defaults to 120000 and may not exceed 600000.")
+        timeout_ms: Long = DesktopPowerShellTool.DEFAULT_TIMEOUT_MILLIS,
     ): String {
         val operationIntent = operation_intent.trim()
         check(operationIntent.isNotBlank()) { "执行 PowerShell 时必须说明操作意图。" }
+        check(timeout_ms in 1..DesktopPowerShellTool.MAX_TIMEOUT_MILLIS) {
+            "PowerShell 超时必须在 1 到 ${DesktopPowerShellTool.MAX_TIMEOUT_MILLIS} 毫秒之间。"
+        }
         if (!ensureExecuteApproval(
             summary = operationIntent,
             payloadPreview = script,
         )) return USER_DECLINED_TOOL_MESSAGE
-        return powerShellTool.execute(DesktopPowerShellTool.Args(script = script))
+        return powerShellTool.execute(
+            DesktopPowerShellTool.Args(
+                script = script,
+                workingDirectory = workspacePath,
+                timeoutMillis = timeout_ms,
+                isCancelled = isCancelled,
+            ),
+        )
     }
 
     /**
@@ -174,13 +188,6 @@ class DesktopToolSet(
             ),
         )
     }
-
-    /**
-     * 结束当前轮次。
-     */
-    @Tool
-    @LLMDescription("Finish the current conversation turn.")
-    fun exit(): String = "exit"
 
     /**
      * 根据权限档位处理写入类工具的审批。

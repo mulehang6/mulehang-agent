@@ -12,6 +12,8 @@ import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.serialization.JSONObject
+import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.agent.prompt.buildLlmModel
@@ -44,22 +46,20 @@ internal suspend fun runWithKoogAgent(
         .install {
             handleEvents {
                 onToolCallStarting { context ->
-                    val argumentsPreview = context.toolArgs.toString().toPreview()
                     emitEvent(
-                        AgentStreamEvent.ToolCallStarted(
+                        buildToolCallStartedEvent(
                             toolCallId = context.toolCallId,
-                            name = context.toolName,
-                            argumentsPreview = argumentsPreview,
-                            operationIntent = extractToolOperationIntent(context.toolName, argumentsPreview),
+                            toolName = context.toolName,
+                            arguments = context.toolArgs,
                         ),
                     )
                 }
                 onToolCallCompleted { context ->
                     emitEvent(
-                        AgentStreamEvent.ToolCallFinished(
+                        buildToolCallFinishedEvent(
                             toolCallId = context.toolCallId,
-                            name = context.toolName,
-                            resultPreview = context.toolResult?.toString()?.toPreview(),
+                            toolName = context.toolName,
+                            result = context.toolResult?.toString(),
                         ),
                     )
                 }
@@ -77,6 +77,56 @@ internal suspend fun runWithKoogAgent(
         .build()
     return agent.run(request.prompt, null)
 }
+
+/**
+ * 从完整的结构化参数构建工具开始事件，避免预览截断破坏终端命令和操作意图。
+ */
+internal fun buildToolCallStartedEvent(
+    toolCallId: String?,
+    toolName: String,
+    arguments: JSONObject,
+): AgentStreamEvent.ToolCallStarted {
+    val serializedArguments = arguments.toString()
+    if (toolName != "run_powershell") {
+        return AgentStreamEvent.ToolCallStarted(
+            toolCallId = toolCallId,
+            name = toolName,
+            argumentsPreview = serializedArguments.toPreview(),
+        )
+    }
+    val script = arguments.stringArgument("script")
+    val operationIntent = arguments.stringArgument("operation_intent")
+        ?: extractToolOperationIntent(toolName, serializedArguments)
+    return AgentStreamEvent.ToolCallStarted(
+        toolCallId = toolCallId,
+        name = toolName,
+        argumentsPreview = (script ?: serializedArguments).toPreview(),
+        operationIntent = operationIntent,
+    )
+}
+
+/**
+ * 读取 JSON 对象中的非空字符串参数。
+ */
+private fun JSONObject.stringArgument(name: String): String? =
+    (entries[name] as? JSONPrimitive)
+        ?.contentOrNull
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+
+/**
+ * 同时构建面向模型上下文的紧凑预览和面向时间线的完整工具输出事件。
+ */
+internal fun buildToolCallFinishedEvent(
+    toolCallId: String?,
+    toolName: String,
+    result: String?,
+): AgentStreamEvent.ToolCallFinished = AgentStreamEvent.ToolCallFinished(
+    toolCallId = toolCallId,
+    name = toolName,
+    resultPreview = result?.toPreview(),
+    resultDisplay = result,
+)
 
 /**
  * 从 Koog 的工具参数预览中提取终端工具的模型操作意图；其他工具不附加该字段。

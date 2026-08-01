@@ -47,6 +47,7 @@ internal fun reduceAgentEvent(
             toolCallId = event.toolCallId,
             toolName = event.name,
             resultPreview = event.resultPreview,
+            resultDisplay = event.resultDisplay,
             contextWindow = contextWindow,
         ),
         id = event.toolCallId,
@@ -209,6 +210,7 @@ private fun completeToolEvent(
     toolCallId: String?,
     toolName: String,
     resultPreview: String?,
+    resultDisplay: String?,
     contextWindow: Int?,
 ): ChatConversationUiState {
     val matchedIndex = conversation.items.indexOfLast { candidate ->
@@ -226,7 +228,10 @@ private fun completeToolEvent(
         ).let { updated ->
             val items = updated.items.toMutableList()
             val event = items.last() as ToolEventItem
-            items[items.lastIndex] = event.copy(resultPreview = resultPreview)
+            items[items.lastIndex] = event.copy(
+                resultPreview = resultPreview,
+                resultDisplay = resultDisplay,
+            )
             updated.copy(items = items)
         }
     }
@@ -235,6 +240,7 @@ private fun completeToolEvent(
     items[matchedIndex] = started.copy(
         status = ToolEventStatus.Finished,
         resultPreview = resultPreview,
+        resultDisplay = resultDisplay,
     )
     return conversation.copy(items = items)
 }

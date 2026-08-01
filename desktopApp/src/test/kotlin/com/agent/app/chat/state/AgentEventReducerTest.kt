@@ -137,7 +137,7 @@ class AgentEventReducerTest {
     }
 
     /**
-     * 同一次工具调用的完成事件必须回填到已有输入卡片，而不是追加第二张输出卡片。
+     * 同一次工具调用的完成事件必须回填到原输入卡片，避免时间线被拆散。
      */
     @Test
     fun `tool finish merges output into its matching input card`() {
@@ -157,15 +157,19 @@ class AgentEventReducerTest {
                 toolCallId = "call-1",
                 name = "grep_code",
                 resultPreview = "src/App.kt:12",
+                resultDisplay = "src/App.kt:12\nfun main() = Unit",
             ),
             contextWindow = 100,
         )
 
-        assertEquals(1, result.items.filterIsInstance<ToolEventItem>().size)
-        val item = result.items.single() as ToolEventItem
-        assertEquals(ToolEventStatus.Finished, item.status)
-        assertEquals("{pattern=TODO}", item.preview)
-        assertEquals("src/App.kt:12", item.resultPreview)
+        val items = result.items.filterIsInstance<ToolEventItem>()
+
+        assertEquals(1, items.size)
+        assertEquals(ToolEventStatus.Finished, items.single().status)
+        assertEquals("{pattern=TODO}", items.single().preview)
+        assertEquals("call-1", items.single().toolCallId)
+        assertEquals("src/App.kt:12", items.single().resultPreview)
+        assertEquals("src/App.kt:12\nfun main() = Unit", items.single().resultDisplay)
     }
 
     @Test

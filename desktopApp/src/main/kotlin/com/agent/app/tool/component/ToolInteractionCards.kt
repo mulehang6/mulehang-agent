@@ -154,8 +154,7 @@ fun QuestionCard(
 @Composable
 fun ApprovalCard(
     pending: PendingApprovalUiState,
-    onApprove: () -> Unit,
-    onReject: () -> Unit,
+    onResponse: (ApprovalResponse) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val model = buildApprovalCardModel(pending)
@@ -203,18 +202,7 @@ fun ApprovalCard(
                     ),
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                RingPrimaryButton(
-                    text = "允许",
-                    onClick = onApprove,
-                    containerColor = AppAccent,
-                )
-                RingPrimaryButton(
-                    text = "拒绝",
-                    onClick = onReject,
-                    containerColor = AppChipBackground,
-                )
-            }
+            ApprovalResponseActions(onResponse)
         }
     }
 }
@@ -238,22 +226,30 @@ fun InlineToolApprovalActions(
                 fontWeight = FontWeight.SemiBold,
             ),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            RingPrimaryButton(
-                text = "同意",
-                onClick = { onResponse(ApprovalResponse.APPROVE_ONCE) },
-                containerColor = AppAccent,
-            )
-            RingPrimaryButton(
-                text = "此类命令都同意",
-                onClick = { onResponse(ApprovalResponse.APPROVE_TOOL_TYPE) },
-                containerColor = AppChipBackground,
-            )
-            RingPrimaryButton(
-                text = "拒绝并停止",
-                onClick = { onResponse(ApprovalResponse.REJECT_AND_STOP) },
-                containerColor = AppChipBackground,
-            )
-        }
+        ApprovalResponseActions(onResponse)
+    }
+}
+
+/**
+ * 渲染审批卡与内嵌审批区共享的三种执行决策动作。
+ */
+@Composable
+private fun ApprovalResponseActions(onResponse: (ApprovalResponse) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        RingPrimaryButton(
+            text = "同意",
+            onClick = { onResponse(ApprovalResponse.APPROVE_ONCE) },
+            containerColor = AppAccent,
+        )
+        RingPrimaryButton(
+            text = "此类命令都同意",
+            onClick = { onResponse(ApprovalResponse.APPROVE_TOOL_TYPE) },
+            containerColor = AppChipBackground,
+        )
+        RingPrimaryButton(
+            text = "拒绝并停止",
+            onClick = { onResponse(ApprovalResponse.REJECT_AND_STOP) },
+            containerColor = AppChipBackground,
+        )
     }
 }

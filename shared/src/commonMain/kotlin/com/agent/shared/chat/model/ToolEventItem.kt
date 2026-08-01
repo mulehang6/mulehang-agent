@@ -6,7 +6,8 @@ package com.agent.shared.chat.model
  * [errorMessage] 仅在 [status] 为 [ToolEventStatus.Failed] 时携带失败原因，
  * 用于在工具事件卡片内就地展示错误，而非在面板顶部单独展示。
  * [operationIntent] 为终端调用时由模型提供的简短操作说明。
- * [resultPreview] 保存与输入属于同一次调用的工具输出。
+ * [resultPreview] 保存回灌给后续模型上下文的紧凑工具输出。
+ * [resultDisplay] 保存供用户展开查看的完整工具输出。
  */
 data class ToolEventItem(
     val toolName: String,
@@ -16,6 +17,7 @@ data class ToolEventItem(
     val operationIntent: String? = null,
     val toolCallId: String? = null,
     val resultPreview: String? = null,
+    val resultDisplay: String? = null,
 ) : ConversationItem {
     override val kind: ConversationItem.Kind = ConversationItem.Kind.ToolEvent
 }

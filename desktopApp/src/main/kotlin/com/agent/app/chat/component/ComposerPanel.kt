@@ -60,6 +60,7 @@ import com.agent.app.design.RingSelectChip
 import com.agent.app.design.RingTooltip
 import com.agent.app.platform.pickFiles
 import com.agent.app.tool.component.QuestionCard
+import com.agent.app.tool.component.ApprovalCard
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
 
@@ -143,7 +144,7 @@ internal fun FooterComposerSection(
 }
 
 /**
- * 在时间线之上叠加展示挂起问题；审批直接显示在对应工具调用卡片内。
+ * 在 composer 上方叠加展示挂起的问题或审批卡片。
  */
 @Composable
 internal fun PendingInteractionCards(
@@ -151,18 +152,24 @@ internal fun PendingInteractionCards(
     state: ChatWindowState,
 ) {
     val pendingQuestion = conversation.pendingQuestion
+    val pendingApproval = conversation.pendingApproval
     AnimatedVisibility(
-        visible = pendingQuestion != null,
+        visible = pendingQuestion != null || pendingApproval != null,
         enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
                 slideInVertically(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) { height -> height / 8 },
         exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
                 slideOutVertically(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) { height -> -height / 12 },
     ) {
-        pendingQuestion?.let { pending ->
-            QuestionCard(
-                pending = pending,
+        when {
+            pendingQuestion != null -> QuestionCard(
+                pending = pendingQuestion,
                 onOptionClick = state::answerPendingQuestion,
                 onSubmitText = state::answerPendingQuestion,
+            )
+
+            pendingApproval != null -> ApprovalCard(
+                pending = pendingApproval,
+                onResponse = state::answerPendingApproval,
             )
         }
     }

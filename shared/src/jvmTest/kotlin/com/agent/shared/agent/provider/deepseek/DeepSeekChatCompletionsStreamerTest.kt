@@ -401,6 +401,50 @@ ok
     }
 
     /**
+     * DeepSeek 偶尔会把工具实参再包进字符串类型的 `arguments` 字段；适配器必须解包，
+     * 否则 Koog 无法找到工具要求的顶层参数。
+     */
+    @Test
+    fun `should unwrap nested deepseek tool arguments before emitting tool call frame`() = runTest {
+        val streamer = DeepSeekChatCompletionsStreamer(
+            chunkRunner = { _, _ ->
+                flowOf(
+                    DeepSeekChatCompletionChunk(
+                        id = "chatcmpl-wrapped-tool-arguments",
+                        created = 1L,
+                        model = "deepseek-v4-flash",
+                        choices = listOf(
+                            DeepSeekChatChoice(
+                                index = 0,
+                                delta = DeepSeekChatDelta(
+                                    toolCalls = listOf(
+                                        DeepSeekStreamToolCall(
+                                            index = 0,
+                                            id = "call-wrapped",
+                                            function = DeepSeekStreamFunction(
+                                                name = "run_powershell",
+                                                arguments = """{"arguments":"{\"script\":\"Get-Location\",\"operation_intent\":\"读取当前目录\"}"}""",
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                                finishReason = "tool_calls",
+                            ),
+                        ),
+                    ),
+                )
+            },
+        )
+
+        val toolCall = streamer.stream(prompt = "读取当前目录", config = deepSeekProfile())
+            .toList()
+            .filterIsInstance<StreamFrame.ToolCallDelta>()
+            .single()
+
+        assertEquals("""{"script":"Get-Location","operation_intent":"读取当前目录"}""", toolCall.content)
+    }
+
+    /**
      * 流式 assistant 收敛后必须先写回 prompt，后续 tool result 请求才能满足 DeepSeek 的相邻约束。
      */
     @Test

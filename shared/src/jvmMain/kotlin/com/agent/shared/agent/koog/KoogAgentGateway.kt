@@ -17,6 +17,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -46,6 +47,7 @@ class KoogAgentGateway(
                 workspacePath = request.workspacePath,
                 permissionPreset = request.permissionPreset,
                 interactionBridge = bridge,
+                isCancelled = { !isActive },
             ).create()
             launch(executionDispatcher) {
                 try {

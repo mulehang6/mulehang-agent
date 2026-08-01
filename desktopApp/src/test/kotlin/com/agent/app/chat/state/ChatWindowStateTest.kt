@@ -319,6 +319,7 @@ class ChatWindowStateTest {
         assertEquals(ConversationItem.Kind.ChatMessage, state.state.items[2].kind)
         val toolEvent = state.state.items[1] as ToolEventItem
         assertEquals("read_file", toolEvent.toolName)
+        assertEquals(ToolEventStatus.Finished, toolEvent.status)
         assertEquals("ok", toolEvent.resultPreview)
     }
 

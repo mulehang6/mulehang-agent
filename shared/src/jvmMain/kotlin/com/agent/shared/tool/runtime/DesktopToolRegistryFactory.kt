@@ -11,6 +11,7 @@ class DesktopToolRegistryFactory(
     private val workspacePath: String,
     private val permissionPreset: PermissionPreset,
     private val interactionBridge: DesktopToolInteractionBridge,
+    private val isCancelled: () -> Boolean = { false },
 ) {
     /**
      * 生成首批桌面工具注册表。
@@ -21,6 +22,7 @@ class DesktopToolRegistryFactory(
                 workspacePath = workspacePath,
                 permissionPreset = permissionPreset,
                 interactionBridge = interactionBridge,
+                isCancelled = isCancelled,
             ),
         )
     }

@@ -21,6 +21,8 @@ import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
+import com.agent.shared.agent.recording.JsonLinesAgentRunRecorder
+import com.agent.shared.agent.recording.RecordingAgentGateway
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository
@@ -55,7 +57,10 @@ internal fun WindowScope.MulehangDesktopApp(
     val windowState = remember {
         ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(
-                KoogAgentGateway(interactionBridge = toolInteractionCoordinator),
+                RecordingAgentGateway(
+                    delegate = KoogAgentGateway(interactionBridge = toolInteractionCoordinator),
+                    recorder = JsonLinesAgentRunRecorder(),
+                ),
             ),
             snapshot = AppSessionSnapshot(profiles = emptyList(), activeProfile = null),
             projectPath = projectRootState.value?.toString().orEmpty(),

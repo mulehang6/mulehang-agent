@@ -134,6 +134,19 @@ internal fun FooterComposerSection(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            activeConversation
+                ?.takeIf {
+                    shouldShowPendingInteractionCard(
+                        hasPendingQuestion = it.pendingQuestion != null,
+                        hasPendingApproval = it.pendingApproval != null,
+                    )
+                }
+                ?.let { conversation ->
+                    PendingInteractionCards(
+                        conversation = conversation,
+                        state = state,
+                    )
+                }
             ComposerPanel(
                 state = state,
                 compact = compact,

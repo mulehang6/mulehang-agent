@@ -645,21 +645,21 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * 等待执行审批也应像追问一样在 composer 上方展示独立交互卡片。
+     * 提问和审批都会在 composer 上方展示独立交互卡片。
      */
     @Test
-    fun `should show pending interaction overlay for approval as well as question`() {
+    fun `should show pending interaction card for questions and approvals`() {
         assertEquals(
             true,
-            shouldShowPendingInteractionOverlay(hasPendingQuestion = false, hasPendingApproval = true),
+            shouldShowPendingInteractionCard(hasPendingQuestion = false, hasPendingApproval = true),
         )
         assertEquals(
             true,
-            shouldShowPendingInteractionOverlay(hasPendingQuestion = true, hasPendingApproval = false),
+            shouldShowPendingInteractionCard(hasPendingQuestion = true, hasPendingApproval = false),
         )
         assertEquals(
             false,
-            shouldShowPendingInteractionOverlay(hasPendingQuestion = false, hasPendingApproval = false),
+            shouldShowPendingInteractionCard(hasPendingQuestion = false, hasPendingApproval = false),
         )
     }
 

@@ -21,6 +21,12 @@ dependencies {
     implementation("org.jetbrains.pty4j:pty4j:0.13.12")
     implementation("net.java.dev.jna:jna:5.14.0")
     implementation("net.java.dev.jna:jna-platform:5.14.0")
+    implementation("net.sourceforge.plantuml:plantuml-mit:1.2026.6")
+    implementation("com.halilibo.compose-richtext:richtext-ui:0.20.0")
+    implementation("com.halilibo.compose-richtext:richtext-commonmark:0.20.0")
+    implementation("io.coil-kt.coil3:coil-compose:3.4.0")
+    implementation("io.coil-kt.coil3:coil-network-ktor3:3.4.0")
+    implementation("org.scilab.forge:jlatexmath:1.0.7")
 
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

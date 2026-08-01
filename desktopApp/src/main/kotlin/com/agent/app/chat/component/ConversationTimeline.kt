@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,16 +21,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,15 +46,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.skiaCanvas
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.AnimatedVisibility
@@ -86,6 +91,16 @@ import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
+import com.halilibo.richtext.markdown.Markdown
+import com.halilibo.richtext.ui.BasicRichText
+import com.halilibo.richtext.ui.RichTextThemeProvider
+import com.halilibo.richtext.ui.RichTextStyle
+import com.halilibo.richtext.ui.WithStyle
+import com.halilibo.richtext.ui.string.RichTextStringStyle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.jetbrains.skia.Data
+import org.jetbrains.skia.svg.SVGDOM
 
 /**
  * 完整会话时间线，按顺序渲染所有用户消息、助手回答、思考块和工具事件。
@@ -109,13 +124,16 @@ internal fun ConversationTimeline(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        conversation.items.forEach { item ->
+        conversation.items.forEachIndexed { index, item ->
             when (item) {
                 is ChatMessageItem -> {
                     if (item.message.role == ChatRole.User) {
                         UserMessageCard(item.message.content)
                     } else {
-                        AssistantMessageBlock(item.message.content)
+                        AssistantMessageBlock(
+                            content = item.message.content,
+                            isStreaming = index == conversation.streamingAssistantItemIndex,
+                        )
                     }
                 }
 
@@ -176,90 +194,175 @@ private fun UserMessageCard(content: String) {
  * 单条助手回答块。
  */
 @Composable
-private fun AssistantMessageBlock(content: String) {
-    val paragraphs = content
-        .trim()
-        .takeIf(String::isNotBlank)
-        ?.split(Regex("\n\\s*\n"))
-        ?.map(String::trim)
-        ?.filter(String::isNotBlank)
-        ?: listOf("No assistant output yet for this task.")
+private fun AssistantMessageBlock(
+    content: String,
+    isStreaming: Boolean,
+) {
+    val document = remember(content, isStreaming) {
+        if (shouldRenderMarkdownDiagram(isStreaming)) {
+            parseAssistantMarkdownDocument(content.trim())
+        } else {
+            AssistantMarkdownDocument(
+                blocks = listOf(AssistantMarkdownBlock.Text(content.trim())),
+                footnotes = emptyList(),
+            )
+        }
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        paragraphs.forEach { paragraph ->
-            AssistantMarkdownBlock(paragraph)
+        document.blocks.forEach { block ->
+            when (block) {
+                is AssistantMarkdownBlock.Text -> AssistantMarkdownText(block.content)
+                is AssistantMarkdownBlock.PlantUml -> PlantUmlDiagram(block.source)
+                is AssistantMarkdownBlock.Code -> AssistantCodeBlock(block.language, block.source)
+                is AssistantMarkdownBlock.Image -> AssistantMarkdownImage(block.alt, block.url)
+                is AssistantMarkdownBlock.DefinitionList -> AssistantDefinitionListItem(block.term, block.definition)
+                is AssistantMarkdownBlock.HtmlSpan -> AssistantSafeHtmlSpan(block.content, block.colorName)
+                is AssistantMarkdownBlock.HtmlBlock -> AssistantSafeHtmlBlock(block.content, block.alignment)
+                is AssistantMarkdownBlock.InlineMath -> AssistantMathFormula(block.source, display = false)
+                is AssistantMarkdownBlock.DisplayMath -> AssistantMathFormula(block.source, display = true)
+                is AssistantMarkdownBlock.Details -> AssistantMarkdownDetails(block.summary, block.content)
+            }
         }
+        AssistantFootnoteSection(document.footnotes)
     }
 }
 
 /**
- * 渲染助手正文中常用的 Markdown 标题、列表、代码块与粗体，保持普通文本的阅读节奏。
+ * 以应用主题渲染普通 Markdown 文本，显式回传前景色避免深色主题被默认黑色覆盖。
  */
 @Composable
-private fun AssistantMarkdownBlock(content: String) {
-    val headingMatch = Regex("^(#{1,6})\\s+(.+)$").matchEntire(content)
-    when {
-        headingMatch != null -> Text(
-            text = headingMatch.groupValues[2],
-            style = MaterialTheme.typography.titleMedium.copy(
-                color = AppText,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
-
-        content.startsWith("```") && content.endsWith("```") -> Text(
-            text = content.removePrefix("```").removeSuffix("```").trim(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF17181A), RoundedCornerShape(8.dp))
-                .padding(12.dp),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = AppText,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = 21.sp,
-            ),
-        )
-
-        content.lineSequence().all { it.trimStart().startsWith("- ") || it.trimStart().startsWith("* ") } ->
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                content.lineSequence().forEach { line ->
-                    Text(
-                        text = "• ${line.trimStart().drop(2)}",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = AppText,
-                            lineHeight = 23.sp,
+internal fun AssistantMarkdownText(content: String) {
+    val normalizedContent = remember(content) { normalizeAssistantMarkdown(content).trim() }
+    if (normalizedContent.isBlank()) return
+    if (containsAssistantMarkdownInlineExtensions(normalizedContent)) {
+        AssistantMarkdownInlineExtensionsText(normalizedContent)
+        return
+    }
+    RichTextThemeProvider(
+        textStyleProvider = { LocalTextStyle.current },
+        textStyleBackProvider = { style, children ->
+            CompositionLocalProvider(LocalTextStyle provides style) { children() }
+        },
+        contentColorProvider = { AppText },
+        contentColorBackProvider = { color, children ->
+            CompositionLocalProvider(LocalContentColor provides color) { children() }
+        },
+    ) {
+        CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodyMedium) {
+            SelectionContainer {
+                BasicRichText(modifier = Modifier.fillMaxWidth()) {
+                    WithStyle(
+                        style = RichTextStyle(
+                            stringStyle = RichTextStringStyle(
+                                linkStyle = assistantMarkdownLinkStyle(),
+                            ),
                         ),
-                    )
+                    ) {
+                        Markdown(content = normalizedContent)
+                    }
                 }
             }
-
-        else -> Text(
-            text = markdownInlineText(content),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = AppText,
-                lineHeight = 23.sp,
-            ),
-        )
+        }
     }
 }
 
 /**
- * 解析普通段落中的 `**粗体**`，其余 Markdown 文本保持原样以避免丢失内容。
+ * 在后台生成 PlantUML SVG，完成后由 Skia 直接绘制；失败时保留原始源码供用户检查。
  */
-private fun markdownInlineText(content: String) = buildAnnotatedString {
-    val pattern = Regex("\\*\\*(.+?)\\*\\*")
-    var cursor = 0
-    pattern.findAll(content).forEach { match ->
-        append(content.substring(cursor, match.range.first))
-        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
-            append(match.groupValues[1])
+@Composable
+private fun PlantUmlDiagram(source: String) {
+    var renderedSvg by remember(source) { mutableStateOf<Result<String>?>(null) }
+    LaunchedEffect(source) {
+        renderedSvg = runCatching {
+            withContext(Dispatchers.Default) { renderPlantUmlToSvg(source) }
         }
-        cursor = match.range.last + 1
     }
-    append(content.substring(cursor))
+    when (val result = renderedSvg) {
+        null -> Text(
+            text = "正在渲染 PlantUML 图表…",
+            style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+        )
+
+        else -> {
+            val svg = result.getOrNull()
+            if (svg != null) {
+                PlantUmlSvg(svg)
+            } else {
+                AssistantMarkdownText("```plantuml\n$source\n```")
+            }
+        }
+    }
 }
+
+/**
+ * 使用 Compose Desktop 已携带的 Skia SVG 支持绘制本地 PlantUML 输出。
+ */
+@Composable
+private fun PlantUmlSvg(svg: String) {
+    val document = remember(svg) { SVGDOM(Data.makeFromBytes(svg.encodeToByteArray())) }
+    DisposableEffect(document) {
+        onDispose(document::close)
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(280.dp),
+        ) {
+            document.setContainerSize(size.width, size.height)
+            drawIntoCanvas { canvas ->
+                document.render(canvas.skiaCanvas)
+            }
+        }
+    }
+}
+
+/**
+ * 仅在 Agent 完成回复后启用图表渲染，避免不完整的流式围栏触发布局抖动。
+ */
+internal fun shouldRenderMarkdownDiagram(isStreaming: Boolean): Boolean = !isStreaming
+
+/**
+ * 将回复中的常见安全 HTML 语义降级为 Markdown，避开 Compose Desktop 对 HTML 块的字面输出。
+ */
+internal fun normalizeAssistantMarkdown(content: String): String = content
+    .replace(UNSAFE_HTML_BLOCK, "")
+    .replace(HTML_LINE_BREAK, "\n")
+    .replace(HTML_BOLD, "**$1**")
+    .replace(HTML_ITALIC, "*$1*")
+    .replace(HTML_INLINE_CODE, "`$1`")
+    .replace(HTML_BLOCK_OPEN, "\n")
+    .replace(HTML_BLOCK_CLOSE, "\n")
+    .replace(HTML_TAG, "")
+
+private val UNSAFE_HTML_BLOCK = Regex(
+    pattern = "<\\s*(?:script|style)\\b[^>]*>.*?<\\s*/\\s*(?:script|style)\\s*>",
+    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+private val HTML_LINE_BREAK = Regex("<\\s*br\\s*/?\\s*>", RegexOption.IGNORE_CASE)
+private val HTML_BOLD = Regex(
+    pattern = "<\\s*(?:b|strong)\\b[^>]*>(.*?)<\\s*/\\s*(?:b|strong)\\s*>",
+    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+private val HTML_ITALIC = Regex(
+    pattern = "<\\s*(?:i|em)\\b[^>]*>(.*?)<\\s*/\\s*(?:i|em)\\s*>",
+    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+private val HTML_INLINE_CODE = Regex(
+    pattern = "<\\s*(?:code|kbd)\\b[^>]*>(.*?)<\\s*/\\s*(?:code|kbd)\\s*>",
+    options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+private val HTML_BLOCK_OPEN = Regex("<\\s*(?:div|p|details|summary|dl|dt|dd)\\b[^>]*>", RegexOption.IGNORE_CASE)
+private val HTML_BLOCK_CLOSE = Regex("<\\s*/\\s*(?:div|p|details|summary|dl|dt|dd)\\s*>", RegexOption.IGNORE_CASE)
+private val HTML_TAG = Regex("<[^>]+>")
 
 /**
  * 时间线中的思考块展示。

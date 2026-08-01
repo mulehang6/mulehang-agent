@@ -9,13 +9,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,8 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
@@ -72,16 +69,8 @@ internal fun WorkspacePanel(
     val conversationId = activeConversation?.id
     val scrollState = remember(conversationId) { ScrollState(0) }
     val isFollowingLatest = remember(conversationId) { mutableStateOf(true) }
-    val questionOverlayHeightPx = remember(conversationId) { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
-    val hasPendingInteraction = activeConversation?.let { conversation ->
-        shouldShowPendingInteractionOverlay(
-            hasPendingQuestion = conversation.pendingQuestion != null,
-            hasPendingApproval = conversation.pendingApproval != null,
-        )
-    } ?: false
 
     LaunchedEffect(scrollState.value) {
         isFollowingLatest.value = scrollState.value >= scrollState.maxValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
@@ -95,22 +84,6 @@ internal fun WorkspacePanel(
 
     LaunchedEffect(scrollState.maxValue) {
         if (shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest.value)) {
-            scrollState.scrollTo(scrollState.maxValue)
-        }
-    }
-
-    LaunchedEffect(activeConversation?.pendingQuestion?.requestId, activeConversation?.pendingApproval?.requestId) {
-        if (!hasPendingInteraction) {
-            questionOverlayHeightPx.value = 0
-        }
-    }
-
-    LaunchedEffect(
-        questionOverlayHeightPx.value,
-        activeConversation?.pendingQuestion?.requestId,
-        activeConversation?.pendingApproval?.requestId,
-    ) {
-        if (hasPendingInteraction && isFollowingLatest.value) {
             scrollState.scrollTo(scrollState.maxValue)
         }
     }
@@ -175,13 +148,6 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                             )
                                         }
-                                        if (hasPendingInteraction) {
-                                            Spacer(
-                                                modifier = Modifier.height(
-                                                    with(density) { questionOverlayHeightPx.value.toDp() },
-                                                ),
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -201,29 +167,8 @@ internal fun WorkspacePanel(
                                     )
                                 }
                             }
-                            activeConversation
-                                ?.takeIf {
-                                    shouldShowPendingInteractionOverlay(
-                                        hasPendingQuestion = it.pendingQuestion != null,
-                                        hasPendingApproval = it.pendingApproval != null,
-                                    )
-                                }
-                                ?.let { conversation ->
-                                    Column(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .fillMaxWidth()
-                                            .padding(horizontal = if (compact) 12.dp else 32.dp)
-                                            .widthIn(max = 720.dp)
-                                            .onSizeChanged { questionOverlayHeightPx.value = it.height },
-                                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        PendingInteractionCards(conversation, state)
-                                    }
-                                }
                             if (
                                 activeConversation != null &&
-                                !hasPendingInteraction &&
                                 shouldShowScrollToBottomButton(isFollowingLatest.value)
                             ) {
                                 Surface(
@@ -299,7 +244,7 @@ internal fun shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest: Bo
 /**
  * 提问或审批挂起时都应在 composer 上方展示独立交互卡片。
  */
-internal fun shouldShowPendingInteractionOverlay(
+internal fun shouldShowPendingInteractionCard(
     hasPendingQuestion: Boolean,
     hasPendingApproval: Boolean,
 ): Boolean = hasPendingQuestion || hasPendingApproval

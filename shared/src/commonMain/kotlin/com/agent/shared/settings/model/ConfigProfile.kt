@@ -1,5 +1,7 @@
 package com.agent.shared.settings.model
 
+import com.agent.shared.agent.api.ReasoningEffort
+
 /**
  * 合并用户级、项目级与环境变量覆盖后的最终 profile。
  */
@@ -15,4 +17,6 @@ data class ConfigProfile(
     val enabled: Boolean,
     val layer: ConfigLayer,
     val limit: ModelLimit? = null,
+    val reasoningEfforts: List<ReasoningEffort>? = null,
+    val defaultReasoningEffort: ReasoningEffort? = null,
 )

@@ -1,7 +1,9 @@
 package com.agent.shared.settings.resolver
 
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
@@ -95,8 +97,10 @@ object SettingsMerger {
             .filter { model -> providerEnabled && model.isEnabled() }
             .map { model ->
                 val modelId = model.id.sanitizeModelName()
+                val profileId = environment["MULEHANG_PROFILE_ID"] ?: buildProfileId(providerId, modelId)
+                val (reasoningEfforts, defaultReasoningEffort) = model.toReasoningConfiguration(profileId)
                 ConfigProfile(
-                    id = environment["MULEHANG_PROFILE_ID"] ?: buildProfileId(providerId, modelId),
+                    id = profileId,
                     providerId = providerId,
                     providerLabel = label ?: providerId,
                     modelLabel = model.label,
@@ -107,6 +111,8 @@ object SettingsMerger {
                     enabled = true,
                     layer = layer,
                     limit = environment.toModelLimit(default = model.limit),
+                    reasoningEfforts = reasoningEfforts,
+                    defaultReasoningEffort = defaultReasoningEffort,
                 )
             }
     }
@@ -147,6 +153,33 @@ object SettingsMerger {
 
     private fun buildProfileId(providerId: String, model: String): String =
         "$providerId:$model"
+
+    /**
+     * 将 JSON 的 reasoning 字符串转换为运行时枚举，并验证默认档位。
+     */
+    private fun ModelProfile.toReasoningConfiguration(
+        profileId: String,
+    ): Pair<List<ReasoningEffort>?, ReasoningEffort?> {
+        val configuredEfforts = reasoningEfforts ?: return null to null
+        val efforts = configuredEfforts.map { raw -> raw.toReasoningEffort(profileId) }
+        val defaultEffort = defaultReasoningEffort?.toReasoningEffort(profileId)
+        if (defaultEffort != null && defaultEffort !in efforts) {
+            throw IllegalConfigExceptions {
+                "profile $profileId 的 defaultReasoningEffort 必须包含在 reasoningEfforts 中"
+            }
+        }
+        return efforts to defaultEffort
+    }
+
+    /**
+     * 解析单个 reasoning wire value，并在无效时提供可定位的配置错误。
+     */
+    private fun String.toReasoningEffort(profileId: String): ReasoningEffort =
+        ReasoningEffort.entries.firstOrNull { effort ->
+            effort.wireValue == trim().lowercase()
+        } ?: throw IllegalConfigExceptions {
+            "profile $profileId 的 reasoningEffort 无效: $this"
+        }
 
     /**
      * 保留原始 provider 与其来源层级。

@@ -1,6 +1,7 @@
 package com.agent.app.chat.state
 
 import com.agent.shared.chat.model.ExecutionState
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.session.AppSessionSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,7 +24,11 @@ class ConversationFactoryTest {
 
     @Test
     fun `new conversation preserves the default empty conversation semantics`() {
-        val result = newConversation("E:\\workspace", contextWindow = 100)
+        val result = newConversation(
+            workspacePath = "E:\\workspace",
+            contextWindow = 100,
+            reasoningEffort = ReasoningEffort.MEDIUM,
+        )
 
         assertEquals("新建对话", result.title)
         assertEquals("E:\\workspace", result.workspacePath)

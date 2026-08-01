@@ -151,7 +151,11 @@ class ChatWindowState(
      */
     fun createConversationForWorkspace(workspacePath: String) {
         onWorkspaceSelected(workspacePath)
-        val conversation = newConversation(workspacePath, activeContextWindow())
+        val conversation = newConversation(
+            workspacePath = workspacePath,
+            contextWindow = activeContextWindow(),
+            reasoningEffort = activeProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
+        )
         val updatedTasks = if (shouldReplaceActiveEmptyConversation(workspacePath)) {
             ui.tasks.map { existing ->
                 if (existing.id == ui.activeTaskId) {
@@ -226,7 +230,14 @@ class ChatWindowState(
             ui = ui.copy(
                 selectedProfileId = profileId,
                 tasks = ui.tasks.map { conversation ->
-                    conversation.withRecalculatedContextUsage(contextWindowFor(selectedProfile))
+                    conversation
+                        .copy(
+                            reasoningEffort = resolvedReasoningEffort(
+                                profile = selectedProfile,
+                                preferredEffort = conversation.reasoningEffort,
+                            ) ?: conversation.reasoningEffort,
+                        )
+                        .withRecalculatedContextUsage(contextWindowFor(selectedProfile))
                 },
             )
         }
@@ -448,11 +459,18 @@ class ChatWindowState(
     private fun supportedReasoningEffort(
         profile: ConfigProfile,
         conversation: ChatConversationUiState,
+    ): ReasoningEffort? = resolvedReasoningEffort(profile, conversation.reasoningEffort)
+
+    /**
+     * 保留受当前 profile 支持的档位；否则回退到该 profile 的默认档位。
+     */
+    private fun resolvedReasoningEffort(
+        profile: ConfigProfile,
+        preferredEffort: ReasoningEffort,
     ): ReasoningEffort? {
         val capabilities = ModelCapabilitiesResolver.resolve(profile)
-        val variants = capabilities.variants.values
-        return conversation.reasoningEffort.takeIf { effort ->
-            variants.any { variant -> variant.reasoningEffort == effort }
+        return preferredEffort.takeIf { effort ->
+            effort in capabilities.reasoningEfforts
         } ?: capabilities.defaultReasoningEffort
     }
 

@@ -45,6 +45,21 @@
         }
       ],
       "enabled": false
+    },
+    {
+      "id": "custom-openai-compatible",
+      "label": "Custom OpenAI Compatible",
+      "providerType": "openai-chat-completions",
+      "baseUrl": "https://gateway.example/v1",
+      "apiKey": "your-api-key",
+      "models": [
+        {
+          "id": "custom-reasoning-model",
+          "reasoningEfforts": ["low", "medium", "high"],
+          "defaultReasoningEffort": "medium"
+        }
+      ],
+      "enabled": false
     }
   ]
 }

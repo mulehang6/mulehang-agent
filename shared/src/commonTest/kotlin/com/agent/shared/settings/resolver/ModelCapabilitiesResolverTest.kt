@@ -60,23 +60,31 @@ class ModelCapabilitiesResolverTest {
     }
 
     /**
-     * OpenAI-compatible 的 GPT reasoning family 应按 Kilo 思路生成 reasoning variants。
+     * 官方 OpenAI Responses 的 GPT/Codex reasoning family 应暴露 reasoning variants。
      */
     @Test
-    fun `should generate reasoning variants for openai compatible gpt reasoning family`() {
-        val capabilities = ModelCapabilitiesResolver.resolve(
+    fun `should generate reasoning variants for official OpenAI reasoning family`() {
+        val official = ModelCapabilitiesResolver.resolve(
             profile = profile(
-                providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
-                baseUrl = "https://openrouter.ai/api/v1",
-                model = "openai/gpt-5-codex",
+                providerType = ProviderType.OPENAI_RESPONSES,
+                baseUrl = "https://api.openai.com/v1",
+                model = "gpt-5-codex",
+            ),
+        )
+        val customEndpoint = ModelCapabilitiesResolver.resolve(
+            profile = profile(
+                providerType = ProviderType.OPENAI_RESPONSES,
+                baseUrl = "https://gateway.example/v1",
+                model = "gpt-5-codex",
             ),
         )
 
         assertEquals(
             listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH),
-            capabilities.reasoningEfforts,
+            official.reasoningEfforts,
         )
-        assertEquals(ReasoningEffort.MEDIUM, capabilities.variants["medium"]?.reasoningEffort)
+        assertEquals(ReasoningEffort.MEDIUM, official.variants["medium"]?.reasoningEffort)
+        assertEquals(emptyList(), customEndpoint.reasoningEfforts)
     }
 
     /**
@@ -96,11 +104,50 @@ class ModelCapabilitiesResolverTest {
         assertEquals(ModelLimit(context = 128_000, output = 16_000), capabilities.limit)
     }
 
+    /**
+     * 显式配置应优先于 DeepSeek 的代码内置默认能力。
+     */
+    @Test
+    fun `should let configured capabilities override deepseek defaults`() {
+        val capabilities = ModelCapabilitiesResolver.resolve(
+            profile = profile(
+                providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-v4-flash",
+                reasoningEfforts = listOf(ReasoningEffort.LOW),
+                defaultReasoningEffort = ReasoningEffort.LOW,
+            ),
+        )
+
+        assertEquals(listOf(ReasoningEffort.LOW), capabilities.reasoningEfforts)
+        assertEquals(ReasoningEffort.LOW, capabilities.defaultReasoningEffort)
+    }
+
+    /**
+     * 空的显式配置应阻断后续 provider 的能力推断。
+     */
+    @Test
+    fun `should expose no reasoning for explicitly empty configured efforts`() {
+        val capabilities = ModelCapabilitiesResolver.resolve(
+            profile = profile(
+                providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                baseUrl = "https://api.deepseek.com/v1",
+                model = "deepseek-v4-flash",
+                reasoningEfforts = emptyList(),
+            ),
+        )
+
+        assertEquals(emptyList(), capabilities.reasoningEfforts)
+        assertEquals(null, capabilities.defaultReasoningEffort)
+    }
+
     private fun profile(
         providerType: ProviderType,
         baseUrl: String,
         model: String,
         limit: ModelLimit? = null,
+        reasoningEfforts: List<ReasoningEffort>? = null,
+        defaultReasoningEffort: ReasoningEffort? = null,
     ): ConfigProfile = ConfigProfile(
         id = "profile-$model",
         providerType = providerType,
@@ -110,5 +157,7 @@ class ModelCapabilitiesResolverTest {
         enabled = true,
         layer = ConfigLayer.PROJECT,
         limit = limit,
+        reasoningEfforts = reasoningEfforts,
+        defaultReasoningEffort = defaultReasoningEffort,
     )
 }

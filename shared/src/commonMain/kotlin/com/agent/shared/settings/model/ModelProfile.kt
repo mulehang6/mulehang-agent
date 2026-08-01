@@ -11,6 +11,8 @@ data class ModelProfile(
     val label: String? = null,
     val enabled: Boolean? = null,
     val limit: ModelLimit? = null,
+    val reasoningEfforts: List<String>? = null,
+    val defaultReasoningEffort: String? = null,
 ) {
     /**
      * 配置未显式关闭时默认启用。

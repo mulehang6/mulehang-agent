@@ -1,6 +1,8 @@
 package com.agent.shared.settings.resolver
 
+import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
@@ -10,6 +12,8 @@ import com.agent.shared.settings.model.SettingsDocument
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertContains
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -316,4 +320,101 @@ class SettingsMergerTest {
 
         assertFalse(disabled.isEnabled())
     }
+
+    /**
+     * 自定义模型的 reasoning 档位应从 JSON 配置转换为类型安全的运行时 profile。
+     */
+    @Test
+    fun `should merge configured reasoning efforts into runtime profile`() {
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = customModelSettings(
+                reasoningEfforts = listOf("low", "medium", "high"),
+                defaultReasoningEffort = "medium",
+            ),
+            environment = emptyMap(),
+        )
+
+        assertEquals(
+            listOf(ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH),
+            merged.single().reasoningEfforts,
+        )
+        assertEquals(ReasoningEffort.MEDIUM, merged.single().defaultReasoningEffort)
+    }
+
+    /**
+     * 显式空列表表示模型不支持 reasoning，不能与未配置混淆。
+     */
+    @Test
+    fun `should preserve an explicitly empty reasoning effort list`() {
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = customModelSettings(reasoningEfforts = emptyList()),
+            environment = emptyMap(),
+        )
+
+        assertEquals(emptyList(), merged.single().reasoningEfforts)
+        assertEquals(null, merged.single().defaultReasoningEffort)
+    }
+
+    /**
+     * 非法 reasoning 档位应在配置合并时指出对应模型。
+     */
+    @Test
+    fun `should reject invalid configured reasoning effort`() {
+        val exception = assertFailsWith<IllegalConfigExceptions> {
+            SettingsMerger.merge(
+                user = null,
+                project = customModelSettings(reasoningEfforts = listOf("deep")),
+                environment = emptyMap(),
+            )
+        }
+
+        assertContains(exception.message.orEmpty(), "custom:custom-reasoning-model")
+        assertContains(exception.message.orEmpty(), "deep")
+    }
+
+    /**
+     * 默认 reasoning 档位必须是该模型已声明的可选项之一。
+     */
+    @Test
+    fun `should reject configured default reasoning effort outside supported efforts`() {
+        val exception = assertFailsWith<IllegalConfigExceptions> {
+            SettingsMerger.merge(
+                user = null,
+                project = customModelSettings(
+                    reasoningEfforts = listOf("low"),
+                    defaultReasoningEffort = "high",
+                ),
+                environment = emptyMap(),
+            )
+        }
+
+        assertContains(exception.message.orEmpty(), "custom:custom-reasoning-model")
+        assertContains(exception.message.orEmpty(), "defaultReasoningEffort")
+    }
+
+    /**
+     * 为自定义 OpenAI-compatible 模型构造测试配置。
+     */
+    private fun customModelSettings(
+        reasoningEfforts: List<String>,
+        defaultReasoningEffort: String? = null,
+    ): SettingsDocument = SettingsDocument(
+        providers = listOf(
+            ProviderProfile(
+                id = "custom",
+                providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                baseUrl = "https://gateway.example/v1",
+                apiKey = "test-key",
+                models = listOf(
+                    ModelProfile(
+                        id = "custom-reasoning-model",
+                        reasoningEfforts = reasoningEfforts,
+                        defaultReasoningEffort = defaultReasoningEffort,
+                    ),
+                ),
+            ),
+        ),
+    )
 }

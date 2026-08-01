@@ -2,6 +2,9 @@ package com.agent.app.chat.state
 
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.session.AppSessionSnapshot
+import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
 import java.util.UUID
 
 /**
@@ -11,21 +14,23 @@ internal fun initialUiState(
     snapshot: AppSessionSnapshot,
     projectPath: String,
 ): ChatWindowUiState {
+    val selectedProfile = snapshot.activeProfile ?: snapshot.profiles.firstOrNull()
     if (projectPath.isBlank()) {
         return ChatWindowUiState(
             tasks = emptyList(),
             activeTaskId = "",
-            selectedProfileId = snapshot.activeProfile?.id ?: snapshot.profiles.firstOrNull()?.id,
+            selectedProfileId = selectedProfile?.id,
         )
     }
     val initialConversation = newConversation(
         workspacePath = projectPath,
-        contextWindow = snapshot.activeProfile?.let(::resolveContextWindow),
+        contextWindow = selectedProfile?.let(::resolveContextWindow),
+        reasoningEffort = selectedProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
     )
     return ChatWindowUiState(
         tasks = listOf(initialConversation),
         activeTaskId = initialConversation.id,
-        selectedProfileId = snapshot.activeProfile?.id ?: snapshot.profiles.firstOrNull()?.id,
+        selectedProfileId = selectedProfile?.id,
     )
 }
 
@@ -35,16 +40,24 @@ internal fun initialUiState(
 internal fun newConversation(
     workspacePath: String,
     contextWindow: Int?,
+    reasoningEffort: ReasoningEffort,
 ): ChatConversationUiState = ChatConversationUiState(
     id = UUID.randomUUID().toString(),
     title = DEFAULT_CONVERSATION_TITLE,
     workspacePath = workspacePath,
+    reasoningEffort = reasoningEffort,
     contextUsageFraction = estimateContextUsage(
         items = emptyList(),
         attachmentCount = 0,
         contextWindow = contextWindow,
     ),
 )
+
+/**
+ * 返回 profile 在新会话中应展示的 reasoning 默认档位。
+ */
+internal fun defaultReasoningEffortFor(profile: ConfigProfile): ReasoningEffort =
+    ModelCapabilitiesResolver.resolve(profile).defaultReasoningEffort ?: ReasoningEffort.MEDIUM
 
 /**
  * 根据首条用户消息生成本地短标题。

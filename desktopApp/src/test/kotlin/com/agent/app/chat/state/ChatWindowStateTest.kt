@@ -845,6 +845,45 @@ class ChatWindowStateTest {
     }
 
     /**
+     * DeepSeek 仅支持 high/max 时，初始会话应直接显示其默认的 high 档位。
+     */
+    @Test
+    fun `should initialize deepseek conversation with supported default reasoning effort`() = runTest(dispatcher) {
+        val deepSeekProfile = profile(model = "deepseek-v4-flash")
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(deepSeekProfile),
+                activeProfile = deepSeekProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+    }
+
+    /**
+     * 切换到不支持当前档位的模型时，应立即回退到该模型默认档位。
+     */
+    @Test
+    fun `should reset unsupported reasoning effort when switching to deepseek`() = runTest(dispatcher) {
+        val openAiProfile = profile(model = "gpt-4.1")
+        val deepSeekProfile = profile(model = "deepseek-v4-flash")
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(openAiProfile, deepSeekProfile),
+                activeProfile = openAiProfile,
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.selectProfile(deepSeekProfile.id)
+
+        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+    }
+
+    /**
      * 当前模型不支持 thinking 时，发送请求不应携带 reasoning effort。
      */
     @Test

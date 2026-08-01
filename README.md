@@ -26,6 +26,8 @@
 
 优先级固定为：`环境变量 > 项目级配置 > 用户级配置 > 默认值`
 
+自定义 OpenAI-compatible 模型不会按模型名推断思考能力。需要时，在对应 `models[]` 项中声明 `reasoningEfforts`（可选值为 `low`、`medium`、`high`、`max`）和可选的 `defaultReasoningEffort`；后者必须出现在前者列表中。省略 `reasoningEfforts` 表示不声明能力，空数组表示明确关闭思考等级。
+
 ## 环境要求
 
 使用 JDK 21、Gradle Wrapper、Kotlin Multiplatform 与 Compose Multiplatform Desktop。当前只聚焦 Windows Desktop，不启动开发服务器。

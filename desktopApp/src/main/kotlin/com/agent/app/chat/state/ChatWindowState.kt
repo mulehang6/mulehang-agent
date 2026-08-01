@@ -91,7 +91,13 @@ class ChatWindowState(
         ui = ui.copy(
             selectedProfileId = selectedProfileId,
             tasks = ui.tasks.map { conversation ->
-                conversation.withRecalculatedContextUsage(selectedProfile?.let(::contextWindowFor))
+                conversation
+                    .copy(
+                        reasoningEffort = selectedProfile?.let { profile ->
+                            resolvedReasoningEffort(profile, conversation.reasoningEffort)
+                        } ?: conversation.reasoningEffort,
+                    )
+                    .withRecalculatedContextUsage(selectedProfile?.let(::contextWindowFor))
             },
         )
     }

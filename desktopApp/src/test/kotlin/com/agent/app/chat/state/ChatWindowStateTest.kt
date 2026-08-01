@@ -863,6 +863,28 @@ class ChatWindowStateTest {
     }
 
     /**
+     * 配置在初始空快照之后加载时，已有会话也应采用 DeepSeek 的默认档位。
+     */
+    @Test
+    fun `should normalize existing conversation reasoning effort when deepseek snapshot loads`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = emptyList(), activeProfile = null),
+            projectPath = "E:\\abc\\def",
+        )
+        val deepSeekProfile = profile(model = "deepseek-v4-flash")
+
+        state.updateSessionSnapshot(
+            AppSessionSnapshot(
+                profiles = listOf(deepSeekProfile),
+                activeProfile = deepSeekProfile,
+            ),
+        )
+
+        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+    }
+
+    /**
      * 切换到不支持当前档位的模型时，应立即回退到该模型默认档位。
      */
     @Test

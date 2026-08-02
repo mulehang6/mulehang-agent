@@ -1500,6 +1500,35 @@ class ChatWindowStateTest {
         assertEquals(survivingConversationId, state.ui.activeConversationId)
     }
 
+    /**
+     * 重启后加载历史任务时，当前焦点仍应停留在新的空白对话。
+     */
+    @Test
+    fun `should keep a new conversation active when restoring history`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        val newConversationId = state.ui.activeConversationId
+        val historicalConversation = newConversation(
+            workspacePath = "E:\\abc\\def",
+            contextWindow = null,
+            reasoningEffort = ReasoningEffort.MEDIUM,
+        ).copy(title = "历史任务")
+
+        state.restoreTasks(listOf(historicalConversation))
+
+        assertEquals(newConversationId, state.ui.activeConversationId)
+        assertEquals(
+            listOf(newConversationId, historicalConversation.id),
+            state.ui.tasks.map(ChatConversationUiState::id),
+        )
+    }
+
     private fun profile(
         model: String = "gpt-4.1",
         limit: ModelLimit? = null,

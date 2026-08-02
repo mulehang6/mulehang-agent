@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
+import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
@@ -36,6 +37,7 @@ class ChatWindowState(
     projectPath: String = "",
     private val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
     private val onWorkspaceSelected: (String) -> Unit = {},
+    private val persistenceCoordinator: TaskPersistenceCoordinator? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
@@ -150,6 +152,7 @@ class ChatWindowState(
             tasks = remainingTasks,
             activeTaskId = nextActiveTaskId,
         )
+        persistenceCoordinator?.schedule(ui.tasks)
     }
 
     /**
@@ -178,6 +181,7 @@ class ChatWindowState(
             activeTaskId = conversation.id,
             draft = "",
         )
+        persistenceCoordinator?.schedule(ui.tasks)
     }
 
     /**
@@ -460,6 +464,38 @@ class ChatWindowState(
             ?: error("Conversation $conversationId not found.")
 
     /**
+     * 用数据库加载的任务替换初始占位任务；空数据库保持当前可用会话。
+     */
+    fun restoreTasks(tasks: List<ChatConversationUiState>) {
+        if (tasks.isEmpty()) return
+        val newConversation = ui.tasks.firstOrNull { it.isEmptyDefaultConversation() }
+            ?: newConversation(
+                workspacePath = tasks.first().workspacePath,
+                contextWindow = activeContextWindow(),
+                reasoningEffort = activeProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
+            )
+        ui = ui.copy(
+            tasks = listOf(newConversation) + tasks.filterNot(ChatConversationUiState::isEmptyDefaultConversation),
+            activeTaskId = newConversation.id,
+            draft = "",
+        )
+    }
+
+    /**
+     * 保存或加载失败时更新侧栏可见的简短提示。
+     */
+    fun setPersistenceError(message: String) {
+        ui = ui.copy(persistenceErrorMessage = message)
+    }
+
+    /**
+     * 在窗口退出前强制写入最新任务快照。
+     */
+    fun flushPersistence(onFlushed: () -> Unit) {
+        persistenceCoordinator?.flush(ui.tasks, onFlushed) ?: onFlushed()
+    }
+
+    /**
      * 仅当当前 profile 支持所选档位时才将 reasoning effort 送入执行链路。
      */
     private fun supportedReasoningEffort(
@@ -534,6 +570,7 @@ class ChatWindowState(
                 }
             },
         )
+        persistenceCoordinator?.schedule(ui.tasks)
     }
 
     /**

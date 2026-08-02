@@ -133,6 +133,7 @@ data class ChatWindowUiState(
     val draft: String = "",
     val selectedProfileId: String? = null,
     val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
+    val persistenceErrorMessage: String? = null,
 ) {
     /**
      * 当前激活的对话线程。

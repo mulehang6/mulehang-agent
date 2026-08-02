@@ -16,6 +16,7 @@ dependencies {
     implementation("org.jetbrains.compose.material3:material3:1.9.0")
     implementation("org.jetbrains.runtime:jbr-api:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("org.jetbrains.jediterm:jediterm-core:3.66")
     implementation("org.jetbrains.jediterm:jediterm-ui:3.66")
     implementation("org.jetbrains.pty4j:pty4j:0.13.12")

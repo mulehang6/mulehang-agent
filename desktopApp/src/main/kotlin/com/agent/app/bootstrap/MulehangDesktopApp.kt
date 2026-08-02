@@ -6,10 +6,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
 import com.agent.app.chat.component.ChatScreen
+import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppBackground
@@ -28,6 +30,7 @@ import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository
 import com.agent.shared.session.DesktopUiStateStore
 import com.agent.shared.session.LoadAppSessionUseCase
+import com.agent.shared.chat.persistence.SqliteTaskRepository
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -54,6 +57,12 @@ internal fun WindowScope.MulehangDesktopApp(
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
     }
+    val stateHolder = remember { mutableStateOf<ChatWindowState?>(null) }
+    val taskPersistenceCoordinator = TaskPersistenceCoordinator(
+        repository = remember { SqliteTaskRepository(userHome.resolve(".mulehang/tasks.db")) },
+        scope = rememberCoroutineScope(),
+        reportError = { message -> stateHolder.value?.setPersistenceError(message) },
+    )
     val windowState = remember {
         ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(
@@ -68,14 +77,21 @@ internal fun WindowScope.MulehangDesktopApp(
             onWorkspaceSelected = { workspacePath ->
                 projectRootState.value = DesktopProjectRootResolver.resolve(Paths.get(workspacePath))
             },
+            persistenceCoordinator = taskPersistenceCoordinator,
         )
     }
+    stateHolder.value = windowState
 
     LaunchedEffect(projectRootState.value) {
         val projectRoot = projectRootState.value ?: return@LaunchedEffect
         uiStateStore.saveRecentWorkspace(projectRoot.toString())
         val repository = DesktopAppSessionRepository(projectRoot = projectRoot, userHome = userHome)
         windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+    }
+    LaunchedEffect(Unit) {
+        runCatching { taskPersistenceCoordinator.load() }
+            .onSuccess(windowState::restoreTasks)
+            .onFailure { windowState.setPersistenceError("历史任务未加载") }
     }
 
     MaterialTheme(
@@ -101,7 +117,7 @@ internal fun WindowScope.MulehangDesktopApp(
             onTitleBarClientPointerEvent = nativeTitleBarHandle?.let { handle ->
                 { handle.forceClientArea() }
             },
-            onCloseRequest = onCloseRequest,
+            onCloseRequest = { windowState.flushPersistence(onCloseRequest) },
         )
     }
 }

@@ -60,6 +60,7 @@ import com.agent.app.chat.state.ChatTaskStatus
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppDanger
+import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppSidebarBackground
@@ -149,6 +150,12 @@ internal fun TaskSidebar(
                 tooltip = "在其他工作区新建任务",
             )
         }
+        state.ui.persistenceErrorMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall.copy(color = AppDanger),
+            )
+        }
         RingPrimaryButton(
             text = "新建任务",
             onClick = startTaskInCurrentWorkspace,
@@ -235,6 +242,7 @@ private fun TaskListItem(
 ) {
     var anchorHeightPixels by remember { mutableStateOf(0) }
     var contextMenuClickPosition by remember { mutableStateOf(Offset.Zero) }
+    var hovered by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val contextMenuOffset = with(density) {
         DpOffset(
@@ -253,12 +261,18 @@ private fun TaskListItem(
                     contextMenuClickPosition = event.changes.firstOrNull()?.position ?: Offset.Zero
                     onOpenContextMenu()
                 }
-            },
+            }
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false },
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            color = if (selected) AppSelectedBackground else Color.Transparent,
+            color = when {
+                selected -> AppSelectedBackground
+                hovered -> AppHoverBackground
+                else -> Color.Transparent
+            },
             border = null,
             onClick = onClick,
         ) {

@@ -173,15 +173,17 @@ class AgentEventReducerTest {
     }
 
     /**
-     * 流式正文后续出现工具或思考事件时，正文必须持续停留在时间线末尾。
+     * 工具调用应切分助手正文，确保工具前后的文本按真实事件顺序显示。
      */
     @Test
-    fun `subsequent timeline events keep the streaming answer at the end`() {
-        val afterTool = reduceAgentEvent(
-            conversation(
-                items = listOf(ChatMessageItem(ChatMessage(ChatRole.Assistant, "draft"))),
-                streamingAssistantItemIndex = 0,
-            ),
+    fun `tool call keeps assistant text before and after the tool in timeline order`() {
+        val afterTextBeforeTool = reduceAgentEvent(
+            conversation(),
+            AgentStreamEvent.TextDelta("before"),
+            contextWindow = 100,
+        )
+        val afterToolStart = reduceAgentEvent(
+            afterTextBeforeTool,
             AgentStreamEvent.ToolCallStarted(
                 toolCallId = "call-1",
                 name = "read_file",
@@ -189,21 +191,25 @@ class AgentEventReducerTest {
             ),
             contextWindow = 100,
         )
-
-        val afterReasoning = reduceAgentEvent(
-            afterTool,
-            AgentStreamEvent.ReasoningDelta(summary = "checking", rawText = "checking"),
+        val afterToolFinish = reduceAgentEvent(
+            afterToolStart,
+            AgentStreamEvent.ToolCallFinished(
+                toolCallId = "call-1",
+                name = "read_file",
+                resultPreview = "contents",
+                resultDisplay = "contents",
+            ),
             contextWindow = 100,
         )
         val result = reduceAgentEvent(
-            afterReasoning,
-            AgentStreamEvent.ReasoningDelta(summary = " again", rawText = " again"),
+            afterToolFinish,
+            AgentStreamEvent.TextDelta("after"),
             contextWindow = 100,
         )
 
-        assertEquals("read_file", (result.items[0] as ToolEventItem).toolName)
-        assertEquals("checking again", (result.items[1] as ReasoningItem).summaryText)
-        assertEquals("draft", (result.items[2] as ChatMessageItem).message.content)
+        assertEquals("before", (result.items[0] as ChatMessageItem).message.content)
+        assertEquals(ToolEventStatus.Finished, (result.items[1] as ToolEventItem).status)
+        assertEquals("after", (result.items[2] as ChatMessageItem).message.content)
         assertEquals(2, result.streamingAssistantItemIndex)
     }
 

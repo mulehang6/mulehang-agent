@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
@@ -80,6 +81,7 @@ import com.agent.app.chat.presentation.toolEventOutputText
 import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.AppDanger
+import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppPanelBackground
@@ -103,6 +105,86 @@ import org.jetbrains.skia.Data
 import org.jetbrains.skia.svg.SVGDOM
 
 /**
+ * 时间线在渲染前使用的展示段，不改变底层会话事件。
+ */
+internal sealed interface TimelineDisplayItem {
+    /** 此展示段包含的原始时间线项数量。 */
+    val itemCount: Int
+
+    /** 不参与工具合并的普通时间线项。 */
+    data class Content(val item: com.agent.shared.chat.model.ConversationItem) : TimelineDisplayItem {
+        override val itemCount: Int = 1
+    }
+
+    /** 相邻完成工具调用组成的展示组。 */
+    data class SuccessfulToolGroup(val items: List<ToolEventItem>) : TimelineDisplayItem {
+        override val itemCount: Int = items.size
+    }
+
+    /** 始终独立展示的失败工具调用。 */
+    data class FailedTool(val item: ToolEventItem) : TimelineDisplayItem {
+        override val itemCount: Int = 1
+    }
+}
+
+/**
+ * 合并相邻完成工具调用；任何非完成工具或其他时间线项均构成明确边界。
+ */
+internal fun groupTimelineItems(
+    items: List<com.agent.shared.chat.model.ConversationItem>,
+): List<TimelineDisplayItem> {
+    val result = mutableListOf<TimelineDisplayItem>()
+    val pendingTools = mutableListOf<ToolEventItem>()
+    fun flushTools() {
+        if (pendingTools.isNotEmpty()) {
+            result += TimelineDisplayItem.SuccessfulToolGroup(pendingTools.toList())
+            pendingTools.clear()
+        }
+    }
+    items.forEach { item ->
+        if (item is ToolEventItem && item.status == ToolEventStatus.Finished) {
+            pendingTools += item
+        } else {
+            flushTools()
+            result += if (item is ToolEventItem && item.status == ToolEventStatus.Failed) {
+                TimelineDisplayItem.FailedTool(item)
+            } else {
+                TimelineDisplayItem.Content(item)
+            }
+        }
+    }
+    flushTools()
+    return result
+}
+
+/**
+ * 构造收起状态下统一的工具组标题。
+ */
+internal fun buildToolGroupHeadline(count: Int): String = "已执行工具 · $count"
+
+/** 工具文字行的垂直内边距，保持为零以贴近终端式活动列表。 */
+internal const val TOOL_EVENT_ROW_VERTICAL_PADDING_DP = 0
+
+/**
+ * 返回相邻展示段之间的垂直间距：连续工具调用保持紧凑，跨内容段落留出呼吸感。
+ */
+internal fun timelineDisplayItemSpacing(
+    previous: TimelineDisplayItem,
+    current: TimelineDisplayItem,
+): Int = if (previous.isToolInvocation() && current.isToolInvocation()) 4 else 10
+
+/**
+ * 判断展示段是否代表工具调用；状态文本是独立的时间线内容，而非工具行。
+ */
+private fun TimelineDisplayItem.isToolInvocation(): Boolean = when (this) {
+    is TimelineDisplayItem.SuccessfulToolGroup,
+    is TimelineDisplayItem.FailedTool,
+    -> true
+
+    is TimelineDisplayItem.Content -> item is ToolEventItem && item.status != ToolEventStatus.Status
+}
+
+/**
  * 完整会话时间线，按顺序渲染所有用户消息、助手回答、思考块和工具事件。
  */
 @Composable
@@ -120,29 +202,39 @@ internal fun ConversationTimeline(
     val hasFailedToolEvent = conversation.items.any {
         it is ToolEventItem && it.status == ToolEventStatus.Failed
     }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        conversation.items.forEachIndexed { index, item ->
-            when (item) {
+    val displayItems = groupTimelineItems(conversation.items)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        displayItems.forEachIndexed { index, displayItem ->
+            if (index > 0) {
+                Spacer(
+                    modifier = Modifier.height(
+                        timelineDisplayItemSpacing(displayItems[index - 1], displayItem).dp,
+                    ),
+                )
+            }
+            when (displayItem) {
+                is TimelineDisplayItem.SuccessfulToolGroup -> TimelineToolGroup(displayItem.items)
+                is TimelineDisplayItem.FailedTool -> TimelineToolTextRow(displayItem.item, isFailure = true)
+                is TimelineDisplayItem.Content -> when (val item = displayItem.item) {
                 is ChatMessageItem -> {
                     if (item.message.role == ChatRole.User) {
                         UserMessageCard(item.message.content)
                     } else {
                         AssistantMessageBlock(
                             content = item.message.content,
-                            isStreaming = index == conversation.streamingAssistantItemIndex,
+                            isStreaming = item === conversation.items.getOrNull(conversation.streamingAssistantItemIndex ?: -1),
                         )
                     }
                 }
 
                 is ReasoningItem -> TimelineReasoningItem(item)
-                is ToolEventItem -> TimelineToolEvent(item)
+                is ToolEventItem -> TimelineToolTextRow(item, isFailure = false)
+                }
             }
         }
         if (conversation.executionState == ExecutionState.Running) {
             buildSecondaryStatus(conversation)?.let { status ->
+                if (displayItems.isNotEmpty()) Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = status,
                     style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
@@ -150,6 +242,7 @@ internal fun ConversationTimeline(
             }
         }
         if (failedState != null && !hasFailedToolEvent) {
+            if (displayItems.isNotEmpty()) Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = "${failedState.error.title}: ${failedState.error.message}",
                 modifier = Modifier
@@ -419,6 +512,134 @@ private fun TimelineReasoningItem(item: ReasoningItem) {
 
 /**
  * 时间线中的工具事件条目。
+ */
+@Composable
+private fun TimelineToolGroup(items: List<ToolEventItem>) {
+    var expanded by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(false) }
+    var hovered by remember { mutableStateOf(false) }
+    val chevronRotation by animateFloatAsState(
+        targetValue = toolEventChevronRotation(expanded),
+        animationSpec = tween(durationMillis = 160),
+        label = "tool-group-chevron",
+    )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                .onPointerEvent(PointerEventType.Exit) { hovered = false }
+                .background(if (hovered) AppHoverBackground else Color.Transparent, RoundedCornerShape(7.dp))
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 10.dp, vertical = TOOL_EVENT_ROW_VERTICAL_PADDING_DP.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = buildToolGroupHeadline(items.size),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted, fontWeight = FontWeight.Medium),
+            )
+            ToolEventChevron(chevronRotation)
+        }
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(tween(durationMillis = 180)) + fadeIn(tween(durationMillis = 150)),
+            exit = shrinkVertically(tween(durationMillis = 120)) + fadeOut(tween(durationMillis = 100)),
+        ) {
+            Column(
+                modifier = Modifier.padding(start = 12.dp, top = 3.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items.forEach { TimelineToolTextRow(it, isFailure = false) }
+            }
+        }
+    }
+}
+
+/**
+ * 无边框的单个工具文本行，可按需展开完整输出或错误内容。
+ */
+@Composable
+private fun TimelineToolTextRow(
+    item: ToolEventItem,
+    isFailure: Boolean,
+) {
+    val hasDetails = toolEventHasDetails(item) || item.errorMessage?.isNotBlank() == true
+    var expanded by remember(toolEventExpansionIdentity(item)) { mutableStateOf(false) }
+    var hovered by remember { mutableStateOf(false) }
+    val chevronRotation by animateFloatAsState(
+        targetValue = toolEventChevronRotation(expanded),
+        animationSpec = tween(durationMillis = 160),
+        label = "tool-text-chevron",
+    )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                .onPointerEvent(PointerEventType.Exit) { hovered = false }
+                .background(if (hovered) AppHoverBackground else Color.Transparent, RoundedCornerShape(7.dp))
+                .clickable(enabled = hasDetails) { expanded = !expanded }
+                .padding(horizontal = 10.dp, vertical = TOOL_EVENT_ROW_VERTICAL_PADDING_DP.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = listOfNotNull(item.toolName, buildToolEventInlineInput(item)).joinToString("  "),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = if (isFailure) AppDanger else AppText,
+                    fontFamily = if (isTerminalToolEvent(item)) FontFamily.Monospace else FontFamily.Default,
+                ),
+            )
+            if (hasDetails) ToolEventChevron(chevronRotation)
+        }
+        AnimatedVisibility(
+            visible = expanded && hasDetails,
+            enter = expandVertically(tween(durationMillis = 180)) + fadeIn(tween(durationMillis = 150)),
+            exit = shrinkVertically(tween(durationMillis = 120)) + fadeOut(tween(durationMillis = 100)),
+        ) {
+            Column(
+                modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                toolEventOutputText(item)?.let { output ->
+                    Text(
+                        text = output,
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFF17181A), RoundedCornerShape(6.dp)).padding(10.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(color = AppMuted, lineHeight = 20.sp),
+                    )
+                }
+                item.errorMessage?.takeIf(String::isNotBlank)?.let { error ->
+                    Text(
+                        text = error,
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFF2A1518), RoundedCornerShape(6.dp)).padding(10.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(color = AppDanger, lineHeight = 20.sp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 绘制与展开状态同步旋转的轻量箭头。
+ */
+@Composable
+private fun ToolEventChevron(rotation: Float) {
+    Canvas(
+        modifier = Modifier
+            .size(16.dp)
+            .graphicsLayer { rotationZ = rotation },
+    ) {
+        val stroke = 1.8.dp.toPx()
+        drawLine(AppMuted, Offset(size.width * 0.22f, size.height * 0.34f), Offset(size.width * 0.5f, size.height * 0.64f), stroke, StrokeCap.Round)
+        drawLine(AppMuted, Offset(size.width * 0.5f, size.height * 0.64f), Offset(size.width * 0.78f, size.height * 0.34f), stroke, StrokeCap.Round)
+    }
+}
+
+/**
+ * 旧工具卡片保留至本次渲染替换完成，避免影响其现有辅助函数的复用。
  */
 @Composable
 private fun TimelineToolEvent(

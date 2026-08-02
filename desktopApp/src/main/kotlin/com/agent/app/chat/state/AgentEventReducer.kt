@@ -184,7 +184,7 @@ private fun appendToolEvent(
     toolCallId: String? = null,
     contextWindow: Int?,
 ): ChatConversationUiState {
-    val normalizedConversation = closeStreamingReasoning(conversation)
+    val normalizedConversation = closeStreamingAssistant(closeStreamingReasoning(conversation))
     val nextItems = normalizedConversation.items + ToolEventItem(
         toolName = toolName,
         status = status,
@@ -193,11 +193,10 @@ private fun appendToolEvent(
         toolCallId = toolCallId,
     )
     val nextConversation = normalizedConversation.copy(items = nextItems)
-    val reorderedConversation = moveStreamingAssistantToEnd(nextConversation)
-    return reorderedConversation.copy(
+    return nextConversation.copy(
         contextUsageFraction = estimateContextUsage(
-            items = reorderedConversation.items,
-            attachmentCount = reorderedConversation.attachments.size,
+            items = nextConversation.items,
+            attachmentCount = nextConversation.attachments.size,
             contextWindow = contextWindow,
         ),
     )
@@ -295,55 +294,42 @@ private fun appendReasoningDelta(
     contextWindow: Int?,
 ): ChatConversationUiState {
     if (summary.isNullOrEmpty() && rawText.isNullOrEmpty()) return conversation
-    val currentIndex = conversation.streamingReasoningItemIndex
+    val normalizedConversation = closeStreamingAssistant(conversation)
+    val currentIndex = normalizedConversation.streamingReasoningItemIndex
     return if (currentIndex == null) {
-        val nextItems = conversation.items + ReasoningItem(
+        val nextItems = normalizedConversation.items + ReasoningItem(
             summaryText = summary,
             rawText = rawText ?: summary,
             expanded = true,
             isStreaming = true,
         )
-        moveStreamingAssistantToEnd(conversation.copy(
+        normalizedConversation.copy(
             items = nextItems,
-            streamingReasoningItemIndex = conversation.items.size,
+            streamingReasoningItemIndex = normalizedConversation.items.size,
             contextUsageFraction = estimateContextUsage(
                 items = nextItems,
-                attachmentCount = conversation.attachments.size,
+                attachmentCount = normalizedConversation.attachments.size,
                 contextWindow = contextWindow,
             ),
-        ))
+        )
     } else {
-        val existingItem = conversation.items[currentIndex] as? ReasoningItem ?: return conversation
-        val updatedItems = conversation.items.toMutableList()
+        val existingItem = normalizedConversation.items[currentIndex] as? ReasoningItem ?: return normalizedConversation
+        val updatedItems = normalizedConversation.items.toMutableList()
         updatedItems[currentIndex] = existingItem.copy(
             summaryText = existingItem.summaryText.orEmpty().appendNullable(summary),
             rawText = existingItem.rawText.orEmpty().appendNullable(rawText ?: summary),
             expanded = true,
             isStreaming = true,
         )
-        moveStreamingAssistantToEnd(conversation.copy(items = updatedItems))
+        normalizedConversation.copy(items = updatedItems)
     }
 }
 
 /**
- * 将仍在生成的助手正文保持在时间线末尾，避免后续事件使其临时显示在旧位置。
+ * 结束当前流式正文段，使后续工具、思考或文本事件在时间线中保持真实顺序。
  */
-private fun moveStreamingAssistantToEnd(source: ChatConversationUiState): ChatConversationUiState {
-    val currentIndex = source.streamingAssistantItemIndex ?: return source
-    if (currentIndex == source.items.lastIndex) return source
-    val streamingItem = source.items.getOrNull(currentIndex) as? ChatMessageItem ?: return source
-    val updatedItems = source.items.toMutableList().apply {
-        removeAt(currentIndex)
-        add(streamingItem)
-    }
-    return source.copy(
-        items = updatedItems,
-        streamingAssistantItemIndex = updatedItems.lastIndex,
-        streamingReasoningItemIndex = source.streamingReasoningItemIndex?.let { reasoningIndex ->
-            if (reasoningIndex > currentIndex) reasoningIndex - 1 else reasoningIndex
-        },
-    )
-}
+private fun closeStreamingAssistant(source: ChatConversationUiState): ChatConversationUiState =
+    source.copy(streamingAssistantItemIndex = null)
 
 /**
  * 收到 reasoning 完整事件后收尾当前思考块。

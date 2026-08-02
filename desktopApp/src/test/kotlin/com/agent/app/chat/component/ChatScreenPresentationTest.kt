@@ -28,6 +28,7 @@ import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import javax.swing.BorderFactory
@@ -688,7 +689,66 @@ class ChatScreenPresentationTest {
     fun `should expose readable task sidebar typography`() {
         assertEquals(13, TASK_SECTION_TITLE_FONT_SIZE_SP)
     }
+
+    /**
+     * 相邻的成功工具调用应成为一个展示组；失败与状态事件必须成为明确边界。
+     */
+    @Test
+    fun `should group adjacent completed tools while keeping failures and statuses separate`() {
+        val displayItems = groupTimelineItems(
+            listOf(
+                toolEvent("first", ToolEventStatus.Finished),
+                toolEvent("second", ToolEventStatus.Finished),
+                toolEvent("broken", ToolEventStatus.Failed),
+                toolEvent("third", ToolEventStatus.Finished),
+                toolEvent("status", ToolEventStatus.Status),
+                toolEvent("fourth", ToolEventStatus.Finished),
+            ),
+        )
+
+        assertEquals(listOf(2, 1, 1, 1, 1), displayItems.map(TimelineDisplayItem::itemCount))
+        assertTrue(displayItems[1] is TimelineDisplayItem.FailedTool)
+        assertTrue(displayItems[3] is TimelineDisplayItem.Content)
+    }
+
+    /**
+     * 相邻工具调用保持紧凑；思考或状态文本切换到工具调用时保留清晰的段落间距。
+     */
+    @Test
+    fun `should separate tool groups from other timeline content`() {
+        val startedTool = TimelineDisplayItem.Content(toolEvent("first", ToolEventStatus.Started))
+        val failedTool = TimelineDisplayItem.FailedTool(toolEvent("broken", ToolEventStatus.Failed))
+        val statusText = TimelineDisplayItem.Content(toolEvent("status", ToolEventStatus.Status))
+
+        assertEquals(4, timelineDisplayItemSpacing(startedTool, failedTool))
+        assertEquals(4, timelineDisplayItemSpacing(failedTool, startedTool))
+        assertEquals(10, timelineDisplayItemSpacing(startedTool, statusText))
+    }
+
+    /**
+     * 工具调用使用纯文字行，避免交互热区的垂直内边距拉开时间线。
+     */
+    @Test
+    fun `should remove tool row vertical padding for inline density`() {
+        assertEquals(0, TOOL_EVENT_ROW_VERTICAL_PADDING_DP)
+    }
+
+    /**
+     * 单个成功工具同样使用统一的数量入口。
+     */
+    @Test
+    fun `should use an executed tools headline for a single tool`() {
+        assertEquals("已执行工具 · 1", buildToolGroupHeadline(1))
+    }
 }
+
+/**
+ * 构造用于展示规则测试的最小工具事件。
+ */
+private fun toolEvent(name: String, status: ToolEventStatus): ToolEventItem = ToolEventItem(
+    toolName = name,
+    status = status,
+)
 
 /**
  * 构造发送给原生标题栏菜单命中组件的测试鼠标事件。

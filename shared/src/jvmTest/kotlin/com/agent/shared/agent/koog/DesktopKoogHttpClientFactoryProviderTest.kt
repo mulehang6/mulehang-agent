@@ -15,10 +15,10 @@ import kotlin.test.assertTrue
 class DesktopKoogHttpClientFactoryProviderTest {
 
     /**
-     * Desktop 统一工厂应固定产出基于 JDK HttpClient 的 Ktor 客户端，避免回退到 Apache5。
+     * Desktop 统一工厂应保留基于 JDK HttpClient 的 Ktor client，并加上 SSE 终止标记过滤。
      */
     @Test
-    fun `should create koog http client backed by ktor java engine`() {
+    fun `should create sse filtering client backed by ktor java engine`() {
         val client = DesktopKoogHttpClientFactoryProvider.factory.create(
             clientName = "test",
             baseUrl = "https://api.deepseek.com/v1",
@@ -30,8 +30,9 @@ class DesktopKoogHttpClientFactoryProviderTest {
             json = Json,
         )
 
-        val ktorClient = assertIs<KtorKoogHttpClient>(client)
-        assertEquals("test", ktorClient.clientName)
+        val filteringClient = assertIs<SseTerminatorFilteringKoogHttpClient>(client)
+        assertEquals("test", filteringClient.clientName)
+        val ktorClient = assertIs<KtorKoogHttpClient>(filteringClient.delegate)
         assertTrue(ktorClient.ktorClient.engine::class.qualifiedName.orEmpty().contains(".java.", ignoreCase = true))
     }
 }

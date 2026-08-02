@@ -146,6 +146,9 @@ object SettingsMerger {
     private fun String.toPositiveIntOrNull(): Int? =
         trim().toIntOrNull()?.takeIf { it > 0 }
 
+    /**
+     * 将显式默认模型置于列表首位；未声明时保留 models 的原始顺序，使第一个模型成为默认项。
+     */
     private fun List<ModelProfile>.orderDefaultFirst(defaultModel: String?): List<ModelProfile> {
         if (defaultModel.isNullOrBlank()) return this
         return sortedBy { model -> if (model.id == defaultModel) 0 else 1 }

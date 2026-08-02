@@ -18,7 +18,12 @@ data class ModelCapabilities(
     /** UI 可展示的 reasoning 档位，按配置或 provider 声明的顺序返回。 */
     val reasoningEfforts: List<ReasoningEffort> = variants.values.mapNotNull { it.reasoningEffort }
 
-    /** 当前模型的 reasoning 默认档位。 */
+    /**
+     * 当前模型的 reasoning 默认档位。
+     *
+     * 显式配置优先；未配置时按通用规则选择 `medium`，若模型不支持该档位则选择
+     * `reasoningEfforts` 中的第一个。没有 reasoning 能力时保持为空。
+     */
     val defaultReasoningEffort: ReasoningEffort? =
         configuredDefaultReasoningEffort ?: ReasoningEffort.MEDIUM.takeIf { it in reasoningEfforts }
             ?: reasoningEfforts.firstOrNull()

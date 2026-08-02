@@ -124,6 +124,46 @@ class ModelCapabilitiesResolverTest {
     }
 
     /**
+     * 未显式设置默认档位的通用 reasoning 模型应优先选择 medium。
+     */
+    @Test
+    fun `should default configured reasoning efforts containing medium to medium`() {
+        val capabilities = ModelCapabilitiesResolver.resolve(
+            profile = profile(
+                providerType = ProviderType.OPENAI_RESPONSES,
+                baseUrl = "https://gateway.example/v1",
+                model = "reasoning-model",
+                reasoningEfforts = listOf(
+                    ReasoningEffort.LOW,
+                    ReasoningEffort.MEDIUM,
+                    ReasoningEffort.HIGH,
+                    ReasoningEffort.XHIGH,
+                    ReasoningEffort.MAX,
+                ),
+            ),
+        )
+
+        assertEquals(ReasoningEffort.MEDIUM, capabilities.defaultReasoningEffort)
+    }
+
+    /**
+     * 不含 medium 的通用 reasoning 模型应保留配置顺序中的最低档位作为默认值。
+     */
+    @Test
+    fun `should default configured reasoning efforts without medium to first effort`() {
+        val capabilities = ModelCapabilitiesResolver.resolve(
+            profile = profile(
+                providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                baseUrl = "https://gateway.example/v1",
+                model = "reasoning-model",
+                reasoningEfforts = listOf(ReasoningEffort.HIGH, ReasoningEffort.MAX),
+            ),
+        )
+
+        assertEquals(ReasoningEffort.HIGH, capabilities.defaultReasoningEffort)
+    }
+
+    /**
      * 空的显式配置应阻断后续 provider 的能力推断。
      */
     @Test

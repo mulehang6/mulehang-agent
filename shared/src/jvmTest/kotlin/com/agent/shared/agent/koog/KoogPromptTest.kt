@@ -28,7 +28,8 @@ class KoogPromptTest {
         assertEquals(1, prompt.messages.size)
         assertTrue(prompt.messages.single() is Message.System)
         val params = prompt.params as? OpenAIChatParams
-        assertEquals(ai.koog.prompt.executor.clients.openai.base.models.ReasoningEffort.HIGH, params?.reasoningEffort)
+        assertEquals(null, params?.reasoningEffort)
+        assertEquals("\"high\"", params?.additionalProperties?.get("reasoning_effort").toString())
     }
 
     private fun deepSeekProfile(): ConfigProfile = ConfigProfile(

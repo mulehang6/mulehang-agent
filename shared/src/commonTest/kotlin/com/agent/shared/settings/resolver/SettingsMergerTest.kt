@@ -114,6 +114,33 @@ class SettingsMergerTest {
     }
 
     /**
+     * 未声明 defaultModel 时，models 数组的第一个模型应成为运行时列表首项。
+     */
+    @Test
+    fun `should use first model when default model is omitted`() {
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = SettingsDocument(
+                providers = listOf(
+                    ProviderProfile(
+                        id = "custom",
+                        providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                        baseUrl = "https://gateway.example/v1",
+                        apiKey = "key",
+                        models = listOf(
+                            ModelProfile(id = "first-model"),
+                            ModelProfile(id = "second-model"),
+                        ),
+                    ),
+                ),
+            ),
+            environment = emptyMap(),
+        )
+
+        assertEquals(listOf("first-model", "second-model"), merged.map { it.model })
+    }
+
+    /**
      * 环境变量优先级最高，应覆盖 JSON 中的字段。
      */
     @Test
@@ -340,6 +367,32 @@ class SettingsMergerTest {
             merged.single().reasoningEfforts,
         )
         assertEquals(ReasoningEffort.MEDIUM, merged.single().defaultReasoningEffort)
+    }
+
+    /**
+     * 配置中的 xhigh 档位应转换为运行时 profile 可消费的类型安全枚举。
+     */
+    @Test
+    fun `should merge xhigh configured reasoning effort into runtime profile`() {
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = customModelSettings(
+                reasoningEfforts = listOf("low", "medium", "high", "xhigh", "max"),
+                defaultReasoningEffort = "medium",
+            ),
+            environment = emptyMap(),
+        )
+
+        assertEquals(
+            listOf(
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.XHIGH,
+                ReasoningEffort.MAX,
+            ),
+            merged.single().reasoningEfforts,
+        )
     }
 
     /**

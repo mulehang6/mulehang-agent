@@ -172,7 +172,8 @@ private data class ReasoningAccumulator(
      * 生成最终 reasoning part；没有内容时返回 null。
      */
     fun toMessagePart(): MessagePart.Reasoning? {
-        val content = completeContent ?: deltaContent.takeIf { it.isNotEmpty() }
+        val content = completeContent?.takeIf { it.isNotEmpty() }
+            ?: deltaContent.takeIf { it.isNotEmpty() }
         if (content.isNullOrEmpty()) {
             return null
         }

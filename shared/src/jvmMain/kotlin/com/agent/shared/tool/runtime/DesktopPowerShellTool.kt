@@ -19,6 +19,7 @@ class DesktopPowerShellTool(
         val workingDirectory: String? = null,
         val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
         val isCancelled: () -> Boolean = { false },
+        val onOutput: (text: String, isErrorStream: Boolean) -> Unit = { _, _ -> },
     )
 
     /**
@@ -110,6 +111,8 @@ class DesktopPowerShellTool(
                     workingDirectory = args.workingDirectory?.let(::File) ?: File(System.getProperty("user.dir")),
                     timeoutMillis = args.timeoutMillis.coerceIn(1, MAX_TIMEOUT_MILLIS),
                     isCancelled = args.isCancelled,
+                    onStdoutChunk = { text -> args.onOutput(text, false) },
+                    onStderrChunk = { text -> args.onOutput(text, true) },
                 ),
             )
             return ExecutionResult(

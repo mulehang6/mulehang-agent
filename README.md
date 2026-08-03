@@ -26,7 +26,7 @@
 
 优先级固定为：`环境变量 > 项目级配置 > 用户级配置 > 默认值`
 
-自定义 OpenAI-compatible 模型不会按模型名推断思考能力。需要时，在对应 `models[]` 项中声明 `reasoningEfforts`（可选值为 `low`、`medium`、`high`、`max`）和可选的 `defaultReasoningEffort`；后者必须出现在前者列表中。省略 `reasoningEfforts` 表示不声明能力，空数组表示明确关闭思考等级。
+自定义 OpenAI-compatible 模型不会按模型名推断思考能力。需要时，在对应 `models[]` 项中声明 `reasoningEfforts`（可选值为 `none`、`low`、`medium`、`high`、`xhigh`、`max`）和可选的 `defaultReasoningEffort`；后者必须出现在前者列表中。值会按 `providerType` 原样编码到相应请求字段，因此仅声明目标服务实际支持的档位。省略 `reasoningEfforts` 表示不声明能力，空数组表示明确关闭思考等级。
 
 ## 环境要求
 

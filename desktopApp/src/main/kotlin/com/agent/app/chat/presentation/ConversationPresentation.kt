@@ -56,6 +56,14 @@ internal fun toolEventDetailText(item: ToolEventItem): String = item.preview
 internal fun toolEventOutputText(item: ToolEventItem): String? =
     item.resultDisplay ?: item.resultPreview
 
+/**
+ * 仅在进行中的终端调用已产生输出时自动展开，避免静默工具占用展开空间。
+ */
+internal fun shouldAutoExpandRunningTerminalOutput(item: ToolEventItem): Boolean =
+    isTerminalToolEvent(item) &&
+            item.status == ToolEventStatus.Started &&
+            toolEventOutputText(item)?.isNotBlank() == true
+
 /** 单个惰性终端输出文本块的最大字符数，避免超长单行阻塞排版。 */
 internal const val TOOL_OUTPUT_CHUNK_MAX_CHARS = 2_000
 
@@ -160,7 +168,13 @@ internal fun buildReasoningHeadline(item: ReasoningItem): String {
 }
 
 /**
- * 将已完成思考的耗时格式化为整秒文案。
+ * 将已完成思考的耗时格式化为秒或毫秒文案。
  */
-internal fun buildReasoningDurationLabel(durationMillis: Long): String =
-    "已思考 ${durationMillis.coerceAtLeast(0L) / 1_000L} 秒"
+internal fun buildReasoningDurationLabel(durationMillis: Long): String {
+    val normalizedDuration = durationMillis.coerceAtLeast(0L)
+    return if (normalizedDuration < 1_000L) {
+        "已思考 $normalizedDuration 毫秒"
+    } else {
+        "已思考 ${normalizedDuration / 1_000L} 秒"
+    }
+}

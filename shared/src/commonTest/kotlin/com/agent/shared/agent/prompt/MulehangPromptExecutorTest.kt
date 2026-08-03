@@ -142,6 +142,21 @@ class MulehangPromptExecutorTest {
     }
 
     /**
+     * Responses 服务可通过 `reasoning.effort=none` 显式关闭思考模式，不能在客户端丢失该 wire value。
+     */
+    @Test
+    @Suppress("UnstableApiUsage")
+    fun `should pass none reasoning effort through responses params`() {
+        val params = buildPromptParams(
+            config = responsesProfile(),
+            reasoningEffort = ReasoningEffort.NONE,
+        ) as OpenAIResponsesParams
+
+        assertEquals(null, params.reasoning)
+        assertEquals("{\"effort\":\"none\"}", params.additionalProperties?.get("reasoning").toString())
+    }
+
+    /**
      * Chat Completions 端点必须自动通过 legacy reasoning_effort 字段原样透传。
      */
     @Test

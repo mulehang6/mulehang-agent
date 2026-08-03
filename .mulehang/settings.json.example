@@ -43,12 +43,12 @@
         {
           "id": "deepseek-v4-flash",
           "label": "V4 Flash",
-          "reasoningEfforts": ["high", "max"]
+          "reasoningEfforts": ["low", "high", "max"]
         },
         {
           "id": "deepseek-v4-pro",
           "label": "V4 Pro",
-          "reasoningEfforts": ["high", "max"]
+          "reasoningEfforts": ["low", "high", "max"]
         }
       ]
     },
@@ -62,7 +62,7 @@
         {
           "id": "deepseek-v4-flash",
           "label": "V4 Flash (Responses)",
-          "reasoningEfforts": ["low", "medium", "high", "xhigh", "max"]
+          "reasoningEfforts": ["low", "high", "max", "none"]
         }
       ],
       "enabled": false

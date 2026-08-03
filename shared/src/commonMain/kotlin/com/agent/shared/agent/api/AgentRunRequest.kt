@@ -21,6 +21,7 @@ data class AgentRunRequest(
 enum class ReasoningEffort(
     val wireValue: String,
 ) {
+    NONE("none"),
     LOW("low"),
     MEDIUM("medium"),
     HIGH("high"),

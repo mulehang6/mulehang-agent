@@ -3,6 +3,9 @@ package com.agent.shared.tool.runtime
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -28,6 +31,8 @@ class DesktopProcessRunner(
         val workingDirectory: File,
         val timeoutMillis: Long,
         val isCancelled: () -> Boolean = { false },
+        val onStdoutChunk: (String) -> Unit = {},
+        val onStderrChunk: (String) -> Unit = {},
     ) {
         init {
             require(command.isNotEmpty()) { "执行命令不能为空。" }
@@ -70,8 +75,8 @@ class DesktopProcessRunner(
             Thread(runnable, "mulehang-process-output").apply { isDaemon = true }
         }
         try {
-            val stdout = readers.submit<CapturedOutput> { readLimited(process.inputStream) }
-            val stderr = readers.submit<CapturedOutput> { readLimited(process.errorStream) }
+            val stdout = readers.submit<CapturedOutput> { readLimited(process.inputStream, args.onStdoutChunk) }
+            val stderr = readers.submit<CapturedOutput> { readLimited(process.errorStream, args.onStderrChunk) }
             val outcome = waitForProcess(process, args)
             val capturedStdout = awaitOutput(stdout)
             val capturedStderr = awaitOutput(stderr)
@@ -141,20 +146,27 @@ class DesktopProcessRunner(
     /**
      * 读取输入流到内存上限，同时继续排空余下字节以免子进程阻塞。
      */
-    private fun readLimited(input: InputStream): CapturedOutput {
+    private fun readLimited(
+        input: InputStream,
+        onChunk: (String) -> Unit,
+    ): CapturedOutput {
         input.use { stream ->
             val buffer = ByteArray(STREAM_BUFFER_SIZE)
             val captured = ByteArrayOutputStream(minOf(maxOutputBytes, STREAM_BUFFER_SIZE))
+            val decoder = StreamingUtf8ChunkDecoder(onChunk)
             var truncated = false
             while (true) {
                 val count = stream.read(buffer)
                 if (count < 0) break
                 val remaining = maxOutputBytes - captured.size()
                 if (remaining > 0) {
-                    captured.write(buffer, 0, minOf(remaining, count))
+                    val capturedCount = minOf(remaining, count)
+                    captured.write(buffer, 0, capturedCount)
+                    decoder.append(buffer, capturedCount)
                 }
                 if (count > remaining) truncated = true
             }
+            decoder.finish()
             return CapturedOutput(
                 text = captured.toString(StandardCharsets.UTF_8),
                 truncated = truncated,
@@ -190,6 +202,62 @@ class DesktopProcessRunner(
         val text: String,
         val truncated: Boolean,
     )
+
+    /**
+     * 将任意读取边界中的 UTF-8 字节转换为完整文本片段。
+     */
+    private class StreamingUtf8ChunkDecoder(
+        private val onChunk: (String) -> Unit,
+    ) {
+        private val decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+        private val characters = CharBuffer.allocate(STREAM_BUFFER_SIZE)
+        private var pendingBytes = ByteArray(0)
+
+        /** 接收新读到的字节并转发其中已完整解码的文本。 */
+        fun append(bytes: ByteArray, count: Int) {
+            if (count <= 0) return
+            val input = ByteBuffer.allocate(pendingBytes.size + count).apply {
+                put(pendingBytes)
+                put(bytes, 0, count)
+                flip()
+            }
+            decode(input, endOfInput = false)
+            pendingBytes = ByteArray(input.remaining()).also(input::get)
+        }
+
+        /** 刷新末尾未完成序列，确保回调文本与最终捕获文本一致。 */
+        fun finish() {
+            val input = ByteBuffer.wrap(pendingBytes)
+            decode(input, endOfInput = true)
+            pendingBytes = ByteArray(0)
+            while (true) {
+                characters.clear()
+                val result = decoder.flush(characters)
+                emitCharacters()
+                if (result.isUnderflow) return
+                if (result.isError) result.throwException()
+            }
+        }
+
+        /** 持续解码到输入耗尽或字符缓冲区不再溢出。 */
+        private fun decode(input: ByteBuffer, endOfInput: Boolean) {
+            while (true) {
+                characters.clear()
+                val result = decoder.decode(input, characters, endOfInput)
+                emitCharacters()
+                if (result.isUnderflow) return
+                if (result.isError) result.throwException()
+            }
+        }
+
+        /** 将当前字符缓冲区中完整的 UTF-8 文本交给调用方。 */
+        private fun emitCharacters() {
+            characters.flip()
+            if (characters.hasRemaining()) onChunk(characters.toString())
+        }
+    }
 
     private companion object {
         const val DEFAULT_MAX_OUTPUT_BYTES = 1_024 * 1_024

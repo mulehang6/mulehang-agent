@@ -156,6 +156,13 @@ class DesktopToolSet(
                 workingDirectory = workspacePath,
                 timeoutMillis = timeout_ms,
                 isCancelled = isCancelled,
+                onOutput = { text, isErrorStream ->
+                    interactionBridge.onToolOutputChunk(
+                        toolName = "run_powershell",
+                        text = text,
+                        isErrorStream = isErrorStream,
+                    )
+                },
             ),
         )
     }

@@ -32,6 +32,12 @@ class RecordingAgentGatewayTest {
                     name = "read_file",
                     argumentsPreview = "README.md",
                 ),
+                AgentStreamEvent.ToolOutputDelta(
+                    toolCallId = "tool-1",
+                    name = "read_file",
+                    text = "读取中...\n",
+                    stream = AgentStreamEvent.ToolOutputStream.Stdout,
+                ),
                 AgentStreamEvent.ToolCallFinished(
                     toolCallId = "tool-1",
                     name = "read_file",
@@ -50,7 +56,7 @@ class RecordingAgentGatewayTest {
 
         val events = gateway.run(request()).toList()
 
-        assertEquals(7, events.size)
+        assertEquals(8, events.size)
         assertEquals(1, records.size)
         assertEquals("run-1", records.single().runId)
         assertEquals("最终回复", records.single().finalText)

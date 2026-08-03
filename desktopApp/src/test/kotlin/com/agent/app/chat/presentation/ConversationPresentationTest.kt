@@ -44,6 +44,14 @@ class ConversationPresentationTest {
     }
 
     /**
+     * 不满一秒的思考应保留毫秒精度，避免显示为零秒。
+     */
+    @Test
+    fun `should format subsecond reasoning duration in milliseconds`() {
+        assertEquals("已思考 430 毫秒", buildReasoningDurationLabel(430))
+    }
+
+    /**
      * 聊天正文应直接显示内容，不再拼接角色前缀。
      */
     @Test
@@ -333,6 +341,29 @@ class ConversationPresentationTest {
                     status = ToolEventStatus.Finished,
                     resultPreview = "line-1",
                 ),
+            ),
+        )
+    }
+
+    /**
+     * 运行中的 PowerShell 一旦产生输出，详情应自动展开以呈现实时反馈。
+     */
+    @Test
+    fun `should auto expand running powershell output`() {
+        assertEquals(
+            true,
+            shouldAutoExpandRunningTerminalOutput(
+                ToolEventItem(
+                    toolName = "run_powershell",
+                    status = ToolEventStatus.Started,
+                    resultDisplay = "> Task :shared:compileKotlin\n",
+                ),
+            ),
+        )
+        assertEquals(
+            false,
+            shouldAutoExpandRunningTerminalOutput(
+                ToolEventItem("read_file", ToolEventStatus.Started, resultDisplay = "README"),
             ),
         )
     }

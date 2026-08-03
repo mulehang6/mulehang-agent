@@ -13,12 +13,14 @@ import com.agent.shared.tool.runtime.DesktopToolRegistryFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Koog 1.0.0 接入点，负责执行单轮消息并转换为应用事件。
@@ -42,7 +44,20 @@ class KoogAgentGateway(
     } else {
         channelFlow {
             send(AgentStreamEvent.Started)
-            val bridge = eventEmittingBridge(::send)
+            val eventQueue = Channel<AgentStreamEvent>(TOOL_EVENT_CHANNEL_CAPACITY)
+            val forwardingJob = launch {
+                for (event in eventQueue) {
+                    send(event)
+                }
+            }
+            val bridge = eventEmittingBridge(
+                emitEvent = eventQueue::send,
+                emitToolOutput = { event ->
+                    runCatching {
+                        runBlocking { eventQueue.send(event) }
+                    }
+                },
+            )
             val registry = DesktopToolRegistryFactory(
                 workspacePath = request.workspacePath,
                 permissionPreset = request.permissionPreset,
@@ -55,18 +70,23 @@ class KoogAgentGateway(
                         request,
                         registry,
                         bridge,
-                        ::send,
+                        eventQueue::send,
                     )
-                    send(AgentStreamEvent.Completed(result))
+                    eventQueue.send(AgentStreamEvent.Completed(result))
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (e: Exception) {
-                    send(AgentStreamEvent.Failed(e.message ?: "执行错误"))
+                    eventQueue.send(AgentStreamEvent.Failed(e.message ?: "执行错误"))
                 } finally {
+                    eventQueue.close()
+                    forwardingJob.join()
                     close()
                 }
             }
-            awaitClose()
+            awaitClose {
+                eventQueue.cancel()
+                forwardingJob.cancel()
+            }
         }
     }
 
@@ -75,6 +95,7 @@ class KoogAgentGateway(
      */
     private fun eventEmittingBridge(
         emitEvent: suspend (AgentStreamEvent) -> Unit,
+        emitToolOutput: (AgentStreamEvent.ToolOutputDelta) -> Unit,
     ): DesktopToolInteractionBridge = object : DesktopToolInteractionBridge {
         override fun isApprovalAutoApproved(request: ApprovalRequest): Boolean =
             interactionBridge.isApprovalAutoApproved(request)
@@ -90,6 +111,29 @@ class KoogAgentGateway(
             }
             return interactionBridge.requestApproval(request)
         }
+
+        override fun onToolOutputChunk(
+            toolName: String,
+            text: String,
+            isErrorStream: Boolean,
+        ) {
+            if (text.isEmpty()) return
+            emitToolOutput(
+                AgentStreamEvent.ToolOutputDelta(
+                    name = toolName,
+                    text = text,
+                    stream = if (isErrorStream) {
+                        AgentStreamEvent.ToolOutputStream.Stderr
+                    } else {
+                        AgentStreamEvent.ToolOutputStream.Stdout
+                    },
+                ),
+            )
+        }
+    }
+
+    private companion object {
+        const val TOOL_EVENT_CHANNEL_CAPACITY = 64
     }
 }
 

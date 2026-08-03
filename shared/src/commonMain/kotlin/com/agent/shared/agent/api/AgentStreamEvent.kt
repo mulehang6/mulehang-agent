@@ -38,6 +38,24 @@ sealed interface AgentStreamEvent {
     ) : AgentStreamEvent
 
     /**
+     * 工具运行期间产生的实时输出增量。
+     */
+    data class ToolOutputDelta(
+        val toolCallId: String? = null,
+        val name: String,
+        val text: String,
+        val stream: ToolOutputStream,
+    ) : AgentStreamEvent
+
+    /**
+     * 工具输出所属的进程流。
+     */
+    enum class ToolOutputStream {
+        Stdout,
+        Stderr,
+    }
+
+    /**
      * 工具请求用户回答问题。
      */
     data class QuestionRequested(val request: QuestionRequest) : AgentStreamEvent

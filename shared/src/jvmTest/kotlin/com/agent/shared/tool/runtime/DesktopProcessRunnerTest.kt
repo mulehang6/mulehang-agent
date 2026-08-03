@@ -1,6 +1,9 @@
 package com.agent.shared.tool.runtime
 
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,6 +13,38 @@ import kotlin.test.assertTrue
  * 验证受控子进程运行器的输出和生命周期边界。
  */
 class DesktopProcessRunnerTest {
+    /**
+     * 进程尚未退出时，已读取的 stdout 必须立即回调给调用方。
+     */
+    @Test
+    fun `should emit stdout before a long running process completes`() {
+        val firstOutput = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val future = executor.submit<DesktopProcessRunner.Result> {
+                DesktopProcessRunner().run(
+                    DesktopProcessRunner.Args(
+                        command = cmd("echo first & ping 127.0.0.1 -n 3 > nul & echo second"),
+                        workingDirectory = temporaryDirectory(),
+                        timeoutMillis = 5_000,
+                        onStdoutChunk = { chunk ->
+                            if (chunk.contains("first")) firstOutput.countDown()
+                        },
+                    ),
+                )
+            }
+
+            assertTrue(firstOutput.await(2, TimeUnit.SECONDS))
+            assertTrue(!future.isDone)
+            assertEquals(
+                listOf("first", "second"),
+                future.get().stdout.lineSequence().map(String::trim).filter(String::isNotEmpty).toList(),
+            )
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
     /**
      * stdout 和 stderr 都持续产生数据时，运行器必须同时排空两条管道。
      */

@@ -160,6 +160,7 @@ private class AgentRunRecordCollector(
             is AgentStreamEvent.QuestionRequested,
             is AgentStreamEvent.ApprovalRequested,
             is AgentStreamEvent.Status,
+            is AgentStreamEvent.ToolOutputDelta,
             -> Unit
 
             is AgentStreamEvent.TextDelta -> text.append(event.text)

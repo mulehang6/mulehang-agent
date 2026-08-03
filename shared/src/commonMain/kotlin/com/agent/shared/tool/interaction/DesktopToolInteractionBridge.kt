@@ -15,6 +15,17 @@ interface DesktopToolInteractionBridge {
     fun isApprovalAutoApproved(request: ApprovalRequest): Boolean = false
 
     /**
+     * 将工具执行期间产生的输出同步转发给 UI。
+     *
+     * 工具实现运行在非协程调用栈中，因此该回调不能挂起。
+     */
+    fun onToolOutputChunk(
+        toolName: String,
+        text: String,
+        isErrorStream: Boolean,
+    ) = Unit
+
+    /**
      * 请求用户回答一个问题，并在提交后恢复。
      */
     suspend fun requestQuestion(request: QuestionRequest): String

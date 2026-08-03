@@ -90,6 +90,38 @@ class KoogAgentGatewayTest {
     }
 
     /**
+     * reasoning 文本已通过增量事件到达时，空的完成事件不能清除该文本；否则工具结果续传会丢失
+     * Responses 协议要求回放的 reasoning_text。
+     */
+    @Test
+    fun `should retain reasoning delta when completion content is empty`() = runTest {
+        val message = collectAssistantMessageFromStream(
+            frames = flowOf(
+                StreamFrame.ReasoningDelta(
+                    id = "reasoning-1",
+                    text = "需要先读取文件。",
+                ),
+                StreamFrame.ReasoningComplete(
+                    id = "reasoning-1",
+                    content = emptyList(),
+                ),
+                StreamFrame.ToolCallComplete(
+                    id = "call-1",
+                    name = "read_file",
+                    content = "{\"path\":\"README.md\"}",
+                ),
+                StreamFrame.End(finishReason = "tool_calls"),
+            ),
+            emitEvent = {},
+        )
+
+        assertEquals(
+            listOf("需要先读取文件。"),
+            message.parts.filterIsInstance<MessagePart.Reasoning>().single().content,
+        )
+    }
+
+    /**
      * 自定义流式节点应把工具调用 frame 还原为可继续执行的 assistant message。
      */
     @Test
@@ -527,6 +559,48 @@ class KoogAgentGatewayTest {
         val questionEvent = assertIs<AgentStreamEvent.QuestionRequested>(events[1])
         assertEquals("Pick one", questionEvent.request.question)
         assertEquals(AgentStreamEvent.Completed("Option B"), events[2])
+    }
+
+    /**
+     * 工具在后台线程产生输出时，网关必须在工具结束前把增量转为 UI 事件。
+     */
+    @Test
+    fun `should forward tool output chunks before the agent completes`() = runTest {
+        val gateway = KoogAgentGateway(
+            interactionBridge = object : DesktopToolInteractionBridge {
+                override suspend fun requestQuestion(request: QuestionRequest): String = "answer"
+
+                override suspend fun requestApproval(request: ApprovalRequest): Boolean = true
+            },
+            agentRunner = { _, _, bridge, _ ->
+                bridge.onToolOutputChunk(
+                    toolName = "run_powershell",
+                    text = "> Task :shared:compileKotlin\n",
+                    isErrorStream = false,
+                )
+                "done"
+            },
+        )
+
+        val events = gateway.run(
+            AgentRunRequest(
+                prompt = "hello",
+                profile = openAiProfile(),
+                workspacePath = "D:\\repo",
+            ),
+        ).toList()
+
+        assertEquals(AgentStreamEvent.Started, events[0])
+        assertEquals(
+            AgentStreamEvent.ToolOutputDelta(
+                toolCallId = null,
+                name = "run_powershell",
+                text = "> Task :shared:compileKotlin\n",
+                stream = AgentStreamEvent.ToolOutputStream.Stdout,
+            ),
+            events[1],
+        )
+        assertEquals(AgentStreamEvent.Completed("done"), events[2])
     }
 
     /**

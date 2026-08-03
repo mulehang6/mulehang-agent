@@ -41,6 +41,15 @@ internal fun reduceAgentEvent(
         argumentsPreview = event.argumentsPreview,
     )
 
+    is AgentStreamEvent.ToolOutputDelta -> appendToolOutput(
+        conversation = conversation,
+        toolCallId = event.toolCallId,
+        toolName = event.name,
+        text = event.text,
+        isErrorStream = event.stream == AgentStreamEvent.ToolOutputStream.Stderr,
+        contextWindow = contextWindow,
+    )
+
     is AgentStreamEvent.ToolCallFinished -> appendAssistantToolResultHistory(
         completeToolEvent(
             conversation = conversation,
@@ -323,6 +332,46 @@ private fun appendReasoningDelta(
         )
         normalizedConversation.copy(items = updatedItems)
     }
+}
+
+/**
+ * 将进行中工具的输出增量追加到对应卡片，而不提前结束该工具调用。
+ */
+private fun appendToolOutput(
+    conversation: ChatConversationUiState,
+    toolCallId: String?,
+    toolName: String,
+    text: String,
+    isErrorStream: Boolean,
+    contextWindow: Int?,
+): ChatConversationUiState {
+    if (text.isEmpty()) return conversation
+    val matchedIndex = conversation.items.indexOfLast { candidate ->
+        candidate is ToolEventItem && candidate.status == ToolEventStatus.Started &&
+                (candidate.toolCallId == toolCallId || (toolCallId == null && candidate.toolName == toolName))
+    }
+    val displayText = if (isErrorStream) "stderr: $text" else text
+    if (matchedIndex < 0) {
+        return appendToolEvent(
+            conversation = conversation,
+            toolName = toolName,
+            status = ToolEventStatus.Started,
+            preview = null,
+            toolCallId = toolCallId,
+            contextWindow = contextWindow,
+        ).let { updated ->
+            val items = updated.items.toMutableList()
+            val event = items.last() as ToolEventItem
+            items[items.lastIndex] = event.copy(resultDisplay = displayText)
+            updated.copy(items = items)
+        }
+    }
+    val items = conversation.items.toMutableList()
+    val started = items[matchedIndex] as ToolEventItem
+    items[matchedIndex] = started.copy(
+        resultDisplay = started.resultDisplay.orEmpty() + displayText,
+    )
+    return conversation.copy(items = items)
 }
 
 /**

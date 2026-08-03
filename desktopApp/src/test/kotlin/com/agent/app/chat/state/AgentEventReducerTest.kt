@@ -173,6 +173,38 @@ class AgentEventReducerTest {
     }
 
     /**
+     * 进行中的工具输出应合并回已开始的同一工具卡片，并保持调用仍在运行。
+     */
+    @Test
+    fun `tool output delta appends to the active tool card`() {
+        val started = reduceAgentEvent(
+            conversation(),
+            AgentStreamEvent.ToolCallStarted(
+                toolCallId = "call-1",
+                name = "run_powershell",
+                argumentsPreview = "./gradlew.bat build",
+            ),
+            contextWindow = 100,
+        )
+
+        val result = reduceAgentEvent(
+            started,
+            AgentStreamEvent.ToolOutputDelta(
+                toolCallId = "call-1",
+                name = "run_powershell",
+                text = "> Task :shared:compileKotlin\n",
+                stream = AgentStreamEvent.ToolOutputStream.Stdout,
+            ),
+            contextWindow = 100,
+        )
+
+        val item = result.items.single() as ToolEventItem
+        assertEquals(ToolEventStatus.Started, item.status)
+        assertEquals("> Task :shared:compileKotlin\n", item.resultDisplay)
+        assertNull(item.resultPreview)
+    }
+
+    /**
      * 工具调用应切分助手正文，确保工具前后的文本按真实事件顺序显示。
      */
     @Test

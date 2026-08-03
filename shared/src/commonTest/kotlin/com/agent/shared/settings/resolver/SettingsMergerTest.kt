@@ -396,6 +396,30 @@ class SettingsMergerTest {
     }
 
     /**
+     * `none` 是部分 Responses 服务用来关闭思考模式的显式 wire value，应保留为可配置档位。
+     */
+    @Test
+    fun `should merge none configured reasoning effort into runtime profile`() {
+        val merged = SettingsMerger.merge(
+            user = null,
+            project = customModelSettings(
+                reasoningEfforts = listOf("none", "low", "high", "max"),
+            ),
+            environment = emptyMap(),
+        )
+
+        assertEquals(
+            listOf(
+                ReasoningEffort.NONE,
+                ReasoningEffort.LOW,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.MAX,
+            ),
+            merged.single().reasoningEfforts,
+        )
+    }
+
+    /**
      * 显式空列表表示模型不支持 reasoning，不能与未配置混淆。
      */
     @Test

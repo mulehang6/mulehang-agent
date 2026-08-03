@@ -57,6 +57,15 @@ class AutoScrollPolicyTest {
     }
 
     /**
+     * 用户提交非空草稿时，必须显式回到最新消息，而不受先前手动滚动位置影响。
+     */
+    @Test
+    fun `should force following the latest item when submitting a message`() {
+        assertEquals(true, shouldForceScrollToLatestAfterSubmit("继续构建项目"))
+        assertEquals(false, shouldForceScrollToLatestAfterSubmit("   "))
+    }
+
+    /**
      * 工具运行完成后新增的意图和输出也必须触发时间线跟随。
      */
     @Test

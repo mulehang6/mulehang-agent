@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.agent.app.chat.component
 
 import androidx.compose.animation.AnimatedVisibility
@@ -7,10 +9,17 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,9 +29,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +45,13 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
 import com.agent.app.chat.presentation.buildContextTooltip
 import com.agent.app.chat.presentation.contextRingSweepAngle
@@ -63,6 +81,7 @@ import com.agent.app.tool.component.QuestionCard
 import com.agent.app.tool.component.ApprovalCard
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
+import kotlinx.coroutines.launch
 
 internal const val PENDING_CARD_ENTER_DURATION_MILLIS = 180
 internal const val PENDING_CARD_EXIT_DURATION_MILLIS = 120
@@ -100,12 +119,49 @@ internal fun composerPrimaryActionGlyph(danger: Boolean): HeaderGlyph =
     if (danger) HeaderGlyph.STOP else HeaderGlyph.SEND
 
 /**
+ * 输入框最多占用主工作区的一半，确保时间线始终保留足够的可见空间。
+ */
+internal fun maxComposerInputHeight(workspaceHeight: Dp): Dp = workspaceHeight / 2
+
+/**
+ * 仅在输入内容超过可见区域时显示输入区滚动条。
+ */
+internal fun shouldShowComposerInputScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
+
+/**
+ * 拖选文本接近输入框边缘时返回应执行的滚动增量，中央区域保持静止。
+ */
+internal fun composerSelectionScrollDelta(pointerY: Float, viewportHeight: Int): Float = when {
+    pointerY < 18f -> -24f
+    pointerY > viewportHeight - 18f -> 24f
+    else -> 0f
+}
+
+/**
+ * Shift 加方向键扩展选择范围时，让外层输入区域跟随选区继续滚动。
+ */
+internal fun composerKeyboardSelectionScrollDelta(
+    key: Key,
+    isShiftPressed: Boolean,
+): Float = if (!isShiftPressed) {
+    0f
+} else {
+    when (key) {
+        Key.DirectionUp -> -28f
+        Key.DirectionDown -> 28f
+        else -> 0f
+    }
+}
+
+/**
  * 原型下方 plan + composer 区域。
  */
 @Composable
 internal fun FooterComposerSection(
     state: ChatWindowState,
     compact: Boolean,
+    onSendDraft: () -> Unit,
+    composerInputMaxHeight: Dp = 320.dp,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
     val planCard = activeConversation?.let { extractPlanCard(it.items) }
@@ -150,6 +206,8 @@ internal fun FooterComposerSection(
             ComposerPanel(
                 state = state,
                 compact = compact,
+                onSendDraft = onSendDraft,
+                composerInputMaxHeight = composerInputMaxHeight,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -195,18 +253,28 @@ internal fun PendingInteractionCards(
 private fun ComposerPanel(
     state: ChatWindowState,
     compact: Boolean,
+    onSendDraft: () -> Unit,
+    composerInputMaxHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
     val executionState = activeConversation?.executionState ?: ExecutionState.Idle
+    val permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT
     val primaryActionVisual = buildComposerPrimaryActionVisual(executionState)
     val providerProfiles = groupProfilesByProvider(profiles)
     val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
     val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
     var expandedMenu by remember { mutableStateOf<ComposerMenu?>(null) }
+    val inputScrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    var inputViewportHeight by remember { mutableStateOf(0) }
+
+    LaunchedEffect(state.ui.draft) {
+        inputScrollState.scrollTo(inputScrollState.maxValue)
+    }
 
     RingIsland(
         modifier = modifier,
@@ -253,27 +321,79 @@ private fun ComposerPanel(
                 }
             }
 
-            RingInputField(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onPreviewKeyEvent { event ->
-                        if (shouldSubmitComposerKey(event.key, event.type, event.isShiftPressed)) {
-                            if (executionState.isStoppable()) {
-                                state.cancelActiveRun()
-                            } else {
-                                state.sendDraft()
+                    .onSizeChanged { size -> inputViewportHeight = size.height }
+                    .onPointerEvent(
+                        eventType = PointerEventType.Move,
+                        pass = PointerEventPass.Final,
+                    ) { event ->
+                        val pointerY = event.changes.firstOrNull()?.position?.y ?: return@onPointerEvent
+                        val scrollDelta = composerSelectionScrollDelta(pointerY, inputViewportHeight)
+                        if (event.buttons.isPrimaryPressed && scrollDelta != 0f) {
+                            scope.launch {
+                                inputScrollState.scrollTo((inputScrollState.value + scrollDelta).toInt())
                             }
-                            true
-                        } else {
-                            false
                         }
-                    },
-                value = state.ui.draft,
-                onValueChange = state::updateDraft,
-                minLines = 3,
-                placeholder = "描述你想完成的任务…",
-                borderless = true,
-            )
+                    }
+                    .heightIn(max = composerInputMaxHeight),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(inputScrollState),
+                ) {
+                    RingInputField(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onPreviewKeyEvent { event ->
+                                val selectionScrollDelta = composerKeyboardSelectionScrollDelta(
+                                    key = event.key,
+                                    isShiftPressed = event.isShiftPressed,
+                                )
+                                if (event.type == KeyEventType.KeyDown && selectionScrollDelta != 0f) {
+                                    scope.launch {
+                                        inputScrollState.scrollTo(
+                                            (inputScrollState.value + selectionScrollDelta).toInt(),
+                                        )
+                                    }
+                                }
+                                if (shouldSubmitComposerKey(event.key, event.type, event.isShiftPressed)) {
+                                    if (executionState.isStoppable()) {
+                                        state.cancelActiveRun()
+                                    } else {
+                                        onSendDraft()
+                                    }
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
+                        value = state.ui.draft,
+                        onValueChange = state::updateDraft,
+                        minLines = 3,
+                        placeholder = "描述你想完成的任务…",
+                        borderless = true,
+                    )
+                }
+                if (shouldShowComposerInputScrollbar(inputScrollState.maxValue)) {
+                    CompositionLocalProvider(
+                        LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
+                            unhoverColor = Color(0xFF8D96A6),
+                            hoverColor = Color(0xFFD7DEEA),
+                        ),
+                    ) {
+                        VerticalScrollbar(
+                            adapter = rememberScrollbarAdapter(inputScrollState),
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .padding(vertical = 8.dp, horizontal = 3.dp),
+                        )
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -374,9 +494,9 @@ private fun ComposerPanel(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RingSelectChip(
-                        label = permissionLabel(state.ui.permissionPreset),
+                        label = permissionLabel(permissionPreset),
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
-                        tone = permissionTone(state.ui.permissionPreset),
+                        tone = permissionTone(permissionPreset),
                         onExpandedChange = { shouldExpand ->
                             expandedMenu = ComposerMenu.PERMISSION.takeIf { shouldExpand }
                         },
@@ -389,7 +509,7 @@ private fun ComposerPanel(
                         PermissionPreset.entries.forEach { preset ->
                             RingDropdownMenuItem(
                                 text = permissionLabel(preset),
-                                selected = preset == state.ui.permissionPreset,
+                                selected = preset == permissionPreset,
                                 onClick = {
                                     expandedMenu = null
                                     state.updatePermission(preset)
@@ -403,7 +523,7 @@ private fun ComposerPanel(
                             if (executionState.isStoppable()) {
                                 state.cancelActiveRun()
                             } else {
-                                state.sendDraft()
+                                onSendDraft()
                             }
                         },
                         containerColor = if (primaryActionVisual.danger) AppDanger else AppAccent,

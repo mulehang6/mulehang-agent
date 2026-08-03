@@ -7,12 +7,12 @@ import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -25,9 +25,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 import com.agent.app.chat.presentation.itemContentSize
+import com.agent.app.chat.presentation.shouldForceScrollToLatestAfterSubmit
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppChipBackground
@@ -69,6 +72,9 @@ internal fun WorkspacePanel(
     val conversationId = activeConversation?.id
     val scrollState = remember(conversationId) { ScrollState(0) }
     val isFollowingLatest = remember(conversationId) { mutableStateOf(true) }
+    val submittedMessageScrollRequest = remember(conversationId) { mutableStateOf(0) }
+    var messageEntry by remember(conversationId) { mutableStateOf<PendingMessageEntry?>(null) }
+    var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
 
@@ -86,6 +92,33 @@ internal fun WorkspacePanel(
         if (shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest.value)) {
             scrollState.scrollTo(scrollState.maxValue)
         }
+    }
+
+    LaunchedEffect(submittedMessageScrollRequest.value) {
+        if (submittedMessageScrollRequest.value > 0) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
+    val onSendDraft: () -> Unit = {
+        val draft = state.ui.draft
+        if (shouldForceScrollToLatestAfterSubmit(draft)) {
+            isFollowingLatest.value = true
+            submittedMessageScrollRequest.value += 1
+            // 没有活动会话时草稿不会成为时间线消息，记录进入动效只会让后续同文本消息误动画。
+            if (activeConversation != null) {
+                nextMessageEntryId += 1
+                messageEntry = PendingMessageEntry(
+                    id = nextMessageEntryId,
+                    content = draft.trim(),
+                )
+            }
+        }
+        state.sendDraft()
+    }
+
+    val onMessageEntryFinished: (Long) -> Unit = { finishedId ->
+        if (messageEntry?.id == finishedId) messageEntry = null
     }
 
     Box(
@@ -107,9 +140,11 @@ internal fun WorkspacePanel(
                     color = AppWorkspaceBackground,
                     border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.42f)),
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
+                    BoxWithConstraints {
+                        val composerInputMaxHeight = maxComposerInputHeight(maxHeight)
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -138,6 +173,8 @@ internal fun WorkspacePanel(
                                         when (activeRailView) {
                                             RightRailGlyph.CODE -> ConversationTimeline(
                                                 conversation = activeConversation,
+                                                pendingMessageEntry = messageEntry,
+                                                onMessageEntryFinished = onMessageEntryFinished,
                                             )
                                             RightRailGlyph.HISTORY -> HistoryPanel(
                                                 activeConversation,
@@ -146,6 +183,8 @@ internal fun WorkspacePanel(
 
                                             else -> ConversationTimeline(
                                                 conversation = activeConversation,
+                                                pendingMessageEntry = messageEntry,
+                                                onMessageEntryFinished = onMessageEntryFinished,
                                             )
                                         }
                                     }
@@ -169,7 +208,10 @@ internal fun WorkspacePanel(
                             }
                             if (
                                 activeConversation != null &&
-                                shouldShowScrollToBottomButton(isFollowingLatest.value)
+                                shouldShowScrollToBottomButton(
+                                    isFollowingLatest = isFollowingLatest.value,
+                                    hasTimelineContent = activeConversation.items.isNotEmpty(),
+                                )
                             ) {
                                 Surface(
                                     onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
@@ -211,7 +253,13 @@ internal fun WorkspacePanel(
                                 }
                             }
                         }
-                        FooterComposerSection(state, compact)
+                        FooterComposerSection(
+                            state = state,
+                            compact = compact,
+                            onSendDraft = onSendDraft,
+                            composerInputMaxHeight = composerInputMaxHeight,
+                        )
+                    }
                     }
                 }
             },
@@ -233,7 +281,10 @@ internal fun WorkspacePanel(
 /**
  * 仅在用户未跟随最新输出时显示回到底部动作。
  */
-internal fun shouldShowScrollToBottomButton(isFollowingLatest: Boolean): Boolean = !isFollowingLatest
+internal fun shouldShowScrollToBottomButton(
+    isFollowingLatest: Boolean,
+    hasTimelineContent: Boolean = true,
+): Boolean = hasTimelineContent && !isFollowingLatest
 
 /**
  * 底部输入区因审批或提问卡片扩高时，决定是否保持时间线贴住最新输出。

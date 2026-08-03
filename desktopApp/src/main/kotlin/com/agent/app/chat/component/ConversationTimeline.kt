@@ -8,7 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -47,11 +49,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.skiaCanvas
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +66,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -76,9 +84,9 @@ import com.agent.app.chat.presentation.buildToolEventOperationIntent
 import com.agent.app.chat.presentation.isTerminalToolEvent
 import com.agent.app.chat.presentation.shouldShowToolEventHeadline
 import com.agent.app.chat.presentation.toolEventHasDetails
-import com.agent.app.chat.presentation.toolEventOutputChunks
 import com.agent.app.chat.presentation.toolEventOutputText
 import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
+import com.agent.app.chat.presentation.shouldAutoExpandRunningTerminalOutput
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppHoverBackground
@@ -165,6 +173,9 @@ internal fun buildToolGroupHeadline(count: Int): String = "已执行工具 · $c
 /** 工具文字行的垂直内边距，保持为零以贴近终端式活动列表。 */
 internal const val TOOL_EVENT_ROW_VERTICAL_PADDING_DP = 0
 
+/** 工具输出面板的最大可视高度，超出部分保留在面板内滚动。 */
+internal val TOOL_EVENT_OUTPUT_MAX_HEIGHT = 320.dp
+
 /**
  * 返回相邻展示段之间的垂直间距：连续工具调用保持紧凑，跨内容段落留出呼吸感。
  */
@@ -190,6 +201,8 @@ private fun TimelineDisplayItem.isToolInvocation(): Boolean = when (this) {
 @Composable
 internal fun ConversationTimeline(
     conversation: ChatConversationUiState,
+    pendingMessageEntry: PendingMessageEntry? = null,
+    onMessageEntryFinished: (Long) -> Unit = {},
 ) {
     if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
         Text(
@@ -203,6 +216,7 @@ internal fun ConversationTimeline(
         it is ToolEventItem && it.status == ToolEventStatus.Failed
     }
     val displayItems = groupTimelineItems(conversation.items)
+    val entryMotionTarget = latestMatchingUserMessage(conversation.items, pendingMessageEntry?.content)
     Column(modifier = Modifier.fillMaxWidth()) {
         displayItems.forEachIndexed { index, displayItem ->
             if (index > 0) {
@@ -218,7 +232,11 @@ internal fun ConversationTimeline(
                 is TimelineDisplayItem.Content -> when (val item = displayItem.item) {
                 is ChatMessageItem -> {
                     if (item.message.role == ChatRole.User) {
-                        UserMessageCard(item.message.content)
+                        UserMessageCard(
+                            content = item.message.content,
+                            entryMotionId = pendingMessageEntry?.id?.takeIf { item === entryMotionTarget },
+                            onEntryMotionFinished = onMessageEntryFinished,
+                        )
                     } else {
                         AssistantMessageBlock(
                             content = item.message.content,
@@ -258,11 +276,36 @@ internal fun ConversationTimeline(
     }
 }
 
+/** 新消息进入动效的初始下移距离，需要足够大才能被看见。 */
+private val MESSAGE_ENTRY_TRAVEL = 24.dp
+
 /**
  * 单条用户消息卡片。
  */
 @Composable
-private fun UserMessageCard(content: String) {
+private fun UserMessageCard(
+    content: String,
+    entryMotionId: Long?,
+    onEntryMotionFinished: (Long) -> Unit,
+) {
+    val travelDistancePx = with(LocalDensity.current) { MESSAGE_ENTRY_TRAVEL.toPx() }
+    val progress = remember(entryMotionId) { Animatable(if (entryMotionId == null) 1f else 0f) }
+    LaunchedEffect(entryMotionId) {
+        val motionId = entryMotionId ?: return@LaunchedEffect
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(
+                dampingRatio = 0.62f,
+                stiffness = Spring.StiffnessMediumLow,
+                visibilityThreshold = 0.001f,
+            ),
+        )
+        onEntryMotionFinished(motionId)
+    }
+    val visuals = messageEntryVisuals(
+        progress = progress.value,
+        travelDistancePx = travelDistancePx,
+    )
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.TopEnd,
@@ -270,7 +313,15 @@ private fun UserMessageCard(content: String) {
         Surface(
             modifier = Modifier
                 .widthIn(max = maxWidth * 0.8f)
-                .wrapContentWidth(),
+                .wrapContentWidth()
+                .graphicsLayer {
+                    alpha = visuals.alpha
+                    scaleX = visuals.scale
+                    scaleY = visuals.scale
+                    translationY = visuals.translationY
+                    // 从最靠近发送按钮的右下角展开，动效来源与用户操作位置一致。
+                    transformOrigin = TransformOrigin(pivotFractionX = 1f, pivotFractionY = 1f)
+                },
             shape = RoundedCornerShape(8.dp),
             color = AppUserCardBackground,
         ) {
@@ -565,7 +616,13 @@ private fun TimelineToolTextRow(
 ) {
     val hasDetails = toolEventHasDetails(item) || item.errorMessage?.isNotBlank() == true
     var expanded by remember(toolEventExpansionIdentity(item)) { mutableStateOf(false) }
+    var userSetExpansion by remember(toolEventExpansionIdentity(item)) { mutableStateOf(false) }
     var hovered by remember { mutableStateOf(false) }
+    LaunchedEffect(item.status, item.resultDisplay, item.resultPreview) {
+        if (!userSetExpansion && shouldAutoExpandRunningTerminalOutput(item)) {
+            expanded = true
+        }
+    }
     val chevronRotation by animateFloatAsState(
         targetValue = toolEventChevronRotation(expanded),
         animationSpec = tween(durationMillis = 160),
@@ -578,7 +635,10 @@ private fun TimelineToolTextRow(
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
                 .background(if (hovered) AppHoverBackground else Color.Transparent, RoundedCornerShape(7.dp))
-                .clickable(enabled = hasDetails) { expanded = !expanded }
+                .clickable(enabled = hasDetails) {
+                    userSetExpansion = true
+                    expanded = !expanded
+                }
                 .padding(horizontal = 10.dp, vertical = TOOL_EVENT_ROW_VERTICAL_PADDING_DP.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -604,19 +664,66 @@ private fun TimelineToolTextRow(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 toolEventOutputText(item)?.let { output ->
-                    Text(
+                    ToolEventOutputPane(
                         text = output,
-                        modifier = Modifier.fillMaxWidth().background(Color(0xFF17181A), RoundedCornerShape(6.dp)).padding(10.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(color = AppMuted, lineHeight = 20.sp),
+                        backgroundColor = Color(0xFF17181A),
+                        textColor = AppMuted,
                     )
                 }
                 item.errorMessage?.takeIf(String::isNotBlank)?.let { error ->
-                    Text(
+                    ToolEventOutputPane(
                         text = error,
-                        modifier = Modifier.fillMaxWidth().background(Color(0xFF2A1518), RoundedCornerShape(6.dp)).padding(10.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(color = AppDanger, lineHeight = 20.sp),
+                        backgroundColor = Color(0xFF2A1518),
+                        textColor = AppDanger,
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 以固定最大高度显示工具原始输出，并仅在内容溢出时展示高对比度滚动条。
+ */
+@Composable
+private fun ToolEventOutputPane(
+    text: String,
+    backgroundColor: Color,
+    textColor: Color,
+) {
+    val scrollState = rememberScrollState()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = TOOL_EVENT_OUTPUT_MAX_HEIGHT)
+            .background(backgroundColor, RoundedCornerShape(6.dp)),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(10.dp),
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = textColor,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 20.sp,
+            ),
+        )
+        if (shouldShowToolOutputScrollbar(maxScrollValue = scrollState.maxValue)) {
+            CompositionLocalProvider(
+                LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
+                    unhoverColor = Color(0xFF8D96A6),
+                    hoverColor = Color(0xFFD7DEEA),
+                ),
+            ) {
+                VerticalScrollbar(
+                    adapter = rememberScrollbarAdapter(scrollState),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(vertical = 6.dp, horizontal = 3.dp),
+                )
             }
         }
     }
@@ -650,8 +757,6 @@ private fun TimelineToolEvent(
     val isTerminalTool = isTerminalToolEvent(item)
     val hasDetails = toolEventHasDetails(item)
     val inlineInput = buildToolEventInlineInput(item)
-    val outputChunks = remember(item.resultPreview, item.resultDisplay) { toolEventOutputChunks(item) }
-    val outputListState = rememberLazyListState()
     var expanded by remember(toolEventExpansionIdentity(item)) {
         mutableStateOf(shouldExpandToolEventByDefault(item))
     }
@@ -736,78 +841,18 @@ private fun TimelineToolEvent(
                 exit = shrinkVertically(tween(durationMillis = 120)) + fadeOut(tween(durationMillis = 100)),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    toolEventOutputText(item)?.let {
-                        if (outputChunks.isEmpty()) {
-                            Text(
-                                text = "无输出内容",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color(0xFF17181A), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    color = AppMuted,
-                                    fontSize = 14.sp,
-                                    lineHeight = 21.sp,
-                                ),
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 320.dp)
-                                    .background(Color(0xFF17181A), RoundedCornerShape(6.dp)),
-                            ) {
-                                LazyColumn(
-                                    state = outputListState,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                                ) {
-                                    items(outputChunks) { chunk ->
-                                        Text(
-                                            text = chunk,
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                color = AppMuted,
-                                                fontSize = 14.sp,
-                                                lineHeight = 21.sp,
-                                            ),
-                                        )
-                                    }
-                                }
-                                if (
-                                    shouldShowToolOutputScrollbar(
-                                        canScrollForward = outputListState.canScrollForward ||
-                                            outputListState.canScrollBackward,
-                                    )
-                                ) {
-                                    CompositionLocalProvider(
-                                        LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
-                                            unhoverColor = Color(0xFF747983),
-                                            hoverColor = Color(0xFFB8BEC8),
-                                        ),
-                                    ) {
-                                        VerticalScrollbar(
-                                            adapter = rememberScrollbarAdapter(outputListState),
-                                            modifier = Modifier
-                                                .align(Alignment.CenterEnd)
-                                                .fillMaxHeight()
-                                                .padding(vertical = 4.dp, horizontal = 2.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    toolEventOutputText(item)?.let { output ->
+                        ToolEventOutputPane(
+                            text = output,
+                            backgroundColor = Color(0xFF17181A),
+                            textColor = AppMuted,
+                        )
                     }
                     if (errorMessage != null) {
-                        Text(
+                        ToolEventOutputPane(
                             text = errorMessage,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF2A1518), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = AppDanger,
-                                lineHeight = 20.sp,
-                            ),
+                            backgroundColor = Color(0xFF2A1518),
+                            textColor = AppDanger,
                         )
                     }
                 }
@@ -845,4 +890,4 @@ internal fun toolEventExpansionIdentity(item: ToolEventItem): List<Any?> = listO
 /**
  * 工具输出列表存在可滚动内容时显示滚动条，避免短输出产生无意义的视觉噪声。
  */
-internal fun shouldShowToolOutputScrollbar(canScrollForward: Boolean): Boolean = canScrollForward
+internal fun shouldShowToolOutputScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0

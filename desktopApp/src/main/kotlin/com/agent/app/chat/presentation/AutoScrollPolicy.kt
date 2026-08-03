@@ -37,6 +37,11 @@ internal fun nextAutoScrollFollowState(
 }
 
 /**
+ * 用户主动提交非空草稿时，忽略先前阅读位置并重新跟随最新消息。
+ */
+internal fun shouldForceScrollToLatestAfterSubmit(draft: String): Boolean = draft.isNotBlank()
+
+/**
  * 返回时间线自动滚动锚点。
  */
 internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int =

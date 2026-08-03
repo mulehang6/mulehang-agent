@@ -49,3 +49,4 @@ bin/
 logs/
 /.ai/mcp/
 /.air/mcp.json
+/.claude/worktrees/

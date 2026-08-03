@@ -32,6 +32,28 @@ class KoogPromptTest {
         assertEquals("\"high\"", params?.additionalProperties?.get("reasoning_effort").toString())
     }
 
+    /**
+     * 标题 prompt 也只应包含系统约束，且不能提前写入首条用户消息。
+     */
+    @Test
+    fun `should build conversation title prompt without duplicating user message`() {
+        val prompt = buildConversationTitlePrompt(profile = deepSeekProfile())
+
+        assertEquals(1, prompt.messages.size)
+        assertTrue(prompt.messages.single() is Message.System)
+    }
+
+    /**
+     * 标题系统约束必须明确禁止工具、Markdown 与引号，避免污染侧栏展示。
+     */
+    @Test
+    fun `should forbid tools markdown and quotes in title system prompt`() {
+        val prompt = conversationTitleSystemPrompt()
+
+        assertTrue(prompt.contains("不能调用工具"))
+        assertTrue(prompt.contains("不要使用引号、Markdown"))
+    }
+
     private fun deepSeekProfile(): ConfigProfile = ConfigProfile(
         id = "deepseek",
         providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,

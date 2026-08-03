@@ -39,16 +39,31 @@ data class PendingApprovalUiState(
 )
 
 /**
+ * 会话标题的异步生成生命周期；该状态只影响当前窗口展示，不改变持久化标题。
+ */
+enum class ConversationTitleState {
+    NOT_REQUESTED,
+    GENERATING,
+    GENERATED,
+    FAILED,
+}
+
+/**
  * 单个对话线程的窗口级展示状态。
  */
 data class ChatConversationUiState(
     val id: String,
     val title: String,
+    val titleState: ConversationTitleState = ConversationTitleState.NOT_REQUESTED,
     val workspacePath: String,
     val items: List<ConversationItem> = emptyList(),
     val attachments: List<ChatAttachmentUiState> = emptyList(),
     val history: List<AgentConversationHistoryMessage> = emptyList(),
+    /** 此会话绑定的 provider/model profile；为空时按当前配置回退。 */
+    val profileId: String? = null,
     val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
+    /** 此会话独立保存的工具执行权限。 */
+    val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
     val executionState: ExecutionState = ExecutionState.Idle,
     val streamingAssistantItemIndex: Int? = null,
     val streamingReasoningItemIndex: Int? = null,
@@ -104,6 +119,7 @@ data class ChatTaskListItemUiState(
     val subtitle: String,
     val group: ChatTaskGroup,
     val status: ChatTaskStatus,
+    val titleState: ConversationTitleState,
 )
 
 /**
@@ -274,6 +290,7 @@ internal fun toTaskListItem(conversation: ChatConversationUiState): ChatTaskList
         subtitle = subtitle,
         group = taskGroupFor(conversation),
         status = taskStatusFor(conversation),
+        titleState = conversation.titleState,
     )
 }
 

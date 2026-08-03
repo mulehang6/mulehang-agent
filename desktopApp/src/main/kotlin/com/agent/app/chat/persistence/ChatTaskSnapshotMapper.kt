@@ -17,6 +17,7 @@ import com.agent.shared.chat.model.ToolEventStatus
 import com.agent.shared.chat.persistence.PersistedHistoryItem
 import com.agent.shared.chat.persistence.PersistedTask
 import com.agent.shared.chat.persistence.PersistedTimelineItem
+import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -45,6 +46,8 @@ internal object ChatTaskSnapshotMapper {
         title = source.title,
         workspacePath = source.workspacePath,
         reasoningEffort = source.reasoningEffort.name,
+        profileId = source.profileId,
+        permissionPreset = source.permissionPreset.name,
         contextUsageFraction = source.contextUsageFraction,
         executionState = source.executionState.persistenceType(),
         executionErrorTitle = (source.executionState as? ExecutionState.Failed)?.error?.title,
@@ -64,7 +67,9 @@ internal object ChatTaskSnapshotMapper {
         items = source.timeline.sortedBy(PersistedTimelineItem::sequence).map(::decodeTimeline),
         attachments = json.parseToJsonElement(source.attachmentsJson).jsonArray.map(::decodeAttachment),
         history = source.history.sortedBy(PersistedHistoryItem::sequence).map(::decodeHistory),
-        reasoningEffort = ReasoningEffort.valueOf(source.reasoningEffort),
+        profileId = source.profileId,
+        reasoningEffort = source.reasoningEffort.toReasoningEffort(),
+        permissionPreset = source.permissionPreset.toPermissionPreset(),
         executionState = source.recoveredExecutionState(),
         streamingAssistantItemIndex = null,
         streamingReasoningItemIndex = null,
@@ -211,6 +216,14 @@ internal object ChatTaskSnapshotMapper {
             else -> error("Unsupported history part type: ${objectValue.requiredString("type")}")
         }
     }
+
+    /** 将无效或过期的推理档位安全回退为默认档位。 */
+    private fun String.toReasoningEffort(): ReasoningEffort =
+        ReasoningEffort.entries.firstOrNull { it.name == this } ?: ReasoningEffort.MEDIUM
+
+    /** 将无效或过期的权限档位安全回退为默认权限。 */
+    private fun String.toPermissionPreset(): PermissionPreset =
+        PermissionPreset.entries.firstOrNull { it.name == this } ?: PermissionPreset.DEFAULT
 
     /** 将原运行态恢复为不可续跑的错误状态。 */
     private fun PersistedTask.recoveredExecutionState(): ExecutionState = when (executionState) {

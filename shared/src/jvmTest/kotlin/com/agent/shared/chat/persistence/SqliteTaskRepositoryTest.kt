@@ -51,6 +51,112 @@ class SqliteTaskRepositoryTest {
     }
 
     /**
+     * 会话绑定的非默认 profile 与权限档位也必须通过真实 SQLite 仓库完整往返。
+     */
+    @Test
+    fun `should round trip non default profile id and permission preset`() = runTest {
+        val repository = SqliteTaskRepository(databaseDirectory.resolve("tasks.db"))
+        val expected = taskSnapshot().copy(
+            id = "task-2",
+            profileId = "deepseek:deepseek-v4-pro",
+            permissionPreset = "BRAVE",
+        )
+
+        repository.saveAll(listOf(expected))
+
+        assertEquals(listOf(expected), repository.loadAll())
+    }
+
+    /**
+     * v1 遗留数据库缺少 profile_id/permission_preset 列时，打开仓库应自动迁移且不丢数据。
+     */
+    @Test
+    fun `should migrate legacy v1 database and preserve existing rows`() = runTest {
+        val databasePath = databaseDirectory.resolve("legacy.db")
+        createLegacyV1Database(databasePath)
+
+        val repository = SqliteTaskRepository(databasePath)
+        val tasks = repository.loadAll()
+
+        assertEquals(1, tasks.size)
+        val migratedTask = tasks.single()
+        assertEquals("task-legacy", migratedTask.id)
+        assertEquals("旧版本任务", migratedTask.title)
+        assertEquals(null, migratedTask.profileId)
+        assertEquals("DEFAULT", migratedTask.permissionPreset)
+    }
+
+    /**
+     * 手工建立不含 v2 列的 v1 schema 数据库，模拟迁移前遗留下来的真实数据文件。
+     */
+    private fun createLegacyV1Database(databasePath: java.nio.file.Path) {
+        java.sql.DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeUpdate(
+                    """
+                    CREATE TABLE schema_migration (
+                        version INTEGER PRIMARY KEY,
+                        applied_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                statement.executeUpdate("INSERT INTO schema_migration(version, applied_at) VALUES (1, 0)")
+                statement.executeUpdate(
+                    """
+                    CREATE TABLE task (
+                        id TEXT PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        workspace_path TEXT NOT NULL,
+                        reasoning_effort TEXT NOT NULL,
+                        context_usage_fraction REAL NOT NULL,
+                        execution_state TEXT NOT NULL,
+                        execution_error_title TEXT,
+                        execution_error_message TEXT,
+                        attachments_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    CREATE TABLE task_timeline_item (
+                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+                        sequence INTEGER NOT NULL,
+                        type TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        PRIMARY KEY (task_id, sequence)
+                    )
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    CREATE TABLE task_history_item (
+                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+                        sequence INTEGER NOT NULL,
+                        type TEXT NOT NULL,
+                        payload_json TEXT NOT NULL,
+                        PRIMARY KEY (task_id, sequence)
+                    )
+                    """.trimIndent(),
+                )
+                statement.executeUpdate(
+                    """
+                    INSERT INTO task(
+                        id, title, workspace_path, reasoning_effort, context_usage_fraction,
+                        execution_state, execution_error_title, execution_error_message,
+                        attachments_json, created_at, updated_at
+                    ) VALUES (
+                        'task-legacy', '旧版本任务', 'D:\workspace', 'MEDIUM', 0.0,
+                        'IDLE', NULL, NULL, '[]', 0, 0
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+    }
+
+    /**
      * 构造含完整原始负载的固定任务快照，不依赖被测仓库的实现细节。
      */
     private fun taskSnapshot(): PersistedTask = PersistedTask(

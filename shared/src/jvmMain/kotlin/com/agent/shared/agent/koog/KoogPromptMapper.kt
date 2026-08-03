@@ -38,6 +38,29 @@ internal fun agentSystemPrompt(): String = """
 """.trimIndent()
 
 /**
+ * 构建标题生成专用 prompt；不复用聊天 system prompt，避免带入工具或 Markdown 协议。
+ */
+internal fun buildConversationTitlePrompt(profile: ConfigProfile): Prompt = Prompt.build(
+    id = "mulehang-conversation-title",
+    params = buildPromptParams(profile, reasoningEffort = null),
+) {
+    system(conversationTitleSystemPrompt())
+}
+
+/**
+ * 标题生成的独立系统约束：只产出短标题正文，不解释、不使用工具、不使用 Markdown。
+ */
+internal fun conversationTitleSystemPrompt(): String = """
+    你会看到用户发给编程助手的第一条消息。
+    请为这次对话生成一个简短的中文标题，用于历史任务列表展示。
+    严格遵守：
+    - 只输出标题本身，不要前缀、解释或结尾标点。
+    - 不要使用引号、Markdown 或代码块。
+    - 长度控制在 6 到 16 个字符以内。
+    - 不能调用工具，不能反问，不能拒绝回答。
+""".trimIndent()
+
+/**
  * 将会话历史和当前用户输入映射为 Koog 可消费的消息序列。
  */
 internal fun buildConversationMessages(

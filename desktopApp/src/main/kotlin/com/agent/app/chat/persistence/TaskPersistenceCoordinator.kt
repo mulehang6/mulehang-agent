@@ -2,6 +2,7 @@ package com.agent.app.chat.persistence
 
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.shared.chat.persistence.TaskRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,11 +56,14 @@ class TaskPersistenceCoordinator(
      * 串行保存完整任务集合，防止旧快照覆盖较新的流式内容。
      */
     private suspend fun save(tasks: List<ChatConversationUiState>) = writeMutex.withLock {
-        runCatching {
+        try {
             withContext(Dispatchers.IO) {
                 repository.saveAll(tasks.map(ChatTaskSnapshotMapper::toPersistedTask))
             }
-        }.onFailure {
+        } catch (exception: Throwable) {
+            if (!shouldReportTaskPersistenceError(exception)) {
+                throw exception
+            }
             reportError("任务保存失败")
         }
     }
@@ -68,3 +72,9 @@ class TaskPersistenceCoordinator(
         const val SAVE_DEBOUNCE_MILLIS = 300L
     }
 }
+
+/**
+ * 判断一次持久化异常是否应反馈给用户；协程取消是新快照替换旧快照的正常调度结果。
+ */
+internal fun shouldReportTaskPersistenceError(exception: Throwable): Boolean =
+    exception !is CancellationException

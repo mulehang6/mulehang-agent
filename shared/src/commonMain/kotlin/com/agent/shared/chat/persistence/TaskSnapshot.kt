@@ -8,6 +8,8 @@ data class PersistedTask(
     val title: String,
     val workspacePath: String,
     val reasoningEffort: String,
+    val profileId: String? = null,
+    val permissionPreset: String = "DEFAULT",
     val contextUsageFraction: Float,
     val executionState: String,
     val executionErrorTitle: String?,

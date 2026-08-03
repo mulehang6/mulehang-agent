@@ -5,6 +5,7 @@ import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
+import com.agent.shared.tool.model.PermissionPreset
 import java.util.UUID
 
 /**
@@ -25,6 +26,7 @@ internal fun initialUiState(
     val initialConversation = newConversation(
         workspacePath = projectPath,
         contextWindow = selectedProfile?.let(::resolveContextWindow),
+        profileId = selectedProfile?.id,
         reasoningEffort = selectedProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
     )
     return ChatWindowUiState(
@@ -40,12 +42,16 @@ internal fun initialUiState(
 internal fun newConversation(
     workspacePath: String,
     contextWindow: Int?,
+    profileId: String? = null,
     reasoningEffort: ReasoningEffort,
+    permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
 ): ChatConversationUiState = ChatConversationUiState(
     id = UUID.randomUUID().toString(),
     title = DEFAULT_CONVERSATION_TITLE,
     workspacePath = workspacePath,
+    profileId = profileId,
     reasoningEffort = reasoningEffort,
+    permissionPreset = permissionPreset,
     contextUsageFraction = estimateContextUsage(
         items = emptyList(),
         attachmentCount = 0,
@@ -85,4 +91,4 @@ internal fun ChatConversationUiState.isEmptyDefaultConversation(): Boolean =
 
 internal const val DEFAULT_CONVERSATION_TITLE = "新建对话"
 
-private const val CONVERSATION_TITLE_MAX_LENGTH = 24
+internal const val CONVERSATION_TITLE_MAX_LENGTH = 24

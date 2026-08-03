@@ -2,6 +2,7 @@ package com.agent.app.chat.persistence
 
 import com.agent.app.chat.state.ChatAttachmentUiState
 import com.agent.app.chat.state.ChatConversationUiState
+import com.agent.app.chat.state.ConversationTitleState
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.ReasoningEffort
@@ -12,6 +13,7 @@ import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.tool.model.PermissionPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -76,5 +78,68 @@ class ChatTaskSnapshotMapperTest {
 
         assertTrue(restored.executionState is ExecutionState.Failed)
         assertEquals("执行已中断", (restored.executionState as ExecutionState.Failed).error.title)
+    }
+
+    /**
+     * 非默认的 profile 绑定和权限档位也必须完整往返，不能被悄悄归一化为默认值。
+     */
+    @Test
+    fun `should round trip non default profile and permission preset`() {
+        val source = ChatConversationUiState(
+            id = "task-profile",
+            title = "绑定了非默认配置",
+            workspacePath = "D:\\workspace",
+            profileId = "deepseek:deepseek-v4-pro",
+            reasoningEffort = ReasoningEffort.HIGH,
+            permissionPreset = PermissionPreset.BRAVE,
+            executionState = ExecutionState.Idle,
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
+
+        assertEquals("deepseek:deepseek-v4-pro", restored.profileId)
+        assertEquals(ReasoningEffort.HIGH, restored.reasoningEffort)
+        assertEquals(PermissionPreset.BRAVE, restored.permissionPreset)
+    }
+
+    /**
+     * 无法识别的历史推理档位和权限档位字符串应安全回退到默认值，而不是抛出异常。
+     */
+    @Test
+    fun `should fall back to defaults for unrecognized persisted reasoning and permission values`() {
+        val legacyPersistedTask = ChatTaskSnapshotMapper.toPersistedTask(
+            ChatConversationUiState(
+                id = "task-legacy",
+                title = "旧版本数据",
+                workspacePath = "D:\\workspace",
+                executionState = ExecutionState.Idle,
+            ),
+        ).copy(
+            reasoningEffort = "ULTRA_UNKNOWN",
+            permissionPreset = "UNKNOWN_PRESET",
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(legacyPersistedTask)
+
+        assertEquals(ReasoningEffort.MEDIUM, restored.reasoningEffort)
+        assertEquals(PermissionPreset.DEFAULT, restored.permissionPreset)
+    }
+
+    /**
+     * 恢复的会话绝不能永久停留在标题生成中；持久化不记录该状态，恢复后一律归零。
+     */
+    @Test
+    fun `should never restore a conversation stuck in generating title state`() {
+        val source = ChatConversationUiState(
+            id = "task-generating-title",
+            title = "新建对话",
+            titleState = ConversationTitleState.GENERATING,
+            workspacePath = "D:\\workspace",
+            executionState = ExecutionState.Idle,
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
+
+        assertEquals(ConversationTitleState.NOT_REQUESTED, restored.titleState)
     }
 }

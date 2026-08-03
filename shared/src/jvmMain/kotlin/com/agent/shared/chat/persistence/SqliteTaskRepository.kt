@@ -20,8 +20,8 @@ class SqliteTaskRepository(
         openConnection().use { connection ->
             connection.prepareStatement(
                 """
-                SELECT id, title, workspace_path, reasoning_effort, context_usage_fraction,
-                    execution_state, execution_error_title, execution_error_message, attachments_json
+                SELECT id, title, workspace_path, reasoning_effort, profile_id, permission_preset,
+                    context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json
                 FROM task
                 ORDER BY updated_at DESC, id ASC
                 """.trimIndent(),
@@ -36,6 +36,8 @@ class SqliteTaskRepository(
                                     title = resultSet.getString("title"),
                                     workspacePath = resultSet.getString("workspace_path"),
                                     reasoningEffort = resultSet.getString("reasoning_effort"),
+                                    profileId = resultSet.getString("profile_id"),
+                                    permissionPreset = resultSet.getString("permission_preset"),
                                     contextUsageFraction = resultSet.getFloat("context_usage_fraction"),
                                     executionState = resultSet.getString("execution_state"),
                                     executionErrorTitle = resultSet.getString("execution_error_title"),
@@ -113,53 +115,57 @@ class SqliteTaskRepository(
                     """.trimIndent(),
                 )
             }
-            if (isMigrationApplied(this, INITIAL_SCHEMA_VERSION)) return@inTransaction
-            createStatement().use { statement ->
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task (
-                        id TEXT PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        workspace_path TEXT NOT NULL,
-                        reasoning_effort TEXT NOT NULL,
-                        context_usage_fraction REAL NOT NULL,
-                        execution_state TEXT NOT NULL,
-                        execution_error_title TEXT,
-                        execution_error_message TEXT,
-                        attachments_json TEXT NOT NULL,
-                        created_at INTEGER NOT NULL,
-                        updated_at INTEGER NOT NULL
+            if (!isMigrationApplied(this, INITIAL_SCHEMA_VERSION)) {
+                createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE task (
+                            id TEXT PRIMARY KEY,
+                            title TEXT NOT NULL,
+                            workspace_path TEXT NOT NULL,
+                            reasoning_effort TEXT NOT NULL,
+                            context_usage_fraction REAL NOT NULL,
+                            execution_state TEXT NOT NULL,
+                            execution_error_title TEXT,
+                            execution_error_message TEXT,
+                            attachments_json TEXT NOT NULL,
+                            created_at INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
                     )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_timeline_item (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        sequence INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, sequence)
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE task_timeline_item (
+                            task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+                            sequence INTEGER NOT NULL,
+                            type TEXT NOT NULL,
+                            payload_json TEXT NOT NULL,
+                            PRIMARY KEY (task_id, sequence)
+                        )
+                        """.trimIndent(),
                     )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_history_item (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        sequence INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, sequence)
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE task_history_item (
+                            task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+                            sequence INTEGER NOT NULL,
+                            type TEXT NOT NULL,
+                            payload_json TEXT NOT NULL,
+                            PRIMARY KEY (task_id, sequence)
+                        )
+                        """.trimIndent(),
                     )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate("CREATE INDEX task_workspace_updated_idx ON task(workspace_path, updated_at DESC)")
+                    statement.executeUpdate("CREATE INDEX task_workspace_updated_idx ON task(workspace_path, updated_at DESC)")
+                }
+                recordMigration(this, INITIAL_SCHEMA_VERSION)
             }
-            prepareStatement("INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)").use { statement ->
-                statement.setInt(1, INITIAL_SCHEMA_VERSION)
-                statement.setLong(2, System.currentTimeMillis())
-                statement.executeUpdate()
+            if (!isMigrationApplied(this, SESSION_PREFERENCES_SCHEMA_VERSION)) {
+                createStatement().use { statement ->
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN profile_id TEXT")
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN permission_preset TEXT NOT NULL DEFAULT 'DEFAULT'")
+                }
+                recordMigration(this, SESSION_PREFERENCES_SCHEMA_VERSION)
             }
         }
     }
@@ -172,6 +178,14 @@ class SqliteTaskRepository(
             statement.setInt(1, version)
             statement.executeQuery().use { resultSet -> resultSet.next() }
         }
+
+    private fun recordMigration(connection: Connection, version: Int) {
+        connection.prepareStatement("INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)").use { statement ->
+            statement.setInt(1, version)
+            statement.setLong(2, System.currentTimeMillis())
+            statement.executeUpdate()
+        }
+    }
 
     /**
      * 查询单个任务的有序时间线。
@@ -227,23 +241,25 @@ class SqliteTaskRepository(
         connection.prepareStatement(
             """
             INSERT INTO task(
-                id, title, workspace_path, reasoning_effort, context_usage_fraction,
-                execution_state, execution_error_title, execution_error_message,
+                id, title, workspace_path, reasoning_effort, profile_id, permission_preset,
+                context_usage_fraction, execution_state, execution_error_title, execution_error_message,
                 attachments_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, task.id)
             statement.setString(2, task.title)
             statement.setString(3, task.workspacePath)
             statement.setString(4, task.reasoningEffort)
-            statement.setFloat(5, task.contextUsageFraction)
-            statement.setString(6, task.executionState)
-            statement.setString(7, task.executionErrorTitle)
-            statement.setString(8, task.executionErrorMessage)
-            statement.setString(9, task.attachmentsJson)
-            statement.setLong(10, now)
-            statement.setLong(11, now)
+            statement.setString(5, task.profileId)
+            statement.setString(6, task.permissionPreset)
+            statement.setFloat(7, task.contextUsageFraction)
+            statement.setString(8, task.executionState)
+            statement.setString(9, task.executionErrorTitle)
+            statement.setString(10, task.executionErrorMessage)
+            statement.setString(11, task.attachmentsJson)
+            statement.setLong(12, now)
+            statement.setLong(13, now)
             statement.executeUpdate()
         }
     }
@@ -302,5 +318,6 @@ class SqliteTaskRepository(
 
     private companion object {
         const val INITIAL_SCHEMA_VERSION = 1
+        const val SESSION_PREFERENCES_SCHEMA_VERSION = 2
     }
 }

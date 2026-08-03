@@ -23,6 +23,7 @@ import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
+import com.agent.shared.agent.koog.KoogConversationTitleGenerator
 import com.agent.shared.agent.recording.JsonLinesAgentRunRecorder
 import com.agent.shared.agent.recording.RecordingAgentGateway
 import com.agent.shared.chat.usecase.SendMessageUseCase
@@ -78,6 +79,7 @@ internal fun WindowScope.MulehangDesktopApp(
                 projectRootState.value = DesktopProjectRootResolver.resolve(Paths.get(workspacePath))
             },
             persistenceCoordinator = taskPersistenceCoordinator,
+            conversationTitleGenerator = KoogConversationTitleGenerator(),
         )
     }
     stateHolder.value = windowState

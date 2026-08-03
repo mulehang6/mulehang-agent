@@ -9,6 +9,8 @@ import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
+import com.agent.shared.agent.api.ConversationTitleGenerator
+import com.agent.shared.agent.api.ConversationTitleRequest
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ChatMessage
@@ -38,12 +40,15 @@ class ChatWindowState(
     private val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
     private val onWorkspaceSelected: (String) -> Unit = {},
     private val persistenceCoordinator: TaskPersistenceCoordinator? = null,
+    private val conversationTitleGenerator: ConversationTitleGenerator? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
     private var activeRunConversationId: String? = null
     private var pendingQuestionConversationId: String? = null
     private var pendingApprovalConversationId: String? = null
+    private val conversationTitleJobs = mutableMapOf<String, Job>()
+    private val conversationTitleGenerationVersions = mutableMapOf<String, Int>()
     private var snapshot by mutableStateOf(snapshot)
 
     /**
@@ -70,7 +75,12 @@ class ChatWindowState(
      * 当前激活 profile。
      */
     val activeProfile: ConfigProfile?
-        get() = snapshot.profiles.firstOrNull { it.id == ui.selectedProfileId } ?: snapshot.activeProfile
+        get() {
+            val conversationProfileId = ui.activeConversationOrNull?.profileId
+            return snapshot.profiles.firstOrNull { it.id == conversationProfileId }
+                ?: snapshot.profiles.firstOrNull { it.id == ui.selectedProfileId }
+                ?: snapshot.activeProfile
+        }
 
     /**
      * 当前失败状态对应的 UI 可见错误文本。
@@ -89,19 +99,29 @@ class ChatWindowState(
             ?.takeIf { profileId -> snapshot.profiles.any { it.id == profileId } }
             ?: snapshot.activeProfile?.id
             ?: snapshot.profiles.firstOrNull()?.id
-        val selectedProfile = snapshot.profiles.firstOrNull { it.id == selectedProfileId } ?: snapshot.activeProfile
         ui = ui.copy(
             selectedProfileId = selectedProfileId,
             tasks = ui.tasks.map { conversation ->
+                val boundProfile = conversation.profileId?.let { profileId ->
+                    snapshot.profiles.firstOrNull { it.id == profileId }
+                }
+                // 没有显式绑定 profile 的会话代表"跟随窗口默认"，需要沿用与
+                // profileForConversation 相同的回退链，否则新快照的默认档位能力
+                // 不会传导到这些会话的 reasoning effort 和上下文窗口。
+                val effectiveProfile = boundProfile
+                    ?: snapshot.profiles.firstOrNull { it.id == selectedProfileId }
+                    ?: snapshot.activeProfile
                 conversation
                     .copy(
-                        reasoningEffort = selectedProfile?.let { profile ->
+                        profileId = conversation.profileId?.takeIf { boundProfile != null },
+                        reasoningEffort = effectiveProfile?.let { profile ->
                             resolvedReasoningEffort(profile, conversation.reasoningEffort)
                         } ?: conversation.reasoningEffort,
                     )
-                    .withRecalculatedContextUsage(selectedProfile?.let(::contextWindowFor))
+                    .withRecalculatedContextUsage(effectiveProfile?.let(::contextWindowFor))
             },
         )
+        persistenceCoordinator?.schedule(ui.tasks)
     }
 
     /**
@@ -126,31 +146,44 @@ class ChatWindowState(
     fun renameConversation(conversationId: String, title: String) {
         val normalizedTitle = title.trim()
         if (normalizedTitle.isBlank()) return
+        invalidateConversationTitleGeneration(conversationId)
         mutateConversation(conversationId) { conversation ->
-            conversation.copy(title = normalizedTitle)
+            conversation.copy(
+                title = normalizedTitle,
+                titleState = ConversationTitleState.GENERATED,
+            )
         }
     }
 
     /**
-     * 删除指定对话；删除当前对话时切换到剩余的第一条对话。
+     * 删除指定对话；删除当前对话时创建并激活同工作区的空白对话。
      */
     fun deleteConversation(conversationId: String) {
-        if (findConversationOrNull(conversationId) == null) return
+        val deletedConversation = findConversationOrNull(conversationId) ?: return
+        invalidateConversationTitleGeneration(conversationId)
         if (activeRunConversationId == conversationId) {
             activeRunJob?.cancel()
             activeRunJob = null
             activeRunConversationId = null
         }
         clearPendingOwnership(conversationId)
+        val isDeletingActiveConversation = ui.activeTaskId == conversationId
         val remainingTasks = ui.tasks.filterNot { it.id == conversationId }
-        val nextActiveTaskId = if (ui.activeTaskId == conversationId) {
-            remainingTasks.firstOrNull()?.id.orEmpty()
+        val replacementConversation = if (isDeletingActiveConversation) {
+            newConversation(
+                workspacePath = deletedConversation.workspacePath,
+                contextWindow = contextWindowForConversation(deletedConversation),
+                profileId = deletedConversation.profileId,
+                reasoningEffort = deletedConversation.reasoningEffort,
+                permissionPreset = deletedConversation.permissionPreset,
+            )
         } else {
-            ui.activeTaskId
+            null
         }
         ui = ui.copy(
-            tasks = remainingTasks,
-            activeTaskId = nextActiveTaskId,
+            tasks = replacementConversation?.let { conversation -> listOf(conversation) + remainingTasks } ?: remainingTasks,
+            activeTaskId = replacementConversation?.id ?: ui.activeTaskId,
+            draft = if (isDeletingActiveConversation) "" else ui.draft,
         )
         persistenceCoordinator?.schedule(ui.tasks)
     }
@@ -160,10 +193,16 @@ class ChatWindowState(
      */
     fun createConversationForWorkspace(workspacePath: String) {
         onWorkspaceSelected(workspacePath)
+        val preferenceSource = ui.activeConversationOrNull
+        val selectedProfile = activeProfile
         val conversation = newConversation(
             workspacePath = workspacePath,
-            contextWindow = activeContextWindow(),
-            reasoningEffort = activeProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
+            contextWindow = selectedProfile?.let(::contextWindowFor),
+            profileId = preferenceSource?.profileId ?: selectedProfile?.id,
+            reasoningEffort = preferenceSource?.reasoningEffort
+                ?: selectedProfile?.let(::defaultReasoningEffortFor)
+                ?: ReasoningEffort.MEDIUM,
+            permissionPreset = preferenceSource?.permissionPreset ?: PermissionPreset.DEFAULT,
         )
         val updatedTasks = if (shouldReplaceActiveEmptyConversation(workspacePath)) {
             ui.tasks.map { existing ->
@@ -201,7 +240,7 @@ class ChatWindowState(
                 contextUsageFraction = estimateContextUsage(
                     items = conversation.items,
                     attachmentCount = attachments.size,
-                    contextWindow = activeContextWindow(),
+                    contextWindow = contextWindowForConversation(conversation),
                 ),
             )
         }
@@ -218,7 +257,7 @@ class ChatWindowState(
                 contextUsageFraction = estimateContextUsage(
                     items = conversation.items,
                     attachmentCount = attachments.size,
-                    contextWindow = activeContextWindow(),
+                    contextWindow = contextWindowForConversation(conversation),
                 ),
             )
         }
@@ -228,28 +267,27 @@ class ChatWindowState(
      * 调整当前会话的权限档位。
      */
     fun updatePermission(permissionPreset: PermissionPreset) {
-        ui = ui.copy(permissionPreset = permissionPreset)
+        mutateActiveConversation { conversation ->
+            conversation.copy(permissionPreset = permissionPreset)
+        }
     }
 
     /**
      * 切换当前 profile。
      */
     fun selectProfile(profileId: String) {
-        val selectedProfile = snapshot.profiles.firstOrNull { it.id == profileId }
-        if (selectedProfile != null) {
-            ui = ui.copy(
-                selectedProfileId = profileId,
-                tasks = ui.tasks.map { conversation ->
-                    conversation
-                        .copy(
-                            reasoningEffort = resolvedReasoningEffort(
-                                profile = selectedProfile,
-                                preferredEffort = conversation.reasoningEffort,
-                            ) ?: conversation.reasoningEffort,
-                        )
-                        .withRecalculatedContextUsage(contextWindowFor(selectedProfile))
-                },
-            )
+        val selectedProfile = snapshot.profiles.firstOrNull { it.id == profileId } ?: return
+        ui = ui.copy(selectedProfileId = profileId)
+        mutateActiveConversation { conversation ->
+            conversation
+                .copy(
+                    profileId = profileId,
+                    reasoningEffort = resolvedReasoningEffort(
+                        profile = selectedProfile,
+                        preferredEffort = conversation.reasoningEffort,
+                    ) ?: conversation.reasoningEffort,
+                )
+                .withRecalculatedContextUsage(contextWindowFor(selectedProfile))
         }
     }
 
@@ -360,7 +398,8 @@ class ChatWindowState(
             return
         }
 
-        val profile = activeProfile
+        val sourceConversation = findConversation(targetConversationId)
+        val profile = profileForConversation(sourceConversation)
         if (profile == null) {
             mutateActiveConversation { conversation ->
                 conversation.copy(
@@ -375,8 +414,10 @@ class ChatWindowState(
             return
         }
 
-        val sourceConversation = findConversation(targetConversationId)
         val requestHistory = sourceConversation.history
+        val shouldGenerateConversationTitle = sourceConversation.title == DEFAULT_CONVERSATION_TITLE &&
+                sourceConversation.history.none { message -> message is AgentConversationHistoryMessage.User } &&
+                conversationTitleGenerator != null
         val reasoningEffort = supportedReasoningEffort(
             profile = profile,
             conversation = sourceConversation,
@@ -386,6 +427,11 @@ class ChatWindowState(
             conversation.copy(
                 title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
                     ?: buildConversationTitle(prompt),
+                titleState = if (shouldGenerateConversationTitle) {
+                    ConversationTitleState.GENERATING
+                } else {
+                    conversation.titleState
+                },
                 items = nextItems,
                 attachments = emptyList(),
                 history = conversation.history + AgentConversationHistoryMessage.User(content = prompt),
@@ -401,6 +447,13 @@ class ChatWindowState(
             )
         }
         ui = ui.copy(draft = "")
+        if (shouldGenerateConversationTitle) {
+            requestConversationTitle(
+                conversationId = targetConversationId,
+                firstUserMessage = prompt,
+                profile = profile,
+            )
+        }
 
         activeRunConversationId = targetConversationId
         activeRunJob = scope.launch {
@@ -412,7 +465,7 @@ class ChatWindowState(
                         history = requestHistory,
                         reasoningEffort = reasoningEffort,
                         workspacePath = sourceConversation.workspacePath,
-                        permissionPreset = ui.permissionPreset,
+                        permissionPreset = sourceConversation.permissionPreset,
                     ),
                 ).collect { event ->
                     applyAgentEvent(targetConversationId, event)
@@ -436,7 +489,7 @@ class ChatWindowState(
                     val withToolFailure = attachFailureToTimeline(
                         conversation = conversation,
                         reason = reason,
-                        contextWindow = activeContextWindow(),
+                        contextWindow = contextWindowForConversation(conversation),
                     )
                     withToolFailure.copy(
                         executionState = ExecutionState.Failed(
@@ -468,11 +521,18 @@ class ChatWindowState(
      */
     fun restoreTasks(tasks: List<ChatConversationUiState>) {
         if (tasks.isEmpty()) return
+        invalidateAllConversationTitleGenerations()
+        val restoredPreferenceSource = tasks.first()
+        val restoredProfile = profileForConversation(restoredPreferenceSource)
         val newConversation = ui.tasks.firstOrNull { it.isEmptyDefaultConversation() }
             ?: newConversation(
-                workspacePath = tasks.first().workspacePath,
-                contextWindow = activeContextWindow(),
-                reasoningEffort = activeProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
+                workspacePath = restoredPreferenceSource.workspacePath,
+                contextWindow = restoredProfile?.let(::contextWindowFor),
+                profileId = restoredPreferenceSource.profileId ?: restoredProfile?.id,
+                reasoningEffort = restoredProfile?.let { profile ->
+                    resolvedReasoningEffort(profile, restoredPreferenceSource.reasoningEffort)
+                } ?: restoredPreferenceSource.reasoningEffort,
+                permissionPreset = restoredPreferenceSource.permissionPreset,
             )
         ui = ui.copy(
             tasks = listOf(newConversation) + tasks.filterNot(ChatConversationUiState::isEmptyDefaultConversation),
@@ -522,6 +582,21 @@ class ChatWindowState(
     private fun activeContextWindow(): Int? = activeProfile?.let(::contextWindowFor)
 
     /**
+     * 按会话保存的 profile 解析可用配置；旧会话回退到窗口默认配置。
+     */
+    private fun profileForConversation(conversation: ChatConversationUiState): ConfigProfile? =
+        snapshot.profiles.firstOrNull { it.id == conversation.profileId }
+            ?: snapshot.profiles.firstOrNull { it.id == ui.selectedProfileId }
+            ?: snapshot.activeProfile
+
+    /**
+     * 根据会话绑定的 profile 解析上下文窗口。
+     */
+    private fun contextWindowForConversation(conversation: ChatConversationUiState): Int? =
+        snapshot.profiles.firstOrNull { it.id == conversation.profileId }?.let(::contextWindowFor)
+            ?: activeContextWindow()
+
+    /**
      * 解析指定 profile 的上下文窗口。
      */
     private fun contextWindowFor(profile: ConfigProfile): Int? =
@@ -548,7 +623,9 @@ class ChatWindowState(
 
             else -> Unit
         }
-        val contextWindow = activeContextWindow()
+        val contextWindow = findConversationOrNull(conversationId)
+            ?.let(::contextWindowForConversation)
+            ?: activeContextWindow()
         mutateConversation(conversationId) { conversation ->
             reduceAgentEvent(conversation, event, contextWindow)
         }
@@ -578,6 +655,85 @@ class ChatWindowState(
      */
     private fun mutateActiveConversation(transform: (ChatConversationUiState) -> ChatConversationUiState) {
         mutateConversation(ui.activeTaskId, transform)
+    }
+
+    /**
+     * 以独立、无工具的标题生成器更新首条用户消息所在会话。
+     */
+    private fun requestConversationTitle(
+        conversationId: String,
+        firstUserMessage: String,
+        profile: ConfigProfile,
+    ) {
+        val titleGenerator = conversationTitleGenerator ?: return
+        invalidateConversationTitleGeneration(conversationId)
+        val generationVersion = conversationTitleGenerationVersions.getValue(conversationId)
+        conversationTitleJobs[conversationId] = scope.launch {
+            val generatedTitle = try {
+                normalizeGeneratedConversationTitle(
+                    rawTitle = titleGenerator.generate(
+                        ConversationTitleRequest(
+                            firstUserMessage = firstUserMessage,
+                            profile = profile,
+                        ),
+                    ),
+                    fallbackTitle = buildConversationTitle(firstUserMessage),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            if (conversationTitleGenerationVersions[conversationId] != generationVersion) return@launch
+            conversationTitleJobs.remove(conversationId)
+            mutateConversation(conversationId) { conversation ->
+                if (generatedTitle == null) {
+                    conversation.copy(titleState = ConversationTitleState.FAILED)
+                } else {
+                    conversation.copy(
+                        title = generatedTitle,
+                        titleState = ConversationTitleState.GENERATED,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 取消标题任务，并递增版本以阻止迟到结果覆盖当前状态。
+     */
+    private fun invalidateConversationTitleGeneration(conversationId: String) {
+        conversationTitleJobs.remove(conversationId)?.cancel()
+        conversationTitleGenerationVersions[conversationId] =
+            (conversationTitleGenerationVersions[conversationId] ?: 0) + 1
+    }
+
+    /**
+     * 恢复持久化任务前，取消所有窗口内尚未完成的标题生成请求。
+     */
+    private fun invalidateAllConversationTitleGenerations() {
+        conversationTitleJobs.values.forEach(Job::cancel)
+        conversationTitleJobs.clear()
+        conversationTitleGenerationVersions.keys.toList().forEach(::invalidateConversationTitleGeneration)
+    }
+
+    /**
+     * 清洗模型格式标记，保证侧栏始终获得单行、有限长度的可读标题。
+     */
+    private fun normalizeGeneratedConversationTitle(
+        rawTitle: String,
+        fallbackTitle: String,
+    ): String {
+        val normalizedTitle = rawTitle
+            .replace(Regex("[*_`]+"), "")
+            .lineSequence()
+            .joinToString(separator = " ") { line -> line.trim() }
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .trim('"', '\'', '“', '”', '‘', '’')
+            .take(CONVERSATION_TITLE_MAX_LENGTH)
+            .trim()
+        return normalizedTitle.ifBlank { fallbackTitle }
     }
 
     /**

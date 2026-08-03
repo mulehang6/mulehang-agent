@@ -138,13 +138,11 @@ private fun assistantHistoryToKoogMessages(
 
             is AgentConversationHistoryPart.Reasoning -> {
                 val content = part.rawText ?: part.summary.orEmpty()
-                if (content.isNotBlank()) {
-                    beforeAssistantPart()
-                    assistantParts += MessagePart.Reasoning(
-                        content = listOf(content),
-                        summary = part.summary?.takeIf { it.isNotBlank() }?.let(::listOf),
-                    )
-                }
+                beforeAssistantPart()
+                assistantParts += MessagePart.Reasoning(
+                    content = listOf(content),
+                    summary = part.summary?.takeIf { it.isNotBlank() }?.let(::listOf),
+                )
             }
 
             is AgentConversationHistoryPart.ToolCall -> {

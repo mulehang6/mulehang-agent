@@ -65,12 +65,14 @@ internal suspend fun collectAssistantMessageFromStream(
                 accumulator.completeContent = frame.content
                 accumulator.completeSummary = frame.summary
                 accumulator.encrypted = frame.encrypted
-                emitEvent(
-                    AgentStreamEvent.ReasoningCompleted(
-                        summary = frame.summary?.joinToString(separator = ""),
-                        rawText = frame.content.joinToString(separator = ""),
-                    ),
-                )
+                if (hasVisibleReasoningText(frame)) {
+                    emitEvent(
+                        AgentStreamEvent.ReasoningCompleted(
+                            summary = frame.summary?.joinToString(separator = ""),
+                            rawText = frame.content.joinToString(separator = ""),
+                        ),
+                    )
+                }
             }
 
             is StreamFrame.ToolCallDelta -> {
@@ -169,23 +171,29 @@ private data class ReasoningAccumulator(
     var encrypted: String? = null,
 ) {
     /**
-     * 生成最终 reasoning part；没有内容时返回 null。
+     * 生成最终 reasoning part；空推理保留为带空文本的 part，使工具续传轮仍能回放
+     * 服务端要求原样传回的 reasoning_text 结构。
      */
-    fun toMessagePart(): MessagePart.Reasoning? {
+    fun toMessagePart(): MessagePart.Reasoning {
         val content = completeContent?.takeIf { it.isNotEmpty() }
             ?: deltaContent.takeIf { it.isNotEmpty() }
-        if (content.isNullOrEmpty()) {
-            return null
-        }
+            ?: emptyList()
         val summary = completeSummary ?: deltaSummary.takeIf { it.isNotEmpty() }
         return MessagePart.Reasoning(
             id = id,
-            content = content,
+            content = content.ifEmpty { listOf("") },
             summary = summary,
             encrypted = encrypted,
         )
     }
 }
+
+/**
+ * 判断 reasoning 完成帧是否携带可展示的思考文本，空推理不向 UI 发出完成事件。
+ */
+private fun hasVisibleReasoningText(frame: StreamFrame.ReasoningComplete): Boolean =
+    frame.content.any(String::isNotBlank) ||
+        frame.summary.orEmpty().any(String::isNotBlank)
 
 /**
  * 工具调用 part 的临时收集器。

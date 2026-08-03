@@ -122,6 +122,76 @@ class KoogAgentGatewayTest {
     }
 
     /**
+     * 工具续传轮可能只产出空 reasoning item；收敛结果必须保留 Reasoning part（带空文本），
+     * 使下一轮请求仍能回传 reasoning_text，且不向 UI 发出空思考事件。
+     */
+    @Test
+    fun `should retain empty reasoning part without emitting empty completion event`() = runTest {
+        val emittedEvents = mutableListOf<AgentStreamEvent>()
+
+        val message = collectAssistantMessageFromStream(
+            frames = flowOf(
+                StreamFrame.ReasoningComplete(id = "reasoning-1", content = emptyList()),
+                StreamFrame.ToolCallComplete(
+                    id = "call-1",
+                    name = "read_file",
+                    content = """{"path":"README.md"}""",
+                ),
+                StreamFrame.End(finishReason = "tool_calls"),
+            ),
+            emitEvent = { event: AgentStreamEvent -> emittedEvents.add(event) },
+        )
+
+        assertEquals(
+            listOf(
+                MessagePart.Reasoning(id = "reasoning-1", content = listOf("")),
+                MessagePart.Tool.Call(
+                    id = "call-1",
+                    tool = "read_file",
+                    args = """{"path":"README.md"}""",
+                ),
+            ),
+            message.parts,
+        )
+        assertFalse(emittedEvents.any { it is AgentStreamEvent.ReasoningCompleted })
+    }
+
+    /**
+     * 历史恢复时空的 reasoning 片段也必须保留，避免跨会话回放触发同样的 reasoning_text 回传校验。
+     */
+    @Test
+    fun `should keep empty reasoning part from structured history`() {
+        val messages = buildConversationMessages(
+            history = listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.Reasoning(summary = "", rawText = ""),
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
+                            name = "read_file",
+                            argumentsPreview = """{"path":"README.md"}""",
+                        ),
+                    ),
+                ),
+            ),
+            prompt = "second",
+        )
+
+        assertEquals(
+            listOf(
+                MessagePart.Reasoning(content = listOf("")),
+                MessagePart.Tool.Call(
+                    id = "call-1",
+                    tool = "read_file",
+                    args = """{"path":"README.md"}""",
+                ),
+            ),
+            assertIs<Message.Assistant>(messages[1]).parts,
+        )
+    }
+
+    /**
      * 自定义流式节点应把工具调用 frame 还原为可继续执行的 assistant message。
      */
     @Test

@@ -3,6 +3,7 @@
 package com.agent.app.design
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
@@ -312,6 +313,28 @@ internal const val SELECT_POPUP_FOCUSABLE = false
 /** Composer 下拉框说明在持续悬停多久后显示。 */
 internal const val SELECT_TOOLTIP_DELAY_MILLIS = 1500L
 
+/** 下拉菜单项的悬浮反馈需要比常规过渡更快，避免指针移动时产生迟滞感。 */
+internal const val SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 80
+
+private val SelectPopupMenuBackground = Color(0xFF262627)
+private val SelectPopupMenuHoverBackground = Color(0xFF245286)
+private val SelectPopupMenuBorder = Color(0xFF47494D)
+private val SelectPopupMenuShape = RoundedCornerShape(12.dp)
+private val SelectPopupMenuItemShape = RoundedCornerShape(8.dp)
+
+/**
+ * 返回下拉菜单项的底色：保留选中态，同时让可用项在悬浮时切换为 Air 蓝色高亮。
+ */
+internal fun selectMenuItemBackground(
+    selected: Boolean,
+    hovered: Boolean,
+    enabled: Boolean,
+): Color = when {
+    hovered && enabled -> SelectPopupMenuHoverBackground
+    selected -> AppSelectedBackground
+    else -> Color.Transparent
+}
+
 /**
  * 以按下 trigger 时的展开状态为准，避免 popup 的外部关闭先改写受控状态。
  */
@@ -344,6 +367,10 @@ internal fun RingSelectChip(
         var expandedAtPointerPress by remember { mutableStateOf<Boolean?>(null) }
         val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(120))
         val arrowRotation by animateFloatAsState(if (expanded) 180f else 0f, tween(120))
+        val popupMotion = rememberMenuGrowthMotion(
+            expanded = expanded,
+            label = "select-popup",
+        )
         Box {
             Surface(
                 shape = RoundedCornerShape(10.dp),
@@ -401,14 +428,22 @@ internal fun RingSelectChip(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = onDismissRequest,
-                modifier = Modifier.widthIn(min = anchorWidth, max = 280.dp),
+                modifier = Modifier
+                    .widthIn(min = anchorWidth, max = 280.dp)
+                    .graphicsLayer {
+                        transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Dropdown)
+                        scaleX = popupMotion.scale
+                        scaleY = popupMotion.scale
+                        alpha = popupMotion.alpha
+                        translationY = popupMotion.translationYDp * density.density
+                    },
                 offset = DpOffset(0.dp, (-4).dp),
                 properties = PopupProperties(focusable = SELECT_POPUP_FOCUSABLE),
-                shape = RoundedCornerShape(10.dp),
-                containerColor = AppSidebarBackground,
+                shape = SelectPopupMenuShape,
+                containerColor = SelectPopupMenuBackground,
                 tonalElevation = 0.dp,
-                shadowElevation = 8.dp,
-                border = BorderStroke(1.dp, AppLine),
+                shadowElevation = 12.dp,
+                border = BorderStroke(1.dp, SelectPopupMenuBorder),
             ) {
                 content()
             }
@@ -867,17 +902,21 @@ internal fun RingDropdownMenuItem(
     enabled: Boolean = true,
 ) {
     var hovered by remember { mutableStateOf(false) }
-    val backgroundColor = when {
-        selected -> AppSelectedBackground
-        hovered && enabled -> AppHoverBackground
-        else -> Color.Transparent
-    }
+    val backgroundColor by animateColorAsState(
+        targetValue = selectMenuItemBackground(
+            selected = selected,
+            hovered = hovered,
+            enabled = enabled,
+        ),
+        animationSpec = tween(durationMillis = SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS),
+        label = "select-popup-menu-hover",
+    )
     Row(
         modifier = modifier
             .padding(horizontal = 6.dp, vertical = 2.dp)
             .fillMaxWidth()
-            .height(40.dp)
-            .background(backgroundColor, RoundedCornerShape(7.dp))
+            .height(36.dp)
+            .background(backgroundColor, SelectPopupMenuItemShape)
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(enabled = enabled, onClick = onClick)

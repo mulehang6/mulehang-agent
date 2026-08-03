@@ -6,8 +6,19 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -15,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -52,12 +65,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.presentation.resolveWorkspaceForTaskCreation
 import com.agent.app.chat.state.ChatTaskListItemUiState
 import com.agent.app.chat.state.ChatTaskStatus
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.app.chat.state.ConversationTitleState
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppHoverBackground
@@ -67,17 +82,75 @@ import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.design.HeaderGlyph
+import com.agent.app.design.MenuGrowthOrigin
 import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.RingInputField
 import com.agent.app.design.RingPrimaryButton
 import com.agent.app.design.RingTooltip
+import com.agent.app.design.menuGrowthTransformOrigin
+import com.agent.app.design.rememberMenuGrowthMotion
 import com.agent.app.platform.pickWorkspaceDirectory
 
 internal const val TASK_SECTION_TITLE_FONT_SIZE_SP = 13
+internal const val TASK_LIST_ITEM_VERTICAL_PADDING_DP = 0
+internal const val TASK_LIST_ITEM_GAP_DP = 4
+internal const val TASK_CREATE_BUTTON_HEIGHT_DP = 40
+internal const val TASK_SECTION_ROW_HEIGHT_DP = 36
+internal const val TASK_LIST_ITEM_HEIGHT_DP = 40
+internal const val TASK_SECTION_CONTENT_GAP_DP = 4
+internal const val TITLE_GENERATING_DOT_COUNT = 3
+internal const val TASK_CONTEXT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 80
 
-private val TaskContextMenuBackground = Color(0xFF303744)
-private val TaskContextMenuHoverBackground = Color(0xFF3A4658)
-private val TaskContextMenuBorder = Color(0xFF49515E)
+/**
+ * 返回工作区标题使用的折叠状态键，避免与状态分组的折叠状态混用。
+ */
+internal fun workspaceCollapseKey(workspacePath: String): String = "workspace:$workspacePath"
+
+/**
+ * 标题生成期间只保留三点占位，避免把用户首条消息误当成最终任务名。
+ */
+internal fun shouldShowConversationTitleText(titleState: ConversationTitleState): Boolean =
+    titleState != ConversationTitleState.GENERATING
+
+/**
+ * 返回侧栏和标题栏共用的任务上下文菜单操作顺序。
+ */
+internal fun taskContextMenuLabels(): List<String> = listOf("Fork", "删除", "Archive", "重命名")
+
+internal val TaskContextMenuBackground = Color(0xFF262627)
+internal val TaskContextMenuHoverBackground = Color(0xFF245286)
+internal val TaskContextMenuBorder = Color(0xFF47494D)
+internal val TaskContextMenuDanger = Color(0xFFFF5C78)
+internal val TaskContextMenuWidth = 180.dp
+internal val TaskContextMenuShape = RoundedCornerShape(12.dp)
+internal val TaskContextMenuItemShape = RoundedCornerShape(8.dp)
+internal val TaskContextMenuItemHeight = 36.dp
+private val TaskSectionHoverBackground = Color(0xFF303744)
+
+/**
+ * 仅当可用菜单项被悬浮时显示 JetBrains Air 风格的蓝色高亮。
+ */
+internal fun taskContextMenuItemBackground(
+    hovered: Boolean,
+    enabled: Boolean,
+): Color = if (hovered && enabled) TaskContextMenuHoverBackground else Color.Transparent
+
+/**
+ * 将一个屏幕物理像素转换成当前 Compose 密度下的逻辑 Dp 宽度。
+ */
+internal fun onePhysicalPixel(density: Float): Dp = (1f / density).dp
+
+/**
+ * 将条目内部的鼠标像素坐标换算为菜单相对锚点的 Dp 偏移，使右键菜单紧贴光标打开。
+ */
+internal fun contextMenuOffsetForPointer(
+    pointerPosition: Offset,
+    anchorHeightPixels: Int,
+    density: Float,
+): DpOffset = DpOffset(
+    x = (pointerPosition.x / density).dp + 8.dp,
+    y = ((pointerPosition.y - anchorHeightPixels) / density).dp,
+)
 
 /**
  * 原型左侧 task 侧栏。
@@ -91,6 +164,8 @@ internal fun TaskSidebar(
     var searchQuery by remember { mutableStateOf("") }
     var contextMenuTaskId by remember { mutableStateOf<String?>(null) }
     var renamingTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
+    var collapsedSectionKeys by remember { mutableStateOf(emptySet<String>()) }
+    var collapsedWorkspaceKeys by remember { mutableStateOf(emptySet<String>()) }
     val startTaskInCurrentWorkspace: () -> Unit = {
         val workspacePath = resolveWorkspaceForTaskCreation(
             activeWorkspacePath = state.ui.activeConversationOrNull?.workspacePath,
@@ -159,7 +234,10 @@ internal fun TaskSidebar(
         RingPrimaryButton(
             text = "新建任务",
             onClick = startTaskInCurrentWorkspace,
-            modifier = Modifier.fillMaxWidth(),
+            compact = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TASK_CREATE_BUTTON_HEIGHT_DP.dp),
         )
         Column(
             modifier = Modifier
@@ -169,44 +247,112 @@ internal fun TaskSidebar(
         ) {
             filteredWorkspaces.forEach { workspace ->
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val workspaceKey = workspaceCollapseKey(workspace.workspacePath)
+                    val workspaceCollapsed = workspaceKey in collapsedWorkspaceKeys
+                    var workspaceHovered by remember(workspaceKey) { mutableStateOf(false) }
                     RingTooltip(text = workspace.workspacePath) {
-                        Text(
-                            text = workspace.label,
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                color = AppText,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                        )
-                    }
-                    workspace.sections.forEach { section ->
-                        Text(
-                            text = section.title,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = AppMuted,
-                                fontSize = TASK_SECTION_TITLE_FONT_SIZE_SP.sp,
-                                lineHeight = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.2.sp,
-                            ),
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            section.tasks.forEach { task ->
-                                TaskListItem(
-                                    task = task,
-                                    selected = task.id == state.ui.activeTaskId,
-                                    onClick = { state.selectConversation(task.id) },
-                                    contextMenuExpanded = contextMenuTaskId == task.id,
-                                    onOpenContextMenu = { contextMenuTaskId = task.id },
-                                    onDismissContextMenu = { contextMenuTaskId = null },
-                                    onRename = {
-                                        contextMenuTaskId = null
-                                        renamingTask = task
-                                    },
-                                    onDelete = {
-                                        contextMenuTaskId = null
-                                        state.deleteConversation(task.id)
-                                    },
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(TASK_SECTION_ROW_HEIGHT_DP.dp)
+                                .background(
+                                    color = if (workspaceHovered) TaskSectionHoverBackground else Color.Transparent,
+                                    shape = RoundedCornerShape(10.dp),
                                 )
+                                .onPointerEvent(PointerEventType.Enter) { workspaceHovered = true }
+                                .onPointerEvent(PointerEventType.Exit) { workspaceHovered = false }
+                                .clickable {
+                                    collapsedWorkspaceKeys = if (workspaceCollapsed) {
+                                        collapsedWorkspaceKeys - workspaceKey
+                                    } else {
+                                        collapsedWorkspaceKeys + workspaceKey
+                                    }
+                                }
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = workspace.label,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    color = AppText,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                            )
+                            TaskSectionChevron(expanded = !workspaceCollapsed)
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = !workspaceCollapsed,
+                        enter = expandVertically(tween(durationMillis = 200)) + fadeIn(tween(durationMillis = 140)),
+                        exit = shrinkVertically(tween(durationMillis = 150)) + fadeOut(tween(durationMillis = 110)),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(TASK_SECTION_CONTENT_GAP_DP.dp)) {
+                            workspace.sections.forEach { section ->
+                                Column(verticalArrangement = Arrangement.spacedBy(TASK_SECTION_CONTENT_GAP_DP.dp)) {
+                                    val sectionKey = "${workspace.workspacePath}:${section.title}"
+                                    val collapsed = sectionKey in collapsedSectionKeys
+                                    var sectionHovered by remember(sectionKey) { mutableStateOf(false) }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(TASK_SECTION_ROW_HEIGHT_DP.dp)
+                                            .background(
+                                                color = if (sectionHovered) TaskSectionHoverBackground else Color.Transparent,
+                                                shape = RoundedCornerShape(10.dp),
+                                            )
+                                            .onPointerEvent(PointerEventType.Enter) { sectionHovered = true }
+                                            .onPointerEvent(PointerEventType.Exit) { sectionHovered = false }
+                                            .clickable {
+                                                collapsedSectionKeys = if (collapsed) {
+                                                    collapsedSectionKeys - sectionKey
+                                                } else {
+                                                    collapsedSectionKeys + sectionKey
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = section.title,
+                                            modifier = Modifier.weight(1f),
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                color = AppMuted,
+                                                fontSize = TASK_SECTION_TITLE_FONT_SIZE_SP.sp,
+                                                lineHeight = 18.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                letterSpacing = 0.2.sp,
+                                            ),
+                                        )
+                                        TaskSectionChevron(expanded = !collapsed)
+                                    }
+                                    AnimatedVisibility(
+                                        visible = !collapsed,
+                                        enter = expandVertically(tween(durationMillis = 200)) + fadeIn(tween(durationMillis = 140)),
+                                        exit = shrinkVertically(tween(durationMillis = 150)) + fadeOut(tween(durationMillis = 110)),
+                                    ) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(TASK_LIST_ITEM_GAP_DP.dp)) {
+                                            section.tasks.forEach { task ->
+                                                TaskListItem(
+                                                    task = task,
+                                                    selected = task.id == state.ui.activeTaskId,
+                                                    onClick = { state.selectConversation(task.id) },
+                                                    contextMenuExpanded = contextMenuTaskId == task.id,
+                                                    onOpenContextMenu = { contextMenuTaskId = task.id },
+                                                    onDismissContextMenu = { contextMenuTaskId = null },
+                                                    onRename = {
+                                                        contextMenuTaskId = null
+                                                        renamingTask = task
+                                                    },
+                                                    onDelete = {
+                                                        contextMenuTaskId = null
+                                                        state.deleteConversation(task.id)
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -215,7 +361,7 @@ internal fun TaskSidebar(
         }
         renamingTask?.let { task ->
             TaskRenameDialog(
-                task = task,
+                initialTitle = task.title,
                 onDismiss = { renamingTask = null },
                 onConfirm = { title ->
                     state.renameConversation(task.id, title)
@@ -223,6 +369,39 @@ internal fun TaskSidebar(
                 },
             )
         }
+    }
+}
+
+/**
+ * 使用几何线条绘制状态分组箭头，避免依赖字体 glyph 而显示为方框。
+ */
+@Composable
+private fun TaskSectionChevron(expanded: Boolean) {
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 90f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "task-section-chevron",
+    )
+    Canvas(
+        modifier = Modifier
+            .size(16.dp)
+            .graphicsLayer { rotationZ = rotation },
+    ) {
+        val stroke = 1.8.dp.toPx()
+        drawLine(
+            color = AppMuted,
+            start = Offset(size.width * 0.33f, size.height * 0.24f),
+            end = Offset(size.width * 0.65f, size.height * 0.5f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = AppMuted,
+            start = Offset(size.width * 0.65f, size.height * 0.5f),
+            end = Offset(size.width * 0.33f, size.height * 0.76f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
     }
 }
 
@@ -244,12 +423,15 @@ private fun TaskListItem(
     var contextMenuClickPosition by remember { mutableStateOf(Offset.Zero) }
     var hovered by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    val contextMenuOffset = with(density) {
-        DpOffset(
-            x = contextMenuClickPosition.x.toDp() + 8.dp,
-            y = contextMenuClickPosition.y.toDp() - anchorHeightPixels.toDp(),
-        )
-    }
+    val contextMenuMotion = rememberMenuGrowthMotion(
+        expanded = contextMenuExpanded,
+        label = "task-context-menu",
+    )
+    val contextMenuOffset = contextMenuOffsetForPointer(
+        pointerPosition = contextMenuClickPosition,
+        anchorHeightPixels = anchorHeightPixels,
+        density = density.density,
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -266,7 +448,9 @@ private fun TaskListItem(
             .onPointerEvent(PointerEventType.Exit) { hovered = false },
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TASK_LIST_ITEM_HEIGHT_DP.dp),
             shape = RoundedCornerShape(12.dp),
             color = when {
                 selected -> AppSelectedBackground
@@ -276,25 +460,44 @@ private fun TaskListItem(
             border = null,
             onClick = onClick,
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        horizontal = 10.dp,
+                        vertical = TASK_LIST_ITEM_VERTICAL_PADDING_DP.dp,
+                    ),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        text = task.title,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = AppText,
-                            fontWeight = FontWeight.Medium,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (shouldShowConversationTitleText(task.titleState)) {
+                        Text(
+                            text = task.title,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = AppText,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    AnimatedVisibility(
+                        visible = task.titleState == ConversationTitleState.GENERATING,
+                        enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
+                                scaleIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS), initialScale = 0.95f),
+                        exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
+                                scaleOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS), targetScale = 0.95f),
+                    ) {
+                        TitleGeneratingIndicator()
+                    }
                     TaskStatusIndicator(task.status)
                 }
             }
@@ -303,67 +506,96 @@ private fun TaskListItem(
             expanded = contextMenuExpanded,
             onDismissRequest = onDismissContextMenu,
             offset = contextMenuOffset,
-            modifier = Modifier.width(144.dp),
-            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .width(TaskContextMenuWidth)
+                .graphicsLayer {
+                    transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Context)
+                    scaleX = contextMenuMotion.scale
+                    scaleY = contextMenuMotion.scale
+                    alpha = contextMenuMotion.alpha
+                    translationY = contextMenuMotion.translationYDp * density.density
+                },
+            shape = TaskContextMenuShape,
             containerColor = TaskContextMenuBackground,
             tonalElevation = 0.dp,
-            border = BorderStroke(1.dp, TaskContextMenuBorder),
+            shadowElevation = 12.dp,
+            border = BorderStroke(onePhysicalPixel(density.density), TaskContextMenuBorder),
         ) {
-            TaskContextMenuItem(
-                text = "Fork",
-                color = AppMuted.copy(alpha = 0.52f),
-                enabled = false,
-                onClick = {},
-            )
-            TaskContextMenuItem(
-                text = "删除",
-                color = AppDanger,
-                onClick = onDelete,
-            )
-            TaskContextMenuItem(
-                text = "Archive",
-                color = AppMuted.copy(alpha = 0.52f),
-                enabled = false,
-                onClick = {},
-            )
-            TaskContextMenuItem(
-                text = "重命名",
-                color = AppText,
-                onClick = onRename,
+            TaskContextMenuActions(
+                onDelete = onDelete,
+                onRename = onRename,
             )
         }
     }
 }
 
 /**
+ * 侧栏和标题栏共用的任务上下文菜单内容，确保操作顺序、可用状态与视觉一致。
+ */
+@Composable
+internal fun TaskContextMenuActions(
+    onDelete: () -> Unit,
+    onRename: () -> Unit,
+) {
+    TaskContextMenuItem(
+        text = taskContextMenuLabels()[0],
+        color = AppMuted.copy(alpha = 0.52f),
+        enabled = false,
+        onClick = {},
+    )
+    TaskContextMenuItem(
+        text = taskContextMenuLabels()[1],
+        color = TaskContextMenuDanger,
+        onClick = onDelete,
+    )
+    TaskContextMenuItem(
+        text = taskContextMenuLabels()[2],
+        color = AppMuted.copy(alpha = 0.52f),
+        enabled = false,
+        onClick = {},
+    )
+    TaskContextMenuItem(
+        text = taskContextMenuLabels()[3],
+        color = AppText,
+        onClick = onRename,
+    )
+}
+
+/**
  * 右键菜单内高度紧凑的操作项。
  */
 @Composable
-private fun TaskContextMenuItem(
+internal fun TaskContextMenuItem(
     text: String,
     color: Color,
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
     var hovered by remember { mutableStateOf(false) }
+    val backgroundColor by animateColorAsState(
+        targetValue = taskContextMenuItemBackground(hovered = hovered, enabled = enabled),
+        animationSpec = tween(durationMillis = TASK_CONTEXT_MENU_HOVER_TRANSITION_DURATION_MILLIS),
+        label = "task-context-menu-hover",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(TaskContextMenuItemHeight)
             .background(
-                color = if (hovered && enabled) TaskContextMenuHoverBackground else Color.Transparent,
-                shape = RoundedCornerShape(8.dp),
+                color = backgroundColor,
+                shape = TaskContextMenuItemShape,
             )
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium.copy(
+            style = MaterialTheme.typography.bodyLarge.copy(
                 color = color,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
             ),
         )
@@ -374,12 +606,12 @@ private fun TaskContextMenuItem(
  * 为 task 名称提供可编辑的重命名弹窗。
  */
 @Composable
-private fun TaskRenameDialog(
-    task: ChatTaskListItemUiState,
+internal fun TaskRenameDialog(
+    initialTitle: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var title by remember(task.id) { mutableStateOf(task.title) }
+    var title by remember(initialTitle) { mutableStateOf(initialTitle) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AppSidebarBackground,
@@ -411,10 +643,48 @@ private fun TaskRenameDialog(
 }
 
 /**
+ * AI 标题生成中的三点呼吸提示；与任务运行中的旋转进度圈明确区分。
+ */
+@Composable
+internal fun TitleGeneratingIndicator() {
+    val transition = rememberInfiniteTransition(label = "title-generating-dots")
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(TITLE_GENERATING_DOT_COUNT) { index ->
+            val intensity by transition.animateFloat(
+                initialValue = 0.32f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = 360,
+                        delayMillis = index * 100,
+                        easing = CubicBezierEasing(0.22f, 0.82f, 0.24f, 1f),
+                    ),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "title-generating-dot-$index",
+            )
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .graphicsLayer {
+                        alpha = intensity
+                        scaleX = 0.82f + intensity * 0.18f
+                        scaleY = 0.82f + intensity * 0.18f
+                    }
+                    .background(AppAccent, CircleShape),
+            )
+        }
+    }
+}
+
+/**
  * 在条目右侧提供新建、运行和完成三种紧凑状态标识。
  */
 @Composable
-private fun TaskStatusIndicator(status: ChatTaskStatus) {
+internal fun TaskStatusIndicator(status: ChatTaskStatus) {
     val rotationTransition = rememberInfiniteTransition(label = "running-task-indicator")
     val rotation by rotationTransition.animateFloat(
         initialValue = 0f,

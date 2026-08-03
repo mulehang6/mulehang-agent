@@ -123,6 +123,7 @@ internal fun WindowScope.ChatScreen(
                     .captureWorkspaceBackdrop(workspaceBackdropState),
             ) {
                 ChatHeader(
+                    state = state,
                     sidebarVisible = sidebarVisible,
                     onToggleSidebar = { sidebarVisible = !sidebarVisible },
                     windowState = desktopWindowState,

@@ -38,6 +38,7 @@ import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -54,6 +55,9 @@ import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
+import com.agent.app.design.MenuGrowthOrigin
+import com.agent.app.design.menuGrowthTransformOrigin
+import com.agent.app.design.rememberMenuGrowthMotion
 import com.agent.app.platform.buildPowerShellCommand
 import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.ProcessTtyConnector
@@ -235,6 +239,10 @@ internal fun EmbeddedTerminalPanel(
     var contextMenuTabId by remember { mutableStateOf<Long?>(null) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var addHovered by remember { mutableStateOf(false) }
+    val contextMenuMotion = rememberMenuGrowthMotion(
+        expanded = contextMenuTabId != null,
+        label = "terminal-context-menu",
+    )
     val addHoverOpacity by animateFloatAsState(
         targetValue = terminalActionGlowAlpha(addHovered),
         animationSpec = tween(TERMINAL_HOVER_TRANSITION_DURATION_MILLIS, easing = FastOutSlowInEasing),
@@ -333,7 +341,15 @@ internal fun EmbeddedTerminalPanel(
             expanded = contextMenuTabId != null,
             onDismissRequest = { contextMenuTabId = null },
             offset = contextMenuOffset,
-            modifier = Modifier.width(152.dp),
+            modifier = Modifier
+                .width(152.dp)
+                .graphicsLayer {
+                    transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Context)
+                    scaleX = contextMenuMotion.scale
+                    scaleY = contextMenuMotion.scale
+                    alpha = contextMenuMotion.alpha
+                    translationY = contextMenuMotion.translationYDp * density.density
+                },
             shape = RoundedCornerShape(8.dp),
             containerColor = TerminalTabActiveBackground,
             tonalElevation = 0.dp,

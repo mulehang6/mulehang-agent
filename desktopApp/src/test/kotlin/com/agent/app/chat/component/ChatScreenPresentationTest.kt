@@ -5,6 +5,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.design.HeaderGlyph
@@ -16,10 +17,13 @@ import com.agent.app.design.COMPOSER_PRIMARY_GLYPH_SIZE_DP
 import com.agent.app.design.RAIL_ACTION_SIZE_DP
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.SELECT_POPUP_FOCUSABLE
+import com.agent.app.design.SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS
 import com.agent.app.design.SELECT_TOOLTIP_DELAY_MILLIS
 import com.agent.app.design.buildHeaderActions
 import com.agent.app.design.buildRightRailGroups
 import com.agent.app.design.desiredSelectExpandedState
+import com.agent.app.design.menuGrowthTargets
+import com.agent.app.design.selectMenuItemBackground
 import com.agent.app.design.workspaceBackdropOffset
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ExecutionState
@@ -63,6 +67,72 @@ class ChatScreenPresentationTest {
     }
 
     /**
+     * 原生标题栏内的任务上下文也必须通过 AWT 客户区命中层接收点击，不能依赖 Compose clickable。
+     */
+    @Test
+    fun `should route native title bar task context click through awt hit target`() {
+        var clientAreaRequests = 0
+        var clicks = 0
+        val hitTarget = createNativeTitleBarTaskHitTarget(
+            onClientMouseEvent = { clientAreaRequests += 1 },
+            onClick = { clicks += 1 },
+        ).apply {
+            setSize(360, 36)
+        }
+
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_ENTERED))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_MOVED))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON3))
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON3))
+
+        assertEquals(6, clientAreaRequests)
+        assertEquals(2, clicks)
+    }
+
+    /**
+     * 原生标题栏的任务命中层覆盖在 Compose 之上时，悬浮反馈必须由自身绘制而非依赖被遮挡的 Compose 背景。
+     */
+    @Test
+    fun `should paint hover feedback for native title bar task hit target`() {
+        val hitTarget = createNativeTitleBarTaskHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        ).apply {
+            setSize(120, 36)
+        }
+        hitTarget.dispatchEvent(mouseEvent(hitTarget, MouseEvent.MOUSE_ENTERED))
+        val image = BufferedImage(120, 36, BufferedImage.TYPE_INT_ARGB)
+        val graphics = image.createGraphics()
+        try {
+            hitTarget.paint(graphics)
+        } finally {
+            graphics.dispose()
+        }
+
+        assertEquals(java.awt.Color(0x35, 0x38, 0x3E).rgb, image.getRGB(8, 18))
+    }
+
+    /** 标题栏任务胶囊应保持紧凑，不能跟随整条标题栏的高度膨胀。 */
+    @Test
+    fun `should keep title bar task capsule compact`() {
+        assertEquals(36, HEADER_TASK_CHIP_HEIGHT_DP)
+        assertEquals(8, HEADER_TASK_CHIP_HORIZONTAL_PADDING_DP)
+    }
+
+    /** 原生标题栏任务入口不应显示平台默认风格的系统提示气泡。 */
+    @Test
+    fun `should not show system tooltip for native title bar task target`() {
+        val hitTarget = createNativeTitleBarTaskHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        )
+
+        assertNull(hitTarget.toolTipText)
+    }
+
+    /**
      * Swing 互操作命中组件必须使用标题栏底色，不能在菜单四周露出默认白色画布。
      */
     @Test
@@ -96,6 +166,73 @@ class ChatScreenPresentationTest {
         )
 
         assertEquals(java.awt.Color(0x1E, 0x1F, 0x22), interopHost.background)
+    }
+
+    /**
+     * 标题任务命中层的 Swing 宿主必须使用深色标题栏底色，不能让透明面板回退为白色画布。
+     */
+    @Test
+    fun `should synchronize native title bar task hit overlay background`() {
+        val interopHost = JPanel().apply {
+            background = java.awt.Color(0xEE, 0xEE, 0xEE)
+        }
+        val hitTarget = createNativeTitleBarTaskHitTarget(
+            onClientMouseEvent = {},
+            onClick = {},
+        )
+        interopHost.add(hitTarget)
+
+        synchronizeNativeTitleBarTaskInteropBackground(hitTarget)
+
+        assertEquals(java.awt.Color(0x1E, 0x1F, 0x22), interopHost.background)
+        assertEquals(true, interopHost.isOpaque)
+    }
+
+    /** 标题栏和侧栏任务入口必须展示完全相同的操作菜单。 */
+    @Test
+    fun `should expose the same task context menu actions everywhere`() {
+        assertEquals(listOf("Fork", "删除", "Archive", "重命名"), taskContextMenuLabels())
+    }
+
+    /** Air 风格菜单只在悬浮可用操作时显示蓝色圆角高亮。 */
+    @Test
+    fun `should use air blue highlight only while task menu item hovers`() {
+        assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = false, enabled = true))
+        assertEquals(Color(0xFF245286), taskContextMenuItemBackground(hovered = true, enabled = true))
+        assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = true, enabled = false))
+    }
+
+    /** Air 风格菜单应保持紧凑，不能按参考截图的物理像素尺寸直接放大。 */
+    @Test
+    fun `should keep air task context menu compact`() {
+        assertEquals(180.dp, TaskContextMenuWidth)
+        assertEquals(36.dp, TaskContextMenuItemHeight)
+    }
+
+    /** Air 菜单边框按物理像素计算，高 DPI 下不能加粗成多个屏幕像素。 */
+    @Test
+    fun `should keep task context menu border to one physical pixel`() {
+        assertEquals(1.dp, onePhysicalPixel(density = 1f))
+        assertEquals(0.5.dp, onePhysicalPixel(density = 2f))
+    }
+
+    /** 右键菜单项悬浮反馈必须紧跟指针，不能保留可感知的颜色延迟。 */
+    @Test
+    fun `should react to task context menu hover without delay`() {
+        assertEquals(80, TASK_CONTEXT_MENU_HOVER_TRANSITION_DURATION_MILLIS)
+    }
+
+    /** 右键菜单以鼠标位置为锚点，并从条目底部坐标修正为光标附近。 */
+    @Test
+    fun `should place task context menu beside pointer`() {
+        assertEquals(
+            androidx.compose.ui.unit.DpOffset(58.dp, (-20).dp),
+            contextMenuOffsetForPointer(
+                pointerPosition = Offset(100f, 40f),
+                anchorHeightPixels = 80,
+                density = 2f,
+            ),
+        )
     }
 
     /**
@@ -523,6 +660,22 @@ class ChatScreenPresentationTest {
         assertEquals(1500L, SELECT_TOOLTIP_DELAY_MILLIS)
     }
 
+    /** 下拉菜单弹出层沿用 Air 菜单的蓝色悬浮高亮，并以更短的反馈时长响应指针。 */
+    @Test
+    fun `should use air hover treatment for select popup menu items`() {
+        assertEquals(Color.Transparent, selectMenuItemBackground(selected = false, hovered = false, enabled = true))
+        assertEquals(Color(0xFF245286), selectMenuItemBackground(selected = false, hovered = true, enabled = true))
+        assertEquals(Color(0xFF2E436E), selectMenuItemBackground(selected = true, hovered = false, enabled = true))
+        assertEquals(80, SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS)
+    }
+
+    /** 下拉弹出层从触发器一侧轻微放大进入，以保持展开过程有空间感且不拖沓。 */
+    @Test
+    fun `should give select popup a subtle growth entry scale`() {
+        assertEquals(0.96f, menuGrowthTargets(expanded = false).scale)
+        assertEquals(1f, menuGrowthTargets(expanded = true).scale)
+    }
+
     /**
      * 顶部 header 操作区应保持 menu / share / settings / help 的固定顺序。
      */
@@ -634,6 +787,55 @@ class ChatScreenPresentationTest {
     fun `should show scroll to bottom button only away from latest output`() {
         assertEquals(true, shouldShowScrollToBottomButton(isFollowingLatest = false))
         assertEquals(false, shouldShowScrollToBottomButton(isFollowingLatest = true))
+        assertEquals(
+            false,
+            shouldShowScrollToBottomButton(
+                isFollowingLatest = false,
+                hasTimelineContent = false,
+            ),
+        )
+    }
+
+    /**
+     * 标题栏应直接展示工作区、分支和当前任务名；新建会话保留默认任务名。
+     */
+    @Test
+    fun `should build compact header label for new conversation`() {
+        assertEquals(
+            "mulehang-agent : main / 新建对话",
+            buildHeaderConversationLabel("mulehang-agent", "main", "新建对话"),
+        )
+    }
+
+    /** 标题生成中仍须显示项目和分支，只将任务标题槽替换为加载指示器。 */
+    @Test
+    fun `should keep workspace context while header title generates`() {
+        assertEquals(
+            "mulehang-agent : main /",
+            buildHeaderConversationPrefix("mulehang-agent", "main"),
+        )
+    }
+
+    /** 标题栏当前任务名必须比辅助文本更醒目。 */
+    @Test
+    fun `should use a larger title bar task font`() {
+        assertEquals(16, HEADER_TASK_TITLE_FONT_SIZE_SP)
+    }
+
+    /** 拖选到输入框上下边缘时，滚动方向必须跟随指针方向。 */
+    @Test
+    fun `should scroll composer while dragging selection near its edges`() {
+        assertEquals(-24f, composerSelectionScrollDelta(pointerY = 4f, viewportHeight = 100))
+        assertEquals(24f, composerSelectionScrollDelta(pointerY = 96f, viewportHeight = 100))
+        assertEquals(0f, composerSelectionScrollDelta(pointerY = 50f, viewportHeight = 100))
+    }
+
+    /** Shift 加方向键扩展选择范围时，输入框需要同步滚动。 */
+    @Test
+    fun `should scroll composer for keyboard text selection`() {
+        assertEquals(-28f, composerKeyboardSelectionScrollDelta(Key.DirectionUp, isShiftPressed = true))
+        assertEquals(28f, composerKeyboardSelectionScrollDelta(Key.DirectionDown, isShiftPressed = true))
+        assertEquals(0f, composerKeyboardSelectionScrollDelta(Key.DirectionUp, isShiftPressed = false))
     }
 
     /**
@@ -674,12 +876,23 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * 工具输出区域仅在内容超出其最大可见高度时才应显示滚动条。
+     * 长消息输入不能挤占整个主区域，输入框最多使用可用主区域的一半高度。
      */
     @Test
-    fun `should show tool output scrollbar only when content overflows`() {
-        assertEquals(false, shouldShowToolOutputScrollbar(canScrollForward = false))
-        assertEquals(true, shouldShowToolOutputScrollbar(canScrollForward = true))
+    fun `should cap composer input to half of workspace height`() {
+        assertEquals(400.dp, maxComposerInputHeight(800.dp))
+        assertEquals(false, shouldShowComposerInputScrollbar(maxScrollValue = 0))
+        assertEquals(true, shouldShowComposerInputScrollbar(maxScrollValue = 1))
+    }
+
+    /**
+     * 所有工具输出使用统一的最大可视高度，超出后只在卡片内部滚动。
+     */
+    @Test
+    fun `should constrain overflowing tool output and show its scrollbar`() {
+        assertEquals(320.dp, TOOL_EVENT_OUTPUT_MAX_HEIGHT)
+        assertEquals(false, shouldShowToolOutputScrollbar(maxScrollValue = 0))
+        assertEquals(true, shouldShowToolOutputScrollbar(maxScrollValue = 1))
     }
 
     /**

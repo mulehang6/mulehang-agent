@@ -2,6 +2,7 @@ package com.agent.shared.agent.koog
 
 import ai.koog.prompt.executor.clients.openai.OpenAIChatParams
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.prompt.buildLlmModel
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType
@@ -54,10 +55,33 @@ class KoogPromptTest {
         assertTrue(prompt.contains("不要使用引号、Markdown"))
     }
 
+    /**
+     * Anthropic 兼容 profile 的 client settings 应保留 baseUrl，并把运行时构造的
+     * LLModel 映射回配置的模型 ID，绕开 Koog 内置 Claude 白名单。
+     */
+    @Test
+    fun `should map anthropic compatible model to configured model id`() {
+        val profile = anthropicCompatibleProfile()
+        val settings = buildAnthropicClientSettings(profile)
+
+        assertEquals(profile.baseUrl, settings.baseUrl)
+        assertEquals(profile.model, settings.modelVersionsMap[buildLlmModel(profile)])
+    }
+
     private fun deepSeekProfile(): ConfigProfile = ConfigProfile(
         id = "deepseek",
         providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
         baseUrl = "https://api.deepseek.com/v1",
+        apiKey = "key",
+        model = "deepseek-v4-flash",
+        enabled = true,
+        layer = ConfigLayer.PROJECT,
+    )
+
+    private fun anthropicCompatibleProfile(): ConfigProfile = ConfigProfile(
+        id = "deepseek-anthropic",
+        providerType = ProviderType.ANTHROPIC,
+        baseUrl = "https://api.deepseek.com/anthropic",
         apiKey = "key",
         model = "deepseek-v4-flash",
         enabled = true,

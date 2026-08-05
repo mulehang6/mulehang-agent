@@ -8,6 +8,7 @@ import ai.koog.prompt.executor.clients.anthropic.AnthropicClientSettings
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
+import com.agent.shared.agent.prompt.buildLlmModel
 import com.agent.shared.agent.prompt.buildOpenAIClientSettings
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.IllegalConfigExceptions
@@ -266,6 +267,20 @@ private fun appendTrailingEmptyUserMessage(input: List<JsonElement>): JsonObject
 }
 
 /**
+ * 为 Anthropic 兼容端点构造 client settings，把运行时 LLModel 映射回配置的模型 ID。
+ *
+ * Koog 的 `AnthropicClientSettings.modelVersionsMap` 默认只包含内置 Claude 模型，
+ * 序列化前用 `settings.modelVersionsMap[model] ?: throw` 查找请求模型；不提供自定义
+ * 映射时，`deepseek-v4-flash` 等兼容端点模型会在网络请求前报 `Unsupported model`。
+ * 运行时请求从同一 profile 构造等价的 LLModel，因此单条目映射即可覆盖所有请求。
+ */
+internal fun buildAnthropicClientSettings(config: ConfigProfile): AnthropicClientSettings =
+    AnthropicClientSettings(
+        modelVersionsMap = mapOf(buildLlmModel(config) to config.model),
+        baseUrl = config.baseUrl,
+    )
+
+/**
  * 按配置创建 Desktop 平台使用的 Koog prompt executor。
  */
 internal fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor {
@@ -282,7 +297,7 @@ internal fun buildPromptExecutor(config: ConfigProfile): MultiLLMPromptExecutor 
         ProviderType.ANTHROPIC -> {
             val anthropicLLMClient = AnthropicLLMClient(
                 apiKey = config.apiKey,
-                settings = AnthropicClientSettings(baseUrl = config.baseUrl),
+                settings = buildAnthropicClientSettings(config),
                 httpClientFactory = DesktopKoogHttpClientFactoryProvider.factory,
             )
             return MultiLLMPromptExecutor(anthropicLLMClient)

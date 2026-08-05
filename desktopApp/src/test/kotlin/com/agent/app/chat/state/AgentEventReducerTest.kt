@@ -336,6 +336,71 @@ class AgentEventReducerTest {
         assertNull(result.pendingApproval)
     }
 
+    @Test
+    fun `tool call failure keeps execution running and marks the active tool failed`() {
+        val conversation = conversation(
+            items = listOf(
+                ToolEventItem(
+                    toolName = "read_file",
+                    status = ToolEventStatus.Started,
+                    preview = "README.md",
+                    toolCallId = "tool-1",
+                ),
+            ),
+            executionState = ExecutionState.Running,
+        )
+
+        val result = reduceAgentEvent(
+            conversation,
+            AgentStreamEvent.ToolCallFailed(
+                toolCallId = "tool-1",
+                name = "read_file",
+                reason = "file not found",
+            ),
+            contextWindow = 100,
+        )
+
+        assertEquals(
+            ToolEventItem(
+                toolName = "read_file",
+                status = ToolEventStatus.Failed,
+                preview = "README.md",
+                errorMessage = "file not found",
+                toolCallId = "tool-1",
+            ),
+            result.items.single(),
+        )
+        assertEquals(ExecutionState.Running, result.executionState)
+        assertNull(result.pendingQuestion)
+        assertNull(result.pendingApproval)
+    }
+
+    @Test
+    fun `tool call failure without active tool appends a standalone failed card`() {
+        val conversation = conversation(
+            items = listOf(
+                ChatMessageItem(ChatMessage(ChatRole.User, "question")),
+            ),
+            executionState = ExecutionState.Running,
+        )
+
+        val result = reduceAgentEvent(
+            conversation,
+            AgentStreamEvent.ToolCallFailed(name = "glob_files", reason = "no such file"),
+            contextWindow = 100,
+        )
+
+        assertEquals(
+            ToolEventItem(
+                toolName = "glob_files",
+                status = ToolEventStatus.Failed,
+                errorMessage = "no such file",
+            ),
+            result.items.last(),
+        )
+        assertEquals(ExecutionState.Running, result.executionState)
+    }
+
     private fun conversation(
         items: List<com.agent.shared.chat.model.ConversationItem> = emptyList(),
         history: List<AgentConversationHistoryMessage> = emptyList(),

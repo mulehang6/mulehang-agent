@@ -65,7 +65,9 @@ internal suspend fun runWithKoogAgent(
                 }
                 onToolCallFailed { context ->
                     emitEvent(
-                        AgentStreamEvent.Failed(
+                        AgentStreamEvent.ToolCallFailed(
+                            toolCallId = context.toolCallId,
+                            name = context.toolName,
                             reason = context.message.ifBlank {
                                 context.error?.message ?: "工具执行失败"
                             },

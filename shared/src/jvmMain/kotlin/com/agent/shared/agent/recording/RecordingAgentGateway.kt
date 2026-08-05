@@ -188,6 +188,22 @@ private class AgentRunRecordCollector(
                     ),
                 )
 
+            is AgentStreamEvent.ToolCallFailed -> tools
+                .lastOrNull { tool ->
+                    tool.result == null &&
+                        (tool.toolCallId == event.toolCallId ||
+                            (event.toolCallId == null && tool.name == event.name))
+                }
+                ?.apply { result = event.reason }
+                ?: tools.add(
+                    MutableAgentRunToolRecord(
+                        toolCallId = event.toolCallId,
+                        name = event.name,
+                        arguments = null,
+                        result = event.reason,
+                    ),
+                )
+
             is AgentStreamEvent.Completed -> {
                 finalText = event.text.ifBlank { text.toString() }
                 flushPendingReasoning()

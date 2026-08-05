@@ -64,6 +64,14 @@ internal fun reduceAgentEvent(
         resultPreview = event.resultPreview,
     )
 
+    is AgentStreamEvent.ToolCallFailed -> markToolCallFailed(
+        conversation = conversation,
+        toolCallId = event.toolCallId,
+        toolName = event.name,
+        reason = event.reason,
+        contextWindow = contextWindow,
+    )
+
     is AgentStreamEvent.QuestionRequested -> conversation.copy(
         pendingQuestion = PendingQuestionUiState(
             requestId = event.request.requestId,
@@ -250,6 +258,48 @@ private fun completeToolEvent(
         status = ToolEventStatus.Finished,
         resultPreview = resultPreview,
         resultDisplay = resultDisplay,
+    )
+    return conversation.copy(items = items)
+}
+
+/**
+ * 将指定工具调用标记为失败；不改动会话执行状态，agent 运行继续。
+ *
+ * 按 toolCallId 匹配进行中的工具卡片，缺失 id 时回退到同名匹配；找不到
+ * 进行中卡片时追加一条独立失败卡片。
+ */
+private fun markToolCallFailed(
+    conversation: ChatConversationUiState,
+    toolCallId: String?,
+    toolName: String,
+    reason: String,
+    contextWindow: Int?,
+): ChatConversationUiState {
+    val matchedIndex = conversation.items.indexOfLast { candidate ->
+        candidate is ToolEventItem && candidate.status == ToolEventStatus.Started &&
+                (candidate.toolCallId == toolCallId || (toolCallId == null && candidate.toolName == toolName))
+    }
+    if (matchedIndex < 0) {
+        val nextItems = conversation.items + ToolEventItem(
+            toolName = toolName,
+            status = ToolEventStatus.Failed,
+            errorMessage = reason,
+            toolCallId = toolCallId,
+        )
+        return conversation.copy(
+            items = nextItems,
+            contextUsageFraction = estimateContextUsage(
+                items = nextItems,
+                attachmentCount = conversation.attachments.size,
+                contextWindow = contextWindow,
+            ),
+        )
+    }
+    val items = conversation.items.toMutableList()
+    val started = items[matchedIndex] as ToolEventItem
+    items[matchedIndex] = started.copy(
+        status = ToolEventStatus.Failed,
+        errorMessage = reason,
     )
     return conversation.copy(items = items)
 }

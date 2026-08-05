@@ -38,6 +38,15 @@ sealed interface AgentStreamEvent {
     ) : AgentStreamEvent
 
     /**
+     * 单个工具调用失败；agent 运行继续，不应与整个执行失败混淆。
+     */
+    data class ToolCallFailed(
+        val toolCallId: String? = null,
+        val name: String,
+        val reason: String,
+    ) : AgentStreamEvent
+
+    /**
      * 工具运行期间产生的实时输出增量。
      */
     data class ToolOutputDelta(

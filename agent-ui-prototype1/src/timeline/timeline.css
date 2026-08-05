@@ -65,7 +65,7 @@ body {
   padding: 18px 24px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .tl-title-row {
@@ -89,56 +89,8 @@ body {
   padding: 1px 8px;
 }
 
-.tl-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.tl-tab {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--tl-muted);
-  font-family: var(--ring-font-family);
-  font-size: 12px;
-  line-height: 1;
-  padding: 6px 12px;
-  border-radius: 7px;
-  cursor: pointer;
-  transition:
-    background-color 120ms ease-out,
-    color 120ms ease-out,
-    border-color 120ms ease-out;
-}
-
-.tl-tab:hover {
-  background: var(--tl-hover);
-  color: var(--tl-text);
-}
-
-.tl-tab-active {
-  background: rgba(75, 134, 255, 0.14);
-  border-color: rgba(75, 134, 255, 0.35);
-  color: var(--tl-accent);
-}
-
-.tl-note {
-  margin: 0;
-  font-size: 11px;
-  color: var(--tl-faint);
-  line-height: 1.5;
-}
-
-.tl-legend {
-  display: flex;
-  gap: 14px;
-  font-size: 11px;
-  color: var(--tl-faint);
-}
-
-.tl-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.tl-header-right {
+  margin-left: auto;
 }
 
 /* ---- 聊天画布 ---- */
@@ -155,12 +107,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-.tl-variant-note {
-  margin: 0 0 -4px;
-  font-size: 11px;
-  color: var(--tl-faint);
 }
 
 /* ---- 用户消息 ---- */
@@ -231,15 +177,18 @@ body {
   background-color: var(--tl-hover);
 }
 
-.tl-collapsible .ring-icon {
+/* ring-ui Icon 实际类名：外层 span 为 ring-icon-icon，内层 svg 为 ring-icon-glyph。
+   动画与颜色都作用在外层 span 上，transform 对 inline-block 元素生效。 */
+.tl-collapsible .ring-icon-icon {
   color: var(--tl-faint);
   flex-shrink: 0;
 }
 
 /* ---- 思考 ---- */
 
-.tl-thinking .ring-icon {
+.tl-thinking .ring-icon-icon {
   color: var(--tl-accent);
+  animation: tl-breathe 1.4s ease-in-out infinite;
 }
 
 .tl-label {
@@ -257,6 +206,17 @@ body {
   line-height: 1.55;
   color: var(--tl-muted);
   white-space: pre-line;
+}
+
+/* 思考收起态的段落摘要：单行显示每段开头，过长以省略号截断 */
+.tl-thinking-summary {
+  flex: 1;
+  color: var(--tl-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ---- 工具行 ---- */
@@ -280,32 +240,27 @@ body {
 .tl-tool-name {
   color: var(--tl-text);
   font-size: 12.5px;
+  white-space: nowrap;
 }
 
 .tl-tool-input {
+  flex: 1;
   color: var(--tl-faint);
   font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tl-tool-meta {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex-shrink: 0;
-}
-
-.tl-tool-duration {
-  font-size: 11px;
-  color: var(--tl-faint);
-  font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 
 .tl-tool-running .tl-tool-name {
   color: var(--tl-accent);
+}
+
+.tl-tool-running .ring-icon-icon {
+  /* 参考 Air 查找工具：放大镜在图标本体上摆动 */
+  animation: tl-swing 1.1s ease-in-out infinite;
+  transform-origin: 50% 85%;
 }
 
 .tl-tool-failed .tl-tool-name {
@@ -315,7 +270,7 @@ body {
 .tl-tool-output {
   margin: 2px 0 2px;
   padding: 8px 10px 8px 26px;
-  font-family: var(--ring-font-family-mono);
+  font-family: var(--ring-font-family-monospace);
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--tl-danger);
@@ -325,7 +280,21 @@ body {
   word-break: break-all;
 }
 
-/* ---- 工具组（变体 A） ---- */
+/* 编辑类工具展开后显示的具体文件路径 */
+.tl-tool-edit-target {
+  margin: 2px 0 2px;
+  padding: 6px 10px 6px 26px;
+  font-family: var(--ring-font-family-monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tl-text);
+  background-color: var(--tl-output-bg);
+  border-radius: var(--ring-border-radius);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ---- 工具组 ---- */
 
 .tl-tool-group {
   display: flex;
@@ -353,75 +322,157 @@ body {
   min-height: 0;
 }
 
-/* ---- chevron：CSS 自制，旋转过渡 ---- */
+/* ---- 展开箭头：默认隐藏，悬浮该行时才显示；收起朝右、展开朝下 ---- */
 
 .tl-chevron {
   width: 7px;
   height: 7px;
-  margin-left: auto;
   flex-shrink: 0;
   border-right: 1.5px solid var(--tl-faint);
   border-bottom: 1.5px solid var(--tl-faint);
-  transform: rotate(45deg);
-  transition: transform 160ms var(--tl-ease-out);
+  /* 收起态：尖端朝右 */
+  transform: rotate(-45deg);
+  opacity: 0;
+  transition:
+    transform 160ms var(--tl-ease-out),
+    opacity 120ms ease-out;
 }
 
-.tl-chevron-open {
-  transform: rotate(-135deg);
+.tl-collapsible:hover .tl-chevron,
+.tl-collapsible:focus-visible .tl-chevron {
+  opacity: 1;
 }
 
-/* ---- 状态点与脉冲 ---- */
-
-.tl-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.tl-chevron-inline {
+  /* 紧跟名称：紧凑、不占额外空间 */
 }
 
-.tl-dot-done {
-  background-color: var(--tl-success);
-}
-
-.tl-dot-failed {
-  background-color: var(--tl-danger);
-}
-
-.tl-dot-running {
-  background-color: var(--tl-accent);
-  animation: tl-pulse 1.2s ease-in-out infinite;
-}
-
-.tl-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+.tl-chevron-end {
   margin-left: auto;
 }
 
-.tl-dots i {
-  width: 3px;
-  height: 3px;
+.tl-chevron-open {
+  /* 展开态：尖端朝下 */
+  transform: rotate(45deg);
+}
+
+/* ---- 工具组状态图标：执行中灰色加载圈 ↔ 完成绿色勾，交叉淡化过渡 ---- */
+
+.tl-group-status {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.tl-group-status-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+.tl-status-visible {
+  opacity: 1;
+}
+
+/* 断口加载圈：3/4 弧段有颜色、左下 1/4 断开；
+   display: inline-block 必须显式声明，inline 元素的 transform 旋转不生效 */
+.tl-group-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid transparent;
+  border-top-color: var(--tl-muted);
+  border-right-color: var(--tl-muted);
   border-radius: 50%;
-  background-color: var(--tl-accent);
-  animation: tl-pulse 1.1s ease-in-out infinite;
+  animation: tl-spin 0.8s linear infinite;
 }
 
-.tl-dots i:nth-child(2) {
-  animation-delay: 0.15s;
+.tl-group-status .ring-icon-icon {
+  color: var(--tl-success);
 }
 
-.tl-dots i:nth-child(3) {
-  animation-delay: 0.3s;
+@keyframes tl-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-@keyframes tl-pulse {
+/* ---- 动态图标：执行中的图标本体动画 ---- */
+
+@keyframes tl-breathe {
   0%,
   100% {
+    transform: scale(1);
     opacity: 1;
   }
 
   50% {
-    opacity: 0.25;
+    transform: scale(1.18);
+    opacity: 0.75;
   }
+}
+
+@keyframes tl-swing {
+  0%,
+  100% {
+    transform: rotate(-14deg);
+  }
+
+  50% {
+    transform: rotate(14deg);
+  }
+}
+
+/* ---- 下拉框（选中样式取自 ring-ui Select 源码：勾选图标 + hover 高亮） ---- */
+
+.tl-select-trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--tl-line);
+  border-radius: var(--ring-border-radius);
+  background-color: var(--tl-bg);
+  color: var(--tl-text);
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.tl-select-trigger:hover,
+.tl-select-trigger:focus-visible {
+  border-color: var(--ring-border-hover-color);
+  background-color: var(--tl-hover);
+}
+
+.tl-select-popup {
+  border: 1px solid var(--tl-line);
+  border-radius: var(--ring-border-radius-large);
+  background-color: #2b2d30;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.tl-select-popup .ring-list-list {
+  padding: 6px;
+  background-color: #2b2d30;
+}
+
+.tl-select-popup .ring-list-item {
+  margin: 0 0 2px;
+  border-radius: var(--ring-border-radius);
+  color: var(--tl-text);
+}
+
+.tl-select-popup .ring-list-item:last-child {
+  margin-bottom: 0;
+}
+
+.tl-select-popup .ring-list-item.ring-list-hover,
+.tl-select-popup .ring-list-item:hover {
+  background-color: var(--ring-selected-background-color);
 }

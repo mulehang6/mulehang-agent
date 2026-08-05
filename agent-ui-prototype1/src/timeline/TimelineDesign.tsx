@@ -1,24 +1,26 @@
 import { useState, type ReactNode } from 'react'
 import Icon from '@jetbrains/ring-ui-built/components/icon/icon.js'
+import Select from '@jetbrains/ring-ui-built/components/select/select.js'
 import sparkleIcon from '@jetbrains/icons/sparkle'
 import searchIcon from '@jetbrains/icons/search'
 import terminalIcon from '@jetbrains/icons/terminal'
 import pencilIcon from '@jetbrains/icons/pencil'
-import fileIcon from '@jetbrains/icons/file'
+import fileTextIcon from '@jetbrains/icons/file-text'
+import checkmarkIcon from '@jetbrains/icons/checkmark'
 
 /**
- * Agent 执行时间线 · 设计稿
+ * Agent 执行时间线 · 设计稿（轮次式，参考 JetBrains ACP / Air）
  *
- * 两个变体：
- * - 变体 A「轮次式」：思考收在轮次开头（可折叠一行），工具调用按组收起，
- *   正文正常输出 —— 参考 JetBrains ACP / Air 的执行区。
- * - 变体 B「交替式」：思考与工具交替出现，工具不分组直接展示 —— 参考 kilo。
+ * 结构：思考收在轮次开头（一行可折叠）→ 正文输出 → 工具调用按组收起。
  *
- * 设计原则（简约）：
+ * 简约原则：
  * - 全部小字体系（12–13.5px），灰阶 + 少量强调色，无卡片背景。
- * - "正在进行的事"是唯一醒目的：蓝色脉冲点 + 三点动画。
- * - "已完成的事"安静缩起：思考一行、工具一组，点击才展开。
- * - 展开/收起 180ms ease-out，其余动效 ≤160ms。
+ * - 思考中：sparkle 图标与 "Thinking" 文案之间放圆圈加载动画。
+ * - 工具组：组内有执行中的工具时默认展开，执行完毕自动收起（无论成败）。
+ * - 无状态圆点；进行中 = accent 色文字 + 圆圈加载，失败 = 红色文字。
+ * - 展开/收起箭头仅在鼠标悬浮到该行时显示；名称不长时紧跟名称，
+ *   名称过长（如 run_powershell）时贴最右侧。
+ * - 动效：展开 180ms ease-out，其余 ≤160ms。
  */
 
 type ToolKind = 'search' | 'terminal' | 'edit' | 'read'
@@ -28,7 +30,6 @@ interface ToolEvent {
   name: string
   input: string
   status: 'running' | 'done' | 'failed'
-  durationSec?: number
   output?: string
 }
 
@@ -48,10 +49,13 @@ const TOOL_ICONS: Record<ToolKind, string> = {
   search: searchIcon,
   terminal: terminalIcon,
   edit: pencilIcon,
-  read: fileIcon,
+  read: fileTextIcon,
 }
 
-/** 一轮已完成 + 第二轮进行中的演示数据。 */
+/** 名称超过该长度时，展开箭头从"名称旁"移到行最右侧。 */
+const LONG_TOOL_NAME_CHARS = 12
+
+/** 一轮已完成 + 第二轮执行中的演示数据。 */
 const DEMO_ENTRIES: Entry[] = [
   {
     type: 'user',
@@ -64,23 +68,23 @@ const DEMO_ENTRIES: Entry[] = [
     data: {
       live: false,
       durationSec: 18,
-      text: '用户反馈 401 反复出现，可能的原因：1) refresh token 过期后没有重试队列；2) 并发请求同时触发刷新，产生 token 竞态；3) 刷新后 Authorization header 没有同步更新。先看 AuthService 的刷新实现，再确认请求拦截器的行为。',
+      text: 'The user reports recurring 401s. Possible causes: 1) no retry queue after refresh token expiry; 2) concurrent requests trigger refresh simultaneously, causing a token race; 3) the Authorization header is not updated after refresh. Inspect AuthService first, then the request interceptor.',
     },
   },
   {
     type: 'tool',
     id: 't1',
-    data: { kind: 'search', name: 'search_in_files', input: '"token refresh"', status: 'done', durationSec: 0.4 },
+    data: { kind: 'search', name: 'search_in_files', input: '"token refresh"', status: 'done' },
   },
   {
     type: 'tool',
     id: 't2',
-    data: { kind: 'terminal', name: 'run_powershell', input: 'Get-Content src/auth/AuthService.kt', status: 'done', durationSec: 2.1 },
+    data: { kind: 'terminal', name: 'run_powershell', input: 'Get-Content src/auth/AuthService.kt', status: 'done' },
   },
   {
     type: 'tool',
     id: 't3',
-    data: { kind: 'read', name: 'read_file', input: 'src/auth/AuthService.kt', status: 'done', durationSec: 0.3 },
+    data: { kind: 'read', name: 'read_file', input: 'src/auth/AuthService.kt', status: 'done' },
   },
   {
     type: 'tool',
@@ -90,14 +94,13 @@ const DEMO_ENTRIES: Entry[] = [
       name: 'edit_file',
       input: 'src/auth/HttpClient.kt',
       status: 'failed',
-      durationSec: 0.2,
       output: 'Error: no writable file handle, file is read-only (chmod 444)',
     },
   },
   {
     type: 'text',
     id: 'm1',
-    content: '找到原因了。AuthService.refresh() 刷新后只更新了存储里的 token，没有同步更新内存中的 Authorization header，所以刷新后的第一个请求仍然带着旧 token 发出，服务端返回 401。\n\n另外请求拦截器里有一个并发缺口：两个请求同时过期时都会触发刷新，第二次刷新会覆盖第一次的 token，导致其中一边失效。',
+    content: 'Found it. AuthService.refresh() only updates the stored token, not the in-memory Authorization header, so the first request after refresh still carries the old token and gets a 401.\n\nThe interceptor also has a concurrency gap: two simultaneously expired requests both trigger refresh, and the second overwrites the first, invalidating one side.',
   },
   {
     type: 'reasoning',
@@ -112,10 +115,35 @@ const DEMO_ENTRIES: Entry[] = [
   {
     type: 'text',
     id: 'm2',
-    content: '正在应用修复：refresh 成功后同步更新 header，并给刷新流程加单飞（single-flight）保护……',
+    content: 'Applying the fix: sync the header after a successful refresh and add single-flight protection to the refresh flow…',
     live: true,
   },
 ]
+
+const PLAN_OPTIONS = [
+  { key: 'air', label: '轮次式（Air）', type: 'item' as const },
+  { key: 'kilo', label: '交替式（kilo）', type: 'item' as const },
+]
+
+/** 思考耗时英文文案，支持分钟档。 */
+function formatThoughtDuration(durationSec?: number): string {
+  if (durationSec == null) return 'Thought'
+  if (durationSec < 60) return `Thought for ${durationSec}s`
+  const minutes = Math.floor(durationSec / 60)
+  const seconds = durationSec % 60
+  return seconds > 0 ? `Thought for ${minutes}m ${seconds}s` : `Thought for ${minutes}m`
+}
+
+/** 思考收起态摘要：取每一段最前面的部分，拼接为单行，过长由 ellipsis 截断。 */
+function buildReasoningSummary(text: string): string {
+  const SUMMARY_PER_PART_CHARS = 40
+  return text
+    .split(/\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => part.slice(0, SUMMARY_PER_PART_CHARS))
+    .join(' · ')
+}
 
 /** 高度过渡折叠容器：0fr→1fr，180ms ease-out。 */
 function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
@@ -141,35 +169,40 @@ function TextBlock({ content, live }: { content: string; live?: boolean }) {
   )
 }
 
-/** 进行中三点脉冲（accent 色）。 */
-function RunningDots() {
+
+/** 展开/收起箭头；鼠标悬浮到所在行时才显示。 */
+function Chevron({ open, position }: { open: boolean; position: 'inline' | 'end' }) {
   return (
-    <span className="tl-dots" aria-hidden="true">
-      <i />
-      <i />
-      <i />
-    </span>
+    <span
+      className={`tl-chevron tl-chevron-${position} ${open ? 'tl-chevron-open' : ''}`}
+      aria-hidden="true"
+    />
   )
 }
 
-/** 思考行：一行可折叠摘要；进行中时显示"正在思考 + 三点"。 */
+/** 思考行：一行可折叠摘要；进行中时"图标 + 圆圈 + Thinking"。 */
 function ThinkingLine({ event }: { event: ReasoningEvent }) {
   const [open, setOpen] = useState(false)
   if (event.live) {
     return (
       <div className="tl-row tl-thinking">
         <Icon glyph={sparkleIcon} size={14} />
-        <span className="tl-label">正在思考</span>
-        <RunningDots />
+        <span className="tl-label">Thinking</span>
       </div>
     )
   }
   return (
     <div className="tl-thinking-block">
-      <div className="tl-row tl-collapsible" onClick={() => setOpen((v) => !v)} role="button" tabIndex={0}>
+      <div
+        className="tl-row tl-collapsible"
+        onClick={() => setOpen((v) => !v)}
+        role="button"
+        tabIndex={0}
+      >
         <Icon glyph={sparkleIcon} size={14} />
-        <span className="tl-label">思考 {event.durationSec} 秒</span>
-        <span className={`tl-chevron ${open ? 'tl-chevron-open' : ''}`} aria-hidden="true" />
+        <span className="tl-label">{formatThoughtDuration(event.durationSec)}</span>
+        <span className="tl-thinking-summary">{buildReasoningSummary(event.text)}</span>
+        <Chevron open={open} position="inline" />
       </div>
       <Collapse open={open}>
         <p className="tl-reasoning-text">{event.text}</p>
@@ -178,15 +211,21 @@ function ThinkingLine({ event }: { event: ReasoningEvent }) {
   )
 }
 
-/** 单个工具行：类型图标 + 名称 + 输入摘要 + 状态点/耗时；失败可展开输出。 */
+/**
+ * 单个工具行：类型图标（执行中本体动画）+ 名称 + 输入摘要。
+ * 编辑类工具的具体文件路径默认隐藏，展开后才显示；失败工具展开显示错误输出。
+ */
 function ToolLine({ tool }: { tool: ToolEvent }) {
   const [open, setOpen] = useState(false)
   const hasOutput = tool.output != null && tool.output.length > 0
-  const clickable = hasOutput || tool.status === 'failed'
+  const isEdit = tool.kind === 'edit'
+  const clickable = isEdit || hasOutput
+  const longName = tool.name.length > LONG_TOOL_NAME_CHARS
+  const running = tool.status === 'running'
   return (
     <div className="tl-tool-line">
       <div
-        className={`tl-row tl-collapsible ${tool.status === 'running' ? 'tl-tool-running' : ''} ${
+        className={`tl-row tl-collapsible ${running ? 'tl-tool-running' : ''} ${
           tool.status === 'failed' ? 'tl-tool-failed' : ''
         }`}
         onClick={() => clickable && setOpen((v) => !v)}
@@ -195,34 +234,57 @@ function ToolLine({ tool }: { tool: ToolEvent }) {
       >
         <Icon glyph={TOOL_ICONS[tool.kind]} size={13} />
         <span className="tl-tool-name">{tool.name}</span>
-        <span className="tl-tool-input">{tool.input}</span>
-        <span className="tl-tool-meta">
-          {tool.status === 'running' ? (
-            <RunningDots />
-          ) : (
-            <>
-              {tool.durationSec != null && <span className="tl-tool-duration">{tool.durationSec}s</span>}
-              <span className={`tl-dot tl-dot-${tool.status}`} aria-hidden="true" />
-            </>
-          )}
-        </span>
+        {!longName && clickable && <Chevron open={open} position="inline" />}
+        {!isEdit && <span className="tl-tool-input">{tool.input}</span>}
+        {longName && clickable && <Chevron open={open} position="end" />}
       </div>
       <Collapse open={open && clickable}>
-        <pre className="tl-tool-output">{tool.output}</pre>
+        {isEdit && <p className="tl-tool-edit-target">{tool.input}</p>}
+        {hasOutput && <pre className="tl-tool-output">{tool.output}</pre>}
       </Collapse>
     </div>
   )
 }
 
-/** 工具组（变体 A）：一行"已执行 N 个工具"，展开为紧凑列表。 */
+/**
+ * 工具组状态图标：执行中为灰色加载圈，执行完毕为绿色勾，两者交叉淡化过渡。
+ */
+function GroupStatusIcon({ running }: { running: boolean }) {
+  return (
+    <span className="tl-group-status" aria-hidden="true">
+      <span className={`tl-group-status-icon ${running ? 'tl-status-visible' : ''}`}>
+        <span className="tl-group-spinner" />
+      </span>
+      <span className={`tl-group-status-icon ${running ? '' : 'tl-status-visible'}`}>
+        <Icon glyph={checkmarkIcon} size={13} />
+      </span>
+    </span>
+  )
+}
+
+/**
+ * 工具组：一行"已执行 N 个工具"。
+ * 组内有执行中的工具时默认展开，执行完毕自动收起；用户手动点击可随时展开/收起。
+ */
 function ToolGroup({ tools }: { tools: { id: string; data: ToolEvent }[] }) {
-  const [open, setOpen] = useState(false)
+  const hasRunning = tools.some((tool) => tool.data.status === 'running')
+  // 默认跟随组状态：组内有执行中的工具时展开，执行完毕自动收起；
+  // 用户手动点击后以手动选择为准。
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const open = userOpen ?? hasRunning
   return (
     <div className="tl-tool-group">
-      <div className="tl-row tl-collapsible" onClick={() => setOpen((v) => !v)} role="button" tabIndex={0}>
-        <Icon glyph={terminalIcon} size={13} />
-        <span className="tl-label">已执行 {tools.length} 个工具</span>
-        <span className={`tl-chevron ${open ? 'tl-chevron-open' : ''}`} aria-hidden="true" />
+      <div
+        className="tl-row tl-collapsible"
+        onClick={() => setUserOpen((v) => (v === null ? !hasRunning : !v))}
+        role="button"
+        tabIndex={0}
+      >
+        <GroupStatusIcon running={hasRunning} />
+        <span className="tl-label">
+          {hasRunning ? 'Executing tools' : `Executed ${tools.length} tool${tools.length > 1 ? 's' : ''}`}
+        </span>
+        <Chevron open={open} position="inline" />
       </div>
       <Collapse open={open}>
         <div className="tl-tool-list">
@@ -235,10 +297,7 @@ function ToolGroup({ tools }: { tools: { id: string; data: ToolEvent }[] }) {
   )
 }
 
-/**
- * 变体 A · 轮次式：思考收在轮次开头、工具按组收起、正文正常输出。
- * 进行中的工具单独高亮一行，不混进已完成组。
- */
+/** 轮次式时间线：思考 → 正文 → 工具组；进行中的工具并入组内（组默认展开）。 */
 function VariantA({ entries }: { entries: Entry[] }) {
   const rows: (ReactNode | null)[] = []
   let pendingTools: { id: string; data: ToolEvent }[] = []
@@ -259,52 +318,17 @@ function VariantA({ entries }: { entries: Entry[] }) {
     } else if (entry.type === 'text') {
       rows.push(flushTools(key))
       rows.push(<TextBlock key={entry.id} content={entry.content} live={entry.live} />)
-    } else if (entry.data.status === 'running') {
-      rows.push(flushTools(key))
-      rows.push(<ToolLine key={entry.id} tool={entry.data} />)
     } else {
       pendingTools.push({ id: entry.id, data: entry.data })
     }
   })
   rows.push(flushTools('tail'))
-  return (
-    <div className="tl-chat">
-      <p className="tl-variant-note">
-        变体 A · 轮次式 — 思考收在轮次开头，工具调用按组收起（JetBrains ACP / Air 风格）
-      </p>
-      {rows.filter(Boolean)}
-    </div>
-  )
+  return <div className="tl-chat">{rows.filter(Boolean)}</div>
 }
 
-/** 变体 B · 交替式：思考与工具交替出现，工具不分组直接展示。 */
-function VariantB({ entries }: { entries: Entry[] }) {
-  return (
-    <div className="tl-chat">
-      <p className="tl-variant-note">
-        变体 B · 交替式 — 思考与工具交替出现，工具不分组直接展示（kilo 风格）
-      </p>
-      {entries.map((entry) => {
-        if (entry.type === 'user') {
-          return <UserBubble key={entry.id} content={entry.content} />
-        }
-        if (entry.type === 'reasoning') {
-          return <ThinkingLine key={entry.id} event={entry.data} />
-        }
-        if (entry.type === 'text') {
-          return <TextBlock key={entry.id} content={entry.content} live={entry.live} />
-        }
-        return <ToolLine key={entry.id} tool={entry.data} />
-      })}
-    </div>
-  )
-}
-
-type VariantKey = 'A' | 'B'
-
-/** 设计稿页面：标题条 + 变体切换 + 聊天区画布。 */
+/** 设计稿页面：标题条（含 ring-ui Select 选中样式参考）+ 聊天区画布。 */
 export default function TimelineDesign() {
-  const [variant, setVariant] = useState<VariantKey>('A')
+  const [plan, setPlan] = useState(PLAN_OPTIONS[0])
   return (
     <div className="tl-page">
       <header className="tl-header">
@@ -312,47 +336,34 @@ export default function TimelineDesign() {
           <div className="tl-title-row">
             <span className="tl-title">Agent 执行时间线</span>
             <span className="tl-badge">设计稿</span>
-          </div>
-          <div className="tl-tabs" role="tablist">
-            <button
-              type="button"
-              className={`tl-tab ${variant === 'A' ? 'tl-tab-active' : ''}`}
-              onClick={() => setVariant('A')}
-              role="tab"
-              aria-selected={variant === 'A'}
-            >
-              变体 A · 轮次式
-            </button>
-            <button
-              type="button"
-              className={`tl-tab ${variant === 'B' ? 'tl-tab-active' : ''}`}
-              onClick={() => setVariant('B')}
-              role="tab"
-              aria-selected={variant === 'B'}
-            >
-              变体 B · 交替式
-            </button>
+            <div className="tl-header-right">
+              <Select
+                className="tl-select"
+                buttonClassName="tl-select-trigger"
+                popupClassName="tl-select-popup ring-ui-theme-dark"
+                type={Select.Type.BUTTON}
+                selected={plan}
+                data={PLAN_OPTIONS}
+                minWidth={150}
+                onChange={(item: { key: string; label: string } | null) => {
+                  const found = PLAN_OPTIONS.find((option) => option.key === item?.key)
+                  if (found) setPlan(found)
+                }}
+              />
+            </div>
           </div>
           <p className="tl-note">
-            进行中的元素带脉冲动画；思考行与工具组可点击展开。实现时二选一，或按各自优点合并。
+            思考收在轮次开头、工具调用按组收起；思考中与执行中的工具显示圆圈加载动画（accent 色），失败的工具名显示红色。
           </p>
-          <div className="tl-legend">
-            <span>
-              <i className="tl-dot tl-dot-done" aria-hidden="true" />
-              完成
-            </span>
-            <span>
-              <i className="tl-dot tl-dot-failed" aria-hidden="true" />
-              失败
-            </span>
-            <span>
-              <i className="tl-dot tl-dot-running" aria-hidden="true" />
-              进行中
-            </span>
-          </div>
+          <p className="tl-note">
+            展开箭头仅在悬浮该行时显示；名称过长时箭头移到最右侧。右上角下拉框的选中样式（勾选图标 + hover
+            高亮）取自 ring-ui Select 源码，实现时参考。
+          </p>
         </div>
       </header>
-      <main className="tl-canvas">{variant === 'A' ? <VariantA entries={DEMO_ENTRIES} /> : <VariantB entries={DEMO_ENTRIES} />}</main>
+      <main className="tl-canvas">
+        <VariantA entries={DEMO_ENTRIES} />
+      </main>
     </div>
   )
 }

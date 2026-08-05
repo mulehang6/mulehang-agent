@@ -17,6 +17,8 @@ data class PersistedTask(
     val attachmentsJson: String,
     val timeline: List<PersistedTimelineItem>,
     val history: List<PersistedHistoryItem>,
+    /** 任务最后被操作的时间戳（毫秒）；旧数据为 0。 */
+    val updatedAt: Long = 0L,
 )
 
 /**

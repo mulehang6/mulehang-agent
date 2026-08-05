@@ -41,6 +41,7 @@ class ChatWindowState(
     private val onWorkspaceSelected: (String) -> Unit = {},
     private val persistenceCoordinator: TaskPersistenceCoordinator? = null,
     private val conversationTitleGenerator: ConversationTitleGenerator? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
@@ -641,7 +642,7 @@ class ChatWindowState(
         ui = ui.copy(
             tasks = ui.tasks.map { conversation ->
                 if (conversation.id == conversationId) {
-                    transform(conversation)
+                    transform(conversation).copy(updatedAt = clock())
                 } else {
                     conversation
                 }

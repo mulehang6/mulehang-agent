@@ -49,6 +49,7 @@ internal fun newConversation(
     id = UUID.randomUUID().toString(),
     title = DEFAULT_CONVERSATION_TITLE,
     workspacePath = workspacePath,
+    updatedAt = System.currentTimeMillis(),
     profileId = profileId,
     reasoningEffort = reasoningEffort,
     permissionPreset = permissionPreset,

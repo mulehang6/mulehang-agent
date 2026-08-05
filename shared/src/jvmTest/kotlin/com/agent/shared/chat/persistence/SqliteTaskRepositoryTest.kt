@@ -51,6 +51,20 @@ class SqliteTaskRepositoryTest {
     }
 
     /**
+     * updated_at 时间戳必须随快照往返，且加载按最近更新倒序返回。
+     */
+    @Test
+    fun `should round trip updated at and load newest first`() = runTest {
+        val repository = SqliteTaskRepository(databaseDirectory.resolve("tasks.db"))
+        val older = taskSnapshot().copy(id = "task-old", updatedAt = 100L)
+        val newer = taskSnapshot().copy(id = "task-new", updatedAt = 300L)
+
+        repository.saveAll(listOf(older, newer))
+
+        assertEquals(listOf(newer, older), repository.loadAll())
+    }
+
+    /**
      * 会话绑定的非默认 profile 与权限档位也必须通过真实 SQLite 仓库完整往返。
      */
     @Test

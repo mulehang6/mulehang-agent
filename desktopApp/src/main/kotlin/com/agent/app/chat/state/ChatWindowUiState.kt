@@ -69,6 +69,8 @@ data class ChatConversationUiState(
     val streamingReasoningItemIndex: Int? = null,
     val streamingAssistantHistoryIndex: Int? = null,
     val contextUsageFraction: Float = 0.72f,
+    /** 任务最后被操作的时间戳（毫秒），侧栏"已完成"分组按它倒序展示。 */
+    val updatedAt: Long = 0L,
     val pendingQuestion: PendingQuestionUiState? = null,
     val pendingApproval: PendingApprovalUiState? = null,
 ) {
@@ -206,6 +208,7 @@ data class ChatWindowUiState(
                 title = "已完成",
                 tasks = tasks
                     .filter { taskGroupFor(it) == ChatTaskGroup.DONE }
+                    .sortedByDescending { it.updatedAt }
                     .map(::toTaskListItem),
             ),
         )
@@ -233,6 +236,7 @@ data class ChatWindowUiState(
                             title = "已完成",
                             tasks = conversations
                                 .filter { taskGroupFor(it) == ChatTaskGroup.DONE }
+                                .sortedByDescending { it.updatedAt }
                                 .map(::toTaskListItem),
                         ),
                     ),

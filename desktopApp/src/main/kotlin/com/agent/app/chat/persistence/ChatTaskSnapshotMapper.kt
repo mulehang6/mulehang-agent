@@ -55,6 +55,7 @@ internal object ChatTaskSnapshotMapper {
         attachmentsJson = json.encodeToString(JsonArray(source.attachments.map(::encodeAttachment))),
         timeline = source.items.mapIndexed(::encodeTimeline),
         history = source.history.mapIndexed(::encodeHistory),
+        updatedAt = source.updatedAt,
     )
 
     /**
@@ -75,6 +76,7 @@ internal object ChatTaskSnapshotMapper {
         streamingReasoningItemIndex = null,
         streamingAssistantHistoryIndex = null,
         contextUsageFraction = source.contextUsageFraction,
+        updatedAt = source.updatedAt,
         pendingQuestion = null,
         pendingApproval = null,
     )

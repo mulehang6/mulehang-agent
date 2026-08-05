@@ -61,4 +61,78 @@ class WorkspaceTaskGroupingTest {
         assertEquals(ChatTaskStatus.RUNNING, workspaces.first().sections.first().tasks.last().status)
         assertEquals(ChatTaskStatus.DONE, workspaces.last().sections.last().tasks.single().status)
     }
+
+    /**
+     * "已完成"分组应按最后操作时间倒序展示，最近更新的排在最前。
+     */
+    @Test
+    fun `should order done tasks by last updated time descending`() {
+        val ui = ChatWindowUiState(
+            tasks = listOf(
+                ChatConversationUiState(
+                    id = "older",
+                    title = "较早",
+                    workspacePath = "D:\\work\\alpha",
+                    updatedAt = 100L,
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "完成"))),
+                ),
+                ChatConversationUiState(
+                    id = "newer",
+                    title = "较新",
+                    workspacePath = "D:\\work\\alpha",
+                    updatedAt = 300L,
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "完成"))),
+                ),
+                ChatConversationUiState(
+                    id = "middle",
+                    title = "中间",
+                    workspacePath = "D:\\work\\alpha",
+                    updatedAt = 200L,
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "完成"))),
+                ),
+            ),
+            activeTaskId = "older",
+        )
+
+        val doneIds = ui.taskSections
+            .first { it.group == ChatTaskGroup.DONE }
+            .tasks
+            .map { it.id }
+
+        assertEquals(listOf("newer", "middle", "older"), doneIds)
+    }
+
+    /**
+     * 同一工作区内的"已完成"分组也应遵循最近更新倒序。
+     */
+    @Test
+    fun `should order done tasks by last updated time within workspace`() {
+        val ui = ChatWindowUiState(
+            tasks = listOf(
+                ChatConversationUiState(
+                    id = "stale",
+                    title = "旧任务",
+                    workspacePath = "D:\\work\\alpha",
+                    updatedAt = 100L,
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "完成"))),
+                ),
+                ChatConversationUiState(
+                    id = "fresh",
+                    title = "新任务",
+                    workspacePath = "D:\\work\\alpha",
+                    updatedAt = 400L,
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "完成"))),
+                ),
+            ),
+            activeTaskId = "stale",
+        )
+
+        val doneIds = ui.workspaceTaskSections
+            .single()
+            .sections.first { it.group == ChatTaskGroup.DONE }
+            .tasks
+            .map { it.id }
+
+        assertEquals(listOf("fresh", "stale"), doneIds)
+    }
 }

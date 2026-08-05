@@ -21,7 +21,8 @@ class SqliteTaskRepository(
             connection.prepareStatement(
                 """
                 SELECT id, title, workspace_path, reasoning_effort, profile_id, permission_preset,
-                    context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json
+                    context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json,
+                    updated_at
                 FROM task
                 ORDER BY updated_at DESC, id ASC
                 """.trimIndent(),
@@ -43,6 +44,7 @@ class SqliteTaskRepository(
                                     executionErrorTitle = resultSet.getString("execution_error_title"),
                                     executionErrorMessage = resultSet.getString("execution_error_message"),
                                     attachmentsJson = resultSet.getString("attachments_json"),
+                                    updatedAt = resultSet.getLong("updated_at"),
                                     timeline = loadTimeline(connection, taskId),
                                     history = loadHistory(connection, taskId),
                                 ),
@@ -259,7 +261,7 @@ class SqliteTaskRepository(
             statement.setString(10, task.executionErrorMessage)
             statement.setString(11, task.attachmentsJson)
             statement.setLong(12, now)
-            statement.setLong(13, now)
+            statement.setLong(13, task.updatedAt)
             statement.executeUpdate()
         }
     }

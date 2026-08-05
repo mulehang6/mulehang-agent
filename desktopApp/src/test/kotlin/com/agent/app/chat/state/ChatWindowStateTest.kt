@@ -1648,6 +1648,27 @@ class ChatWindowStateTest {
         assertEquals(ConversationTitleState.NOT_REQUESTED, state.ui.activeConversation.titleState)
     }
 
+    /**
+     * 会话每次状态变更都应刷新最后操作时间戳，侧栏"已完成"分组依赖它排序。
+     */
+    @Test
+    fun `should refresh updated at on conversation mutation`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+            clock = { 1_000L },
+        )
+
+        state.send("hi")
+        advanceUntilIdle()
+
+        assertEquals(1_000L, state.ui.activeConversation.updatedAt)
+    }
+
     private fun profile(
         model: String = "gpt-4.1",
         limit: ModelLimit? = null,

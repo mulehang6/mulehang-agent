@@ -173,6 +173,11 @@ private data class ReasoningAccumulator(
     /**
      * 生成最终 reasoning part；空推理保留为带空文本的 part，使工具续传轮仍能回放
      * 服务端要求原样传回的 reasoning_text 结构。
+     *
+     * `encrypted`（Anthropic 协议的 thinking signature）由 Koog 1.1.1 流式客户端在
+     * 丢弃 signature_delta 增量后恒为 null；回传时库内 `toAnthropicAssistantMessage`
+     * 强制要求非空，否则多轮请求直接抛异常。空字符串占位让请求可发出，兼容端点
+     * （如 DeepSeek）不校验 signature。
      */
     fun toMessagePart(): MessagePart.Reasoning {
         val content = completeContent?.takeIf { it.isNotEmpty() }
@@ -183,7 +188,7 @@ private data class ReasoningAccumulator(
             id = id,
             content = content.ifEmpty { listOf("") },
             summary = summary,
-            encrypted = encrypted,
+            encrypted = encrypted.orEmpty(),
         )
     }
 }

@@ -6,6 +6,7 @@ import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.utils.time.KoogClock
+import kotlinx.serialization.json.Json
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.ReasoningEffort
@@ -129,19 +130,39 @@ private fun assistantHistoryToKoogMessages(
         }
     }
 
+    /**
+     * 在历史中出现非工具 part（文本、推理）前闭合尚未收到结果的工具轮次。
+     *
+     * 同一 assistant 历史消息可能同时包含工具调用与最终正文（例如工具失败后 agent
+     * 继续运行并给出总结）。Koog 序列化时会按 part 拆分：先输出 function_call item，
+     * 正文变成独立的 assistant message。若不在此处先补齐工具结果，正文消息会插在
+     * function_call 与 function_call_output 之间，兼容服务端（如 DeepSeek）会以
+     * "No tool output found for tool call X" 400 拒绝整个请求。
+     */
+    fun closePendingToolRound() {
+        if (pendingToolCalls.isEmpty()) return
+        flushAssistant()
+        appendMissingToolResults()
+    }
+
     parts.forEach { part ->
         when (part) {
             is AgentConversationHistoryPart.Text -> {
+                closePendingToolRound()
                 beforeAssistantPart()
                 assistantParts += MessagePart.Text(part.text)
             }
 
             is AgentConversationHistoryPart.Reasoning -> {
                 val content = part.rawText ?: part.summary.orEmpty()
+                closePendingToolRound()
                 beforeAssistantPart()
+                // 历史模型不含 thinking signature；Koog 回传 reasoning 时要求 encrypted 非空，
+                // 与流式累积一致的空字符串占位可让兼容端点（如 DeepSeek）接受该请求。
                 assistantParts += MessagePart.Reasoning(
                     content = listOf(content),
                     summary = part.summary?.takeIf { it.isNotBlank() }?.let(::listOf),
+                    encrypted = "",
                 )
             }
 
@@ -150,7 +171,7 @@ private fun assistantHistoryToKoogMessages(
                 assistantParts += MessagePart.Tool.Call(
                     id = part.id,
                     tool = part.name,
-                    args = part.argumentsPreview.orEmpty(),
+                    args = part.argumentsPreview?.takeIf(::isValidJsonArguments) ?: "{}",
                 )
                 pendingToolCalls[historicalToolCallKey(part.id, part.name)] = PendingHistoricalToolCall(
                     id = part.id,
@@ -177,6 +198,16 @@ private fun assistantHistoryToKoogMessages(
     appendMissingToolResults()
     return messages
 }
+
+/**
+ * 判断历史工具调用参数是否可直接作为 Koog 请求参数回放。
+ *
+ * 历史中的 `argumentsPreview` 是面向 UI 的截断预览（默认 120 字符），可能既不是完整
+ * JSON 也不是 JSON 文本；Koog 序列化 assistant 消息时会对 args 做懒解析，非法 JSON
+ * 会直接抛 JsonDecodingException，因此非 JSON 预览必须降级为合法占位。
+ */
+private fun isValidJsonArguments(arguments: String): Boolean =
+    runCatching { Json.parseToJsonElement(arguments) }.isSuccess
 
 /**
  * 记录已经进入历史 assistant/tool_calls、但尚未匹配到 tool result 的工具调用。

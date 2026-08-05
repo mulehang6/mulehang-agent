@@ -82,6 +82,7 @@ class KoogAgentGatewayTest {
                     id = "r1",
                     content = listOf("raw", " detail"),
                     summary = listOf("summary", " done"),
+                    encrypted = "",
                 ),
                 MessagePart.Text("hello"),
             ),
@@ -144,7 +145,7 @@ class KoogAgentGatewayTest {
 
         assertEquals(
             listOf(
-                MessagePart.Reasoning(id = "reasoning-1", content = listOf("")),
+                MessagePart.Reasoning(id = "reasoning-1", content = listOf(""), encrypted = ""),
                 MessagePart.Tool.Call(
                     id = "call-1",
                     tool = "read_file",
@@ -154,6 +155,41 @@ class KoogAgentGatewayTest {
             message.parts,
         )
         assertFalse(emittedEvents.any { it is AgentStreamEvent.ReasoningCompleted })
+    }
+
+    /**
+     * 历史里工具调用参数只是 UI 预览，可能被截断成非法 JSON；回放时必须降级为合法
+     * 占位，否则 Koog 序列化 assistant 消息时懒解析 argsJson 会直接崩溃。
+     */
+    @Test
+    fun `should fallback truncated tool call arguments to valid json when replaying history`() {
+        val messages = buildConversationMessages(
+            history = listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
+                            name = "grep_code",
+                            argumentsPreview = """{"pattern":"Koog", "path":".", "glob":"null", "regex":false, "case_sensitive":false, "context_lines":2, "max_results":50""",
+                        ),
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-2",
+                            name = "read_file",
+                            argumentsPreview = """{"path":"README.md"}""",
+                        ),
+                    ),
+                ),
+            ),
+            prompt = "second",
+        )
+
+        val parts = assertIs<Message.Assistant>(messages[1]).parts
+        val truncated = assertIs<MessagePart.Tool.Call>(parts[0])
+        assertTrue(runCatching { truncated.argsJson }.isSuccess)
+        assertEquals("{}", truncated.args)
+        val intact = assertIs<MessagePart.Tool.Call>(parts[1])
+        assertEquals("""{"path":"README.md"}""", intact.args)
     }
 
     /**
@@ -180,7 +216,7 @@ class KoogAgentGatewayTest {
 
         assertEquals(
             listOf(
-                MessagePart.Reasoning(content = listOf("")),
+                MessagePart.Reasoning(content = listOf(""), encrypted = ""),
                 MessagePart.Tool.Call(
                     id = "call-1",
                     tool = "read_file",
@@ -525,7 +561,11 @@ class KoogAgentGatewayTest {
         assertEquals(listOf(MessagePart.Text("first")), assertIs<Message.User>(messages[0]).parts)
         assertEquals(
             listOf(
-                MessagePart.Reasoning(content = listOf("先分析原始思考"), summary = listOf("先分析")),
+                MessagePart.Reasoning(
+                    content = listOf("先分析原始思考"),
+                    summary = listOf("先分析"),
+                    encrypted = "",
+                ),
                 MessagePart.Tool.Call(
                     id = "call-1",
                     tool = "read_file",

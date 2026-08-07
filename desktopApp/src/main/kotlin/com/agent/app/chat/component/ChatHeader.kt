@@ -4,6 +4,7 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
@@ -66,6 +67,9 @@ import com.agent.app.design.MenuGrowthOrigin
 import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.menuGrowthTransformOrigin
 import com.agent.app.design.rememberMenuGrowthMotion
+import mulehang_agent.desktopapp.generated.resources.Res
+import mulehang_agent.desktopapp.generated.resources.mulehang_agent
+import org.jetbrains.compose.resources.painterResource
 import java.awt.Cursor
 import java.awt.Graphics
 import java.awt.Graphics2D
@@ -91,6 +95,11 @@ internal const val HEADER_TASK_CHIP_HEIGHT_DP = 36
 internal const val HEADER_TASK_CHIP_HORIZONTAL_PADDING_DP = 8
 internal const val HEADER_BRANCH_CHIP_HEIGHT_DP = HEADER_TASK_CHIP_HEIGHT_DP
 internal const val HEADER_BRANCH_CHIP_HORIZONTAL_PADDING_DP = 4
+internal const val HEADER_PROJECT_ICON_SIZE_DP = 24
+internal const val HEADER_PROJECT_ICON_BUTTON_SIZE_DP = 36
+internal const val HEADER_PROJECT_ICON_GAP_DP = 6
+internal const val HEADER_PROJECT_ICON_MENU_WIDTH_DP = 180
+internal const val HEADER_PROJECT_ICON_MENU_HEIGHT_DP = 64
 private val NATIVE_TITLE_BAR_MENU_SEAM_LISTENER_KEY = Any()
 private val NATIVE_TITLE_BAR_MENU_CORRECTED_BOUNDS_KEY = Any()
 
@@ -129,7 +138,11 @@ internal fun WindowScope.ChatHeader(
     var branchPressed by remember(activeConversation?.workspacePath) { mutableStateOf(false) }
     var branchOrigin by remember(activeConversation?.workspacePath) { mutableStateOf(Offset.Zero) }
     var branchPointerPosition by remember(activeConversation?.workspacePath) { mutableStateOf<Offset?>(null) }
+    var projectIconMenuExpanded by remember { mutableStateOf(false) }
+    var projectIconHovered by remember { mutableStateOf(false) }
+    var projectIconPressed by remember { mutableStateOf(false) }
     val density = LocalDensity.current
+    val projectIconPainter = painterResource(Res.drawable.mulehang_agent)
     val taskContextMenuMotion = rememberMenuGrowthMotion(
         expanded = taskContextMenuExpanded,
         label = "header-task-context-menu",
@@ -159,7 +172,62 @@ internal fun WindowScope.ChatHeader(
         ) {
             Box(
                 modifier = Modifier
-                    .padding(start = 12.dp),
+                    .padding(start = 12.dp)
+                    .size(HEADER_PROJECT_ICON_BUTTON_SIZE_DP.dp)
+                    .background(
+                        color = titleBarComposeHoverBackground(
+                            nativeHitOverlayEnabled = onTitleBarClientPointerEvent != null,
+                            hovered = projectIconHovered,
+                            pressed = projectIconPressed,
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    .onPointerEvent(PointerEventType.Enter) { projectIconHovered = true }
+                    .onPointerEvent(PointerEventType.Exit) {
+                        projectIconHovered = false
+                        projectIconPressed = false
+                    }
+                    .onPointerEvent(PointerEventType.Press) { projectIconPressed = true }
+                    .clickable(enabled = onTitleBarClientPointerEvent == null) {
+                        projectIconMenuExpanded = true
+                        projectIconPressed = false
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (onTitleBarClientPointerEvent != null) {
+                    NativeTitleBarTaskHitOverlay(
+                        onClientMouseEvent = onTitleBarClientPointerEvent,
+                        onOpenMenu = {
+                            projectIconMenuExpanded = true
+                            projectIconPressed = false
+                        },
+                        onPointerMoved = {},
+                        onOpenContextMenu = {},
+                        onInteractionChanged = { hovered, pressed ->
+                            projectIconHovered = hovered
+                            projectIconPressed = pressed
+                        },
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
+                Image(
+                    painter = projectIconPainter,
+                    contentDescription = "mulehang-agent 项目图标",
+                    modifier = Modifier.size(HEADER_PROJECT_ICON_SIZE_DP.dp),
+                )
+                DropdownMenu(
+                    expanded = projectIconMenuExpanded,
+                    onDismissRequest = { projectIconMenuExpanded = false },
+                    modifier = Modifier
+                        .width(HEADER_PROJECT_ICON_MENU_WIDTH_DP.dp)
+                        .height(HEADER_PROJECT_ICON_MENU_HEIGHT_DP.dp),
+                ) {
+                    Spacer(modifier = Modifier.fillMaxSize())
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .padding(start = HEADER_PROJECT_ICON_GAP_DP.dp),
             ) {
                 val menuTooltip = if (sidebarVisible) "隐藏任务侧栏" else "显示任务侧栏"
                 if (onTitleBarClientPointerEvent != null) {

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="glassBody" x1="14" y1="12" x2="51" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8F8FF"/>
+      <stop offset="0.11" stop-color="#6FA6CB"/>
+      <stop offset="0.36" stop-color="#183F5C"/>
+      <stop offset="0.7" stop-color="#0A2942"/>
+      <stop offset="1" stop-color="#17CDE0"/>
+    </linearGradient>
+    <linearGradient id="glassHighlight" x1="16" y1="14" x2="49" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="0.33" stop-color="#BDF4FF" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#71F7FF" stop-opacity="0.72"/>
+    </linearGradient>
+  </defs>
+  <path d="M14 48V23C14 13 32 13 32 23V48M32 23C32 13 50 13 50 23V48" stroke="#061722" stroke-opacity="0.88" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 48V23C14 13 32 13 32 23V48M32 23C32 13 50 13 50 23V48" stroke="url(#glassBody)" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 48V23C14 13 32 13 32 23V48M32 23C32 13 50 13 50 23V48" stroke="url(#glassHighlight)" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14.5 25V22.5C14.5 16.3 23.5 14.8 28.4 18.6" stroke="#FFFFFF" stroke-opacity="0.78" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M33.1 18.4C38.5 14.7 49.5 16.4 49.5 23.1V27" stroke="#C7F9FF" stroke-opacity="0.5" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

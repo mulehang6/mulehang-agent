@@ -68,8 +68,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
@@ -365,7 +367,10 @@ internal fun ConversationTimeline(
                 }
 
                 is ReasoningItem -> TimelineReasoningItem(item)
-                is ToolEventItem -> TimelineToolTextRow(item, isFailure = item.status == ToolEventStatus.Failed)
+                is ToolEventItem -> TimelineToolTextRow(
+                    item = rememberTimelineToolDisplayItem(item),
+                    isFailure = item.status == ToolEventStatus.Failed,
+                )
                 }
             }
         }
@@ -703,8 +708,9 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
     var expanded by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(true) }
     var userSetExpansion by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(false) }
     var hovered by remember { mutableStateOf(false) }
-    val shouldAutoCollapse = shouldAutoCollapseTimelineToolGroup(items)
-    LaunchedEffect(items.map(ToolEventItem::status), userSetExpansion) {
+    val displayItems = items.map { item -> rememberTimelineToolDisplayItem(item) }
+    val shouldAutoCollapse = shouldAutoCollapseTimelineToolGroup(displayItems)
+    LaunchedEffect(displayItems.map(ToolEventItem::status), userSetExpansion) {
         if (!userSetExpansion && shouldAutoCollapse) {
             delay(TOOL_GROUP_AUTO_COLLAPSE_DELAY_MILLIS.milliseconds)
             expanded = false
@@ -717,9 +723,9 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
         ),
         label = "tool-group-chevron",
     )
-    val activeTool = activeTimelineTool(items)
-    val groupGlyph = timelineToolGroupGlyph(items)
-    val groupTint = timelineToolGroupTint(items)
+    val activeTool = activeTimelineTool(displayItems)
+    val groupGlyph = timelineToolGroupGlyph(displayItems)
+    val groupTint = timelineToolGroupTint(displayItems)
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -750,7 +756,7 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
                 )
             }
             AnimatedContent(
-                targetState = toolGroupHeadline(items),
+                targetState = toolGroupHeadline(displayItems),
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 8.dp),
@@ -790,9 +796,101 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
                 modifier = Modifier.padding(start = 12.dp, top = 3.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items.forEach { TimelineToolTextRow(it, isFailure = false) }
+                TimelineToolCardStack(displayItems)
             }
         }
+    }
+}
+
+/**
+ * 暂存工具事件的展示状态，使快速完成的非终端工具仍可展示完整的运行图标动效。
+ */
+@Composable
+private fun rememberTimelineToolDisplayItem(item: ToolEventItem): ToolEventItem {
+    val identity = toolEventExpansionIdentity(item)
+    var displayItem by remember(identity) { mutableStateOf(item) }
+    var startedAtMillis by remember(identity) { mutableStateOf(0L) }
+    var hasSeenStartedState by remember(identity) { mutableStateOf(item.status == ToolEventStatus.Started) }
+    LaunchedEffect(item) {
+        if (item.status == ToolEventStatus.Started) {
+            hasSeenStartedState = true
+            startedAtMillis = System.currentTimeMillis()
+            displayItem = item
+        } else if (!hasSeenStartedState) {
+            displayItem = item
+        } else {
+            val remainingDelayMillis = toolCompletionDelayMillis(
+                item = item,
+                startedAtMillis = startedAtMillis,
+                nowMillis = System.currentTimeMillis(),
+            )
+            if (remainingDelayMillis > 0L) delay(remainingDelayMillis.milliseconds)
+            displayItem = item
+        }
+    }
+    return displayItem
+}
+
+/** 渲染工具组中前景当前卡和一张带纵深反馈的后置预览卡。 */
+@Composable
+private fun TimelineToolCardStack(items: List<ToolEventItem>) {
+    val visibleItems = visibleToolCardStack(items)
+    val currentItem = visibleItems.firstOrNull() ?: return
+    val previewItem = visibleItems.getOrNull(1)
+    val density = LocalDensity.current
+    val previewOffsetX = with(density) { 8.dp.toPx() }
+    val previewOffsetY = with(density) { 6.dp.toPx() }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        previewItem?.let { item ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        alpha = 0.52f
+                        scaleX = 0.97f
+                        scaleY = 0.97f
+                        translationX = previewOffsetX
+                        translationY = previewOffsetY
+                    },
+            ) {
+                TimelineToolStackCard(item = item, preview = true)
+            }
+        }
+        AnimatedContent(
+            targetState = currentItem,
+            transitionSpec = {
+                (slideInHorizontally(tween(durationMillis = 220)) { width -> width / 8 } +
+                        fadeIn(tween(durationMillis = 180)) +
+                        scaleIn(initialScale = 0.97f, animationSpec = tween(durationMillis = 220)))
+                    .togetherWith(
+                        slideOutHorizontally(tween(durationMillis = 160)) { width -> -width / 5 } +
+                                fadeOut(tween(durationMillis = 130)),
+                    )
+            },
+            label = "tool-card-stack",
+        ) { item ->
+            TimelineToolStackCard(item = item, preview = false)
+        }
+    }
+}
+
+/** 将工具行放入独立表面，令前景与后置预览具备明确层级。 */
+@Composable
+private fun TimelineToolStackCard(
+    item: ToolEventItem,
+    preview: Boolean,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = AppPanelBackground,
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
+    ) {
+        TimelineToolTextRow(
+            item = item,
+            isFailure = item.status == ToolEventStatus.Failed,
+            preview = preview,
+        )
     }
 }
 
@@ -803,6 +901,7 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
 private fun TimelineToolTextRow(
     item: ToolEventItem,
     isFailure: Boolean,
+    preview: Boolean = false,
 ) {
     val hasDetails = toolEventHasDetails(item) || item.errorMessage?.isNotBlank() == true
     val glyph = timelineToolGlyph(item)
@@ -829,7 +928,7 @@ private fun TimelineToolTextRow(
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
                 .background(if (hovered) AppHoverBackground else Color.Transparent, RoundedCornerShape(7.dp))
-                .clickable(enabled = hasDetails) {
+                .clickable(enabled = hasDetails && !preview) {
                     userSetExpansion = true
                     expanded = !expanded
                 }
@@ -859,10 +958,10 @@ private fun TimelineToolTextRow(
                     fontFamily = if (isTerminalToolEvent(item)) FontFamily.Monospace else FontFamily.Default,
                 ),
             )
-            if (hasDetails && hovered) ToolEventChevron(chevronRotation)
+            if (hasDetails && hovered && !preview) ToolEventChevron(chevronRotation)
         }
         AnimatedVisibility(
-            visible = expanded && hasDetails,
+            visible = expanded && hasDetails && !preview,
             enter = expandVertically(tween(durationMillis = TOOL_ROW_EXPAND_DURATION_MILLIS)) +
                     fadeIn(tween(durationMillis = TOOL_ROW_EXPAND_DURATION_MILLIS)),
             exit = shrinkVertically(tween(durationMillis = TOOL_ROW_COLLAPSE_DURATION_MILLIS)) +

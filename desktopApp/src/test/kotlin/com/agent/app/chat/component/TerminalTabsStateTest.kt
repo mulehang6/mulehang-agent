@@ -80,6 +80,12 @@ class TerminalTabsStateTest {
         )
     }
 
+    /** 终端标题栏关闭图标必须明确表达仅收起面板的语义。 */
+    @Test
+    fun `should label terminal header close action as hide`() {
+        assertEquals("收起终端", terminalPanelHideActionLabel())
+    }
+
     /** 关闭最后一个标签前应先播放面板退出动画；多标签关闭无需等待。 */
     @Test
     fun `should defer closing only the final terminal tab`() {

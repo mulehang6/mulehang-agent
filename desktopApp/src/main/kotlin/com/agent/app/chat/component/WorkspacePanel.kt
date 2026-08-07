@@ -66,6 +66,7 @@ internal fun WorkspacePanel(
     onAddTerminalTab: () -> Unit,
     onCloseTerminalTab: (Long) -> Unit,
     onCloseOtherTerminalTabs: (Long) -> Unit,
+    onHideTerminalPanel: () -> Unit,
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -272,6 +273,7 @@ internal fun WorkspacePanel(
                     onAddTab = onAddTerminalTab,
                     onCloseTab = onCloseTerminalTab,
                     onCloseOtherTabs = onCloseOtherTerminalTabs,
+                    onHidePanel = onHideTerminalPanel,
                     modifier = terminalModifier,
                 )
             },

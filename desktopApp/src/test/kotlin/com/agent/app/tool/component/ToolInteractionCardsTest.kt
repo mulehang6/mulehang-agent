@@ -29,6 +29,13 @@ class ToolInteractionCardsTest {
         assertTrue(model.allowFreeText)
     }
 
+    /** 自由输入仅在去除空白后仍含内容时才能提交。 */
+    @Test
+    fun `question free text submit should require non blank content`() {
+        assertEquals(false, canSubmitQuestionFreeText("   "))
+        assertEquals(true, canSubmitQuestionFreeText("使用第一种方式"))
+    }
+
     /**
      * 审批卡片应保留工具摘要和目标路径。
      */

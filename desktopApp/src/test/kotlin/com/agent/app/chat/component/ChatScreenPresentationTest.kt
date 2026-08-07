@@ -811,6 +811,12 @@ class ChatScreenPresentationTest {
         assertEquals(120, PENDING_CARD_EXIT_DURATION_MILLIS)
     }
 
+    /** 交互卡进入时应从可感知但不突兀的轻微缩放开始。 */
+    @Test
+    fun `should scale pending interaction card in on entry`() {
+        assertEquals(0.96f, PENDING_CARD_ENTER_INITIAL_SCALE)
+    }
+
     /**
      * 工具详情箭头在收起与展开状态之间必须提供明确的方向提示。
      */

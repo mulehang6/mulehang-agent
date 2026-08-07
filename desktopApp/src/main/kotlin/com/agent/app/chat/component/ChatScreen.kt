@@ -223,6 +223,7 @@ internal fun WindowScope.ChatScreen(
                             terminalSessions.closeAllExcept(keptTabId)
                             terminalTabs = terminalTabs.retainOnly(keptTabId)
                         },
+                        onHideTerminalPanel = { terminalPanelVisible = false },
                         compact = compact,
                         modifier = Modifier.weight(1f),
                     )

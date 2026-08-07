@@ -90,6 +90,7 @@ import javax.swing.plaf.basic.BasicScrollBarUI
 internal const val TERMINAL_CLOSE_BUTTON_SIZE_DP = 24
 internal const val TERMINAL_TAB_HEIGHT_DP = 30
 internal const val TERMINAL_ADD_BUTTON_SIZE_DP = 36
+internal const val TERMINAL_HIDE_BUTTON_SIZE_DP = 32
 private val TerminalSurfaceBackground = Color(0xFF17181A)
 private val TerminalTabActiveBackground = Color(0xFF202A38)
 private val TerminalTabHoverBackground = Color(0xFF24272D)
@@ -102,6 +103,9 @@ internal fun terminalTabBorderColor(selected: Boolean): Color =
 /** 返回新建终端按钮的悬浮底色；图标本身不使用发光效果。 */
 internal fun terminalAddButtonBackground(hovered: Boolean): Color =
     if (hovered) TerminalTabHoverBackground else Color.Transparent
+
+/** 返回终端标题栏关闭图标的可访问文案，明确其不会终止终端会话。 */
+internal fun terminalPanelHideActionLabel(): String = "收起终端"
 
 /**
  * 返回终端操作图标的发光强度；新建和关闭操作保持克制的静态呈现。
@@ -235,6 +239,7 @@ internal fun EmbeddedTerminalPanel(
     onAddTab: () -> Unit,
     onCloseTab: (Long) -> Unit,
     onCloseOtherTabs: (Long) -> Unit,
+    onHidePanel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val activeTab = tabs.tabs.firstOrNull { it.id == tabs.activeTabId }
@@ -246,6 +251,7 @@ internal fun EmbeddedTerminalPanel(
     var contextMenuTabId by remember { mutableStateOf<Long?>(null) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var addHovered by remember { mutableStateOf(false) }
+    var hideHovered by remember { mutableStateOf(false) }
     val contextMenuMotion = rememberMenuGrowthMotion(
         expanded = contextMenuTabId != null,
         label = "terminal-context-menu",
@@ -308,6 +314,23 @@ internal fun EmbeddedTerminalPanel(
                         glowAlpha = 0f,
                     )
                 }
+            }
+            Box(
+                modifier = Modifier
+                    .size(TERMINAL_HIDE_BUTTON_SIZE_DP.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(terminalAddButtonBackground(hideHovered))
+                    .onPointerEvent(PointerEventType.Enter) { hideHovered = true }
+                    .onPointerEvent(PointerEventType.Exit) { hideHovered = false }
+                    .clickable(onClick = onHidePanel)
+                    .semantics { contentDescription = terminalPanelHideActionLabel() },
+                contentAlignment = Alignment.Center,
+            ) {
+                TerminalActionGlyph(
+                    cross = true,
+                    color = AppMuted,
+                    glowAlpha = 0f,
+                )
             }
         }
         Box(

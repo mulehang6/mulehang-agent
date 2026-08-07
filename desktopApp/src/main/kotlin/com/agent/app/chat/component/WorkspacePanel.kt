@@ -60,6 +60,7 @@ internal fun WorkspacePanel(
     activeRailView: RightRailGlyph,
     filterToolActivityOnly: Boolean,
     terminalTabs: TerminalTabsState,
+    terminalPanelVisible: Boolean,
     terminalSessions: TerminalSessionStore,
     onSelectTerminalTab: (Long) -> Unit,
     onAddTerminalTab: () -> Unit,
@@ -130,7 +131,7 @@ internal fun WorkspacePanel(
             ),
     ) {
         ResizableWorkspaceLayout(
-            terminalVisible = terminalTabs.hasActiveTab() && activeConversation != null,
+            terminalVisible = terminalPanelVisible && terminalTabs.hasActiveTab() && activeConversation != null,
             compact = compact,
             modifier = Modifier.fillMaxSize(),
             workspace = { workspaceModifier ->

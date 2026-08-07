@@ -16,10 +16,17 @@ class MenuGrowthMotionTest {
         assertEquals(MenuGrowthTargets(scale = 1f, alpha = 1f, translationYDp = 0f), menuGrowthTargets(true))
     }
 
-    /** 下拉菜单关联触发器顶部，右键菜单关联指针点击位置。 */
+    /** 下拉菜单按最终展开方向关联触发器边缘，右键菜单关联指针点击位置。 */
     @Test
     fun `should use trigger and pointer menu origins`() {
-        assertEquals(TransformOrigin(0.5f, 1f), menuGrowthTransformOrigin(MenuGrowthOrigin.Dropdown))
+        assertEquals(
+            TransformOrigin(0.5f, 0f),
+            menuGrowthTransformOrigin(MenuGrowthOrigin.Dropdown, opensUpward = false),
+        )
+        assertEquals(
+            TransformOrigin(0.5f, 1f),
+            menuGrowthTransformOrigin(MenuGrowthOrigin.Dropdown, opensUpward = true),
+        )
         assertEquals(TransformOrigin(0f, 0f), menuGrowthTransformOrigin(MenuGrowthOrigin.Context))
     }
 
@@ -34,6 +41,7 @@ class MenuGrowthMotionTest {
     @Test
     fun `should fade divider highlight away from the pointer peak`() {
         assertEquals(androidx.compose.ui.graphics.Color(0xFF0A6CD9), DividerAirBlue)
+        assertEquals(1f, DIVIDER_HIGHLIGHT_PEAK_ALPHA)
         assertEquals(0.5f, dividerHighlightPeakFraction(pointerPositionPx = 100f, trackLengthPx = 200f))
         assertEquals(0f, dividerHighlightPeakFraction(pointerPositionPx = -10f, trackLengthPx = 200f))
         assertEquals(1f, dividerHighlightPeakFraction(pointerPositionPx = 240f, trackLengthPx = 200f))

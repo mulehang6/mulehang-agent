@@ -520,8 +520,8 @@ private fun ComposerPanel(
                             style = androidx.compose.material3.MaterialTheme.typography.titleSmall.copy(color = AppMuted),
                         )
                         PermissionPreset.entries.forEachIndexed { index, preset ->
-                    RingPermissionDropdownMenuItem(
-                        description = permissionDescription(preset),
+                            RingPermissionDropdownMenuItem(
+                                description = permissionDescription(preset),
                                 badge = permissionBadge(preset),
                                 badgeColor = permissionBadgeColor(preset),
                                 selected = preset == permissionPreset,

@@ -254,7 +254,6 @@ internal fun EmbeddedTerminalPanel(
     LaunchedEffect(tabs.activeTabId) {
         sessions.focusActiveIfNeeded(tabs.activeTabId)
     }
-
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
@@ -311,12 +310,6 @@ internal fun EmbeddedTerminalPanel(
                 }
             }
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(AppLine.copy(alpha = 0.28f)),
-        )
         Box(
             modifier = Modifier
                 .fillMaxSize()

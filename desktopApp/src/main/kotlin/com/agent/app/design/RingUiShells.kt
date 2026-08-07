@@ -468,7 +468,10 @@ internal fun RingSelectChip(
                         popupPlacementResolved = true
                     }
                     .graphicsLayer {
-                        transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Dropdown)
+                        transformOrigin = menuGrowthTransformOrigin(
+                            origin = MenuGrowthOrigin.Dropdown,
+                            opensUpward = popupOpensUpward,
+                        )
                         scaleX = popupMotion.scale
                         scaleY = popupMotion.scale
                         alpha = popupMotion.alpha

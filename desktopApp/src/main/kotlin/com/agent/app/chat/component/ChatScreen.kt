@@ -52,6 +52,7 @@ import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.captureWorkspaceBackdrop
 import com.agent.app.design.rememberWorkspaceBackdropState
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 internal const val SIDEBAR_VISIBLE_BY_DEFAULT = false
@@ -62,10 +63,14 @@ private const val APP_FEEDBACK_POINTER_OFFSET_DP = 12
 internal data class AppFeedbackState(
     val message: String,
     val anchor: Offset?,
+    val token: Long = 0L,
 )
 
 /** 保留可用的鼠标位置；为空时由全局 toast 使用默认底部位置。 */
 internal fun feedbackToastAnchor(pointerPosition: Offset?): Offset? = pointerPosition
+
+/** 为每次反馈分配递增标识，确保重复文案也会重新开始展示计时。 */
+internal fun nextAppFeedbackToken(currentToken: Long): Long = currentToken + 1L
 
 /**
  * 按原型重构后的桌面主界面。
@@ -79,10 +84,17 @@ internal fun WindowScope.ChatScreen(
     onCloseRequest: () -> Unit,
 ) {
     var terminalTabs by remember { mutableStateOf(TerminalTabsState()) }
+    var terminalPanelVisible by remember { mutableStateOf(false) }
     val terminalSessions = remember { TerminalSessionStore() }
     var sidebarVisible by remember { mutableStateOf(SIDEBAR_VISIBLE_BY_DEFAULT) }
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
+    var appFeedbackToken by remember { mutableStateOf(0L) }
+    var pendingTerminalTabCloseId by remember { mutableStateOf<Long?>(null) }
+    val showAppFeedback: (AppFeedbackState) -> Unit = { feedback ->
+        appFeedbackToken = nextAppFeedbackToken(appFeedbackToken)
+        appFeedback = feedback.copy(token = appFeedbackToken)
+    }
     var sidebarBounds by remember { mutableStateOf(Rect.Zero) }
     var sidebarOrigin by remember { mutableStateOf(Offset.Zero) }
     val workspaceBackdropState = rememberWorkspaceBackdropState()
@@ -92,10 +104,22 @@ internal fun WindowScope.ChatScreen(
         onDispose { terminalSessions.closeAll() }
     }
 
-    LaunchedEffect(appFeedback?.message) {
+    LaunchedEffect(appFeedback?.token) {
         if (appFeedback != null) {
             delay(2.4.seconds)
             appFeedback = null
+        }
+    }
+
+    LaunchedEffect(pendingTerminalTabCloseId, terminalPanelVisible) {
+        val tabId = pendingTerminalTabCloseId
+        if (tabId != null && !terminalPanelVisible) {
+            delay((TERMINAL_PANEL_EXIT_DURATION_MILLIS.toLong() + TERMINAL_PANEL_CLOSE_DELAY_MILLIS).milliseconds)
+            if (pendingTerminalTabCloseId == tabId && !terminalPanelVisible) {
+                terminalSessions.close(tabId)
+                terminalTabs = terminalTabs.resetAfterTerminalWindowClosed()
+                pendingTerminalTabCloseId = null
+            }
         }
     }
 
@@ -147,7 +171,7 @@ internal fun WindowScope.ChatScreen(
                     windowState = desktopWindowState,
                     windowChromeMode = windowChromeMode,
                     onTitleBarClientPointerEvent = onTitleBarClientPointerEvent,
-                    onGlobalFeedback = { feedback -> appFeedback = feedback },
+                    onGlobalFeedback = showAppFeedback,
                     onGlobalPointerPosition = { pointerPosition ->
                         appFeedback?.takeIf { it.anchor != null }?.let { feedback ->
                             appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
@@ -172,19 +196,28 @@ internal fun WindowScope.ChatScreen(
                         activeRailView = RightRailGlyph.CODE,
                         filterToolActivityOnly = false,
                         terminalTabs = terminalTabs,
+                        terminalPanelVisible = terminalPanelVisible,
                         terminalSessions = terminalSessions,
                         onSelectTerminalTab = { tabId ->
                             terminalTabs = terminalTabs.selectTab(tabId)
                         },
                         onAddTerminalTab = {
                             activeConversation?.let { conversation ->
+                                pendingTerminalTabCloseId = null
                                 terminalTabs = terminalTabs.addTab(conversation.workspacePath)
                                 terminalSessions.create(terminalTabs.tabs.last())
+                                terminalPanelVisible = true
                             }
                         },
                         onCloseTerminalTab = { tabId ->
-                            terminalSessions.close(tabId)
-                            terminalTabs = terminalTabs.closeTab(tabId)
+                            if (terminalPanelVisible && shouldDeferTerminalTabClose(terminalTabs)) {
+                                pendingTerminalTabCloseId = tabId
+                                terminalPanelVisible = false
+                            } else {
+                                terminalSessions.close(tabId)
+                                terminalTabs = terminalTabs.closeTab(tabId)
+                                terminalPanelVisible = terminalTabs.hasActiveTab()
+                            }
                         },
                         onCloseOtherTerminalTabs = { keptTabId ->
                             terminalSessions.closeAllExcept(keptTabId)
@@ -198,22 +231,34 @@ internal fun WindowScope.ChatScreen(
                             activeGlyph = resolveActiveRailGlyph(
                                 activeRailView = RightRailGlyph.CODE,
                                 filterToolActivityOnly = false,
-                                terminalVisible = terminalTabs.hasActiveTab(),
+                                terminalVisible = terminalPanelVisible && terminalTabs.hasActiveTab(),
                             ),
                             onToolClick = { glyph ->
                                 if (glyph == RightRailGlyph.TERMINAL) {
                                     if (activeConversation == null) {
-                                        appFeedback = AppFeedbackState(message = "请先选择工作区", anchor = null)
+                                        showAppFeedback(
+                                            AppFeedbackState(message = "请先选择工作区", anchor = null),
+                                        )
                                     } else {
-                                        when (terminalIconAction(terminalTabs.hasActiveTab())) {
-                                            TerminalIconAction.CREATE_TAB -> {
+                                        when (
+                                            terminalRailAction(
+                                                panelVisible = terminalPanelVisible,
+                                                hasActiveTab = terminalTabs.hasActiveTab(),
+                                            )
+                                        ) {
+                                            TerminalRailAction.CREATE_AND_SHOW -> {
+                                                pendingTerminalTabCloseId = null
                                                 terminalTabs = terminalTabs.addTab(activeConversation.workspacePath)
-                                                terminalSessions.create(terminalTabs.tabs.last())
+                                                val newTerminalTab = terminalTabs.tabs.last()
+                                                terminalSessions.create(newTerminalTab)
+                                                terminalPanelVisible = true
                                             }
 
-                                            TerminalIconAction.FOCUS_ACTIVE_TAB -> {
-                                                terminalSessions.focusActiveIfNeeded(terminalTabs.activeTabId)
+                                            TerminalRailAction.SHOW -> {
+                                                pendingTerminalTabCloseId = null
+                                                terminalPanelVisible = true
                                             }
+                                            TerminalRailAction.HIDE -> terminalPanelVisible = false
                                         }
                                         appFeedback = null
                                     }

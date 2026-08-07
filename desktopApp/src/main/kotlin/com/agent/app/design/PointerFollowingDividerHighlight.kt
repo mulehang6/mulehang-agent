@@ -19,6 +19,9 @@ internal const val DIVIDER_HIGHLIGHT_THICKNESS_DP = 3
 /** JetBrains Air 分隔条的蓝色峰值。 */
 internal val DividerAirBlue = Color(0xFF0A6CD9)
 
+/** 指针正下方的蓝色峰值保持满强度，以清晰提示可拖拽边界。 */
+internal const val DIVIDER_HIGHLIGHT_PEAK_ALPHA = 1f
+
 /** 分隔条高亮的主轴方向。 */
 internal enum class DividerHighlightAxis {
     Horizontal,
@@ -126,18 +129,18 @@ private fun DrawScope.drawPointerFollowingDividerHighlight(
 /** 为完整分隔轴生成以鼠标为峰值、向两端淡出的颜色停靠点。 */
 private fun dividerHighlightGradientStops(peakFraction: Float): Array<Pair<Float, Color>> = when {
     peakFraction <= 0f -> arrayOf(
-        0f to DividerAirBlue.copy(alpha = 0.84f),
+        0f to DividerAirBlue.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
         1f to Color.Transparent,
     )
 
     peakFraction >= 1f -> arrayOf(
         0f to Color.Transparent,
-        1f to DividerAirBlue.copy(alpha = 0.84f),
+        1f to DividerAirBlue.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
     )
 
     else -> arrayOf(
         0f to Color.Transparent,
-        peakFraction to DividerAirBlue.copy(alpha = 0.84f),
+        peakFraction to DividerAirBlue.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
         1f to Color.Transparent,
     )
 }

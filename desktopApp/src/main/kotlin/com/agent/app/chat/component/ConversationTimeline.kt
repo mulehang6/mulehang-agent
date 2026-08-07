@@ -255,7 +255,7 @@ internal fun timelineToolGlyph(item: ToolEventItem): TimelineToolGlyph = timelin
 
 /** 返回工具收起行的主文案；终端工具只保留实际命令。 */
 internal fun timelineToolRowHeadline(item: ToolEventItem): String =
-    if (isTerminalToolEvent(item)) buildToolEventInlineInput(item).orEmpty() else item.toolName
+    if (isTerminalToolEvent(item)) buildToolEventInlineInput(item) ?: item.toolName else item.toolName
 
 /** 返回非终端工具应在展开区展示的输入参数。 */
 internal fun timelineToolExpandedInput(item: ToolEventItem): String? =

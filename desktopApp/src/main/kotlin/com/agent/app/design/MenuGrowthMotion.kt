@@ -92,9 +92,12 @@ internal fun selectMenuItemEntranceIndex(
     index.coerceAtLeast(0)
 }
 
-/** 返回下拉菜单触发器或右键点击点对应的缩放原点。 */
-internal fun menuGrowthTransformOrigin(origin: MenuGrowthOrigin): TransformOrigin = when (origin) {
-    MenuGrowthOrigin.Dropdown -> TransformOrigin(0.5f, 1f)
+/** 返回下拉菜单最终展开边缘或右键点击点对应的缩放原点。 */
+internal fun menuGrowthTransformOrigin(
+    origin: MenuGrowthOrigin,
+    opensUpward: Boolean = false,
+): TransformOrigin = when (origin) {
+    MenuGrowthOrigin.Dropdown -> TransformOrigin(0.5f, if (opensUpward) 1f else 0f)
     MenuGrowthOrigin.Context -> TransformOrigin(0f, 0f)
 }
 

@@ -534,6 +534,18 @@ class ChatScreenPresentationTest {
         assertEquals(120f, clampTerminalHeight(200f, 320f, 180f, 200f))
     }
 
+    /** 终端打开、收起和关闭均使用可感知但不拖沓的面板过渡。 */
+    @Test
+    fun `should animate terminal panel visibility changes`() {
+        assertEquals(420, TERMINAL_PANEL_ENTER_DURATION_MILLIS)
+        assertEquals(360, TERMINAL_PANEL_EXIT_DURATION_MILLIS)
+        assertEquals(32L, TERMINAL_PANEL_CLOSE_DELAY_MILLIS)
+        assertEquals(800f, workspaceHeightDuringTerminalMotion(800f, 280f, 0f))
+        assertEquals(520f, workspaceHeightDuringTerminalMotion(800f, 280f, 1f))
+        assertEquals(280f, terminalPanelTranslationYPx(280f, 0f))
+        assertEquals(0f, terminalPanelTranslationYPx(280f, 1f))
+    }
+
     /** 分隔高亮必须围绕指针定位，并在轨道两端裁剪。 */
     @Test
     fun `should clip pointer following divider highlight to its track`() {
@@ -900,6 +912,8 @@ class ChatScreenPresentationTest {
     fun `should retain the optional pointer anchor for branch copy feedback`() {
         assertEquals(Offset(48f, 24f), feedbackToastAnchor(Offset(48f, 24f)))
         assertNull(feedbackToastAnchor(null))
+        assertEquals(1L, nextAppFeedbackToken(0L))
+        assertEquals(42L, nextAppFeedbackToken(41L))
     }
 
     /** 拖选到输入框上下边缘时，滚动方向必须跟随指针方向。 */
@@ -1096,6 +1110,10 @@ class ChatScreenPresentationTest {
         )
 
         assertEquals("Get-ChildItem", timelineToolRowHeadline(terminal))
+        assertEquals(
+            "run_powershell",
+            timelineToolRowHeadline(terminal.copy(preview = null)),
+        )
         assertEquals("list_dir", timelineToolRowHeadline(directory))
         assertEquals("{\"path\":\".\"}", timelineToolExpandedInput(directory))
         assertNull(timelineToolExpandedInput(terminal))
@@ -1111,6 +1129,16 @@ class ChatScreenPresentationTest {
         assertEquals(440, TOOL_GROUP_COLLAPSE_DURATION_MILLIS)
         assertEquals(340, TOOL_ROW_EXPAND_DURATION_MILLIS)
         assertEquals(260, TOOL_ROW_COLLAPSE_DURATION_MILLIS)
+    }
+
+    /**
+     * 终端开合必须通过实际布局高度驱动，避免 SwingPanel 在动画结束后才补绘。
+     */
+    @Test
+    fun `should animate terminal container through actual layout height`() {
+        assertEquals(0f, terminalContainerHeightDuringMotion(270f, 0f))
+        assertEquals(135f, terminalContainerHeightDuringMotion(270f, 0.5f))
+        assertEquals(270f, terminalContainerHeightDuringMotion(270f, 1f))
     }
 
     /** 工具组仅在所有工具结束后自动收起，且每个组由自身状态独立驱动。 */

@@ -25,7 +25,7 @@ internal fun TerminalTabsState.addTab(workspacePath: String): TerminalTabsState 
     val tab = TerminalTab(
         id = nextTabId,
         workspacePath = workspacePath,
-        title = "终端 $nextTabId",
+        title = if (nextTabId == 1L) "终端" else "终端 $nextTabId",
     )
     return copy(
         tabs = tabs + tab,
@@ -69,19 +69,30 @@ internal fun TerminalTabsState.retainOnly(tabId: Long): TerminalTabsState {
  */
 internal fun TerminalTabsState.hasActiveTab(): Boolean = activeTabId != null && tabs.any { it.id == activeTabId }
 
-/**
- * 描述终端图标点击后的状态意图，避免重复点击反转面板可见性。
- */
-internal enum class TerminalIconAction {
-    CREATE_TAB,
-    FOCUS_ACTIVE_TAB,
+/** 描述右侧终端按钮对面板可见性及标签状态的唯一操作。 */
+internal enum class TerminalRailAction {
+    CREATE_AND_SHOW,
+    SHOW,
+    HIDE,
 }
 
 /**
- * 根据是否已有终端页，解析终端图标的唯一状态意图。
+ * 根据面板当前可见性与已有标签解析终端按钮行为；收起不影响终端会话。
  */
-internal fun terminalIconAction(hasActiveTab: Boolean): TerminalIconAction =
-    if (hasActiveTab) TerminalIconAction.FOCUS_ACTIVE_TAB else TerminalIconAction.CREATE_TAB
+internal fun terminalRailAction(
+    panelVisible: Boolean,
+    hasActiveTab: Boolean,
+): TerminalRailAction = when {
+    panelVisible -> TerminalRailAction.HIDE
+    hasActiveTab -> TerminalRailAction.SHOW
+    else -> TerminalRailAction.CREATE_AND_SHOW
+}
+
+/** 仅关闭最后一个标签时需等待终端面板退出动画，避免窗口内容突然清空。 */
+internal fun shouldDeferTerminalTabClose(tabs: TerminalTabsState): Boolean = tabs.tabs.size == 1
+
+/** 在最后一个标签关闭后清空窗口状态，令下一次打开创建全新的首个终端。 */
+internal fun TerminalTabsState.resetAfterTerminalWindowClosed(): TerminalTabsState = TerminalTabsState()
 
 /**
  * 判断是否需要向终端发送新的 Swing 焦点请求。

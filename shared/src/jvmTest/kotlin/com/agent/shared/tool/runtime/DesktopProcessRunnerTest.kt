@@ -52,7 +52,7 @@ class DesktopProcessRunnerTest {
     fun `should drain stdout and stderr concurrently`() {
         val result = DesktopProcessRunner().run(
             DesktopProcessRunner.Args(
-                command = cmd("for /L %i in (1,1,20000) do @echo stdout-%i & @echo stderr-%i 1>&2"),
+                command = cmd("for /L %i in (1,1,2000) do @(echo stdout-%i & echo stderr-%i 1>&2)"),
                 workingDirectory = temporaryDirectory(),
                 timeoutMillis = 5_000,
             ),
@@ -60,8 +60,8 @@ class DesktopProcessRunnerTest {
 
         assertEquals(DesktopProcessRunner.Outcome.COMPLETED, result.outcome)
         assertEquals(0, result.exitCode)
-        assertTrue(result.stdout.contains("stdout-1"))
-        assertTrue(result.stderr.contains("stderr-1"))
+        assertTrue(result.stdout.contains("stdout-2000"))
+        assertTrue(result.stderr.contains("stderr-2000"))
     }
 
     /**

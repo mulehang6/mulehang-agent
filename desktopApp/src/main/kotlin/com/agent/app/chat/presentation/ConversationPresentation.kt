@@ -168,13 +168,13 @@ internal fun buildReasoningHeadline(item: ReasoningItem): String {
 }
 
 /**
- * 将已完成思考的耗时格式化为秒或毫秒文案。
+ * 将已完成思考的耗时格式化为英文秒或毫秒文案。
  */
 internal fun buildReasoningDurationLabel(durationMillis: Long): String {
     val normalizedDuration = durationMillis.coerceAtLeast(0L)
     return if (normalizedDuration < 1_000L) {
-        "已思考 $normalizedDuration 毫秒"
+        "Thought for ${normalizedDuration}ms"
     } else {
-        "已思考 ${normalizedDuration / 1_000L} 秒"
+        "Thought for ${normalizedDuration / 1_000L}s"
     }
 }

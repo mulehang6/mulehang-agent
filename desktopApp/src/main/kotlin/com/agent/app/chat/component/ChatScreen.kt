@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -51,9 +52,25 @@ import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.captureWorkspaceBackdrop
 import com.agent.app.design.rememberWorkspaceBackdropState
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 internal const val SIDEBAR_VISIBLE_BY_DEFAULT = false
+internal const val APP_FEEDBACK_BOTTOM_PADDING_DP = 24
+private const val APP_FEEDBACK_POINTER_OFFSET_DP = 12
+
+/** 应用级反馈及其可选的鼠标锚点。 */
+internal data class AppFeedbackState(
+    val message: String,
+    val anchor: Offset?,
+    val token: Long = 0L,
+)
+
+/** 保留可用的鼠标位置；为空时由全局 toast 使用默认底部位置。 */
+internal fun feedbackToastAnchor(pointerPosition: Offset?): Offset? = pointerPosition
+
+/** 为每次反馈分配递增标识，确保重复文案也会重新开始展示计时。 */
+internal fun nextAppFeedbackToken(currentToken: Long): Long = currentToken + 1L
 
 /**
  * 按原型重构后的桌面主界面。
@@ -67,10 +84,17 @@ internal fun WindowScope.ChatScreen(
     onCloseRequest: () -> Unit,
 ) {
     var terminalTabs by remember { mutableStateOf(TerminalTabsState()) }
+    var terminalPanelVisible by remember { mutableStateOf(false) }
     val terminalSessions = remember { TerminalSessionStore() }
     var sidebarVisible by remember { mutableStateOf(SIDEBAR_VISIBLE_BY_DEFAULT) }
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
-    var railFeedback by remember { mutableStateOf<String?>(null) }
+    var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
+    var appFeedbackToken by remember { mutableStateOf(0L) }
+    var pendingTerminalTabCloseId by remember { mutableStateOf<Long?>(null) }
+    val showAppFeedback: (AppFeedbackState) -> Unit = { feedback ->
+        appFeedbackToken = nextAppFeedbackToken(appFeedbackToken)
+        appFeedback = feedback.copy(token = appFeedbackToken)
+    }
     var sidebarBounds by remember { mutableStateOf(Rect.Zero) }
     var sidebarOrigin by remember { mutableStateOf(Offset.Zero) }
     val workspaceBackdropState = rememberWorkspaceBackdropState()
@@ -80,10 +104,22 @@ internal fun WindowScope.ChatScreen(
         onDispose { terminalSessions.closeAll() }
     }
 
-    LaunchedEffect(railFeedback) {
-        if (railFeedback != null) {
+    LaunchedEffect(appFeedback?.token) {
+        if (appFeedback != null) {
             delay(2.4.seconds)
-            railFeedback = null
+            appFeedback = null
+        }
+    }
+
+    LaunchedEffect(pendingTerminalTabCloseId, terminalPanelVisible) {
+        val tabId = pendingTerminalTabCloseId
+        if (tabId != null && !terminalPanelVisible) {
+            delay((TERMINAL_PANEL_EXIT_DURATION_MILLIS.toLong() + TERMINAL_PANEL_CLOSE_DELAY_MILLIS).milliseconds)
+            if (pendingTerminalTabCloseId == tabId && !terminalPanelVisible) {
+                terminalSessions.close(tabId)
+                terminalTabs = terminalTabs.resetAfterTerminalWindowClosed()
+                pendingTerminalTabCloseId = null
+            }
         }
     }
 
@@ -115,6 +151,12 @@ internal fun WindowScope.ChatScreen(
                     ) {
                         sidebarVisible = false
                     }
+                }
+                .onPointerEvent(PointerEventType.Move) { event ->
+                    val pointerPosition = event.changes.firstOrNull()?.position ?: return@onPointerEvent
+                    appFeedback?.takeIf { feedback -> feedback.anchor != null }?.let { feedback ->
+                        appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
+                    }
                 },
         ) {
             Column(
@@ -129,6 +171,12 @@ internal fun WindowScope.ChatScreen(
                     windowState = desktopWindowState,
                     windowChromeMode = windowChromeMode,
                     onTitleBarClientPointerEvent = onTitleBarClientPointerEvent,
+                    onGlobalFeedback = showAppFeedback,
+                    onGlobalPointerPosition = { pointerPosition ->
+                        appFeedback?.takeIf { it.anchor != null }?.let { feedback ->
+                            appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
+                        }
+                    },
                     onCloseRequest = onCloseRequest,
                 )
                 Row(
@@ -148,19 +196,28 @@ internal fun WindowScope.ChatScreen(
                         activeRailView = RightRailGlyph.CODE,
                         filterToolActivityOnly = false,
                         terminalTabs = terminalTabs,
+                        terminalPanelVisible = terminalPanelVisible,
                         terminalSessions = terminalSessions,
                         onSelectTerminalTab = { tabId ->
                             terminalTabs = terminalTabs.selectTab(tabId)
                         },
                         onAddTerminalTab = {
                             activeConversation?.let { conversation ->
+                                pendingTerminalTabCloseId = null
                                 terminalTabs = terminalTabs.addTab(conversation.workspacePath)
                                 terminalSessions.create(terminalTabs.tabs.last())
+                                terminalPanelVisible = true
                             }
                         },
                         onCloseTerminalTab = { tabId ->
-                            terminalSessions.close(tabId)
-                            terminalTabs = terminalTabs.closeTab(tabId)
+                            if (terminalPanelVisible && shouldDeferTerminalTabClose(terminalTabs)) {
+                                pendingTerminalTabCloseId = tabId
+                                terminalPanelVisible = false
+                            } else {
+                                terminalSessions.close(tabId)
+                                terminalTabs = terminalTabs.closeTab(tabId)
+                                terminalPanelVisible = terminalTabs.hasActiveTab()
+                            }
                         },
                         onCloseOtherTerminalTabs = { keptTabId ->
                             terminalSessions.closeAllExcept(keptTabId)
@@ -174,24 +231,36 @@ internal fun WindowScope.ChatScreen(
                             activeGlyph = resolveActiveRailGlyph(
                                 activeRailView = RightRailGlyph.CODE,
                                 filterToolActivityOnly = false,
-                                terminalVisible = terminalTabs.hasActiveTab(),
+                                terminalVisible = terminalPanelVisible && terminalTabs.hasActiveTab(),
                             ),
                             onToolClick = { glyph ->
                                 if (glyph == RightRailGlyph.TERMINAL) {
                                     if (activeConversation == null) {
-                                        railFeedback = "请先选择工作区"
+                                        showAppFeedback(
+                                            AppFeedbackState(message = "请先选择工作区", anchor = null),
+                                        )
                                     } else {
-                                        when (terminalIconAction(terminalTabs.hasActiveTab())) {
-                                            TerminalIconAction.CREATE_TAB -> {
+                                        when (
+                                            terminalRailAction(
+                                                panelVisible = terminalPanelVisible,
+                                                hasActiveTab = terminalTabs.hasActiveTab(),
+                                            )
+                                        ) {
+                                            TerminalRailAction.CREATE_AND_SHOW -> {
+                                                pendingTerminalTabCloseId = null
                                                 terminalTabs = terminalTabs.addTab(activeConversation.workspacePath)
-                                                terminalSessions.create(terminalTabs.tabs.last())
+                                                val newTerminalTab = terminalTabs.tabs.last()
+                                                terminalSessions.create(newTerminalTab)
+                                                terminalPanelVisible = true
                                             }
 
-                                            TerminalIconAction.FOCUS_ACTIVE_TAB -> {
-                                                terminalSessions.focusActiveIfNeeded(terminalTabs.activeTabId)
+                                            TerminalRailAction.SHOW -> {
+                                                pendingTerminalTabCloseId = null
+                                                terminalPanelVisible = true
                                             }
+                                            TerminalRailAction.HIDE -> terminalPanelVisible = false
                                         }
-                                        railFeedback = null
+                                        appFeedback = null
                                     }
                                 }
                             },
@@ -248,15 +317,31 @@ internal fun WindowScope.ChatScreen(
                 }
             }
         }
-        AnimatedContent(
-            targetState = railFeedback,
-            transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 60.dp, end = if (compact) 16.dp else 54.dp),
-        ) { message ->
-            if (message != null) {
-                RailFeedbackCard(message = message)
+        appFeedback?.let { feedback ->
+            val anchor = feedbackToastAnchor(feedback.anchor)
+            val pointerOffsetPx = with(LocalDensity.current) { APP_FEEDBACK_POINTER_OFFSET_DP.dp.toPx() }
+            AnimatedContent(
+                targetState = feedback.message,
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                modifier = if (anchor == null) {
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = APP_FEEDBACK_BOTTOM_PADDING_DP.dp)
+                } else {
+                    Modifier.align(Alignment.TopStart)
+                },
+            ) { message ->
+                AppFeedbackToast(
+                    message = message,
+                    modifier = if (anchor == null) {
+                        Modifier
+                    } else {
+                        Modifier.graphicsLayer {
+                            translationX = anchor.x + pointerOffsetPx
+                            translationY = anchor.y + pointerOffsetPx
+                        }
+                    },
+                )
             }
         }
     }

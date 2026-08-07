@@ -57,4 +57,11 @@ class TaskSidebarLayoutTest {
         assertEquals(false, shouldShowConversationTitleText(ConversationTitleState.GENERATING))
         assertEquals(true, shouldShowConversationTitleText(ConversationTitleState.GENERATED))
     }
+
+    /** 工作区和状态分组的折叠箭头只在对应行悬浮时显示。 */
+    @Test
+    fun `should show section chevrons only while their row hovers`() {
+        assertEquals(true, shouldShowTaskSectionChevron(hovered = true))
+        assertEquals(false, shouldShowTaskSectionChevron(hovered = false))
+    }
 }

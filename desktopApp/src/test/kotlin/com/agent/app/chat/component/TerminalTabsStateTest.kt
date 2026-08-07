@@ -18,7 +18,7 @@ class TerminalTabsStateTest {
         val first = TerminalTabsState().addTab("C:/workspace")
         val second = first.addTab("D:/other")
 
-        assertEquals(listOf("终端 1", "终端 2"), second.tabs.map(TerminalTab::title))
+        assertEquals(listOf("终端", "终端 2"), second.tabs.map(TerminalTab::title))
         assertEquals(2L, second.activeTabId)
         assertEquals("D:/other", second.tabs.last().workspacePath)
     }
@@ -63,12 +63,42 @@ class TerminalTabsStateTest {
         assertFalse(shouldRequestTerminalFocus(isTerminalFocused = true))
     }
 
-    /**
-     * 重复点击终端图标必须聚焦当前页，而不是关闭面板或创建新页。
-     */
+    /** 右侧终端按钮应纯粹切换面板可见性，不能关闭已有会话。 */
     @Test
-    fun `should focus instead of closing or creating a tab for repeated terminal icon clicks`() {
-        assertEquals(TerminalIconAction.CREATE_TAB, terminalIconAction(hasActiveTab = false))
-        assertEquals(TerminalIconAction.FOCUS_ACTIVE_TAB, terminalIconAction(hasActiveTab = true))
+    fun `should toggle terminal panel without closing its active tab`() {
+        assertEquals(
+            TerminalRailAction.CREATE_AND_SHOW,
+            terminalRailAction(panelVisible = false, hasActiveTab = false),
+        )
+        assertEquals(
+            TerminalRailAction.SHOW,
+            terminalRailAction(panelVisible = false, hasActiveTab = true),
+        )
+        assertEquals(
+            TerminalRailAction.HIDE,
+            terminalRailAction(panelVisible = true, hasActiveTab = true),
+        )
     }
+
+    /** 关闭最后一个标签前应先播放面板退出动画；多标签关闭无需等待。 */
+    @Test
+    fun `should defer closing only the final terminal tab`() {
+        assertTrue(shouldDeferTerminalTabClose(TerminalTabsState().addTab("C:/workspace")))
+        assertFalse(
+            shouldDeferTerminalTabClose(
+                TerminalTabsState().addTab("C:/workspace").addTab("C:/workspace"),
+            ),
+        )
+    }
+
+    /** 关闭最后一个标签后应重置窗口状态，使下一次打开重新从首个终端开始。 */
+    @Test
+    fun `should reset terminal numbering after the terminal window closes`() {
+        val closed = TerminalTabsState().addTab("C:/workspace").resetAfterTerminalWindowClosed()
+        val reopened = closed.addTab("C:/workspace")
+
+        assertEquals(emptyList(), closed.tabs)
+        assertEquals("终端", reopened.tabs.single().title)
+    }
+
 }

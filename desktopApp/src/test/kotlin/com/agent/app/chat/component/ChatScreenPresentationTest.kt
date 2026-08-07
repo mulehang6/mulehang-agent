@@ -12,6 +12,9 @@ import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.AirSidebarStyle
 import com.agent.app.design.AppHeaderBackground
 import com.agent.app.design.AppRailBackground
+import com.agent.app.design.AppAccent
+import com.agent.app.design.AppReasoning
+import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.COMPOSER_PRIMARY_GLYPH_SIZE_DP
 import com.agent.app.design.RAIL_ACTION_SIZE_DP
@@ -73,9 +76,11 @@ class ChatScreenPresentationTest {
     fun `should route native title bar task context click through awt hit target`() {
         var clientAreaRequests = 0
         var clicks = 0
+        var pointerPosition: Offset? = null
         val hitTarget = createNativeTitleBarTaskHitTarget(
             onClientMouseEvent = { clientAreaRequests += 1 },
             onClick = { clicks += 1 },
+            onPointerMoved = { pointerPosition = it },
         ).apply {
             setSize(360, 36)
         }
@@ -89,6 +94,7 @@ class ChatScreenPresentationTest {
 
         assertEquals(6, clientAreaRequests)
         assertEquals(2, clicks)
+        assertEquals(Offset(18f, 18f), pointerPosition)
     }
 
     /**
@@ -119,6 +125,20 @@ class ChatScreenPresentationTest {
     fun `should keep title bar task capsule compact`() {
         assertEquals(36, HEADER_TASK_CHIP_HEIGHT_DP)
         assertEquals(8, HEADER_TASK_CHIP_HORIZONTAL_PADDING_DP)
+    }
+
+    /** 分支名的原生标题栏命中区应与当前任务胶囊共享紧凑高度。 */
+    @Test
+    fun `should keep header branch hover aligned with the task chip`() {
+        assertEquals(HEADER_TASK_CHIP_HEIGHT_DP, HEADER_BRANCH_CHIP_HEIGHT_DP)
+        assertEquals(4, HEADER_BRANCH_CHIP_HORIZONTAL_PADDING_DP)
+    }
+
+    /** 复制分支应发出全局 toast 文案，不得替换标题栏中的分支文本。 */
+    @Test
+    fun `should use a global feedback message after copying a branch`() {
+        assertEquals("已复制", headerBranchCopiedFeedbackMessage())
+        assertEquals(24, APP_FEEDBACK_BOTTOM_PADDING_DP)
     }
 
     /** 原生标题栏任务入口不应显示平台默认风格的系统提示气泡。 */
@@ -514,6 +534,27 @@ class ChatScreenPresentationTest {
         assertEquals(120f, clampTerminalHeight(200f, 320f, 180f, 200f))
     }
 
+    /** 终端打开、收起和关闭均使用可感知但不拖沓的面板过渡。 */
+    @Test
+    fun `should animate terminal panel visibility changes`() {
+        assertEquals(420, TERMINAL_PANEL_ENTER_DURATION_MILLIS)
+        assertEquals(360, TERMINAL_PANEL_EXIT_DURATION_MILLIS)
+        assertEquals(32L, TERMINAL_PANEL_CLOSE_DELAY_MILLIS)
+        assertEquals(800f, workspaceHeightDuringTerminalMotion(800f, 280f, 0f))
+        assertEquals(520f, workspaceHeightDuringTerminalMotion(800f, 280f, 1f))
+        assertEquals(280f, terminalPanelTranslationYPx(280f, 0f))
+        assertEquals(0f, terminalPanelTranslationYPx(280f, 1f))
+    }
+
+    /** 分隔高亮必须围绕指针定位，并在轨道两端裁剪。 */
+    @Test
+    fun `should clip pointer following divider highlight to its track`() {
+        assertEquals(64f, com.agent.app.design.dividerHighlightStartPx(200f, 100f, 72f))
+        assertEquals(0f, com.agent.app.design.dividerHighlightStartPx(200f, 0f, 72f))
+        assertEquals(128f, com.agent.app.design.dividerHighlightStartPx(200f, 200f, 72f))
+        assertEquals(0f, com.agent.app.design.dividerHighlightStartPx(40f, 20f, 72f))
+    }
+
     /**
      * 浮动侧栏宽度随紧凑布局收敛，但不参与主工作区宽度计算。
      */
@@ -534,7 +575,7 @@ class ChatScreenPresentationTest {
         assertEquals(0.78f, AirSidebarStyle.tintAlpha)
         assertEquals(0.075f, AirSidebarStyle.borderAlpha)
         assertEquals(Color(0xFF1D1F21), AirSidebarStyle.fallbackColor)
-        assertEquals(Color(0xFF151719), AppWorkspaceBackground)
+        assertEquals(Color(0xFF18191B), AppWorkspaceBackground)
     }
 
     /**
@@ -660,13 +701,13 @@ class ChatScreenPresentationTest {
         assertEquals(1500L, SELECT_TOOLTIP_DELAY_MILLIS)
     }
 
-    /** 下拉菜单弹出层沿用 Air 菜单的蓝色悬浮高亮，并以更短的反馈时长响应指针。 */
+    /** 下拉菜单弹出层沿用 Air 菜单的蓝色悬浮高亮，但悬浮切换必须即时完成。 */
     @Test
     fun `should use air hover treatment for select popup menu items`() {
         assertEquals(Color.Transparent, selectMenuItemBackground(selected = false, hovered = false, enabled = true))
-        assertEquals(Color(0xFF245286), selectMenuItemBackground(selected = false, hovered = true, enabled = true))
+        assertEquals(Color(0xFF2E436E), selectMenuItemBackground(selected = false, hovered = true, enabled = true))
         assertEquals(Color(0xFF2E436E), selectMenuItemBackground(selected = true, hovered = false, enabled = true))
-        assertEquals(80, SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS)
+        assertEquals(0, SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS)
     }
 
     /** 下拉弹出层从触发器一侧轻微放大进入，以保持展开过程有空间感且不拖沓。 */
@@ -727,21 +768,38 @@ class ChatScreenPresentationTest {
         assertEquals(24, TERMINAL_CLOSE_BUTTON_SIZE_DP)
     }
 
-    /**
-     * 终端操作图标只在悬浮时发光，默认不应保留额外背景框。
-     */
+    /** 当前终端标签使用常态蓝色描边标识选中状态，不依赖悬浮。 */
     @Test
-    fun `should glow terminal action icons without hover surface`() {
-        assertEquals(0f, terminalActionGlowAlpha(hovered = false))
-        assertEquals(0.55f, terminalActionGlowAlpha(hovered = true))
+    fun `should keep selected terminal tab border blue at rest`() {
+        assertEquals(
+            androidx.compose.ui.graphics.Color(0xFF2F81D6),
+            terminalTabBorderColor(selected = true),
+        )
+        assertEquals(
+            androidx.compose.ui.graphics.Color.Transparent,
+            terminalTabBorderColor(selected = false),
+        )
     }
 
-    /**
-     * 终端操作悬浮反馈应在短促过渡中显现，而非瞬时切换。
-     */
+    /** 终端操作图标没有外溢高光，新增操作的悬浮底色由按钮自身负责。 */
     @Test
-    fun `should use brief terminal hover transition`() {
-        assertEquals(140, TERMINAL_HOVER_TRANSITION_DURATION_MILLIS)
+    fun `should keep terminal action icons free from glow`() {
+        assertEquals(0f, terminalActionGlowAlpha(hovered = false))
+        assertEquals(0f, terminalActionGlowAlpha(hovered = true))
+    }
+
+    /** 终端的新建与关闭操作保持静态，不在悬浮时出现额外高光。 */
+    @Test
+    fun `should keep terminal actions free from hover glow`() {
+        assertEquals(0f, terminalActionGlowAlpha(hovered = false))
+        assertEquals(0f, terminalActionGlowAlpha(hovered = true))
+    }
+
+    /** 新建终端仅在悬浮时显示参考图中的浅灰底，不产生图标光晕。 */
+    @Test
+    fun `should show a hover surface for the terminal add action`() {
+        assertEquals(androidx.compose.ui.graphics.Color.Transparent, terminalAddButtonBackground(hovered = false))
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF24272D), terminalAddButtonBackground(hovered = true))
     }
 
     /**
@@ -816,10 +874,46 @@ class ChatScreenPresentationTest {
         )
     }
 
+    /** 原生标题栏由 Swing 命中层绘制悬浮态，Compose 外层不能叠加第二个背景框。 */
+    @Test
+    fun `should leave compose header hover background transparent with native hit overlay`() {
+        assertEquals(
+            androidx.compose.ui.graphics.Color.Transparent,
+            titleBarComposeHoverBackground(
+                nativeHitOverlayEnabled = true,
+                hovered = true,
+                pressed = false,
+            ),
+        )
+        assertEquals(
+            com.agent.app.design.AppHoverBackground.copy(alpha = 0.72f),
+            titleBarComposeHoverBackground(
+                nativeHitOverlayEnabled = false,
+                hovered = true,
+                pressed = false,
+            ),
+        )
+    }
+
     /** 标题栏当前任务名必须比辅助文本更醒目。 */
     @Test
     fun `should use a larger title bar task font`() {
         assertEquals(16, HEADER_TASK_TITLE_FONT_SIZE_SP)
+    }
+
+    /** 分支名的 hover Chip 需与当前任务 Chip 共享紧凑高度。 */
+    @Test
+    fun `should align branch chip height with the task chip`() {
+        assertEquals(HEADER_TASK_CHIP_HEIGHT_DP, HEADER_BRANCH_CHIP_HEIGHT_DP)
+    }
+
+    /** 复制反馈只有在提供指针坐标时才切换为鼠标锚定模式。 */
+    @Test
+    fun `should retain the optional pointer anchor for branch copy feedback`() {
+        assertEquals(Offset(48f, 24f), feedbackToastAnchor(Offset(48f, 24f)))
+        assertNull(feedbackToastAnchor(null))
+        assertEquals(1L, nextAppFeedbackToken(0L))
+        assertEquals(42L, nextAppFeedbackToken(41L))
     }
 
     /** 拖选到输入框上下边缘时，滚动方向必须跟随指针方向。 */
@@ -907,7 +1001,7 @@ class ChatScreenPresentationTest {
      * 相邻的成功工具调用应成为一个展示组；失败与状态事件必须成为明确边界。
      */
     @Test
-    fun `should group adjacent completed tools while keeping failures and statuses separate`() {
+    fun `should group adjacent tools while keeping statuses separate`() {
         val displayItems = groupTimelineItems(
             listOf(
                 toolEvent("first", ToolEventStatus.Finished),
@@ -920,8 +1014,157 @@ class ChatScreenPresentationTest {
         )
 
         assertEquals(listOf(2, 1, 1, 1, 1), displayItems.map(TimelineDisplayItem::itemCount))
-        assertTrue(displayItems[1] is TimelineDisplayItem.FailedTool)
-        assertTrue(displayItems[3] is TimelineDisplayItem.Content)
+        assertTrue(displayItems[0] is TimelineDisplayItem.ToolGroup)
+        assertTrue(displayItems[1] is TimelineDisplayItem.Content)
+        assertTrue(displayItems[2] is TimelineDisplayItem.Content)
+        assertTrue(displayItems[4] is TimelineDisplayItem.Content)
+    }
+
+    /** 运行中的每条工具调用都必须驱动自己的类型图标动画。 */
+    @Test
+    fun `should animate every running tool glyph`() {
+        assertEquals(TimelineToolGlyph.TERMINAL, timelineToolGlyph(toolEvent("run_powershell", ToolEventStatus.Started)))
+        assertEquals(TimelineToolGlyph.SEARCH, timelineToolGlyph(toolEvent("search_in_files", ToolEventStatus.Started)))
+        assertEquals(TimelineToolGlyph.SEARCH, timelineToolGlyph(toolEvent("glob_files", ToolEventStatus.Started)))
+        assertEquals(TimelineToolGlyph.READ, timelineToolGlyph(toolEvent("read_file", ToolEventStatus.Started)))
+        assertEquals(TimelineToolGlyph.EDIT, timelineToolGlyph(toolEvent("edit_file", ToolEventStatus.Started)))
+        assertEquals(TimelineToolGlyph.GENERIC, timelineToolGlyph(toolEvent("custom_tool", ToolEventStatus.Started)))
+        assertEquals(true, shouldAnimateTimelineToolGlyph(ToolEventStatus.Started))
+        assertEquals(false, shouldAnimateTimelineToolGlyph(ToolEventStatus.Finished))
+        assertEquals(false, shouldAnimateTimelineToolGlyph(ToolEventStatus.Failed))
+    }
+
+    /** 工具组内所有调用结束后，应将加载图标切换为成功勾选反馈。 */
+    @Test
+    fun `should show a green success check for a completed tool group`() {
+        val completed = listOf(
+            toolEvent("list_dir", ToolEventStatus.Finished),
+            toolEvent("glob_files", ToolEventStatus.Finished),
+        )
+
+        assertEquals(TimelineToolGlyph.SUCCESS, timelineToolGroupGlyph(completed))
+        assertEquals(AppSuccess, timelineToolGroupTint(completed))
+        assertEquals(TimelineToolGlyph.SEARCH, timelineToolGroupGlyph(listOf(
+            toolEvent("glob_files", ToolEventStatus.Started),
+        )))
+        assertEquals(AppAccent, timelineToolGroupTint(listOf(
+            toolEvent("glob_files", ToolEventStatus.Started),
+        )))
+    }
+
+    /** 工具组标题应说明当前正在执行的语义动作，并让 Shell 保持稳定摘要。 */
+    @Test
+    fun `should describe the active tool group with semantic English actions`() {
+        assertEquals(
+            "Gathering context…",
+            toolGroupHeadline(listOf(toolEvent("grep", ToolEventStatus.Started))),
+        )
+        assertEquals(
+            "Gathering context…",
+            toolGroupHeadline(listOf(toolEvent("list_directory", ToolEventStatus.Started))),
+        )
+        assertEquals(
+            "Editing…",
+            toolGroupHeadline(listOf(toolEvent("apply_patch", ToolEventStatus.Started))),
+        )
+        assertEquals(
+            "Editing…",
+            toolGroupHeadline(
+                listOf(
+                    toolEvent("apply_patch", ToolEventStatus.Started),
+                    toolEvent("run_powershell", ToolEventStatus.Started),
+                ),
+            ),
+        )
+        assertEquals(
+            "Executed tools · 1",
+            toolGroupHeadline(listOf(toolEvent("run_powershell", ToolEventStatus.Started))),
+        )
+    }
+
+    /** 目录与编辑工具应使用区别于通用搜索和读取的专属图标。 */
+    @Test
+    fun `should resolve semantic tool glyphs for directory and editing work`() {
+        assertEquals(
+            TimelineToolGlyph.DIRECTORY,
+            timelineToolPresentation(toolEvent("list_directory", ToolEventStatus.Started)).glyph,
+        )
+        assertEquals(
+            TimelineToolGlyph.EDIT,
+            timelineToolPresentation(toolEvent("apply_patch", ToolEventStatus.Started)).glyph,
+        )
+    }
+
+    /** 终端收起行只显示命令，其他工具输入仅在展开内容中显示。 */
+    @Test
+    fun `should separate terminal commands from non terminal tool inputs`() {
+        val terminal = ToolEventItem(
+            toolName = "run_powershell",
+            status = ToolEventStatus.Started,
+            preview = "{\"script\":\"Get-ChildItem\"}",
+        )
+        val directory = ToolEventItem(
+            toolName = "list_dir",
+            status = ToolEventStatus.Started,
+            preview = "{\"path\":\".\"}",
+        )
+
+        assertEquals("Get-ChildItem", timelineToolRowHeadline(terminal))
+        assertEquals(
+            "run_powershell",
+            timelineToolRowHeadline(terminal.copy(preview = null)),
+        )
+        assertEquals("list_dir", timelineToolRowHeadline(directory))
+        assertEquals("{\"path\":\".\"}", timelineToolExpandedInput(directory))
+        assertNull(timelineToolExpandedInput(terminal))
+    }
+
+    /** 工具区域需采用较大的文字与从容的切换、展开节奏。 */
+    @Test
+    fun `should use readable slow motion metrics for tool activity`() {
+        assertEquals(16, TOOL_GROUP_TITLE_FONT_SIZE_SP)
+        assertEquals(15, TOOL_ROW_FONT_SIZE_SP)
+        assertEquals(420, TOOL_GROUP_TITLE_SWITCH_DURATION_MILLIS)
+        assertEquals(560, TOOL_GROUP_EXPAND_DURATION_MILLIS)
+        assertEquals(440, TOOL_GROUP_COLLAPSE_DURATION_MILLIS)
+        assertEquals(340, TOOL_ROW_EXPAND_DURATION_MILLIS)
+        assertEquals(260, TOOL_ROW_COLLAPSE_DURATION_MILLIS)
+    }
+
+    /**
+     * 终端开合必须通过实际布局高度驱动，避免 SwingPanel 在动画结束后才补绘。
+     */
+    @Test
+    fun `should animate terminal container through actual layout height`() {
+        assertEquals(0f, terminalContainerHeightDuringMotion(270f, 0f))
+        assertEquals(135f, terminalContainerHeightDuringMotion(270f, 0.5f))
+        assertEquals(270f, terminalContainerHeightDuringMotion(270f, 1f))
+    }
+
+    /** 工具组仅在所有工具结束后自动收起，且每个组由自身状态独立驱动。 */
+    @Test
+    fun `should auto collapse each completed tool group independently`() {
+        assertEquals(false, shouldAutoCollapseTimelineToolGroup(listOf(toolEvent("first", ToolEventStatus.Started))))
+        assertEquals(true, shouldAutoCollapseTimelineToolGroup(listOf(toolEvent("first", ToolEventStatus.Finished))))
+        assertEquals(true, shouldAutoCollapseTimelineToolGroup(listOf(
+            toolEvent("first", ToolEventStatus.Finished),
+            toolEvent("second", ToolEventStatus.Failed),
+        )))
+        assertEquals(false, shouldAutoCollapseTimelineToolGroup(emptyList()))
+    }
+
+    /** 思考内容保持块级展示时，标题与正文都应具备清晰的可读字号。 */
+    @Test
+    fun `should use larger typography for the reasoning block`() {
+        assertEquals(16, REASONING_HEADLINE_FONT_SIZE_SP)
+        assertEquals(15, REASONING_BODY_FONT_SIZE_SP)
+    }
+
+    /** 思考结束后改用柔和紫色，以区别仍在进行的蓝色呼吸指示。 */
+    @Test
+    fun `should use a soft purple tint after reasoning completes`() {
+        assertEquals(AppAccent, timelineReasoningTint(streaming = true))
+        assertEquals(AppReasoning, timelineReasoningTint(streaming = false))
     }
 
     /**
@@ -929,8 +1172,8 @@ class ChatScreenPresentationTest {
      */
     @Test
     fun `should separate tool groups from other timeline content`() {
-        val startedTool = TimelineDisplayItem.Content(toolEvent("first", ToolEventStatus.Started))
-        val failedTool = TimelineDisplayItem.FailedTool(toolEvent("broken", ToolEventStatus.Failed))
+        val startedTool = TimelineDisplayItem.ToolGroup(listOf(toolEvent("first", ToolEventStatus.Started)))
+        val failedTool = TimelineDisplayItem.ToolGroup(listOf(toolEvent("broken", ToolEventStatus.Failed)))
         val statusText = TimelineDisplayItem.Content(toolEvent("status", ToolEventStatus.Status))
 
         assertEquals(4, timelineDisplayItemSpacing(startedTool, failedTool))
@@ -946,12 +1189,10 @@ class ChatScreenPresentationTest {
         assertEquals(0, TOOL_EVENT_ROW_VERTICAL_PADDING_DP)
     }
 
-    /**
-     * 单个成功工具同样使用统一的数量入口。
-     */
+    /** 两个及以上工具的收起摘要使用统一英文文案。 */
     @Test
-    fun `should use an executed tools headline for a single tool`() {
-        assertEquals("已执行工具 · 1", buildToolGroupHeadline(1))
+    fun `should use an English executed tools headline`() {
+        assertEquals("Executed tools · 2", buildToolGroupHeadline(2))
     }
 }
 

@@ -53,10 +53,10 @@ internal fun ToolRailPlaceholder(
 }
 
 /**
- * 右侧 rail 操作后的轻量反馈。
+ * 应用级操作后的轻量 toast 反馈。
  */
 @Composable
-internal fun RailFeedbackCard(
+internal fun AppFeedbackToast(
     message: String,
     modifier: Modifier = Modifier,
 ) {

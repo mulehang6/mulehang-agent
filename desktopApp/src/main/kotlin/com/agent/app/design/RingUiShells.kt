@@ -3,7 +3,6 @@
 package com.agent.app.design
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
@@ -13,6 +12,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
@@ -35,7 +35,9 @@ import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +55,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -313,14 +316,15 @@ internal const val SELECT_POPUP_FOCUSABLE = false
 /** Composer 下拉框说明在持续悬停多久后显示。 */
 internal const val SELECT_TOOLTIP_DELAY_MILLIS = 1500L
 
-/** 下拉菜单项的悬浮反馈需要比常规过渡更快，避免指针移动时产生迟滞感。 */
-internal const val SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 80
+/** 下拉菜单项的悬浮反馈即时切换，避免高频指针移动出现滞后。 */
+internal const val SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 0
 
-private val SelectPopupMenuBackground = Color(0xFF262627)
-private val SelectPopupMenuHoverBackground = Color(0xFF245286)
-private val SelectPopupMenuBorder = Color(0xFF47494D)
+private val SelectPopupMenuHoverBackground = Color(0xFF2E436E)
+private val SelectPopupMenuBorder = Color(0xFF393B40)
 private val SelectPopupMenuShape = RoundedCornerShape(12.dp)
 private val SelectPopupMenuItemShape = RoundedCornerShape(8.dp)
+private val LocalSelectMenuItemsVisible = compositionLocalOf { true }
+private val LocalSelectMenuOpensUpward = compositionLocalOf { false }
 
 /**
  * 返回下拉菜单项的底色：保留选中态，同时让可用项在悬浮时切换为 Air 蓝色高亮。
@@ -343,6 +347,12 @@ internal fun desiredSelectExpandedState(
     expandedAtClick: Boolean,
 ): Boolean = !(expandedAtPointerPress ?: expandedAtClick)
 
+/** 根据弹出层与触发器的实际窗口位置判断下拉菜单最终是否向上展开。 */
+internal fun selectMenuOpensUpward(
+    popupTopPx: Float?,
+    anchorTopPx: Float?,
+): Boolean = popupTopPx != null && anchorTopPx != null && popupTopPx < anchorTopPx
+
 @Composable
 internal fun RingSelectChip(
     label: String,
@@ -362,28 +372,51 @@ internal fun RingSelectChip(
         var hovered by remember { mutableStateOf(false) }
         val density = LocalDensity.current
         var anchorWidth by remember { mutableStateOf(112.dp) }
+        var anchorTopInWindowPx by remember { mutableStateOf<Float?>(null) }
+        var popupTopInWindowPx by remember { mutableStateOf<Float?>(null) }
         val interactionSource = remember { MutableInteractionSource() }
         val pressed by interactionSource.collectIsPressedAsState()
         var expandedAtPointerPress by remember { mutableStateOf<Boolean?>(null) }
+        var menuItemsVisible by remember { mutableStateOf(false) }
+        val popupOpensUpward = selectMenuOpensUpward(
+            popupTopPx = popupTopInWindowPx,
+            anchorTopPx = anchorTopInWindowPx,
+        )
         val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(120))
         val arrowRotation by animateFloatAsState(if (expanded) 180f else 0f, tween(120))
         val popupMotion = rememberMenuGrowthMotion(
             expanded = expanded,
             label = "select-popup",
+            opensUpward = popupOpensUpward,
         )
+        var popupPlacementResolved by remember { mutableStateOf(false) }
+        LaunchedEffect(expanded, popupPlacementResolved) {
+            menuItemsVisible = false
+            if (expanded && popupPlacementResolved) {
+                menuItemsVisible = true
+            }
+            if (!expanded) {
+                popupTopInWindowPx = null
+                popupPlacementResolved = false
+            }
+        }
         Box {
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = when {
-                    expanded -> AppSidebarBackground
+                    expanded -> AppPanelBackground
                     hovered -> AppHoverBackground
                     else -> tone
                 },
-                border = BorderStroke(1.dp, AppLine),
+                border = BorderStroke(
+                    1.dp,
+                    if (expanded) AppAccent.copy(alpha = 0.72f) else AppLine,
+                ),
                 modifier = modifier
                     .graphicsLayer(scaleX = scale, scaleY = scale)
                     .onGloballyPositioned { coordinates ->
                         anchorWidth = with(density) { coordinates.size.width.toDp() }
+                        anchorTopInWindowPx = coordinates.positionInWindow().y
                     }
                     .onPointerEvent(PointerEventType.Enter) { hovered = true }
                     .onPointerEvent(PointerEventType.Exit) { hovered = false }
@@ -430,6 +463,10 @@ internal fun RingSelectChip(
                 onDismissRequest = onDismissRequest,
                 modifier = Modifier
                     .widthIn(min = anchorWidth, max = 280.dp)
+                    .onGloballyPositioned { coordinates ->
+                        popupTopInWindowPx = coordinates.positionInWindow().y
+                        popupPlacementResolved = true
+                    }
                     .graphicsLayer {
                         transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Dropdown)
                         scaleX = popupMotion.scale
@@ -440,12 +477,17 @@ internal fun RingSelectChip(
                 offset = DpOffset(0.dp, (-4).dp),
                 properties = PopupProperties(focusable = SELECT_POPUP_FOCUSABLE),
                 shape = SelectPopupMenuShape,
-                containerColor = SelectPopupMenuBackground,
+                containerColor = AppSidebarBackground,
                 tonalElevation = 0.dp,
                 shadowElevation = 12.dp,
                 border = BorderStroke(1.dp, SelectPopupMenuBorder),
             ) {
-                content()
+                CompositionLocalProvider(
+                    LocalSelectMenuItemsVisible provides menuItemsVisible,
+                    LocalSelectMenuOpensUpward provides popupOpensUpward,
+                ) {
+                    content()
+                }
             }
         }
     }
@@ -898,24 +940,55 @@ internal fun RingDropdownMenuItem(
     text: String,
     selected: Boolean,
     onClick: () -> Unit,
+    itemIndex: Int = 0,
+    itemCount: Int = 1,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
     var hovered by remember { mutableStateOf(false) }
-    val backgroundColor by animateColorAsState(
-        targetValue = selectMenuItemBackground(
-            selected = selected,
-            hovered = hovered,
-            enabled = enabled,
-        ),
-        animationSpec = tween(durationMillis = SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS),
-        label = "select-popup-menu-hover",
+    val density = LocalDensity.current
+    val opensUpward = LocalSelectMenuOpensUpward.current
+    val entranceIndex = selectMenuItemEntranceIndex(itemIndex, itemCount, opensUpward)
+    val entranceTargets = selectMenuItemEntranceTargets(
+        visible = LocalSelectMenuItemsVisible.current,
+        opensUpward = opensUpward,
+    )
+    val entranceSpec = tween<Float>(
+        durationMillis = SELECT_MENU_ITEM_ENTRANCE_DURATION_MILLIS,
+        delayMillis = selectMenuItemEntranceDelayMillis(entranceIndex),
+        easing = MenuItemEntranceEasing,
+    )
+    val entranceScale by animateFloatAsState(
+        targetValue = entranceTargets.scale,
+        animationSpec = entranceSpec,
+        label = "select-popup-menu-$entranceIndex-scale",
+    )
+    val entranceAlpha by animateFloatAsState(
+        targetValue = entranceTargets.alpha,
+        animationSpec = entranceSpec,
+        label = "select-popup-menu-$entranceIndex-alpha",
+    )
+    val entranceTranslationYDp by animateFloatAsState(
+        targetValue = entranceTargets.translationYDp,
+        animationSpec = entranceSpec,
+        label = "select-popup-menu-$entranceIndex-translation-y",
+    )
+    val backgroundColor = selectMenuItemBackground(
+        selected = selected,
+        hovered = hovered,
+        enabled = enabled,
     )
     Row(
         modifier = modifier
             .padding(horizontal = 6.dp, vertical = 2.dp)
             .fillMaxWidth()
             .height(36.dp)
+            .graphicsLayer {
+                scaleX = entranceScale
+                scaleY = entranceScale
+                alpha = entranceAlpha
+                translationY = entranceTranslationYDp * density.density
+            }
             .background(backgroundColor, SelectPopupMenuItemShape)
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
@@ -933,12 +1006,79 @@ internal fun RingDropdownMenuItem(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (selected) {
-            Text(
-                text = "✓",
-                style = MaterialTheme.typography.labelMedium.copy(color = AppText),
-            )
-        }
+    }
+}
+
+/** 权限模式菜单中的双行说明选项，使用标签区分风险级别。 */
+@Composable
+internal fun RingPermissionDropdownMenuItem(
+    description: String,
+    badge: String,
+    badgeColor: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    itemIndex: Int = 0,
+    itemCount: Int = 1,
+    modifier: Modifier = Modifier,
+) {
+    var hovered by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val opensUpward = LocalSelectMenuOpensUpward.current
+    val entranceIndex = selectMenuItemEntranceIndex(itemIndex, itemCount, opensUpward)
+    val entranceTargets = selectMenuItemEntranceTargets(
+        visible = LocalSelectMenuItemsVisible.current,
+        opensUpward = opensUpward,
+    )
+    val entranceSpec = tween<Float>(
+        durationMillis = SELECT_MENU_ITEM_ENTRANCE_DURATION_MILLIS,
+        delayMillis = selectMenuItemEntranceDelayMillis(entranceIndex),
+        easing = MenuItemEntranceEasing,
+    )
+    val entranceScale by animateFloatAsState(
+        targetValue = entranceTargets.scale,
+        animationSpec = entranceSpec,
+        label = "permission-popup-menu-$entranceIndex-scale",
+    )
+    val entranceAlpha by animateFloatAsState(
+        targetValue = entranceTargets.alpha,
+        animationSpec = entranceSpec,
+        label = "permission-popup-menu-$entranceIndex-alpha",
+    )
+    val entranceTranslationYDp by animateFloatAsState(
+        targetValue = entranceTargets.translationYDp,
+        animationSpec = entranceSpec,
+        label = "permission-popup-menu-$entranceIndex-translation-y",
+    )
+    val backgroundColor = when {
+        hovered || selected -> SelectPopupMenuHoverBackground
+        else -> Color.Transparent
+    }
+    Column(
+        modifier = modifier
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = entranceScale
+                scaleY = entranceScale
+                alpha = entranceAlpha
+                translationY = entranceTranslationYDp * density.density
+            }
+            .background(backgroundColor, SelectPopupMenuItemShape)
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(
+            text = badge,
+            modifier = Modifier.background(badgeColor, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(color = Color.White),
+        )
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+        )
     }
 }
 
@@ -946,15 +1086,16 @@ internal fun RingDropdownMenuItem(
  * 用 Compose Canvas 绘制右侧 rail 图标。
  */
 @Composable
-private fun RightRailGlyphIcon(
+internal fun RightRailGlyphIcon(
     glyph: RightRailGlyph,
     tint: Color,
+    glyphSize: Dp = RAIL_GLYPH_SIZE_DP.dp,
 ) {
     Box(
-        modifier = Modifier.size(RAIL_GLYPH_SIZE_DP.dp),
+        modifier = Modifier.size(glyphSize),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(RAIL_GLYPH_SIZE_DP.dp)) {
+        Canvas(modifier = Modifier.size(glyphSize)) {
             val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
             val width = size.width
             val height = size.height
@@ -1191,7 +1332,7 @@ private fun RightRailGlyphIcon(
 
 internal val AppBackground = Color(0xFF1E1F22)
 internal val AppHeaderBackground = Color(0xFF1E1F22)
-internal val AppWorkspaceBackground = Color(0xFF151719)
+internal val AppWorkspaceBackground = Color(0xFF18191B)
 internal val AppSidebarBackground = Color(0xFF2B2D30)
 internal val AppPanelBackground = Color(0xFF1E1F22)
 internal val AppSelectedBackground = Color(0xFF2E436E)
@@ -1206,4 +1347,6 @@ internal val AppMuted = Color(0xFF9DA0A8)
 internal val AppAccent = Color(0xFF548AF7)
 internal val AppMarkdownLink = Color(0xFF9CB3D2)
 internal val AppSuccess = Color(0xFF5FAD65)
+/** 已完成思考的柔和紫色，区别于运行中动作使用的蓝色强调。 */
+internal val AppReasoning = Color(0xFFB7A2F7)
 internal val AppDanger = Color(0xFFE37774)

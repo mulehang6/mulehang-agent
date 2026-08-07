@@ -40,7 +40,7 @@ class ConversationPresentationTest {
      */
     @Test
     fun `should format completed reasoning duration in seconds`() {
-        assertEquals("已思考 2 秒", buildReasoningDurationLabel(2_001))
+        assertEquals("Thought for 2s", buildReasoningDurationLabel(2_001))
     }
 
     /**
@@ -48,7 +48,7 @@ class ConversationPresentationTest {
      */
     @Test
     fun `should format subsecond reasoning duration in milliseconds`() {
-        assertEquals("已思考 430 毫秒", buildReasoningDurationLabel(430))
+        assertEquals("Thought for 430ms", buildReasoningDurationLabel(430))
     }
 
     /**
@@ -70,7 +70,7 @@ class ConversationPresentationTest {
     fun `should replace thinking headline with completed duration`() {
         assertEquals("Thinking...", buildReasoningHeadline(ReasoningItem(isStreaming = true)))
         assertEquals(
-            "已思考 2 秒",
+            "Thought for 2s",
             buildReasoningHeadline(ReasoningItem(isStreaming = false, durationMillis = 2_001)),
         )
     }

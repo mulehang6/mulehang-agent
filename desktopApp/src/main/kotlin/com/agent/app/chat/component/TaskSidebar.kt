@@ -101,6 +101,9 @@ internal const val TASK_SECTION_CONTENT_GAP_DP = 4
 internal const val TITLE_GENERATING_DOT_COUNT = 3
 internal const val TASK_CONTEXT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 80
 
+/** 折叠箭头仅在对应的工作区或状态分组行被鼠标悬浮时显示。 */
+internal fun shouldShowTaskSectionChevron(hovered: Boolean): Boolean = hovered
+
 /**
  * 返回工作区标题使用的折叠状态键，避免与状态分组的折叠状态混用。
  */
@@ -279,7 +282,10 @@ internal fun TaskSidebar(
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                             )
-                            TaskSectionChevron(expanded = !workspaceCollapsed)
+                            TaskSectionChevronSlot(
+                                expanded = !workspaceCollapsed,
+                                visible = shouldShowTaskSectionChevron(workspaceHovered),
+                            )
                         }
                     }
                     AnimatedVisibility(
@@ -324,7 +330,10 @@ internal fun TaskSidebar(
                                                 letterSpacing = 0.2.sp,
                                             ),
                                         )
-                                        TaskSectionChevron(expanded = !collapsed)
+                                        TaskSectionChevronSlot(
+                                            expanded = !collapsed,
+                                            visible = shouldShowTaskSectionChevron(sectionHovered),
+                                        )
                                     }
                                     AnimatedVisibility(
                                         visible = !collapsed,
@@ -368,6 +377,29 @@ internal fun TaskSidebar(
                     renamingTask = null
                 },
             )
+        }
+    }
+}
+
+/** 保留箭头槽位并在悬浮时淡入，避免标题文字随图标出现而发生横向跳动。 */
+@Composable
+private fun TaskSectionChevronSlot(expanded: Boolean, visible: Boolean) {
+    Box(
+        modifier = Modifier.size(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(durationMillis = 120)) + scaleIn(
+                animationSpec = tween(durationMillis = 120),
+                initialScale = 0.85f,
+            ),
+            exit = fadeOut(tween(durationMillis = 100)) + scaleOut(
+                animationSpec = tween(durationMillis = 100),
+                targetScale = 0.85f,
+            ),
+        ) {
+            TaskSectionChevron(expanded = expanded)
         }
     }
 }

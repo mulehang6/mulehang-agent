@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.BaselineShift
@@ -17,12 +18,18 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.agent.app.design.AppText
 
-/** 深色聊天背景中突出 `==高亮==` 内容的低干扰底色。 */
-internal val AssistantMarkdownHighlightBackground = Color(0xFF5C4B12)
+/** 深色聊天背景中突出 `==高亮==` 内容的低饱和灰蓝底色。 */
+internal val AssistantMarkdownHighlightBackground = Color(0xFF3A414A)
+
+/** 返回正文反引号代码共用的透明背景强调色样式。 */
+internal fun assistantMarkdownInlineCodeStyle(): SpanStyle = SpanStyle(
+    fontFamily = FontFamily.Monospace,
+    color = AssistantMarkdownInlineCodeForeground,
+)
 
 /** 判断一段 Markdown 是否包含需要由原生文本组件处理的行内扩展。 */
 internal fun containsAssistantMarkdownInlineExtensions(content: String): Boolean =
-    INLINE_EXTENSION_PATTERNS.any { pattern -> pattern.containsMatchIn(content) }
+    EXTENSION_DETECTION_PATTERNS.any { pattern -> pattern.containsMatchIn(content) }
 
 /**
  * 将富文本库尚未解析的下划线、高亮、上下标语法转换为 Compose 的带样式文本。
@@ -62,7 +69,7 @@ internal fun AssistantMarkdownInlineExtensionsText(content: String) {
 
 /** 找到当前位置起最靠前的一项受支持行内扩展。 */
 private fun findNextInlineExtension(content: String, startIndex: Int): AssistantMarkdownInlineExtension? =
-    INLINE_EXTENSION_PATTERNS.mapNotNull { pattern ->
+    INLINE_RENDER_PATTERNS.mapNotNull { pattern ->
         pattern.find(content, startIndex)?.let { match ->
             AssistantMarkdownInlineExtension(
                 match = match,
@@ -75,6 +82,7 @@ private fun findNextInlineExtension(content: String, startIndex: Int): Assistant
 private fun styleForInlineExtension(pattern: Regex): SpanStyle = when (pattern) {
     HTML_UNDERLINE -> SpanStyle(textDecoration = TextDecoration.Underline)
     HIGHLIGHT -> SpanStyle(background = AssistantMarkdownHighlightBackground)
+    INLINE_CODE -> assistantMarkdownInlineCodeStyle()
     SUBSCRIPT -> SpanStyle(
         baselineShift = BaselineShift.Subscript,
         fontSize = 0.75.em,
@@ -96,7 +104,12 @@ private data class AssistantMarkdownInlineExtension(
 
 private val HTML_UNDERLINE = Regex("<\\s*u\\s*>([^<\\r\\n]+)<\\s*/\\s*u\\s*>", RegexOption.IGNORE_CASE)
 private val HIGHLIGHT = Regex("==([^=\\r\\n]+)==")
+private val INLINE_CODE = Regex("`([^`\\r\\n]+)`")
 private val SUBSCRIPT = Regex("(?<!~)~([^~\\r\\n]+)~(?!~)")
 private val SUPERSCRIPT = Regex("(?<!\\^)\\^([^\\^\\r\\n]+)\\^(?!\\^)")
 private val LIST_ITEM_MARKER = Regex("(?m)^\\h*[-*]\\h+")
-private val INLINE_EXTENSION_PATTERNS = listOf(HTML_UNDERLINE, HIGHLIGHT, SUBSCRIPT, SUPERSCRIPT)
+/** 只有这些非 CommonMark 扩展语法需要绕过富文本 Markdown 渲染器。 */
+private val EXTENSION_DETECTION_PATTERNS = listOf(HTML_UNDERLINE, HIGHLIGHT, SUBSCRIPT, SUPERSCRIPT)
+
+/** 扩展文本渲染时额外识别反引号，避免混合文本遗漏统一的代码样式。 */
+private val INLINE_RENDER_PATTERNS = listOf(HTML_UNDERLINE, HIGHLIGHT, INLINE_CODE, SUBSCRIPT, SUPERSCRIPT)

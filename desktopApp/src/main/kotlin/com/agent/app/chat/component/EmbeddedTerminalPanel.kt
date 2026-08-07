@@ -2,10 +2,6 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,8 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -50,12 +48,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.MenuGrowthOrigin
+import com.agent.app.design.RightRailGlyph
+import com.agent.app.design.RightRailGlyphIcon
 import com.agent.app.design.menuGrowthTransformOrigin
 import com.agent.app.design.rememberMenuGrowthMotion
 import com.agent.app.platform.buildPowerShellCommand
@@ -91,15 +89,24 @@ import javax.swing.plaf.basic.BasicScrollBarUI
 
 internal const val TERMINAL_CLOSE_BUTTON_SIZE_DP = 24
 internal const val TERMINAL_TAB_HEIGHT_DP = 30
-internal const val TERMINAL_HOVER_TRANSITION_DURATION_MILLIS = 140
+internal const val TERMINAL_ADD_BUTTON_SIZE_DP = 36
 private val TerminalSurfaceBackground = Color(0xFF17181A)
-private val TerminalTabActiveBackground = Color(0xFF292C31)
+private val TerminalTabActiveBackground = Color(0xFF202A38)
 private val TerminalTabHoverBackground = Color(0xFF24272D)
+private val TerminalTabSelectedBorder = Color(0xFF2F81D6)
+
+/** 返回终端标签的常态边框色，选中态使用 Air 蓝描边而非悬浮反馈。 */
+internal fun terminalTabBorderColor(selected: Boolean): Color =
+    if (selected) TerminalTabSelectedBorder else Color.Transparent
+
+/** 返回新建终端按钮的悬浮底色；图标本身不使用发光效果。 */
+internal fun terminalAddButtonBackground(hovered: Boolean): Color =
+    if (hovered) TerminalTabHoverBackground else Color.Transparent
 
 /**
- * 返回终端操作图标在悬浮时的发光强度。
+ * 返回终端操作图标的发光强度；新建和关闭操作保持克制的静态呈现。
  */
-internal fun terminalActionGlowAlpha(hovered: Boolean): Float = if (hovered) 0.55f else 0f
+internal fun terminalActionGlowAlpha(hovered: Boolean): Float = 0f
 
 /**
  * 表示 Compose 终端面板所需的 Swing 终端边界。
@@ -243,16 +250,6 @@ internal fun EmbeddedTerminalPanel(
         expanded = contextMenuTabId != null,
         label = "terminal-context-menu",
     )
-    val addHoverOpacity by animateFloatAsState(
-        targetValue = terminalActionGlowAlpha(addHovered),
-        animationSpec = tween(TERMINAL_HOVER_TRANSITION_DURATION_MILLIS, easing = FastOutSlowInEasing),
-        label = "terminal-add-hover-opacity",
-    )
-    val addIconColor by animateColorAsState(
-        targetValue = if (addHovered) AppAccent else AppMuted,
-        animationSpec = tween(TERMINAL_HOVER_TRANSITION_DURATION_MILLIS, easing = FastOutSlowInEasing),
-        label = "terminal-add-hover-icon-color",
-    )
 
     LaunchedEffect(tabs.activeTabId) {
         sessions.focusActiveIfNeeded(tabs.activeTabId)
@@ -268,7 +265,7 @@ internal fun EmbeddedTerminalPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(TerminalSurfaceBackground)
-                .padding(start = 12.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+                .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -296,7 +293,10 @@ internal fun EmbeddedTerminalPanel(
                 }
                 Box(
                     modifier = Modifier
-                        .size(TERMINAL_CLOSE_BUTTON_SIZE_DP.dp)
+                        .padding(start = 4.dp)
+                        .size(TERMINAL_ADD_BUTTON_SIZE_DP.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(terminalAddButtonBackground(addHovered))
                         .onPointerEvent(PointerEventType.Enter) { addHovered = true }
                         .onPointerEvent(PointerEventType.Exit) { addHovered = false }
                         .clickable(onClick = onAddTab)
@@ -305,8 +305,8 @@ internal fun EmbeddedTerminalPanel(
                 ) {
                     TerminalActionGlyph(
                         cross = false,
-                        color = addIconColor,
-                        glowAlpha = addHoverOpacity,
+                        color = AppText,
+                        glowAlpha = 0f,
                     )
                 }
             }
@@ -398,17 +398,6 @@ private fun TerminalTabChip(
 ) {
     var tabOrigin by remember { mutableStateOf(Offset.Zero) }
     var tabHovered by remember { mutableStateOf(false) }
-    var closeHovered by remember { mutableStateOf(false) }
-    val closeHoverOpacity by animateFloatAsState(
-        targetValue = terminalActionGlowAlpha(closeHovered),
-        animationSpec = tween(TERMINAL_HOVER_TRANSITION_DURATION_MILLIS, easing = FastOutSlowInEasing),
-        label = "terminal-close-hover-opacity",
-    )
-    val closeIconColor by animateColorAsState(
-        targetValue = if (closeHovered) AppDanger else AppMuted,
-        animationSpec = tween(TERMINAL_HOVER_TRANSITION_DURATION_MILLIS, easing = FastOutSlowInEasing),
-        label = "terminal-close-hover-icon-color",
-    )
     Row(
         modifier = Modifier
             .padding(end = 4.dp)
@@ -422,7 +411,7 @@ private fun TerminalTabChip(
             )
             .border(
                 width = 1.dp,
-                color = if (selected) AppLine.copy(alpha = 0.58f) else Color.Transparent,
+                color = terminalTabBorderColor(selected),
                 shape = RoundedCornerShape(6.dp),
             )
             .onGloballyPositioned { tabOrigin = it.positionInRoot() }
@@ -435,27 +424,31 @@ private fun TerminalTabChip(
             }
             .clickable(onClick = onSelect)
             .height(TERMINAL_TAB_HEIGHT_DP.dp)
-            .padding(start = 14.dp),
+            .padding(start = 10.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        RightRailGlyphIcon(
+            glyph = RightRailGlyph.TERMINAL,
+            tint = if (selected) AppText else AppMuted,
+            glyphSize = 22.dp,
+        )
         Text(
             text = tab.title,
+            modifier = Modifier.padding(start = 6.dp),
             style = MaterialTheme.typography.labelLarge.copy(color = AppText),
         )
         Box(
             modifier = Modifier
                 .padding(start = 6.dp)
                 .size(TERMINAL_CLOSE_BUTTON_SIZE_DP.dp)
-                .onPointerEvent(PointerEventType.Enter) { closeHovered = true }
-                .onPointerEvent(PointerEventType.Exit) { closeHovered = false }
                 .clickable(onClick = onClose)
                 .semantics { contentDescription = "关闭${tab.title}" },
             contentAlignment = Alignment.Center,
         ) {
             TerminalActionGlyph(
                 cross = true,
-                color = closeIconColor,
-                glowAlpha = closeHoverOpacity,
+                color = AppMuted,
+                glowAlpha = 0f,
             )
         }
     }

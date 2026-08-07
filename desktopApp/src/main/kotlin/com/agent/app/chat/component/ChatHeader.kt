@@ -37,7 +37,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -69,6 +71,8 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.event.MouseAdapter
@@ -85,6 +89,8 @@ private const val NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX = 1
 internal const val HEADER_TASK_TITLE_FONT_SIZE_SP = 16
 internal const val HEADER_TASK_CHIP_HEIGHT_DP = 36
 internal const val HEADER_TASK_CHIP_HORIZONTAL_PADDING_DP = 8
+internal const val HEADER_BRANCH_CHIP_HEIGHT_DP = HEADER_TASK_CHIP_HEIGHT_DP
+internal const val HEADER_BRANCH_CHIP_HORIZONTAL_PADDING_DP = 4
 private val NATIVE_TITLE_BAR_MENU_SEAM_LISTENER_KEY = Any()
 private val NATIVE_TITLE_BAR_MENU_CORRECTED_BOUNDS_KEY = Any()
 
@@ -107,17 +113,22 @@ internal fun WindowScope.ChatHeader(
     windowState: WindowState,
     windowChromeMode: WindowChromeMode,
     onTitleBarClientPointerEvent: (() -> Unit)?,
+    onGlobalFeedback: (AppFeedbackState) -> Unit,
+    onGlobalPointerPosition: (Offset) -> Unit,
     onCloseRequest: () -> Unit,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
     var branchName by remember(activeConversation?.workspacePath) { mutableStateOf("读取分支中…") }
     var taskContextMenuExpanded by remember(activeConversation?.id) { mutableStateOf(false) }
     var renameTarget by remember(activeConversation?.id) { mutableStateOf<HeaderTaskRenameTarget?>(null) }
-    var taskTitleWidthPixels by remember(activeConversation?.id) { mutableStateOf(0) }
     var taskTitleHeightPixels by remember(activeConversation?.id) { mutableStateOf(0) }
     var taskContextMenuClickPosition by remember(activeConversation?.id) { mutableStateOf<Offset?>(null) }
     var taskTitleHovered by remember(activeConversation?.id) { mutableStateOf(false) }
     var taskTitlePressed by remember(activeConversation?.id) { mutableStateOf(false) }
+    var branchHovered by remember(activeConversation?.workspacePath) { mutableStateOf(false) }
+    var branchPressed by remember(activeConversation?.workspacePath) { mutableStateOf(false) }
+    var branchOrigin by remember(activeConversation?.workspacePath) { mutableStateOf(Offset.Zero) }
+    var branchPointerPosition by remember(activeConversation?.workspacePath) { mutableStateOf<Offset?>(null) }
     val density = LocalDensity.current
     val taskContextMenuMotion = rememberMenuGrowthMotion(
         expanded = taskContextMenuExpanded,
@@ -181,22 +192,103 @@ internal fun WindowScope.ChatHeader(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = "MH Agent",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = AppText,
-                            ),
-                        )
                         activeConversation?.let { conversation ->
                             Text(
-                                text = buildHeaderConversationPrefix(
-                                    workspace = buildWorkspaceLabel(conversation.workspacePath),
-                                    branch = branchName,
-                                ),
-                                modifier = Modifier.padding(start = 8.dp),
+                                text = "${buildWorkspaceLabel(conversation.workspacePath)} :",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    color = AppText,
+                                    fontSize = HEADER_TASK_TITLE_FONT_SIZE_SP.sp,
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(start = 4.dp)
+                                    .height(HEADER_BRANCH_CHIP_HEIGHT_DP.dp)
+                                    .onGloballyPositioned { coordinates ->
+                                        branchOrigin = coordinates.positionInRoot()
+                                    }
+                                    .background(
+                                        color = titleBarComposeHoverBackground(
+                                            nativeHitOverlayEnabled = onTitleBarClientPointerEvent != null,
+                                            hovered = branchHovered,
+                                            pressed = branchPressed,
+                                        ),
+                                        shape = RoundedCornerShape(10.dp),
+                                    )
+                                    .onPointerEvent(PointerEventType.Enter) { branchHovered = true }
+                                    .onPointerEvent(PointerEventType.Exit) {
+                                        branchHovered = false
+                                        branchPressed = false
+                                    }
+                                    .onPointerEvent(PointerEventType.Press) { event ->
+                                        branchPressed = true
+                                        branchPointerPosition = event.changes.firstOrNull()
+                                            ?.position
+                                            ?.let(branchOrigin::plus)
+                                    }
+                                    .onPointerEvent(PointerEventType.Move) { event ->
+                                        branchPointerPosition = event.changes.firstOrNull()
+                                            ?.position
+                                            ?.let(branchOrigin::plus)
+                                    }
+                                    .clickable(enabled = onTitleBarClientPointerEvent == null) {
+                                        copyHeaderBranchToClipboard(branchName)
+                                        onGlobalFeedback(
+                                            AppFeedbackState(
+                                                message = headerBranchCopiedFeedbackMessage(),
+                                                anchor = feedbackToastAnchor(branchPointerPosition),
+                                            ),
+                                        )
+                                        branchPressed = false
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (
+                                    onTitleBarClientPointerEvent != null
+                                ) {
+                                    NativeTitleBarTaskHitOverlay(
+                                        onClientMouseEvent = onTitleBarClientPointerEvent,
+                                        onOpenMenu = { localPointerPosition ->
+                                            copyHeaderBranchToClipboard(branchName)
+                                            onGlobalFeedback(
+                                                AppFeedbackState(
+                                                    message = headerBranchCopiedFeedbackMessage(),
+                                                    anchor = feedbackToastAnchor(branchOrigin + localPointerPosition),
+                                                ),
+                                            )
+                                        },
+                                        onPointerMoved = { localPointerPosition ->
+                                            onGlobalPointerPosition(branchOrigin + localPointerPosition)
+                                        },
+                                        onOpenContextMenu = {},
+                                        onInteractionChanged = { hovered, pressed ->
+                                            branchHovered = hovered
+                                            branchPressed = pressed
+                                        },
+                                        modifier = Modifier.matchParentSize(),
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Spacer(modifier = Modifier.width(HEADER_BRANCH_CHIP_HORIZONTAL_PADDING_DP.dp))
+                                    Text(
+                                        text = branchName,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            color = AppText,
+                                            fontSize = HEADER_TASK_TITLE_FONT_SIZE_SP.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        ),
+                                    )
+                                    Spacer(modifier = Modifier.width(HEADER_BRANCH_CHIP_HORIZONTAL_PADDING_DP.dp))
+                                }
+                            }
+                            Text(
+                                text = "/",
+                                modifier = Modifier.padding(start = 4.dp),
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     color = AppText,
                                     fontSize = HEADER_TASK_TITLE_FONT_SIZE_SP.sp,
@@ -208,15 +300,14 @@ internal fun WindowScope.ChatHeader(
                                     .height(HEADER_TASK_CHIP_HEIGHT_DP.dp)
                                     .padding(start = 4.dp)
                                     .onSizeChanged { size ->
-                                        taskTitleWidthPixels = size.width
                                         taskTitleHeightPixels = size.height
                                     }
                                     .background(
-                                        color = when {
-                                            taskTitlePressed -> AppHoverBackground.copy(alpha = 0.92f)
-                                            taskTitleHovered -> AppHoverBackground.copy(alpha = 0.72f)
-                                            else -> Color.Transparent
-                                        },
+                                        color = titleBarComposeHoverBackground(
+                                            nativeHitOverlayEnabled = onTitleBarClientPointerEvent != null,
+                                            hovered = taskTitleHovered,
+                                            pressed = taskTitlePressed,
+                                        ),
                                         shape = RoundedCornerShape(8.dp),
                                     )
                                     .graphicsLayer {
@@ -240,9 +331,7 @@ internal fun WindowScope.ChatHeader(
                                 contentAlignment = Alignment.CenterStart,
                             ) {
                                 if (
-                                    onTitleBarClientPointerEvent != null &&
-                                    taskTitleWidthPixels > 0 &&
-                                    taskTitleHeightPixels > 0
+                                    onTitleBarClientPointerEvent != null
                                 ) {
                                     NativeTitleBarTaskHitOverlay(
                                         onClientMouseEvent = onTitleBarClientPointerEvent,
@@ -250,6 +339,7 @@ internal fun WindowScope.ChatHeader(
                                             taskContextMenuClickPosition = null
                                             taskContextMenuExpanded = true
                                         },
+                                        onPointerMoved = {},
                                         onOpenContextMenu = { pointerPosition ->
                                             taskContextMenuClickPosition = pointerPosition
                                             taskContextMenuExpanded = true
@@ -258,9 +348,7 @@ internal fun WindowScope.ChatHeader(
                                             taskTitleHovered = hovered
                                             taskTitlePressed = pressed
                                         },
-                                        modifier = Modifier
-                                            .width(with(density) { taskTitleWidthPixels.toDp() })
-                                            .height(with(density) { taskTitleHeightPixels.toDp() }),
+                                        modifier = Modifier.matchParentSize(),
                                     )
                                 }
                                 Row(
@@ -367,6 +455,23 @@ internal fun WindowScope.ChatHeader(
 }
 
 /**
+ * 返回 Compose 标题文字层的悬浮底色；原生命中层启用时由 AWT 层独占绘制，避免叠出套框。
+ */
+internal fun titleBarComposeHoverBackground(
+    nativeHitOverlayEnabled: Boolean,
+    hovered: Boolean,
+    pressed: Boolean,
+): Color = if (nativeHitOverlayEnabled) {
+    Color.Transparent
+} else {
+    when {
+        pressed -> AppHoverBackground.copy(alpha = 0.92f)
+        hovered -> AppHoverBackground.copy(alpha = 0.72f)
+        else -> Color.Transparent
+    }
+}
+
+/**
  * 组装标题栏内紧凑的任务上下文，不额外插入与产品标题冲突的分隔符。
  */
 internal fun buildHeaderConversationLabel(
@@ -382,6 +487,14 @@ internal fun buildHeaderConversationPrefix(
     workspace: String,
     branch: String,
 ): String = "$workspace : $branch /"
+
+/** 将当前工作区分支名复制到系统剪贴板，供标题栏的单击操作使用。 */
+private fun copyHeaderBranchToClipboard(branch: String) {
+    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(branch), null)
+}
+
+/** 返回复制分支后显示在全局 toast 中的反馈文案。 */
+internal fun headerBranchCopiedFeedbackMessage(): String = "已复制"
 
 /**
  * 在后台读取工作区当前 Git 分支；非 Git 工作区保留清晰的回退文案。
@@ -432,7 +545,8 @@ private fun NativeTitleBarMenuButton(
 @Composable
 private fun NativeTitleBarTaskHitOverlay(
     onClientMouseEvent: () -> Unit,
-    onOpenMenu: () -> Unit,
+    onOpenMenu: (Offset) -> Unit,
+    onPointerMoved: (Offset) -> Unit,
     onOpenContextMenu: (Offset) -> Unit,
     onInteractionChanged: (hovered: Boolean, pressed: Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -442,6 +556,7 @@ private fun NativeTitleBarTaskHitOverlay(
             createNativeTitleBarTaskHitTarget(
                 onClientMouseEvent = onClientMouseEvent,
                 onClick = onOpenMenu,
+                onPointerMoved = onPointerMoved,
                 onContextMenuClick = onOpenContextMenu,
                 onInteractionChanged = onInteractionChanged,
             )
@@ -450,6 +565,7 @@ private fun NativeTitleBarTaskHitOverlay(
             component.updateActions(
                 onClientMouseEvent = onClientMouseEvent,
                 onClick = onOpenMenu,
+                onPointerMoved = onPointerMoved,
                 onContextMenuClick = onOpenContextMenu,
                 onInteractionChanged = onInteractionChanged,
             )
@@ -477,12 +593,14 @@ internal fun createNativeTitleBarMenuHitTarget(
  */
 internal fun createNativeTitleBarTaskHitTarget(
     onClientMouseEvent: () -> Unit,
-    onClick: () -> Unit,
-    onContextMenuClick: (Offset) -> Unit = { onClick() },
+    onClick: (Offset) -> Unit,
+    onPointerMoved: (Offset) -> Unit = {},
+    onContextMenuClick: (Offset) -> Unit = { pointerPosition -> onClick(pointerPosition) },
     onInteractionChanged: (hovered: Boolean, pressed: Boolean) -> Unit = { _, _ -> },
 ): NativeTitleBarTaskHitTarget = NativeTitleBarTaskHitTarget(
     onClientMouseEvent = onClientMouseEvent,
     onClick = onClick,
+    onPointerMoved = onPointerMoved,
     onContextMenuClick = onContextMenuClick,
     onInteractionChanged = onInteractionChanged,
 )
@@ -560,12 +678,14 @@ private fun JComponent.installNativeTitleBarMenuSeamCover(component: NativeTitle
  */
 internal class NativeTitleBarTaskHitTarget(
     onClientMouseEvent: () -> Unit,
-    onClick: () -> Unit,
+    onClick: (Offset) -> Unit,
+    onPointerMoved: (Offset) -> Unit,
     onContextMenuClick: (Offset) -> Unit,
     onInteractionChanged: (hovered: Boolean, pressed: Boolean) -> Unit,
 ) : JPanel() {
     private var clientMouseEventAction = onClientMouseEvent
     private var clickAction = onClick
+    private var pointerMovedAction = onPointerMoved
     private var contextMenuClickAction = onContextMenuClick
     private var interactionChangedAction = onInteractionChanged
     private var hovered = false
@@ -593,7 +713,7 @@ internal class NativeTitleBarTaskHitTarget(
                 if (event.button == MouseEvent.BUTTON3) {
                     contextMenuClickAction(Offset(event.x.toFloat(), event.y.toFloat()))
                 } else {
-                    clickAction()
+                    clickAction(Offset(event.x.toFloat(), event.y.toFloat()))
                 }
             }
         }
@@ -610,9 +730,15 @@ internal class NativeTitleBarTaskHitTarget(
             reportInteraction()
         }
 
-        override fun mouseDragged(event: MouseEvent) = markClientArea()
+        override fun mouseDragged(event: MouseEvent) {
+            markClientArea()
+            reportPointerPosition(event)
+        }
 
-        override fun mouseMoved(event: MouseEvent) = markClientArea()
+        override fun mouseMoved(event: MouseEvent) {
+            markClientArea()
+            reportPointerPosition(event)
+        }
     }
 
     init {
@@ -658,12 +784,14 @@ internal class NativeTitleBarTaskHitTarget(
      */
     fun updateActions(
         onClientMouseEvent: () -> Unit,
-        onClick: () -> Unit,
-        onContextMenuClick: (Offset) -> Unit = { onClick() },
+        onClick: (Offset) -> Unit,
+        onPointerMoved: (Offset) -> Unit = {},
+        onContextMenuClick: (Offset) -> Unit = { pointerPosition -> onClick(pointerPosition) },
         onInteractionChanged: (hovered: Boolean, pressed: Boolean) -> Unit,
     ) {
         clientMouseEventAction = onClientMouseEvent
         clickAction = onClick
+        pointerMovedAction = onPointerMoved
         contextMenuClickAction = onContextMenuClick
         interactionChangedAction = onInteractionChanged
         synchronizeNativeTitleBarTaskInteropBackground(this)
@@ -674,6 +802,11 @@ internal class NativeTitleBarTaskHitTarget(
      */
     private fun markClientArea() {
         clientMouseEventAction()
+    }
+
+    /** 将原生标题栏局部坐标交给 Compose，以持续更新已复制反馈的锚点。 */
+    private fun reportPointerPosition(event: MouseEvent) {
+        pointerMovedAction(Offset(event.x.toFloat(), event.y.toFloat()))
     }
 
     /**

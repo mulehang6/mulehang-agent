@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -54,6 +55,17 @@ import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 
 internal const val SIDEBAR_VISIBLE_BY_DEFAULT = false
+internal const val APP_FEEDBACK_BOTTOM_PADDING_DP = 24
+private const val APP_FEEDBACK_POINTER_OFFSET_DP = 12
+
+/** 应用级反馈及其可选的鼠标锚点。 */
+internal data class AppFeedbackState(
+    val message: String,
+    val anchor: Offset?,
+)
+
+/** 保留可用的鼠标位置；为空时由全局 toast 使用默认底部位置。 */
+internal fun feedbackToastAnchor(pointerPosition: Offset?): Offset? = pointerPosition
 
 /**
  * 按原型重构后的桌面主界面。
@@ -70,7 +82,7 @@ internal fun WindowScope.ChatScreen(
     val terminalSessions = remember { TerminalSessionStore() }
     var sidebarVisible by remember { mutableStateOf(SIDEBAR_VISIBLE_BY_DEFAULT) }
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
-    var railFeedback by remember { mutableStateOf<String?>(null) }
+    var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var sidebarBounds by remember { mutableStateOf(Rect.Zero) }
     var sidebarOrigin by remember { mutableStateOf(Offset.Zero) }
     val workspaceBackdropState = rememberWorkspaceBackdropState()
@@ -80,10 +92,10 @@ internal fun WindowScope.ChatScreen(
         onDispose { terminalSessions.closeAll() }
     }
 
-    LaunchedEffect(railFeedback) {
-        if (railFeedback != null) {
+    LaunchedEffect(appFeedback?.message) {
+        if (appFeedback != null) {
             delay(2.4.seconds)
-            railFeedback = null
+            appFeedback = null
         }
     }
 
@@ -115,6 +127,12 @@ internal fun WindowScope.ChatScreen(
                     ) {
                         sidebarVisible = false
                     }
+                }
+                .onPointerEvent(PointerEventType.Move) { event ->
+                    val pointerPosition = event.changes.firstOrNull()?.position ?: return@onPointerEvent
+                    appFeedback?.takeIf { feedback -> feedback.anchor != null }?.let { feedback ->
+                        appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
+                    }
                 },
         ) {
             Column(
@@ -129,6 +147,12 @@ internal fun WindowScope.ChatScreen(
                     windowState = desktopWindowState,
                     windowChromeMode = windowChromeMode,
                     onTitleBarClientPointerEvent = onTitleBarClientPointerEvent,
+                    onGlobalFeedback = { feedback -> appFeedback = feedback },
+                    onGlobalPointerPosition = { pointerPosition ->
+                        appFeedback?.takeIf { it.anchor != null }?.let { feedback ->
+                            appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
+                        }
+                    },
                     onCloseRequest = onCloseRequest,
                 )
                 Row(
@@ -179,7 +203,7 @@ internal fun WindowScope.ChatScreen(
                             onToolClick = { glyph ->
                                 if (glyph == RightRailGlyph.TERMINAL) {
                                     if (activeConversation == null) {
-                                        railFeedback = "请先选择工作区"
+                                        appFeedback = AppFeedbackState(message = "请先选择工作区", anchor = null)
                                     } else {
                                         when (terminalIconAction(terminalTabs.hasActiveTab())) {
                                             TerminalIconAction.CREATE_TAB -> {
@@ -191,7 +215,7 @@ internal fun WindowScope.ChatScreen(
                                                 terminalSessions.focusActiveIfNeeded(terminalTabs.activeTabId)
                                             }
                                         }
-                                        railFeedback = null
+                                        appFeedback = null
                                     }
                                 }
                             },
@@ -248,15 +272,31 @@ internal fun WindowScope.ChatScreen(
                 }
             }
         }
-        AnimatedContent(
-            targetState = railFeedback,
-            transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 60.dp, end = if (compact) 16.dp else 54.dp),
-        ) { message ->
-            if (message != null) {
-                RailFeedbackCard(message = message)
+        appFeedback?.let { feedback ->
+            val anchor = feedbackToastAnchor(feedback.anchor)
+            val pointerOffsetPx = with(LocalDensity.current) { APP_FEEDBACK_POINTER_OFFSET_DP.dp.toPx() }
+            AnimatedContent(
+                targetState = feedback.message,
+                transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                modifier = if (anchor == null) {
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = APP_FEEDBACK_BOTTOM_PADDING_DP.dp)
+                } else {
+                    Modifier.align(Alignment.TopStart)
+                },
+            ) { message ->
+                AppFeedbackToast(
+                    message = message,
+                    modifier = if (anchor == null) {
+                        Modifier
+                    } else {
+                        Modifier.graphicsLayer {
+                            translationX = anchor.x + pointerOffsetPx
+                            translationY = anchor.y + pointerOffsetPx
+                        }
+                    },
+                )
             }
         }
     }

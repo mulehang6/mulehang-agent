@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
@@ -13,17 +15,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.agent.app.design.AppLine
-import com.agent.app.design.AppMuted
+import com.agent.app.design.DividerHighlightAxis
+import com.agent.app.design.PointerFollowingDividerHighlight
 import java.awt.Cursor
 
 /**
@@ -60,6 +66,9 @@ internal fun ResizableWorkspaceLayout(
         val minimumWorkspaceHeightPx = with(density) { (if (compact) 220.dp else 280.dp).toPx() }
         val defaultTerminalHeightPx = with(density) { (if (compact) 200.dp else 260.dp).toPx() }
         var terminalHeightPx by remember { mutableFloatStateOf(defaultTerminalHeightPx) }
+        var dividerHovered by remember { mutableStateOf(false) }
+        var dividerDragging by remember { mutableStateOf(false) }
+        var dividerPointerX by remember { mutableFloatStateOf(0f) }
         val effectiveTerminalHeightPx = clampTerminalHeight(
             terminalHeightPx,
             availableHeightPx,
@@ -87,9 +96,25 @@ internal fun ResizableWorkspaceLayout(
                     .fillMaxWidth()
                     .height(dividerHeight)
                     .pointerHoverIcon(PointerIcon(Cursor(Cursor.N_RESIZE_CURSOR)))
+                    .onPointerEvent(PointerEventType.Enter) { event ->
+                        dividerHovered = true
+                        dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                    }
+                    .onPointerEvent(PointerEventType.Move) { event ->
+                        dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                    }
+                    .onPointerEvent(PointerEventType.Exit) { dividerHovered = false }
                     .pointerInput(availableHeightPx, compact) {
-                        detectDragGestures { change, dragAmount ->
+                        detectDragGestures(
+                            onDragStart = { position ->
+                                dividerDragging = true
+                                dividerPointerX = position.x
+                            },
+                            onDragEnd = { dividerDragging = false },
+                            onDragCancel = { dividerDragging = false },
+                        ) { change, dragAmount ->
                             change.consume()
+                            dividerPointerX = change.position.x
                             terminalHeightPx = clampTerminalHeight(
                                 terminalHeightPx - dragAmount.y,
                                 availableHeightPx,
@@ -102,15 +127,15 @@ internal fun ResizableWorkspaceLayout(
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(0.12f)
-                        .height(3.dp)
-                        .background(AppMuted.copy(alpha = 0.52f), RoundedCornerShape(50)),
-                )
-                Box(
-                    modifier = Modifier
                         .fillMaxWidth()
                         .height(1.dp)
                         .background(AppLine.copy(alpha = 0.25f)),
+                )
+                PointerFollowingDividerHighlight(
+                    axis = DividerHighlightAxis.Horizontal,
+                    pointerPositionPx = dividerPointerX,
+                    visible = dividerHovered || dividerDragging,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
             terminal(

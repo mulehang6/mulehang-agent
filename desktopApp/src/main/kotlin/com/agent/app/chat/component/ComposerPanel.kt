@@ -65,6 +65,7 @@ import com.agent.app.design.AppAccent
 import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
+import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.HeaderGlyph
@@ -74,6 +75,7 @@ import com.agent.app.design.RingDropdownMenuItem
 import com.agent.app.design.RingInputField
 import com.agent.app.design.RingIsland
 import com.agent.app.design.RingPrimaryButton
+import com.agent.app.design.RingPermissionDropdownMenuItem
 import com.agent.app.design.RingSelectChip
 import com.agent.app.design.RingTooltip
 import com.agent.app.platform.pickFiles
@@ -423,11 +425,13 @@ private fun ComposerPanel(
                         modifier = Modifier.width(if (compact) 96.dp else 120.dp),
                         tooltip = "选择服务商",
                     ) {
-                        providerProfiles.forEach { (_, providerModels) ->
-                            val first = providerModels.firstOrNull() ?: return@forEach
+                        providerProfiles.entries.forEachIndexed { index, (_, providerModels) ->
+                            val first = providerModels.firstOrNull() ?: return@forEachIndexed
                             RingDropdownMenuItem(
                                 text = first.providerLabel,
                                 selected = first.providerId == currentProvider,
+                                itemIndex = index,
+                                itemCount = providerProfiles.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.selectProfile(first.id)
@@ -447,10 +451,12 @@ private fun ComposerPanel(
                         modifier = Modifier.width(if (compact) 124.dp else 152.dp),
                         tooltip = "选择模型",
                     ) {
-                        currentProviderProfiles.forEach { profile ->
+                        currentProviderProfiles.forEachIndexed { index, profile ->
                             RingDropdownMenuItem(
                                 text = profile.modelLabel ?: profile.model,
                                 selected = profile.id == selectedProfile?.id,
+                                itemIndex = index,
+                                itemCount = currentProviderProfiles.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.selectProfile(profile.id)
@@ -471,12 +477,14 @@ private fun ComposerPanel(
                             modifier = Modifier.width(if (compact) 104.dp else 120.dp),
                             tooltip = "选择推理强度",
                         ) {
-                            selectedVariants.forEach { variant ->
-                                val effort = variant.reasoningEffort ?: return@forEach
-                                RingDropdownMenuItem(
-                                    text = reasoningControlLabel(effort),
-                                    selected = effort == activeConversation?.reasoningEffort,
-                                    onClick = {
+                        selectedVariants.forEachIndexed { index, variant ->
+                            val effort = variant.reasoningEffort ?: return@forEachIndexed
+                            RingDropdownMenuItem(
+                                text = reasoningControlLabel(effort),
+                                selected = effort == activeConversation?.reasoningEffort,
+                                itemIndex = index,
+                                itemCount = selectedVariants.size,
+                                onClick = {
                                         expandedMenu = null
                                         state.updateReasoningEffort(effort)
                                     },
@@ -506,10 +514,19 @@ private fun ComposerPanel(
                         modifier = Modifier.width(126.dp),
                         tooltip = "选择执行权限",
                     ) {
-                        PermissionPreset.entries.forEach { preset ->
-                            RingDropdownMenuItem(
-                                text = permissionLabel(preset),
+                        Text(
+                            text = "权限模式",
+                            modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 6.dp),
+                            style = androidx.compose.material3.MaterialTheme.typography.titleSmall.copy(color = AppMuted),
+                        )
+                        PermissionPreset.entries.forEachIndexed { index, preset ->
+                    RingPermissionDropdownMenuItem(
+                        description = permissionDescription(preset),
+                                badge = permissionBadge(preset),
+                                badgeColor = permissionBadgeColor(preset),
                                 selected = preset == permissionPreset,
+                                itemIndex = index,
+                                itemCount = PermissionPreset.entries.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.updatePermission(preset)
@@ -567,4 +584,31 @@ private fun permissionTone(permissionPreset: PermissionPreset): Color = when (pe
     PermissionPreset.EDIT_ALLOW -> Color(0xFF66511C)
     PermissionPreset.PLAN -> Color(0xFF434750)
     PermissionPreset.BRAVE -> Color(0xFF652E36)
+}
+
+/** 权限模式在菜单内的简短说明。 */
+private fun permissionDescription(permissionPreset: PermissionPreset): String = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> "首次使用每种工具时请求确认"
+    PermissionPreset.AUTO -> "自动执行安全的只读操作"
+    PermissionPreset.EDIT_ALLOW -> "自动接受文件编辑权限"
+    PermissionPreset.PLAN -> "修改前先完成计划"
+    PermissionPreset.BRAVE -> "跳过所有权限确认"
+}
+
+/** 权限模式的视觉标签。 */
+private fun permissionBadge(permissionPreset: PermissionPreset): String = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> "询问"
+    PermissionPreset.AUTO -> "自动"
+    PermissionPreset.EDIT_ALLOW -> "允许编辑"
+    PermissionPreset.PLAN -> "计划"
+    PermissionPreset.BRAVE -> "完全访问"
+}
+
+/** 权限模式的风险级别色。 */
+private fun permissionBadgeColor(permissionPreset: PermissionPreset): Color = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> Color(0xFF5A5C60)
+    PermissionPreset.AUTO -> Color(0xFF245286)
+    PermissionPreset.EDIT_ALLOW -> Color(0xFF55479A)
+    PermissionPreset.PLAN -> Color(0xFF76561B)
+    PermissionPreset.BRAVE -> Color(0xFF8E3541)
 }

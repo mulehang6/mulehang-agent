@@ -1,6 +1,7 @@
 package com.agent.app.chat.state
 
 import com.agent.shared.chat.model.ChatMessageItem
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ConversationItem
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
@@ -44,6 +45,9 @@ internal fun estimateContextUsage(
 internal fun estimateTokens(item: ConversationItem): Int = when (item) {
     is ChatMessageItem -> estimateTextTokens(item.message.content)
     is ReasoningItem -> estimateTextTokens(item.rawText ?: item.displayText)
+    is AnsweredQuestionsItem -> item.answers.sumOf { answer ->
+        estimateTextTokens(answer.question) + estimateTextTokens(answer.answer)
+    }
     is ToolEventItem -> estimateTextTokens(item.preview.orEmpty()) + estimateTextTokens(item.toolName)
 }
 

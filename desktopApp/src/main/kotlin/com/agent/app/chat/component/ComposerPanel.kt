@@ -5,10 +5,16 @@ package com.agent.app.chat.component
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
@@ -39,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -87,6 +95,12 @@ import kotlinx.coroutines.launch
 
 internal const val PENDING_CARD_ENTER_DURATION_MILLIS = 180
 internal const val PENDING_CARD_EXIT_DURATION_MILLIS = 120
+internal const val PENDING_CARD_ENTER_INITIAL_SCALE = 0.96f
+internal const val COMPOSER_BORDER_FLOW_DURATION_MILLIS = 1_600
+
+/** 仅在 Agent 实际执行工具或生成输出时启用 Composer 的流光反馈。 */
+internal fun shouldAnimateComposerBorder(executionState: ExecutionState): Boolean =
+    executionState == ExecutionState.Running
 
 /**
  * Composer 底部可互斥展开的菜单。
@@ -192,19 +206,12 @@ internal fun FooterComposerSection(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            activeConversation
-                ?.takeIf {
-                    shouldShowPendingInteractionCard(
-                        hasPendingQuestion = it.pendingQuestion != null,
-                        hasPendingApproval = it.pendingApproval != null,
-                    )
-                }
-                ?.let { conversation ->
-                    PendingInteractionCards(
-                        conversation = conversation,
-                        state = state,
-                    )
-                }
+            activeConversation?.let { conversation ->
+                PendingInteractionCards(
+                    conversation = conversation,
+                    state = state,
+                )
+            }
             ComposerPanel(
                 state = state,
                 compact = compact,
@@ -226,18 +233,31 @@ internal fun PendingInteractionCards(
 ) {
     val pendingQuestion = conversation.pendingQuestion
     val pendingApproval = conversation.pendingApproval
+    var isReadyForEntryAnimation by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isReadyForEntryAnimation = true
+    }
+
     AnimatedVisibility(
-        visible = pendingQuestion != null || pendingApproval != null,
+        visible = pendingInteractionCardVisibility(
+            isReadyForEntryAnimation = isReadyForEntryAnimation,
+            hasPendingQuestion = pendingQuestion != null,
+            hasPendingApproval = pendingApproval != null,
+        ),
         enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
-                slideInVertically(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) { height -> height / 8 },
+                slideInVertically(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) { height -> height / 8 } +
+                scaleIn(
+                    initialScale = PENDING_CARD_ENTER_INITIAL_SCALE,
+                    animationSpec = tween(PENDING_CARD_ENTER_DURATION_MILLIS),
+                ),
         exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
                 slideOutVertically(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) { height -> -height / 12 },
     ) {
         when {
             pendingQuestion != null -> QuestionCard(
                 pending = pendingQuestion,
-                onOptionClick = state::answerPendingQuestion,
-                onSubmitText = state::answerPendingQuestion,
+                onSubmitAnswers = state::answerPendingQuestions,
             )
 
             pendingApproval != null -> ApprovalCard(
@@ -247,6 +267,15 @@ internal fun PendingInteractionCards(
         }
     }
 }
+
+/**
+ * 初次组合的卡片先保持隐藏，让 AnimatedVisibility 获得明确的入场状态变化。
+ */
+internal fun pendingInteractionCardVisibility(
+    isReadyForEntryAnimation: Boolean,
+    hasPendingQuestion: Boolean,
+    hasPendingApproval: Boolean,
+): Boolean = isReadyForEntryAnimation && (hasPendingQuestion || hasPendingApproval)
 
 /**
  * 原型 composer。
@@ -263,6 +292,15 @@ private fun ComposerPanel(
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
     val executionState = activeConversation?.executionState ?: ExecutionState.Idle
+    val composerBorderTransition = rememberInfiniteTransition(label = "composer-border-flow")
+    val composerBorderProgress by composerBorderTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(COMPOSER_BORDER_FLOW_DURATION_MILLIS, easing = LinearEasing),
+        ),
+        label = "composer-border-progress",
+    )
     val permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT
     val primaryActionVisual = buildComposerPrimaryActionVisual(executionState)
     val providerProfiles = groupProfilesByProvider(profiles)
@@ -279,7 +317,30 @@ private fun ComposerPanel(
     }
 
     RingIsland(
-        modifier = modifier,
+        modifier = modifier.drawBehind {
+            val stroke = 2.dp.toPx()
+            val inset = stroke / 2f
+            val corner = 18.dp.toPx()
+            val staticColor = AppAccent.copy(alpha = 0.64f)
+            drawRoundRect(
+                color = staticColor,
+                topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
+                style = Stroke(width = stroke),
+            )
+            if (shouldAnimateComposerBorder(executionState)) {
+                drawArc(
+                    color = AppAccent,
+                    startAngle = composerBorderProgress * 360f,
+                    sweepAngle = 96f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                    size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke * 1.5f),
+                )
+            }
+        },
         color = ComposerBackground,
     ) {
         Column(
@@ -326,6 +387,7 @@ private fun ComposerPanel(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(Color(0xFF0A0B0D), RoundedCornerShape(12.dp))
                     .onSizeChanged { size -> inputViewportHeight = size.height }
                     .onPointerEvent(
                         eventType = PointerEventType.Move,

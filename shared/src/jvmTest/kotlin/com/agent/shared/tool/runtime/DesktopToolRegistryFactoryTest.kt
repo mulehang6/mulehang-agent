@@ -130,6 +130,39 @@ class DesktopToolRegistryFactoryTest {
         assertTrue(args.isCancelled())
         assertEquals(DesktopPowerShellTool.DEFAULT_TIMEOUT_MILLIS, args.timeoutMillis)
     }
+
+    /** 批量 JSON 问题应优先于兼容的单题参数，并在进入桥接层前规整候选项。 */
+    @Test
+    fun `ask user should prefer normalized batch questions json`() {
+        var capturedQuestion: QuestionRequest? = null
+        val toolSet = DesktopToolSet(
+            workspacePath = "D:\\repo",
+            permissionPreset = PermissionPreset.DEFAULT,
+            interactionBridge = object : DesktopToolInteractionBridge {
+                override suspend fun requestQuestion(request: QuestionRequest): String {
+                    capturedQuestion = request
+                    return "answers"
+                }
+
+                override suspend fun requestApproval(request: ApprovalRequest): Boolean = true
+            },
+        )
+
+        val result = toolSet.ask_user(
+            question = "legacy",
+            questions_json = """[{"question":"目标","options":["UI","UI","Bug","Feature","Review","Extra"]}]""",
+        )
+
+        assertEquals("answers", result)
+        assertEquals(
+            listOf("目标"),
+            capturedQuestion?.questions?.map { it.question },
+        )
+        assertEquals(
+            listOf("UI", "Bug", "Feature", "Review", "Extra"),
+            capturedQuestion?.questions?.singleOrNull()?.options,
+        )
+    }
 }
 
 internal fun fakeBridge(): DesktopToolInteractionBridge = object : DesktopToolInteractionBridge {

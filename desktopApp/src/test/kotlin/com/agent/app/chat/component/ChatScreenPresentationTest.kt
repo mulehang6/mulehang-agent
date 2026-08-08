@@ -13,6 +13,7 @@ import com.agent.app.design.AirSidebarStyle
 import com.agent.app.design.AppHeaderBackground
 import com.agent.app.design.AppRailBackground
 import com.agent.app.design.AppAccent
+import com.agent.app.design.AppDanger
 import com.agent.app.design.AppReasoning
 import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppWorkspaceBackground
@@ -811,6 +812,29 @@ class ChatScreenPresentationTest {
         assertEquals(120, PENDING_CARD_EXIT_DURATION_MILLIS)
     }
 
+    /**
+     * 初次组合时即使已有挂起交互，也必须先隐藏一帧，才能触发卡片入场动画。
+     */
+    @Test
+    fun `should defer an already pending interaction card until entry animation is ready`() {
+        assertEquals(
+            false,
+            pendingInteractionCardVisibility(
+                isReadyForEntryAnimation = false,
+                hasPendingQuestion = true,
+                hasPendingApproval = false,
+            ),
+        )
+        assertEquals(
+            true,
+            pendingInteractionCardVisibility(
+                isReadyForEntryAnimation = true,
+                hasPendingQuestion = false,
+                hasPendingApproval = true,
+            ),
+        )
+    }
+
     /** 交互卡进入时应从可感知但不突兀的轻微缩放开始。 */
     @Test
     fun `should scale pending interaction card in on entry`() {
@@ -1007,7 +1031,7 @@ class ChatScreenPresentationTest {
      * 相邻的成功工具调用应成为一个展示组；失败与状态事件必须成为明确边界。
      */
     @Test
-    fun `should group adjacent tools while keeping statuses separate`() {
+    fun `should group adjacent tools including failures while keeping statuses separate`() {
         val displayItems = groupTimelineItems(
             listOf(
                 toolEvent("first", ToolEventStatus.Finished),
@@ -1019,11 +1043,40 @@ class ChatScreenPresentationTest {
             ),
         )
 
-        assertEquals(listOf(2, 1, 1, 1, 1), displayItems.map(TimelineDisplayItem::itemCount))
+        assertEquals(listOf(4, 1, 1), displayItems.map(TimelineDisplayItem::itemCount))
         assertTrue(displayItems[0] is TimelineDisplayItem.ToolGroup)
         assertTrue(displayItems[1] is TimelineDisplayItem.Content)
         assertTrue(displayItems[2] is TimelineDisplayItem.Content)
-        assertTrue(displayItems[4] is TimelineDisplayItem.Content)
+    }
+
+    /** ask_user 只驱动提问卡，不应生成时间线工具项或把相邻工具合并。 */
+    @Test
+    fun `should omit ask user tool event from timeline groups`() {
+        val displayItems = groupTimelineItems(
+            listOf(
+                toolEvent("read_file", ToolEventStatus.Finished),
+                toolEvent("ask_user", ToolEventStatus.Started),
+                toolEvent("list_dir", ToolEventStatus.Finished),
+            ),
+        )
+
+        assertEquals(listOf(1, 1), displayItems.map(TimelineDisplayItem::itemCount))
+        assertTrue(displayItems.all { it is TimelineDisplayItem.Content })
+    }
+
+    /** 全部结束的工具组中仍有失败项时，应优先暴露失败而非绿色成功反馈。 */
+    @Test
+    fun `should prioritize failure in a completed tool group`() {
+        val items = listOf(
+            toolEvent("read_file", ToolEventStatus.Finished),
+            toolEvent("apply_patch", ToolEventStatus.Failed),
+            toolEvent("list_dir", ToolEventStatus.Finished),
+        )
+
+        assertEquals(TimelineToolGlyph.EDIT, timelineToolGroupGlyph(items))
+        assertEquals(AppDanger, timelineToolGroupTint(items))
+        assertEquals("Tool failed", toolGroupHeadline(items))
+        assertEquals(listOf("apply_patch", "list_dir"), visibleToolCardStack(items).map(ToolEventItem::toolName))
     }
 
     /** 运行中的每条工具调用都必须驱动自己的类型图标动画。 */
@@ -1038,6 +1091,14 @@ class ChatScreenPresentationTest {
         assertEquals(true, shouldAnimateTimelineToolGlyph(ToolEventStatus.Started))
         assertEquals(false, shouldAnimateTimelineToolGlyph(ToolEventStatus.Finished))
         assertEquals(false, shouldAnimateTimelineToolGlyph(ToolEventStatus.Failed))
+    }
+
+    /** 单独展示的终端工具完成后应自动收起其输出面板。 */
+    @Test
+    fun `should auto collapse completed standalone terminal tool`() {
+        assertEquals(true, shouldAutoCollapseStandaloneTerminalTool(toolEvent("run_powershell", ToolEventStatus.Finished)))
+        assertEquals(false, shouldAutoCollapseStandaloneTerminalTool(toolEvent("run_powershell", ToolEventStatus.Started)))
+        assertEquals(false, shouldAutoCollapseStandaloneTerminalTool(toolEvent("read_file", ToolEventStatus.Finished)))
     }
 
     /** 工具组内所有调用结束后，应将加载图标切换为成功勾选反馈。 */
@@ -1164,6 +1225,13 @@ class ChatScreenPresentationTest {
     fun `should use larger typography for the reasoning block`() {
         assertEquals(16, REASONING_HEADLINE_FONT_SIZE_SP)
         assertEquals(15, REASONING_BODY_FONT_SIZE_SP)
+    }
+
+    /** 思考正文的展开与收起应使用短促且不突兀的过渡节奏。 */
+    @Test
+    fun `should animate reasoning body expansion and collapse`() {
+        assertEquals(220, REASONING_BODY_EXPAND_DURATION_MILLIS)
+        assertEquals(160, REASONING_BODY_COLLAPSE_DURATION_MILLIS)
     }
 
     /** 思考结束后改用柔和紫色，以区别仍在进行的蓝色呼吸指示。 */

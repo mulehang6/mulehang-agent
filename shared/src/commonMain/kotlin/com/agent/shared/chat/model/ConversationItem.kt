@@ -27,5 +27,10 @@ sealed interface ConversationItem {
          * 思考块。
          */
         Reasoning,
+
+        /**
+         * 用户对一组 Agent 问题的已完成回答。
+         */
+        Answers,
     }
 }

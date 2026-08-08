@@ -6,6 +6,7 @@ import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.AppError
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
@@ -18,6 +19,7 @@ import com.agent.shared.chat.persistence.PersistedHistoryItem
 import com.agent.shared.chat.persistence.PersistedTask
 import com.agent.shared.chat.persistence.PersistedTimelineItem
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionAnswer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -112,6 +114,17 @@ internal object ChatTaskSnapshotMapper {
             putNullable("durationMillis", source.durationMillis)
         }.toString())
 
+        is AnsweredQuestionsItem -> PersistedTimelineItem(sequence, "answers", buildJsonObject {
+            put("answers", buildJsonArray {
+                source.answers.forEach { answer ->
+                    add(buildJsonObject {
+                        put("question", answer.question)
+                        put("answer", answer.answer)
+                    })
+                }
+            })
+        }.toString())
+
         is ToolEventItem -> PersistedTimelineItem(sequence, "tool_event", buildJsonObject {
             put("toolName", source.toolName)
             put("status", source.status.name)
@@ -136,6 +149,16 @@ internal object ChatTaskSnapshotMapper {
                 isStreaming = objectValue.requiredBoolean("isStreaming"),
                 startedAtMillis = objectValue.requiredLong("startedAtMillis"),
                 durationMillis = objectValue.optionalLong("durationMillis"),
+            )
+
+            "answers" -> AnsweredQuestionsItem(
+                answers = objectValue.getValue("answers").jsonArray.map { answerElement ->
+                    val answerObject = answerElement.jsonObject
+                    QuestionAnswer(
+                        question = answerObject.requiredString("question"),
+                        answer = answerObject.requiredString("answer"),
+                    )
+                },
             )
 
             "tool_event" -> ToolEventItem(

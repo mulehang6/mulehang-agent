@@ -1,6 +1,7 @@
 package com.agent.app.chat.export
 
 import com.agent.app.chat.state.ChatConversationUiState
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ReasoningItem
@@ -33,6 +34,14 @@ internal fun buildConversationMarkdown(conversation: ChatConversationUiState): S
             is ReasoningItem -> {
                 appendLine("## Reasoning")
                 appendLine(item.displayText)
+            }
+
+            is AnsweredQuestionsItem -> {
+                appendLine("## Answers")
+                item.answers.forEach { answer ->
+                    appendLine("### ${answer.question}")
+                    appendLine(answer.answer)
+                }
             }
 
             is ToolEventItem -> {

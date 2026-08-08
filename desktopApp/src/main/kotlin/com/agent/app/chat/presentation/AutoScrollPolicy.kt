@@ -1,6 +1,7 @@
 package com.agent.app.chat.presentation
 
 import com.agent.shared.chat.model.ChatMessageItem
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ConversationItem
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
@@ -53,6 +54,7 @@ internal fun timelineAutoScrollAnchorIndex(totalItems: Int): Int =
 internal fun itemContentSize(item: ConversationItem): Int = when (item) {
     is ChatMessageItem -> item.message.content.length
     is ReasoningItem -> (item.rawText ?: item.displayText).length
+    is AnsweredQuestionsItem -> item.answers.sumOf { answer -> answer.question.length + answer.answer.length }
     is ToolEventItem -> listOf(
         item.preview,
         item.toolName,

@@ -8,6 +8,8 @@ import com.agent.shared.chat.model.ConversationItem
 import com.agent.shared.chat.model.ConversationState
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionPrompt
+import com.agent.shared.tool.model.normalizeQuestionPrompts
 
 /**
  * 附件在 composer 中的展示状态。
@@ -22,10 +24,19 @@ data class ChatAttachmentUiState(
  */
 data class PendingQuestionUiState(
     val requestId: String,
-    val question: String,
-    val options: List<String>,
+    val question: String = "",
+    val options: List<String> = emptyList(),
+    val questions: List<QuestionPrompt> = emptyList(),
     val allowFreeText: Boolean,
-)
+) {
+    /**
+     * 返回批量题目；旧状态会按原有单题字段回退。
+     */
+    val effectiveQuestions: List<QuestionPrompt>
+        get() = normalizeQuestionPrompts(
+            questions.ifEmpty { listOf(QuestionPrompt(question = question, options = options)) },
+        )
+}
 
 /**
  * 当前轮次挂起中的审批卡片状态。

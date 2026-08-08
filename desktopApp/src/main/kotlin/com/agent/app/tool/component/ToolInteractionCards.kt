@@ -3,15 +3,20 @@ package com.agent.app.tool.component
 import com.agent.app.chat.state.PendingApprovalUiState
 import com.agent.app.chat.state.PendingQuestionUiState
 import com.agent.app.tool.interaction.ApprovalResponse
+import com.agent.shared.tool.model.QuestionAnswer
+import com.agent.shared.tool.model.QuestionPrompt
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +24,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,8 +46,7 @@ import com.agent.app.design.RingPrimaryButton
  * 问题卡片的展示模型。
  */
 data class QuestionCardModel(
-    val title: String,
-    val options: List<String>,
+    val questions: List<QuestionPrompt>,
     val allowFreeText: Boolean,
 )
 
@@ -60,8 +66,7 @@ data class ApprovalCardModel(
  * 将挂起问题状态映射为界面模型。
  */
 internal fun buildQuestionCardModel(pending: PendingQuestionUiState): QuestionCardModel = QuestionCardModel(
-    title = pending.question,
-    options = pending.options,
+    questions = pending.effectiveQuestions,
     allowFreeText = pending.allowFreeText,
 )
 
@@ -77,18 +82,27 @@ internal fun buildApprovalCardModel(pending: PendingApprovalUiState): ApprovalCa
     rawCommand = pending.payloadPreview.takeIf { pending.toolName == "run_powershell" },
 )
 
+/** 判断自由回答去除空白后是否仍可提交。 */
+internal fun canSubmitQuestionFreeText(value: String): Boolean = value.isNotBlank()
+
+/** 返回已规整的自由回答；纯空白内容不会穿透到状态层。 */
+internal fun questionFreeTextSubmission(value: String): String? =
+    value.trim().takeIf(::canSubmitQuestionFreeText)
+
+/** 问卷只有每题都给出非空回答时才允许一次提交。 */
+internal fun canSubmitQuestionnaire(answers: List<String>): Boolean = answers.all(::canSubmitQuestionFreeText)
+
 /**
  * transcript 内嵌的问题卡片。
  */
 @Composable
 fun QuestionCard(
     pending: PendingQuestionUiState,
-    onOptionClick: (String) -> Unit,
-    onSubmitText: (String) -> Unit,
+    onSubmitAnswers: (List<QuestionAnswer>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val model = buildQuestionCardModel(pending)
-    var draft by remember(pending.requestId) { mutableStateOf("") }
+    var answers by remember(pending.requestId) { mutableStateOf(List(model.questions.size) { "" }) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -101,49 +115,63 @@ fun QuestionCard(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Agent 需要补充信息",
+                text = "Agent needs answers",
                 style = MaterialTheme.typography.labelLarge.copy(
                     color = AppMuted,
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
-            Text(
-                text = model.title,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    color = AppText,
-                    lineHeight = 24.sp,
-                ),
-            )
-            if (model.options.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    model.options.forEach { option ->
+            model.questions.forEachIndexed { index, prompt ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "${index + 1}. ${prompt.question}",
+                        style = MaterialTheme.typography.bodyLarge.copy(color = AppText, lineHeight = 24.sp),
+                    )
+                    prompt.options.take(5).forEach { option ->
                         RingPrimaryButton(
                             text = option,
-                            onClick = { onOptionClick(option) },
-                            containerColor = AppAccent,
+                            onClick = {
+                                answers = answers.toMutableList().also { it[index] = option }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            containerColor = if (answers[index] == option) AppAccent else AppChipBackground,
+                        )
+                    }
+                    if (model.allowFreeText) {
+                        BasicTextField(
+                            value = answers[index].takeIf { answer -> answer !in prompt.options }.orEmpty(),
+                            onValueChange = { value ->
+                                answers = answers.toMutableList().also { it[index] = value }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, AppLine.copy(alpha = 0.72f), RoundedCornerShape(10.dp))
+                                .background(AppPanelBackground, RoundedCornerShape(10.dp))
+                                .padding(12.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = AppText),
+                            cursorBrush = SolidColor(AppText),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (answers[index].isBlank() || answers[index] in prompt.options) {
+                                        Text("Other…", style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted))
+                                    }
+                                    innerTextField()
+                                }
+                            },
                         )
                     }
                 }
             }
-            if (model.allowFreeText) {
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = draft,
-                    onValueChange = { draft = it },
-                    label = { Text("自定义回答") },
-                    minLines = 2,
-                    shape = RoundedCornerShape(16.dp),
-                )
-                RingPrimaryButton(
-                    text = "提交",
-                    onClick = { onSubmitText(draft.trim()) },
-                    enabled = draft.isNotBlank(),
-                    containerColor = AppSuccess,
-                )
-            }
+            RingPrimaryButton(
+                text = "Submit answers",
+                onClick = {
+                    onSubmitAnswers(model.questions.mapIndexed { index, prompt ->
+                        QuestionAnswer(question = prompt.question, answer = answers[index].trim())
+                    })
+                },
+                enabled = canSubmitQuestionnaire(answers),
+                containerColor = AppAccent,
+            )
         }
     }
 }
@@ -203,6 +231,63 @@ fun ApprovalCard(
                 )
             }
             ApprovalResponseActions(onResponse)
+        }
+    }
+}
+
+/**
+ * 呈现桌面风格的自由回答输入区，将输入和提交动作组织为同一个操作表面。
+ */
+@Composable
+private fun QuestionFreeTextInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSubmit: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, AppLine.copy(alpha = 0.72f), RoundedCornerShape(14.dp))
+            .background(AppPanelBackground, RoundedCornerShape(14.dp)),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 76.dp)
+                .padding(12.dp),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = AppText,
+                lineHeight = 22.sp,
+            ),
+            cursorBrush = SolidColor(AppText),
+            minLines = 3,
+            decorationBox = { innerTextField ->
+                Box {
+                    if (value.isBlank()) {
+                        Text(
+                            text = "补充你的回答…",
+                            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 10.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RingPrimaryButton(
+                text = "提交回答",
+                onClick = { questionFreeTextSubmission(value)?.let(onSubmit) },
+                enabled = canSubmitQuestionFreeText(value),
+                containerColor = AppSuccess,
+            )
         }
     }
 }

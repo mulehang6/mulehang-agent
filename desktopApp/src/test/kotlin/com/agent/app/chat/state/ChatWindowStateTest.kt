@@ -11,6 +11,7 @@ import com.agent.shared.agent.api.ConversationTitleGenerator
 import com.agent.shared.agent.api.ConversationTitleRequest
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.AppError
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationItem
@@ -27,6 +28,8 @@ import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.QuestionRequest
+import com.agent.shared.tool.model.QuestionAnswer
+import com.agent.shared.tool.model.QuestionPrompt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -1667,6 +1670,44 @@ class ChatWindowStateTest {
         advanceUntilIdle()
 
         assertEquals(1_000L, state.ui.activeConversation.updatedAt)
+    }
+
+    /** 批量问题应在一次提交后记录 Answers，并只恢复当前轮次一次。 */
+    @Test
+    fun `should resume once and append answers after every batch question is answered`() = runTest(dispatcher) {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val batchRequest = QuestionRequest(
+            requestId = "q-batch",
+            toolCallId = "call-batch",
+            questions = listOf(
+                QuestionPrompt("目标", listOf("UI", "Bug")),
+                QuestionPrompt("语言", listOf("中文", "English")),
+            ),
+        )
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                emit(AgentStreamEvent.QuestionRequested(batchRequest))
+                emit(AgentStreamEvent.Completed(coordinator.requestQuestion(batchRequest)))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\abc\\def",
+            toolInteractionCoordinator = coordinator,
+        )
+
+        state.send("start")
+        advanceUntilIdle()
+        state.answerPendingQuestions(
+            listOf(QuestionAnswer("目标", "UI"), QuestionAnswer("语言", "中文")),
+        )
+        advanceUntilIdle()
+
+        val answers = state.ui.activeConversation.items.filterIsInstance<AnsweredQuestionsItem>().single()
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(listOf("UI", "中文"), answers.answers.map(QuestionAnswer::answer))
     }
 
     private fun profile(

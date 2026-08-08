@@ -106,6 +106,7 @@ import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.design.AppUserCardBackground
 import com.agent.shared.chat.model.ChatMessageItem
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
@@ -158,16 +159,28 @@ internal fun groupTimelineItems(
         pendingTools.clear()
     }
     items.forEach { item ->
-        if (item is ToolEventItem && item.status != ToolEventStatus.Status && item.status != ToolEventStatus.Failed) {
-            pendingTools += item
-        } else {
-            flushTools()
-            result += TimelineDisplayItem.Content(item)
+        when (item) {
+            is ToolEventItem -> when {
+                isAskUserToolEvent(item) -> flushTools()
+                item.status != ToolEventStatus.Status -> pendingTools += item
+                else -> {
+                    flushTools()
+                    result += TimelineDisplayItem.Content(item)
+                }
+            }
+
+            else -> {
+                flushTools()
+                result += TimelineDisplayItem.Content(item)
+            }
         }
     }
     flushTools()
     return result
 }
+
+/** 判断工具事件是否只应通过挂起问题卡交互，而不写入时间线。 */
+private fun isAskUserToolEvent(item: ToolEventItem): Boolean = item.toolName == "ask_user"
 
 /**
  * 构造收起状态下统一的工具组标题。
@@ -209,6 +222,12 @@ internal const val REASONING_HEADLINE_FONT_SIZE_SP = 16
 
 /** 思考块正文的字号，避免长文本显得过小。 */
 internal const val REASONING_BODY_FONT_SIZE_SP = 15
+
+/** 思考正文展开的时长，兼顾信息出现的可追踪性与响应感。 */
+internal const val REASONING_BODY_EXPAND_DURATION_MILLIS = 220
+
+/** 思考正文收起略快，避免重复查看时阻塞时间线扫读。 */
+internal const val REASONING_BODY_COLLAPSE_DURATION_MILLIS = 160
 
 /** 工具行使用的紧凑类型图标。 */
 internal enum class TimelineToolGlyph {
@@ -267,13 +286,23 @@ internal fun timelineToolExpandedInput(item: ToolEventItem): String? =
 internal fun activeTimelineTool(items: List<ToolEventItem>): ToolEventItem? =
     items.lastOrNull { it.status == ToolEventStatus.Started }
 
-/** 进行中的组沿用当前工具图标，完成后统一显示成功勾选。 */
-internal fun timelineToolGroupGlyph(items: List<ToolEventItem>): TimelineToolGlyph =
-    activeTimelineTool(items)?.let(::timelineToolGlyph) ?: TimelineToolGlyph.SUCCESS
+/** 返回同组最新的失败工具，确保结束态不会掩盖错误反馈。 */
+internal fun failedTimelineTool(items: List<ToolEventItem>): ToolEventItem? =
+    items.lastOrNull { it.status == ToolEventStatus.Failed }
 
-/** 运行状态使用蓝色强调；全部完成后用绿色明确反馈成功。 */
+/** 进行中的组沿用当前工具图标；失败优先于成功勾选。 */
+internal fun timelineToolGroupGlyph(items: List<ToolEventItem>): TimelineToolGlyph =
+    activeTimelineTool(items)?.let(::timelineToolGlyph)
+        ?: failedTimelineTool(items)?.let(::timelineToolGlyph)
+        ?: TimelineToolGlyph.SUCCESS
+
+/** 运行状态使用蓝色强调；失败保持危险色；全部成功后才使用绿色。 */
 internal fun timelineToolGroupTint(items: List<ToolEventItem>): Color =
-    if (activeTimelineTool(items) == null) AppSuccess else AppAccent
+    when {
+        activeTimelineTool(items) != null -> AppAccent
+        failedTimelineTool(items) != null -> AppDanger
+        else -> AppSuccess
+    }
 
 /** 思考运行和完成分别使用蓝、紫，避免时间线只剩一片灰色。 */
 internal fun timelineReasoningTint(streaming: Boolean): Color = if (streaming) AppAccent else AppReasoning
@@ -281,7 +310,9 @@ internal fun timelineReasoningTint(streaming: Boolean): Color = if (streaming) A
 /** 返回工具组当前的语义标题；Shell 和未知工具保留稳定数量摘要。 */
 internal fun toolGroupHeadline(items: List<ToolEventItem>): String {
     val runningTools = items.filter { it.status == ToolEventStatus.Started }
-    if (runningTools.isEmpty()) return buildToolGroupHeadline(items.size)
+    if (runningTools.isEmpty()) {
+        return if (failedTimelineTool(items) != null) "Tool failed" else buildToolGroupHeadline(items.size)
+    }
 
     return runningTools
         .asReversed()
@@ -298,6 +329,10 @@ internal fun shouldAnimateTimelineToolGlyph(status: ToolEventStatus): Boolean = 
 /** 组内不存在进行中的工具时，工具组应自行收起。 */
 internal fun shouldAutoCollapseTimelineToolGroup(items: List<ToolEventItem>): Boolean =
     items.isNotEmpty() && items.none { it.status == ToolEventStatus.Started }
+
+/** 单独呈现的成功终端工具应在展示完成反馈后自动收起输出。 */
+internal fun shouldAutoCollapseStandaloneTerminalTool(item: ToolEventItem): Boolean =
+    isTerminalToolEvent(item) && item.status == ToolEventStatus.Finished
 
 /**
  * 返回相邻展示段之间的垂直间距：连续工具调用保持紧凑，跨内容段落留出呼吸感。
@@ -367,6 +402,7 @@ internal fun ConversationTimeline(
                 }
 
                 is ReasoningItem -> TimelineReasoningItem(item)
+                is AnsweredQuestionsItem -> TimelineAnswersItem(item)
                 is ToolEventItem -> TimelineToolTextRow(
                     item = rememberTimelineToolDisplayItem(item),
                     isFailure = item.status == ToolEventStatus.Failed,
@@ -687,7 +723,13 @@ private fun TimelineReasoningItem(item: ReasoningItem) {
                 style = headlineStyle,
             )
         }
-        if (expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(tween(durationMillis = REASONING_BODY_EXPAND_DURATION_MILLIS)) +
+                    fadeIn(tween(durationMillis = REASONING_BODY_EXPAND_DURATION_MILLIS)),
+            exit = shrinkVertically(tween(durationMillis = REASONING_BODY_COLLAPSE_DURATION_MILLIS)) +
+                    fadeOut(tween(durationMillis = REASONING_BODY_COLLAPSE_DURATION_MILLIS)),
+        ) {
             Text(
                 text = item.displayText,
                 style = MaterialTheme.typography.bodySmall.copy(
@@ -803,6 +845,51 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
 }
 
 /**
+ * 以可展开的紧凑摘要展示已经提交给 Agent 的批量问答。
+ */
+@Composable
+private fun TimelineAnswersItem(item: AnsweredQuestionsItem) {
+    var expanded by remember(item) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = "▣  Answers",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = AppText,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        )
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(tween(durationMillis = 180)) + fadeIn(tween(durationMillis = 150)),
+            exit = shrinkVertically(tween(durationMillis = 120)) + fadeOut(tween(durationMillis = 100)),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item.answers.forEach { answer ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = answer.question,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = AppText,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        )
+                        Text(
+                            text = answer.answer,
+                            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * 暂存工具事件的展示状态，使快速完成的非终端工具仍可展示完整的运行图标动效。
  */
 @Composable
@@ -909,9 +996,15 @@ private fun TimelineToolTextRow(
     var expanded by remember(toolEventExpansionIdentity(item)) { mutableStateOf(false) }
     var userSetExpansion by remember(toolEventExpansionIdentity(item)) { mutableStateOf(false) }
     var hovered by remember { mutableStateOf(false) }
-    LaunchedEffect(item.status, item.resultDisplay, item.resultPreview) {
-        if (!userSetExpansion && shouldAutoExpandRunningTerminalOutput(item)) {
-            expanded = true
+    LaunchedEffect(item.status, item.resultDisplay, item.resultPreview, userSetExpansion) {
+        if (!userSetExpansion) {
+            when {
+                shouldAutoExpandRunningTerminalOutput(item) -> expanded = true
+                shouldAutoCollapseStandaloneTerminalTool(item) -> {
+                    delay(TOOL_GROUP_AUTO_COLLAPSE_DELAY_MILLIS.milliseconds)
+                    expanded = false
+                }
+            }
         }
     }
     val chevronRotation by animateFloatAsState(

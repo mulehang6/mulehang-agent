@@ -24,9 +24,24 @@ class ToolInteractionCardsTest {
 
         val model = buildQuestionCardModel(pending)
 
-        assertEquals("Pick one", model.title)
-        assertEquals(listOf("A", "B", "C"), model.options)
+        assertEquals(listOf("Pick one"), model.questions.map { it.question })
+        assertEquals(listOf("A", "B", "C"), model.questions.single().options)
         assertTrue(model.allowFreeText)
+    }
+
+    /** 内置候选项最多五个，且全部题目回答后才允许一次提交。 */
+    @Test
+    fun `questionnaire caps built in choices and requires every answer`() {
+        val answers = listOf("UI", "")
+
+        assertEquals(
+            listOf("1", "2", "3", "4", "5"),
+            com.agent.shared.tool.model.normalizeQuestionPrompts(
+                listOf(com.agent.shared.tool.model.QuestionPrompt("目标", listOf("1", "2", "3", "4", "5", "6"))),
+            ).single().options,
+        )
+        assertEquals(false, canSubmitQuestionnaire(answers))
+        assertEquals(true, canSubmitQuestionnaire(listOf("UI", "中文")))
     }
 
     /** 自由输入仅在去除空白后仍含内容时才能提交。 */
@@ -34,6 +49,13 @@ class ToolInteractionCardsTest {
     fun `question free text submit should require non blank content`() {
         assertEquals(false, canSubmitQuestionFreeText("   "))
         assertEquals(true, canSubmitQuestionFreeText("使用第一种方式"))
+    }
+
+    /** 提交内容在交给状态层前必须去除空白，并拒绝空回答。 */
+    @Test
+    fun `question free text submission should trim content and reject blanks`() {
+        assertEquals(null, questionFreeTextSubmission("   "))
+        assertEquals("使用第一种方式", questionFreeTextSubmission("  使用第一种方式  "))
     }
 
     /**

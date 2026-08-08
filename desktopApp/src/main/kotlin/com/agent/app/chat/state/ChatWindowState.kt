@@ -13,6 +13,7 @@ import com.agent.shared.agent.api.ConversationTitleGenerator
 import com.agent.shared.agent.api.ConversationTitleRequest
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.AppError
+import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
@@ -23,6 +24,8 @@ import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionAnswer
+import com.agent.shared.tool.model.QuestionPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -333,15 +336,60 @@ class ChatWindowState(
      * 回答当前挂起问题，并恢复同一轮 agent 执行。
      */
     fun answerPendingQuestion(answer: String) {
-        if (!toolInteractionCoordinator.submitQuestion(answer)) return
         val targetConversationId = resolvePendingQuestionConversationId() ?: return
+        val pending = findConversation(targetConversationId).pendingQuestion ?: return
+        val question = pending.effectiveQuestions.singleOrNull()?.question ?: return
+        submitPendingQuestionAnswers(
+            answers = listOf(QuestionAnswer(question = question, answer = answer)),
+            toolResponse = answer,
+        )
+    }
+
+    /**
+     * 一次提交当前批量问题的完整回答，并恢复发起问题的同一轮 Agent。
+     */
+    fun answerPendingQuestions(answers: List<QuestionAnswer>) {
+        submitPendingQuestionAnswers(
+            answers = answers,
+            toolResponse = formatQuestionAnswers(answers),
+        )
+    }
+
+    /**
+     * 写入问答记录、解除挂起并向等待中的工具调用提交指定文本结果。
+     */
+    private fun submitPendingQuestionAnswers(
+        answers: List<QuestionAnswer>,
+        toolResponse: String,
+    ) {
+        val targetConversationId = resolvePendingQuestionConversationId() ?: return
+        val pending = findConversation(targetConversationId).pendingQuestion ?: return
+        if (!isCompleteQuestionAnswerSet(pending = pending, answers = answers)) return
+        if (!toolInteractionCoordinator.submitQuestion(toolResponse)) return
         pendingQuestionConversationId = null
         mutateConversation(targetConversationId) { conversation ->
             conversation.copy(
+                items = conversation.items + AnsweredQuestionsItem(answers = answers),
                 pendingQuestion = null,
                 executionState = ExecutionState.Running,
             )
         }
+    }
+
+    /**
+     * 验证答案必须按当前问卷顺序完整覆盖，且每项都包含非空文本。
+     */
+    private fun isCompleteQuestionAnswerSet(
+        pending: PendingQuestionUiState,
+        answers: List<QuestionAnswer>,
+    ): Boolean = pending.effectiveQuestions.map(QuestionPrompt::question) == answers.map(QuestionAnswer::question) &&
+            answers.all { it.answer.isNotBlank() }
+
+    /**
+     * 将批量回答编码为稳定的纯文本，供挂起中的 Agent 工具调用继续读取。
+     */
+    private fun formatQuestionAnswers(answers: List<QuestionAnswer>): String = answers.joinToString("\n\n") { answer ->
+        "Question: ${answer.question}\nAnswer: ${answer.answer.trim()}"
     }
 
     /**

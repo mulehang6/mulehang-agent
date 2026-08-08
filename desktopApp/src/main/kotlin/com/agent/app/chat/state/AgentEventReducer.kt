@@ -72,16 +72,20 @@ internal fun reduceAgentEvent(
         contextWindow = contextWindow,
     )
 
-    is AgentStreamEvent.QuestionRequested -> conversation.copy(
-        pendingQuestion = PendingQuestionUiState(
-            requestId = event.request.requestId,
-            question = event.request.question,
-            options = event.request.options,
-            allowFreeText = event.request.allowFreeText,
-        ),
-        pendingApproval = null,
-        executionState = ExecutionState.WaitingForUserInput,
-    )
+    is AgentStreamEvent.QuestionRequested -> {
+        val questions = event.request.effectiveQuestions
+        conversation.copy(
+            pendingQuestion = PendingQuestionUiState(
+                requestId = event.request.requestId,
+                question = questions.firstOrNull()?.question.orEmpty(),
+                options = questions.firstOrNull()?.options.orEmpty(),
+                questions = questions,
+                allowFreeText = event.request.allowFreeText,
+            ),
+            pendingApproval = null,
+            executionState = ExecutionState.WaitingForUserInput,
+        )
+    }
 
     is AgentStreamEvent.ApprovalRequested -> conversation.copy(
         pendingApproval = PendingApprovalUiState(

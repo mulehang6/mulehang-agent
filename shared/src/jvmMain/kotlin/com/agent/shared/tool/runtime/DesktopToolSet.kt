@@ -6,10 +6,13 @@ import ai.koog.agents.core.tools.reflect.ToolSet
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.QuestionPrompt
 import com.agent.shared.tool.model.QuestionRequest
+import com.agent.shared.tool.model.normalizeQuestionPrompts
 import com.agent.shared.tool.policy.DesktopToolPolicy
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 
 /**
  * 桌面首批本地工具集合。
@@ -171,20 +174,49 @@ class DesktopToolSet(
      * 向用户发起问题请求。
      */
     @Tool
-    @LLMDescription("Ask the user a question with up to three options and free text.")
+    @LLMDescription("Ask all needed user questions at once. Prefer questions_json: a JSON array of objects with question and up to five options. The legacy question and options fields remain supported for one question.")
     fun ask_user(
-        @LLMDescription("Question text.") question: String,
-        @LLMDescription("Optional answer choices.") options: List<String> = emptyList(),
+        @LLMDescription("Legacy single question text. Use only when questions_json is blank.") question: String = "",
+        @LLMDescription("Legacy answer choices for question. Use only when questions_json is blank.") options: List<String> = emptyList(),
+        @LLMDescription("Preferred JSON array: [{\"question\":\"...\",\"options\":[\"...\"]}]. Ask all needed questions in this single array.") questions_json: String = "",
     ): String = runBlocking {
+        val questions = questionPromptsForToolCall(
+            question = question,
+            options = options,
+            questionsJson = questions_json,
+        )
         interactionBridge.requestQuestion(
             QuestionRequest(
                 requestId = UUID.randomUUID().toString(),
                 toolCallId = "ask_user",
-                question = question,
-                options = options.map(String::trim).filter(String::isNotEmpty).take(3),
+                questions = questions,
                 allowFreeText = true,
             ),
         )
+    }
+
+    /**
+     * 将优先的 JSON 问题数组或兼容单题参数规整为可展示的批量请求。
+     */
+    private fun questionPromptsForToolCall(
+        question: String,
+        options: List<String>,
+        questionsJson: String,
+    ): List<QuestionPrompt> {
+        val rawQuestions = if (questionsJson.isBlank()) {
+            listOf(QuestionPrompt(question = question, options = options))
+        } else {
+            runCatching {
+                QUESTION_JSON.decodeFromString<List<QuestionPrompt>>(questionsJson)
+            }.getOrElse { error ->
+                throw IllegalArgumentException(
+                    "questions_json 必须是 [{\"question\":\"...\",\"options\":[\"...\"]}] 形式的 JSON 数组。",
+                    error,
+                )
+            }
+        }
+        return normalizeQuestionPrompts(rawQuestions).takeIf(List<QuestionPrompt>::isNotEmpty)
+            ?: throw IllegalArgumentException("ask_user 至少需要一个非空问题。")
     }
 
     /**
@@ -244,5 +276,6 @@ class DesktopToolSet(
 
     private companion object {
         const val USER_DECLINED_TOOL_MESSAGE = "用户已拒绝执行此操作。"
+        val QUESTION_JSON = Json { ignoreUnknownKeys = false }
     }
 }

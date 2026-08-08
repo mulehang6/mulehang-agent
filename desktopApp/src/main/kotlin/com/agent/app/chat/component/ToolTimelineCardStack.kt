@@ -25,11 +25,13 @@ internal fun toolCompletionDelayMillis(
 /**
  * 返回卡片堆叠中可见的当前工具和一张下一工具预览。
  *
- * 当仍有运行工具时，从首个运行项开始；全部结束时保留最后一项，供完成反馈短暂展示。
+ * 当仍有运行工具时，从首个运行项开始；全部结束且存在失败时优先展示失败项，
+ * 否则保留最后一项供成功反馈短暂展示。
  */
 internal fun visibleToolCardStack(items: List<ToolEventItem>): List<ToolEventItem> {
     val currentIndex = items.indexOfFirst { it.status == ToolEventStatus.Started }
         .takeIf { it >= 0 }
+        ?: items.indexOfLast { it.status == ToolEventStatus.Failed }.takeIf { it >= 0 }
         ?: items.lastIndex
     return items.drop(currentIndex.coerceAtLeast(0)).take(2)
 }

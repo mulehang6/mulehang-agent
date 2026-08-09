@@ -88,6 +88,11 @@ class SqliteTaskRepositoryTest {
     fun `should migrate legacy v1 database and preserve existing rows`() = runTest {
         val databasePath = databaseDirectory.resolve("legacy.db")
         createLegacyV1Database(databasePath)
+        val backupDirectory = databaseDirectory.resolve("tasks-backups")
+        Files.createDirectories(backupDirectory)
+        repeat(3) { index ->
+            Files.writeString(backupDirectory.resolve("legacy-00000000000$index.db"), "previous backup")
+        }
 
         val repository = SqliteTaskRepository(databasePath)
         val tasks = repository.loadAll()
@@ -98,6 +103,10 @@ class SqliteTaskRepositoryTest {
         assertEquals("旧版本任务", migratedTask.title)
         assertEquals(null, migratedTask.profileId)
         assertEquals("DEFAULT", migratedTask.permissionPreset)
+        assertTrue(Files.isDirectory(backupDirectory))
+        Files.list(backupDirectory).use { backups ->
+            assertEquals(3L, backups.count())
+        }
     }
 
     /**

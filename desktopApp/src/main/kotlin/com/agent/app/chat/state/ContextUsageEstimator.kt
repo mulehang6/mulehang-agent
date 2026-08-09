@@ -5,6 +5,7 @@ import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ConversationItem
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
+import com.agent.shared.agent.koog.agentSystemPromptEstimatedTokenCount
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
 
@@ -27,7 +28,7 @@ internal fun resolveContextWindow(profile: ConfigProfile): Int? =
     profile.limit?.context ?: ModelCapabilitiesResolver.resolve(profile).limit?.context
 
 /**
- * 依据已有消息和附件粗略估计上下文占用比例；没有 context 窗口时回退为 0。
+ * 依据固定系统提示词、已有消息和附件粗略估计上下文占用比例；没有 context 窗口时回退为 0。
  */
 internal fun estimateContextUsage(
     items: List<ConversationItem>,
@@ -35,7 +36,9 @@ internal fun estimateContextUsage(
     contextWindow: Int?,
 ): Float {
     val window = contextWindow?.takeIf { it > 0 } ?: return 0f
-    val estimatedTokens = items.sumOf(::estimateTokens) + attachmentCount * ATTACHMENT_TOKEN_ESTIMATE
+    val estimatedTokens = agentSystemPromptEstimatedTokenCount() +
+        items.sumOf(::estimateTokens) +
+        attachmentCount * ATTACHMENT_TOKEN_ESTIMATE
     return (estimatedTokens.toFloat() / window).coerceIn(0f, 1f)
 }
 

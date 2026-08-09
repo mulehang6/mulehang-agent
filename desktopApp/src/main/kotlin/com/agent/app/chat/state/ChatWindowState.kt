@@ -160,7 +160,7 @@ class ChatWindowState(
     }
 
     /**
-     * 删除指定对话；删除当前对话时创建并激活同工作区的空白对话。
+     * 删除指定对话；删除当前对话时优先复用已有空白对话，避免重复创建占位项。
      */
     fun deleteConversation(conversationId: String) {
         val deletedConversation = findConversationOrNull(conversationId) ?: return
@@ -174,7 +174,9 @@ class ChatWindowState(
         val isDeletingActiveConversation = ui.activeTaskId == conversationId
         val remainingTasks = ui.tasks.filterNot { it.id == conversationId }
         val replacementConversation = if (isDeletingActiveConversation) {
-            newConversation(
+            remainingTasks.firstOrNull {
+                it.workspacePath == deletedConversation.workspacePath && it.isEmptyDefaultConversation()
+            } ?: remainingTasks.firstOrNull(ChatConversationUiState::isEmptyDefaultConversation) ?: newConversation(
                 workspacePath = deletedConversation.workspacePath,
                 contextWindow = contextWindowForConversation(deletedConversation),
                 profileId = deletedConversation.profileId,
@@ -185,7 +187,11 @@ class ChatWindowState(
             null
         }
         ui = ui.copy(
-            tasks = replacementConversation?.let { conversation -> listOf(conversation) + remainingTasks } ?: remainingTasks,
+            tasks = if (replacementConversation != null && replacementConversation !in remainingTasks) {
+                listOf(replacementConversation) + remainingTasks
+            } else {
+                remainingTasks
+            },
             activeTaskId = replacementConversation?.id ?: ui.activeTaskId,
             draft = if (isDeletingActiveConversation) "" else ui.draft,
         )
@@ -197,6 +203,16 @@ class ChatWindowState(
      */
     fun createConversationForWorkspace(workspacePath: String) {
         onWorkspaceSelected(workspacePath)
+        val reusableConversation = ui.tasks.firstOrNull { conversation ->
+            conversation.workspacePath == workspacePath && conversation.isEmptyDefaultConversation()
+        }
+        if (reusableConversation != null) {
+            ui = ui.copy(
+                activeTaskId = reusableConversation.id,
+                draft = "",
+            )
+            return
+        }
         val preferenceSource = ui.activeConversationOrNull
         val selectedProfile = activeProfile
         val conversation = newConversation(

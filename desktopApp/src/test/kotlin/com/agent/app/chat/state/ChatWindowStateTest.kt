@@ -473,10 +473,10 @@ class ChatWindowStateTest {
     }
 
     /**
-     * 新建对话时如果当前会话仍是空白默认会话，应替换它而不是留下两个“新对话”。
+     * 新建对话时如果当前会话仍是空白默认会话，应直接复用它而不是留下两个“新对话”。
      */
     @Test
-    fun `should replace current empty conversation when creating a new workspace conversation`() = runTest(dispatcher) {
+    fun `should reuse current empty conversation when creating a new workspace conversation`() = runTest(dispatcher) {
         val state = ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(idleGateway()),
             snapshot = AppSessionSnapshot(
@@ -491,7 +491,7 @@ class ChatWindowStateTest {
 
         assertEquals("def", state.ui.workspaceGroups.single().label)
         assertEquals(1, state.ui.workspaceGroups.single().conversations.size)
-        assertNotEquals(originalConversationId, state.ui.activeConversationId)
+        assertEquals(originalConversationId, state.ui.activeConversationId)
         assertEquals(emptyList(), state.ui.activeConversation.attachments)
     }
 
@@ -518,6 +518,35 @@ class ChatWindowStateTest {
         assertNotEquals(originalConversationId, state.ui.activeConversationId)
         assertEquals(2, state.findConversation(originalConversationId).items.size)
         assertEquals(emptyList(), state.ui.activeConversation.items)
+    }
+
+    /**
+     * 历史会话旁已有同工作区空白会话时，新建操作应直接切换到该会话。
+     */
+    @Test
+    fun `should reuse existing empty conversation when creating from a historical conversation`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(streamingGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        val historicalConversationId = state.ui.activeConversationId
+        state.send("hello")
+        advanceUntilIdle()
+        state.createConversationForWorkspace("E:\\abc\\def")
+        val emptyConversationId = state.ui.activeConversationId
+
+        state.selectConversation(historicalConversationId)
+        state.updateDraft("未发送草稿")
+        state.createConversationForWorkspace("E:\\abc\\def")
+
+        assertEquals(emptyConversationId, state.ui.activeConversationId)
+        assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+        assertEquals("", state.ui.draft)
     }
 
     /**
@@ -1503,6 +1532,27 @@ class ChatWindowStateTest {
 
         assertEquals(listOf(survivingConversationId), state.ui.tasks.map { it.id })
         assertEquals(survivingConversationId, state.ui.activeConversationId)
+    }
+
+    /** 删除当前历史会话时必须复用已有的新建对话，不能再次生成空白占位项。 */
+    @Test
+    fun `should reuse existing new conversation when deleting active historical conversation`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\abc\\def",
+        )
+        val historicalId = state.ui.activeConversationId
+        state.send("历史会话")
+        advanceUntilIdle()
+        state.createConversationForWorkspace("E:\\abc\\def")
+        val newConversationId = state.ui.activeConversationId
+
+        state.selectConversation(historicalId)
+        state.deleteConversation(historicalId)
+
+        assertEquals(listOf(newConversationId), state.ui.tasks.map { it.id })
+        assertEquals(newConversationId, state.ui.activeConversationId)
     }
 
     /**

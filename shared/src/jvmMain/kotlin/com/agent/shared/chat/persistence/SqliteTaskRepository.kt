@@ -106,17 +106,24 @@ class SqliteTaskRepository(
      * 应用当前 SQLite schema 的第一版迁移。
      */
     private fun migrate(connection: Connection) {
-        connection.inTransaction {
-            createStatement().use { statement ->
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE IF NOT EXISTS schema_migration (
-                        version INTEGER PRIMARY KEY,
-                        applied_at INTEGER NOT NULL
-                    )
-                    """.trimIndent(),
+        connection.createStatement().use { statement ->
+            statement.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migration (
+                    version INTEGER PRIMARY KEY,
+                    applied_at INTEGER NOT NULL
                 )
-            }
+                """.trimIndent(),
+            )
+        }
+        val pendingMigrations = listOf(
+            INITIAL_SCHEMA_VERSION,
+            SESSION_PREFERENCES_SCHEMA_VERSION,
+        ).filterNot { version -> isMigrationApplied(connection, version) }
+        if (pendingMigrations.isNotEmpty() && hasTaskTable(connection)) {
+            backupDatabaseBeforeMigration(connection)
+        }
+        connection.inTransaction {
             if (!isMigrationApplied(this, INITIAL_SCHEMA_VERSION)) {
                 createStatement().use { statement ->
                     statement.executeUpdate(
@@ -186,6 +193,40 @@ class SqliteTaskRepository(
             statement.setInt(1, version)
             statement.setLong(2, System.currentTimeMillis())
             statement.executeUpdate()
+        }
+    }
+
+    /**
+     * 判断当前数据库是否已包含历史任务，避免为全新数据库生成无意义备份。
+     */
+    private fun hasTaskTable(connection: Connection): Boolean =
+        connection.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task'",
+        ).use { statement ->
+            statement.executeQuery().use { resultSet -> resultSet.next() }
+        }
+
+    /**
+     * 在迁移前生成已 checkpoint 的 SQLite 文件副本，并只保留最近的备份。
+     */
+    private fun backupDatabaseBeforeMigration(connection: Connection) {
+        connection.createStatement().use { statement ->
+            statement.execute("PRAGMA wal_checkpoint(FULL)")
+        }
+        val backupDirectory = databasePath.parent?.resolve(TASK_BACKUP_DIRECTORY_NAME)
+            ?: databasePath.resolveSibling(TASK_BACKUP_DIRECTORY_NAME)
+        Files.createDirectories(backupDirectory)
+        val databaseBaseName = databasePath.fileName.toString().removeSuffix(".db")
+        val backupPath = backupDirectory.resolve(
+            "$databaseBaseName-${System.currentTimeMillis()}.db",
+        )
+        Files.copy(databasePath, backupPath)
+        Files.list(backupDirectory).use { paths ->
+            paths
+                .filter { path -> path.fileName.toString().startsWith("$databaseBaseName-") }
+                .sorted { left, right -> right.fileName.toString().compareTo(left.fileName.toString()) }
+                .skip(TASK_BACKUP_RETENTION_COUNT.toLong())
+                .forEach(Files::deleteIfExists)
         }
     }
 
@@ -321,5 +362,7 @@ class SqliteTaskRepository(
     private companion object {
         const val INITIAL_SCHEMA_VERSION = 1
         const val SESSION_PREFERENCES_SCHEMA_VERSION = 2
+        const val TASK_BACKUP_DIRECTORY_NAME = "tasks-backups"
+        const val TASK_BACKUP_RETENTION_COUNT = 3
     }
 }

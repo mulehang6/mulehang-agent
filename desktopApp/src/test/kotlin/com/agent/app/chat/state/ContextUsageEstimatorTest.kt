@@ -3,6 +3,7 @@ package com.agent.app.chat.state
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
+import com.agent.shared.agent.koog.agentSystemPromptEstimatedTokenCount
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ModelLimit
@@ -20,14 +21,15 @@ class ContextUsageEstimatorTest {
     }
 
     @Test
-    fun `usage estimate preserves text and attachment token constants`() {
+    fun `usage estimate includes the fixed system prompt plus text and attachment token constants`() {
+        val expectedTokens = agentSystemPromptEstimatedTokenCount() + 2 + 64
         val result = estimateContextUsage(
             items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "12345678"))),
             attachmentCount = 1,
-            contextWindow = 100,
+            contextWindow = expectedTokens * 2,
         )
 
-        assertEquals(0.66f, result)
+        assertEquals(0.5f, result)
         assertEquals(0f, estimateContextUsage(emptyList(), attachmentCount = 0, contextWindow = null))
     }
 

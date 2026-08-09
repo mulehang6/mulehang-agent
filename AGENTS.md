@@ -36,5 +36,6 @@ Kotlin 使用 4 空格、尾随逗号、无制表符；类型为 `PascalCase`，
 
 ## 其他
 - 涉及到界面UI相关工作，使用 emil-design-eng
+- 工具、问答等可展开详情遵循 [Islands 设计规范](docs/design/islands.md)。
 - git 提交格式：type(scope): summary, type和scope英文，summary中文
 - 本地日志在 `desktopAPP/logs` 下，需要时自己看

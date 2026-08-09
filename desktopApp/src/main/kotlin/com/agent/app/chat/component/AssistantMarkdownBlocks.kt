@@ -113,6 +113,38 @@ internal fun parseAssistantMarkdownDocument(content: String): AssistantMarkdownD
 }
 
 /**
+ * 流式阶段也提取围栏代码，避免围栏闭合前后在正文与代码卡之间跳变。
+ * PlantUML 在流式阶段保留源码，防止不完整图表触发渲染。
+ */
+internal fun parseAssistantMarkdownStreamingDocument(content: String): AssistantMarkdownDocument {
+    val partialFence = UNTERMINATED_FENCED_CODE.find(content)
+    val completedContent = partialFence?.let { content.substring(0, it.range.first) } ?: content
+    val completedDocument = parseAssistantMarkdownDocument(completedContent)
+    val completedBlocks = completedDocument.blocks.map { block ->
+        if (block is AssistantMarkdownBlock.PlantUml) {
+            AssistantMarkdownBlock.Code(language = "plantuml", source = block.source)
+        } else {
+            block
+        }
+    }
+    val partialBlock = partialFence?.let { match ->
+        val language = requireNotNull(match.groups[1]?.value)
+            .trim()
+            .substringBefore(' ')
+            .lowercase()
+            .ifBlank { null }
+        AssistantMarkdownBlock.Code(
+            language = language,
+            source = requireNotNull(match.groups[2]?.value),
+        )
+    }
+    return AssistantMarkdownDocument(
+        blocks = partialBlock?.let { completedBlocks + it } ?: completedBlocks,
+        footnotes = completedDocument.footnotes,
+    )
+}
+
+/**
  * 从 Markdown 中提取已闭合的代码、公式、图片、定义列表和安全 HTML；其余文本交给通用 renderer。
  */
 internal fun splitAssistantMarkdownBlocks(content: String): List<AssistantMarkdownBlock> {
@@ -252,6 +284,10 @@ private fun toSuperscriptNumber(number: Int): String = number.toString().map { d
 private val FENCED_CODE = Regex(
     pattern = "```([^`\\r\\n]*)\\r?\\n(.*?)\\r?\\n```",
     options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+)
+/** 匹配流式回答末尾尚未闭合的围栏代码。 */
+private val UNTERMINATED_FENCED_CODE = Regex(
+    pattern = "```([^`\\r\\n]*)\\r?\\n((?:(?!\\r?\\n```)[\\s\\S])*)$",
 )
 private val DISPLAY_MATH = Regex(
     pattern = "\\$\\$\\s*(.*?)\\s*\\$\\$",

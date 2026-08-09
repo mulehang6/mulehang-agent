@@ -60,8 +60,8 @@ internal fun AssistantMarkdownInlineExtensionsText(content: String) {
             text = renderAssistantMarkdownInlineExtensions(content),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyMedium.copy(
-                color = AppText,
-                lineHeight = 23.sp,
+                color = AssistantMarkdownBodyForeground,
+                lineHeight = 25.sp,
             ),
         )
     }

@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:OptIn(
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    androidx.compose.ui.text.ExperimentalTextApi::class,
+)
 
 package com.agent.app.design
 
@@ -27,9 +30,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipDefaults
@@ -51,6 +54,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -60,6 +65,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -506,9 +512,16 @@ internal fun RingContextIndicator(
     modifier: Modifier = Modifier,
 ) {
     RingTooltip(tooltip) {
+        var hovered by remember { mutableStateOf(false) }
         Box(
             modifier = modifier
                 .size(34.dp)
+                .background(
+                    color = if (hovered) AppHoverBackground else Color.Transparent,
+                    shape = RoundedCornerShape(8.dp),
+                )
+                .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                .onPointerEvent(PointerEventType.Exit) { hovered = false }
                 .semantics { contentDescription = tooltip },
             contentAlignment = Alignment.Center,
         ) {
@@ -582,7 +595,7 @@ internal fun RingRailActionButton(
 }
 
 /**
- * 为控件提供桌面 tooltip；可选延迟只用于需要降低悬停噪声的控件。
+ * 为控件提供持续可见的桌面 tooltip，避免 Material 默认超时导致 hover 信息在指针移动时消失。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -599,22 +612,14 @@ internal fun RingTooltip(
     val positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
         if (belowAnchor) TooltipAnchorPosition.Below else TooltipAnchorPosition.Above,
     )
-    if (hoverDelayMillis <= 0L) {
-        TooltipBox(
-            positionProvider = positionProvider,
-            tooltip = { PlainTooltip { Text(text) } },
-            state = rememberTooltipState(),
-            content = content,
-        )
-        return
-    }
-
-    // Material 默认在进入时立即显示并自动超时；下拉框需要反转为延迟且持续的悬停行为。
+    // Material 默认 tooltip 会自动超时；所有 hover 信息统一改为显式、持续的状态控制。
     val state = rememberTooltipState(isPersistent = true)
     var hovered by remember { mutableStateOf(false) }
     LaunchedEffect(hovered, hoverDelayMillis) {
         if (hovered) {
-            delay(hoverDelayMillis.milliseconds)
+            if (hoverDelayMillis > 0L) {
+                delay(hoverDelayMillis.milliseconds)
+            }
             state.show()
         } else {
             state.dismiss()
@@ -622,7 +627,23 @@ internal fun RingTooltip(
     }
     TooltipBox(
         positionProvider = positionProvider,
-        tooltip = { PlainTooltip { Text(text) } },
+        tooltip = {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = AppChipBackground,
+                border = BorderStroke(1.dp, AppLine),
+                shadowElevation = 8.dp,
+            ) {
+                Text(
+                    text = text,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = AppText,
+                        textAlign = TextAlign.Center,
+                    ),
+                )
+            }
+        },
         state = state,
         enableUserInput = false,
     ) {
@@ -1349,7 +1370,37 @@ internal val AppText = Color(0xFFFFFFFF)
 internal val AppMuted = Color(0xFF9DA0A8)
 internal val AppAccent = Color(0xFF548AF7)
 internal val AppMarkdownLink = Color(0xFF9CB3D2)
+/** 工具组与工具行共用的低饱和交互色，避免占用全局状态语义色。 */
+internal val AppToolInteraction = Color(0xFF91CFC9)
 internal val AppSuccess = Color(0xFF5FAD65)
 /** 已完成思考的柔和紫色，区别于运行中动作使用的蓝色强调。 */
 internal val AppReasoning = Color(0xFFB7A2F7)
 internal val AppDanger = Color(0xFFE37774)
+
+/** Windows 桌面界面统一使用更柔和的中文无衬线字体；缺失时由 Compose 自动回退。 */
+internal val AppUiFontFamily = FontFamily("Microsoft YaHei UI")
+
+/** 将中文界面字体应用到 Material 全部文本层级，代码块仍会在局部覆写为等宽字体。 */
+internal val AppTypography = Typography().withAppUiFont()
+
+/** 复制 Material 默认排版度量，仅替换比例字体，避免意外改变既有尺寸与间距。 */
+private fun Typography.withAppUiFont(): Typography = copy(
+    displayLarge = displayLarge.withAppUiFont(),
+    displayMedium = displayMedium.withAppUiFont(),
+    displaySmall = displaySmall.withAppUiFont(),
+    headlineLarge = headlineLarge.withAppUiFont(),
+    headlineMedium = headlineMedium.withAppUiFont(),
+    headlineSmall = headlineSmall.withAppUiFont(),
+    titleLarge = titleLarge.withAppUiFont(),
+    titleMedium = titleMedium.withAppUiFont(),
+    titleSmall = titleSmall.withAppUiFont(),
+    bodyLarge = bodyLarge.withAppUiFont(),
+    bodyMedium = bodyMedium.withAppUiFont(),
+    bodySmall = bodySmall.withAppUiFont(),
+    labelLarge = labelLarge.withAppUiFont(),
+    labelMedium = labelMedium.withAppUiFont(),
+    labelSmall = labelSmall.withAppUiFont(),
+)
+
+/** 仅覆写比例字体族，保留 Material 预设的字号、字重、行高与字距。 */
+private fun TextStyle.withAppUiFont(): TextStyle = copy(fontFamily = AppUiFontFamily)

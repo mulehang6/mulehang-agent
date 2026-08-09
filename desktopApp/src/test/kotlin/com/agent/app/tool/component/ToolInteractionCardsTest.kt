@@ -67,6 +67,21 @@ class ToolInteractionCardsTest {
         assertEquals("使用第一种方式", questionFreeTextSubmission("  使用第一种方式  "))
     }
 
+    /** 选择自己输入时必须立即形成选中态，并在切换预设后保留自定义草稿。 */
+    @Test
+    fun `custom answer should select immediately and preserve its draft`() {
+        val customSelected = selectQuestionCustomAnswer(QuestionAnswerDraft())
+        val typed = updateQuestionCustomAnswer(customSelected, "使用本地文件")
+        val presetSelected = selectQuestionPresetAnswer(typed, "使用默认方案")
+        val customRestored = selectQuestionCustomAnswer(presetSelected)
+
+        assertEquals(QuestionAnswerMode.CUSTOM, customSelected.mode)
+        assertEquals("", questionAnswerValue(customSelected))
+        assertEquals("使用默认方案", questionAnswerValue(presetSelected))
+        assertEquals(QuestionAnswerMode.CUSTOM, customRestored.mode)
+        assertEquals("使用本地文件", questionAnswerValue(customRestored))
+    }
+
     /**
      * 审批卡片应保留工具摘要和目标路径。
      */

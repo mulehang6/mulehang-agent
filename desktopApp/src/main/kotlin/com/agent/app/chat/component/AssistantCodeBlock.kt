@@ -3,15 +3,21 @@ package com.agent.app.chat.component
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -20,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
+import java.awt.datatransfer.StringSelection
+import kotlinx.coroutines.launch
 
 /** 围栏代码的关键字颜色。 */
 internal val CodeKeywordColor = Color(0xFFC9A7FF)
@@ -51,7 +59,7 @@ internal fun highlightCode(source: String, language: String?): AnnotatedString {
 }
 
 /**
- * 原生显示带语言标记的代码块，并允许用户选择复制其中的源码。
+ * 原生显示带语言标记的代码块，并允许用户选择或一键复制其中的源码。
  */
 @Composable
 internal fun AssistantCodeBlock(
@@ -68,11 +76,17 @@ internal fun AssistantCodeBlock(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            language?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                language?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                    )
+                }
+                CopyCodeButton(source = source)
             }
             SelectionContainer {
                 Text(
@@ -86,6 +100,23 @@ internal fun AssistantCodeBlock(
                 )
             }
         }
+    }
+}
+
+/** 将完整代码块源码写入系统剪贴板，供所有围栏代码和 PlantUML 视图复用。 */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+internal fun CopyCodeButton(source: String) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    TextButton(
+        onClick = {
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(StringSelection(source)))
+            }
+        },
+    ) {
+        Text("复制")
     }
 }
 

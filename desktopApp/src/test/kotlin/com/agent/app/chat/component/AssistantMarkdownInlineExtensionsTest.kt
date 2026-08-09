@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import com.agent.app.design.AppAccent
@@ -22,6 +23,16 @@ class AssistantMarkdownInlineExtensionsTest {
     fun `should render inline code as blue text without a background wrapper`() {
         assertEquals(AppAccent, assistantMarkdownStringStyle().codeStyle?.color)
         assertEquals(Color.Unspecified, assistantMarkdownStringStyle().codeStyle?.background)
+    }
+
+    /** 粗体只提升字重和柔和前景色，不再叠加刺眼的背景色。 */
+    @Test
+    fun `should render bold markdown without a background wrapper`() {
+        val boldStyle = assistantMarkdownStringStyle().boldStyle
+
+        assertEquals(AssistantMarkdownStrongForeground, boldStyle?.color)
+        assertEquals(FontWeight.SemiBold, boldStyle?.fontWeight)
+        assertEquals(Color.Unspecified, boldStyle?.background)
     }
 
     /** 扩展 Markdown 与反引号代码混用时，也必须移除反引号并复用无底色的蓝色样式。 */

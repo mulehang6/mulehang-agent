@@ -15,7 +15,10 @@ import com.agent.app.design.AppRailBackground
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppReasoning
-import com.agent.app.design.AppSuccess
+import com.agent.app.design.AppMuted
+import com.agent.app.design.AppText
+import com.agent.app.design.AppTypography
+import com.agent.app.design.AppUiFontFamily
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.COMPOSER_PRIMARY_GLYPH_SIZE_DP
 import com.agent.app.design.RAIL_ACTION_SIZE_DP
@@ -30,6 +33,7 @@ import com.agent.app.design.menuGrowthTargets
 import com.agent.app.design.selectMenuItemBackground
 import com.agent.app.design.workspaceBackdropOffset
 import com.agent.shared.chat.model.AppError
+import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
@@ -219,7 +223,7 @@ class ChatScreenPresentationTest {
     @Test
     fun `should use air blue highlight only while task menu item hovers`() {
         assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = false, enabled = true))
-        assertEquals(Color(0xFF245286), taskContextMenuItemBackground(hovered = true, enabled = true))
+        assertEquals(Color(0xFF1D3F6E), taskContextMenuItemBackground(hovered = true, enabled = true))
         assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = true, enabled = false))
     }
 
@@ -525,14 +529,14 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * 分隔线拖动后的终端高度必须同时保护主区域和终端的可用空间。
+     * 分隔线拖动后的终端宽度必须同时保护主区域和终端的可用空间。
      */
     @Test
-    fun `should clamp terminal height to split pane bounds`() {
-        assertEquals(180f, clampTerminalHeight(-20f, 800f, 180f, 280f))
-        assertEquals(520f, clampTerminalHeight(700f, 800f, 180f, 280f))
-        assertEquals(310f, clampTerminalHeight(310f, 800f, 180f, 280f))
-        assertEquals(120f, clampTerminalHeight(200f, 320f, 180f, 200f))
+    fun `should clamp terminal width to split pane bounds`() {
+        assertEquals(180f, clampTerminalWidth(-20f, 800f, 180f, 280f))
+        assertEquals(520f, clampTerminalWidth(700f, 800f, 180f, 280f))
+        assertEquals(310f, clampTerminalWidth(310f, 800f, 180f, 280f))
+        assertEquals(120f, clampTerminalWidth(200f, 320f, 180f, 200f))
     }
 
     /** 终端打开、收起和关闭均使用可感知但不拖沓的面板过渡。 */
@@ -541,10 +545,8 @@ class ChatScreenPresentationTest {
         assertEquals(420, TERMINAL_PANEL_ENTER_DURATION_MILLIS)
         assertEquals(360, TERMINAL_PANEL_EXIT_DURATION_MILLIS)
         assertEquals(32L, TERMINAL_PANEL_CLOSE_DELAY_MILLIS)
-        assertEquals(800f, workspaceHeightDuringTerminalMotion(800f, 280f, 0f))
-        assertEquals(520f, workspaceHeightDuringTerminalMotion(800f, 280f, 1f))
-        assertEquals(280f, terminalPanelTranslationYPx(280f, 0f))
-        assertEquals(0f, terminalPanelTranslationYPx(280f, 1f))
+        assertEquals(800f, workspaceWidthDuringTerminalMotion(800f, 280f, 0f))
+        assertEquals(520f, workspaceWidthDuringTerminalMotion(800f, 280f, 1f))
     }
 
     /** 分隔高亮必须围绕指针定位，并在轨道两端裁剪。 */
@@ -847,7 +849,36 @@ class ChatScreenPresentationTest {
     @Test
     fun `should rotate tool event chevron when details expand`() {
         assertEquals(0f, toolEventChevronRotation(expanded = false))
-        assertEquals(180f, toolEventChevronRotation(expanded = true))
+        assertEquals(90f, toolEventChevronRotation(expanded = true))
+    }
+
+    /** 工具组与工具行的箭头仅在鼠标悬浮时显示，减少静态视觉噪声。 */
+    @Test
+    fun `should show tool chevron only while hovered`() {
+        assertEquals(false, shouldShowTimelineToolChevron(hovered = false))
+        assertEquals(true, shouldShowTimelineToolChevron(hovered = true))
+    }
+
+    /** 已提交问答行以文字悬浮代替默认 Material 点击底色。 */
+    @Test
+    fun `should highlight answers title only while hovered`() {
+        assertEquals(AppText, timelineAnswersTitleTint(hovered = false))
+        assertEquals(AppAccent, timelineAnswersTitleTint(hovered = true))
+    }
+
+    /** 悬浮只提高工具标题的对比度，不引入背景或图标状态变化。 */
+    @Test
+    fun `should highlight tool titles only while hovered`() {
+        assertEquals(AppMuted, timelineToolTitleTint(hovered = false, restingTint = AppMuted))
+        assertEquals(AppAccent, timelineToolTitleTint(hovered = true, restingTint = AppMuted))
+        assertEquals(AppAccent, timelineToolTitleTint(hovered = true, restingTint = AppDanger))
+    }
+
+    /** 两层工具行的箭头间距应保持稳定，避免展开控件远离所属文字。 */
+    @Test
+    fun `should keep compact tool chevron gaps`() {
+        assertEquals(16, TOOL_GROUP_CHEVRON_GAP_DP)
+        assertEquals(8, TOOL_ROW_CHEVRON_GAP_DP)
     }
 
     /**
@@ -1049,6 +1080,30 @@ class ChatScreenPresentationTest {
         assertTrue(displayItems[2] is TimelineDisplayItem.Content)
     }
 
+    /** 连续 reasoning part 没有工具、正文或状态边界时，应合并成一个思考块。 */
+    @Test
+    fun `should merge adjacent reasoning parts without an intervening event`() {
+        val first = ReasoningItem(
+            summaryText = "先分析",
+            rawText = "first raw",
+            isStreaming = false,
+            durationMillis = 2_000,
+        )
+        val second = ReasoningItem(
+            summaryText = "再验证",
+            rawText = "second raw",
+            isStreaming = false,
+            durationMillis = 3_000,
+        )
+
+        val displayItems = groupTimelineItems(listOf(first, second))
+
+        assertEquals(listOf(2), displayItems.map(TimelineDisplayItem::itemCount))
+        val group = displayItems.single() as TimelineDisplayItem.ReasoningGroup
+        assertEquals("先分析\n\n再验证", mergeReasoningItems(group.items).displayText)
+        assertEquals(5_000, mergeReasoningItems(group.items).durationMillis)
+    }
+
     /** ask_user 只驱动提问卡，不应生成时间线工具项或把相邻工具合并。 */
     @Test
     fun `should omit ask user tool event from timeline groups`() {
@@ -1075,7 +1130,7 @@ class ChatScreenPresentationTest {
 
         assertEquals(TimelineToolGlyph.EDIT, timelineToolGroupGlyph(items))
         assertEquals(AppDanger, timelineToolGroupTint(items))
-        assertEquals("Tool failed", toolGroupHeadline(items))
+        assertEquals(listOf("Read files", "Edited files", "Searched files"), toolGroupSummaries(items))
         assertEquals(listOf("apply_patch", "list_dir"), visibleToolCardStack(items).map(ToolEventItem::toolName))
     }
 
@@ -1101,16 +1156,16 @@ class ChatScreenPresentationTest {
         assertEquals(false, shouldAutoCollapseStandaloneTerminalTool(toolEvent("read_file", ToolEventStatus.Finished)))
     }
 
-    /** 工具组内所有调用结束后，应将加载图标切换为成功勾选反馈。 */
+    /** 工具组内所有调用结束后，应回归中性的通用控制图标。 */
     @Test
-    fun `should show a green success check for a completed tool group`() {
+    fun `should show a muted generic controls glyph for a completed tool group`() {
         val completed = listOf(
             toolEvent("list_dir", ToolEventStatus.Finished),
             toolEvent("glob_files", ToolEventStatus.Finished),
         )
 
-        assertEquals(TimelineToolGlyph.SUCCESS, timelineToolGroupGlyph(completed))
-        assertEquals(AppSuccess, timelineToolGroupTint(completed))
+        assertEquals(TimelineToolGlyph.GENERIC, timelineToolGroupGlyph(completed))
+        assertEquals(AppMuted, timelineToolGroupTint(completed))
         assertEquals(TimelineToolGlyph.SEARCH, timelineToolGroupGlyph(listOf(
             toolEvent("glob_files", ToolEventStatus.Started),
         )))
@@ -1119,33 +1174,21 @@ class ChatScreenPresentationTest {
         )))
     }
 
-    /** 工具组标题应说明当前正在执行的语义动作，并让 Shell 保持稳定摘要。 */
+    /** 工具组摘要应按首次执行顺序追加，并对同类工具去重。 */
     @Test
-    fun `should describe the active tool group with semantic English actions`() {
+    fun `should append stable semantic summaries for tool groups`() {
         assertEquals(
-            "Gathering context…",
-            toolGroupHeadline(listOf(toolEvent("grep", ToolEventStatus.Started))),
-        )
-        assertEquals(
-            "Gathering context…",
-            toolGroupHeadline(listOf(toolEvent("list_directory", ToolEventStatus.Started))),
-        )
-        assertEquals(
-            "Editing…",
-            toolGroupHeadline(listOf(toolEvent("apply_patch", ToolEventStatus.Started))),
-        )
-        assertEquals(
-            "Editing…",
-            toolGroupHeadline(
+            listOf("Searched files", "Ran commands", "Edited files", "Used tools"),
+            toolGroupSummaries(
                 listOf(
-                    toolEvent("apply_patch", ToolEventStatus.Started),
+                    toolEvent("list_directory", ToolEventStatus.Started),
+                    toolEvent("grep", ToolEventStatus.Started),
                     toolEvent("run_powershell", ToolEventStatus.Started),
+                    toolEvent("run_powershell", ToolEventStatus.Started),
+                    toolEvent("apply_patch", ToolEventStatus.Started),
+                    toolEvent("custom_tool", ToolEventStatus.Started),
                 ),
             ),
-        )
-        assertEquals(
-            "Executed tools · 1",
-            toolGroupHeadline(listOf(toolEvent("run_powershell", ToolEventStatus.Started))),
         )
     }
 
@@ -1186,12 +1229,11 @@ class ChatScreenPresentationTest {
         assertNull(timelineToolExpandedInput(terminal))
     }
 
-    /** 工具区域需采用较大的文字与从容的切换、展开节奏。 */
+    /** 工具区域需采用较大的文字与从容的展开节奏，标题不再整段替换。 */
     @Test
     fun `should use readable slow motion metrics for tool activity`() {
         assertEquals(16, TOOL_GROUP_TITLE_FONT_SIZE_SP)
         assertEquals(15, TOOL_ROW_FONT_SIZE_SP)
-        assertEquals(420, TOOL_GROUP_TITLE_SWITCH_DURATION_MILLIS)
         assertEquals(560, TOOL_GROUP_EXPAND_DURATION_MILLIS)
         assertEquals(440, TOOL_GROUP_COLLAPSE_DURATION_MILLIS)
         assertEquals(340, TOOL_ROW_EXPAND_DURATION_MILLIS)
@@ -1199,13 +1241,13 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * 终端开合必须通过实际布局高度驱动，避免 SwingPanel 在动画结束后才补绘。
+     * 终端开合必须通过实际布局宽度驱动，避免 SwingPanel 在动画结束后才补绘。
      */
     @Test
-    fun `should animate terminal container through actual layout height`() {
-        assertEquals(0f, terminalContainerHeightDuringMotion(270f, 0f))
-        assertEquals(135f, terminalContainerHeightDuringMotion(270f, 0.5f))
-        assertEquals(270f, terminalContainerHeightDuringMotion(270f, 1f))
+    fun `should animate terminal container through actual layout width`() {
+        assertEquals(0f, terminalContainerWidthDuringMotion(270f, 0f))
+        assertEquals(135f, terminalContainerWidthDuringMotion(270f, 0.5f))
+        assertEquals(270f, terminalContainerWidthDuringMotion(270f, 1f))
     }
 
     /** 工具组仅在所有工具结束后自动收起，且每个组由自身状态独立驱动。 */
@@ -1261,6 +1303,29 @@ class ChatScreenPresentationTest {
     @Test
     fun `should remove tool row vertical padding for inline density`() {
         assertEquals(0, TOOL_EVENT_ROW_VERTICAL_PADDING_DP)
+    }
+
+    /** 工具与问答详情使用统一的 Islands 外层与同色内层表面，不额外显示标签。 */
+    @Test
+    fun `should use shared islands surfaces for expanded details`() {
+        assertEquals(Color(0xFF202125), ToolEventInputPaneBackground)
+        assertEquals(DetailIslandBackground, ToolEventOutputPaneBackground)
+        assertEquals(Color(0xFF27292E), DetailIslandsOuterBackground)
+        assertTrue(DetailIslandsOuterBackground != DetailIslandBackground)
+        assertEquals(28, TOOL_EVENT_DETAILS_START_PADDING_DP)
+        assertEquals(26, ANSWERS_DETAILS_START_PADDING_DP)
+        assertEquals(12, DETAIL_ISLANDS_OUTER_CORNER_RADIUS_DP)
+        assertEquals(8, DETAIL_ISLANDS_INNER_CORNER_RADIUS_DP)
+        assertEquals(12, DETAIL_ISLANDS_GAP_DP)
+        assertEquals(16, DETAIL_ISLANDS_OUTER_PADDING_DP)
+    }
+
+    /** 助手 Markdown 应使用柔和灰白，不继承全局纯白正文。 */
+    @Test
+    fun `should use softened assistant markdown colors`() {
+        assertEquals(Color(0xFFC7CBD3), AssistantMarkdownBodyForeground)
+        assertEquals(Color(0xFFD8DCE3), AssistantMarkdownStrongForeground)
+        assertEquals(AppUiFontFamily, AppTypography.bodyMedium.fontFamily)
     }
 
     /** 两个及以上工具的收起摘要使用统一英文文案。 */

@@ -4,6 +4,7 @@ import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 /** 验证工具时间线卡片堆叠和最短运行展示规则。 */
 class ToolTimelineCardStackTest {
@@ -30,6 +31,15 @@ class ToolTimelineCardStackTest {
         )
     }
 
+    /** 首次组合时已经结束的工具仍应先渲染运行态，避免动画被事件批次跳过。 */
+    @Test
+    fun `should synthesize running state when a non terminal completion is first observed`() {
+        val displayed = initialTimelineToolDisplayItem(toolEvent("read_file", ToolEventStatus.Finished))
+
+        assertEquals(ToolEventStatus.Started, displayed.status)
+        assertFalse(shouldSynthesizeRunningToolDisplay(toolEvent("run_powershell", ToolEventStatus.Finished)))
+    }
+
     /** 堆叠卡片只保留当前运行项和一张后置预览。 */
     @Test
     fun `should show current running tool and one next preview only`() {
@@ -42,6 +52,7 @@ class ToolTimelineCardStackTest {
 
         assertEquals(listOf("second", "third"), visibleToolCardStack(items).map(ToolEventItem::toolName))
     }
+
 }
 
 /** 构造最小工具事件，避免测试耦合工具协议的无关字段。 */

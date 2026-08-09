@@ -1,10 +1,15 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.agent.app.tool.component
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +52,20 @@ data class ApprovalCardModel(
     val rawCommand: String?,
 )
 
+/** 单题回答当前所处的选择模式，空白、预设和自定义输入必须明确区分。 */
+internal enum class QuestionAnswerMode {
+    NONE,
+    PRESET,
+    CUSTOM,
+}
+
+/** 保留预设选择与自定义草稿，切换模式时不丢失用户已经输入的内容。 */
+internal data class QuestionAnswerDraft(
+    val mode: QuestionAnswerMode = QuestionAnswerMode.NONE,
+    val presetValue: String = "",
+    val customValue: String = "",
+)
+
 /**
  * 将挂起问题状态映射为界面模型。
  */
@@ -72,6 +93,25 @@ internal fun canSubmitQuestionFreeText(value: String): Boolean = value.isNotBlan
 internal fun questionFreeTextSubmission(value: String): String? =
     value.trim().takeIf(::canSubmitQuestionFreeText)
 
+/** 返回当前模式真正会提交给 Agent 的回答内容。 */
+internal fun questionAnswerValue(draft: QuestionAnswerDraft): String = when (draft.mode) {
+    QuestionAnswerMode.PRESET -> draft.presetValue
+    QuestionAnswerMode.CUSTOM -> draft.customValue
+    QuestionAnswerMode.NONE -> ""
+}
+
+/** 选中预设答案，同时保留可能存在的自定义草稿。 */
+internal fun selectQuestionPresetAnswer(draft: QuestionAnswerDraft, option: String): QuestionAnswerDraft =
+    draft.copy(mode = QuestionAnswerMode.PRESET, presetValue = option)
+
+/** 立即选中“自己输入”，不要求用户先键入内容才形成选中状态。 */
+internal fun selectQuestionCustomAnswer(draft: QuestionAnswerDraft): QuestionAnswerDraft =
+    draft.copy(mode = QuestionAnswerMode.CUSTOM)
+
+/** 更新自定义草稿时保持其选择状态。 */
+internal fun updateQuestionCustomAnswer(draft: QuestionAnswerDraft, value: String): QuestionAnswerDraft =
+    draft.copy(mode = QuestionAnswerMode.CUSTOM, customValue = value)
+
 /** 问卷只有每题都给出非空回答时才允许一次提交。 */
 internal fun canSubmitQuestionnaire(answers: List<String>): Boolean = answers.all(::canSubmitQuestionFreeText)
 
@@ -96,7 +136,7 @@ fun QuestionCard(
     modifier: Modifier = Modifier,
 ) {
     val model = buildQuestionCardModel(pending)
-    var answers by remember(pending.requestId) { mutableStateOf(List(model.questions.size) { "" }) }
+    var answers by remember(pending.requestId) { mutableStateOf(List(model.questions.size) { QuestionAnswerDraft() }) }
     var activeQuestionIndex by remember(pending.requestId) { mutableStateOf(0) }
 
     if (model.questions.isEmpty()) return
@@ -134,38 +174,41 @@ fun QuestionCard(
                 QuestionOptionRow(
                     number = optionIndex + 1,
                     text = option,
-                    selected = activeAnswer == option,
+                    selected = activeAnswer.mode == QuestionAnswerMode.PRESET && activeAnswer.presetValue == option,
                     onClick = {
-                        answers = answers.toMutableList().also { it[activeQuestionIndex] = option }
+                        answers = answers.toMutableList().also { drafts ->
+                            drafts[activeQuestionIndex] = selectQuestionPresetAnswer(activeAnswer, option)
+                        }
                     },
                 )
             }
             if (model.allowFreeText) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = (activePrompt.options.take(5).size + 1).toString(),
-                        modifier = Modifier
-                            .background(AppChipBackground, RoundedCornerShape(7.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelLarge.copy(color = AppText),
-                    )
+                QuestionOptionRow(
+                    number = activePrompt.options.take(5).size + 1,
+                    text = "自己输入",
+                    selected = activeAnswer.mode == QuestionAnswerMode.CUSTOM,
+                    onClick = {
+                        answers = answers.toMutableList().also { drafts ->
+                            drafts[activeQuestionIndex] = selectQuestionCustomAnswer(activeAnswer)
+                        }
+                    },
+                )
+                AnimatedVisibility(visible = activeAnswer.mode == QuestionAnswerMode.CUSTOM) {
                     BasicTextField(
-                        value = activeAnswer.takeIf { it !in activePrompt.options }.orEmpty(),
+                        value = activeAnswer.customValue,
                         onValueChange = { value ->
-                            answers = answers.toMutableList().also { it[activeQuestionIndex] = value }
+                            answers = answers.toMutableList().also { drafts ->
+                                drafts[activeQuestionIndex] = updateQuestionCustomAnswer(activeAnswer, value)
+                            }
                         },
-                        modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 28.dp, end = 10.dp, top = 2.dp, bottom = 6.dp),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = AppText),
                         cursorBrush = SolidColor(AppText),
                         decorationBox = { innerTextField ->
-                            Box {
-                                if (activeAnswer.isBlank() || activeAnswer in activePrompt.options) {
+                            Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                                if (activeAnswer.customValue.isBlank()) {
                                     Text(
                                         "Type something else…",
                                         style = MaterialTheme.typography.bodyLarge.copy(color = AppMuted)
@@ -187,16 +230,16 @@ fun QuestionCard(
                     onClick = {
                         if (isLastQuestion) {
                             onSubmitAnswers(model.questions.mapIndexed { index, prompt ->
-                                QuestionAnswer(question = prompt.question, answer = answers[index].trim())
+                                QuestionAnswer(question = prompt.question, answer = questionAnswerValue(answers[index]).trim())
                             })
                         } else {
                             activeQuestionIndex = nextQuestionnaireTabIndex(activeQuestionIndex, model.questions.size)
                         }
                     },
                     enabled = if (isLastQuestion) {
-                        canSubmitQuestionnaire(answers)
+                        canSubmitQuestionnaire(answers.map(::questionAnswerValue))
                     } else {
-                        canSubmitQuestionFreeText(activeAnswer)
+                        canSubmitQuestionFreeText(questionAnswerValue(activeAnswer))
                     },
                     containerColor = AppAccent,
                 )
@@ -205,7 +248,7 @@ fun QuestionCard(
     }
 }
 
-/** 渲染单行候选项，让选择动作更接近问卷而非一组工具按钮。 */
+/** 渲染桌面式单行候选项，使用选择指示与文字层级代替 Material 按钮反馈。 */
 @Composable
 private fun QuestionOptionRow(
     number: Int,
@@ -213,31 +256,51 @@ private fun QuestionOptionRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Surface(
+    var hovered by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        color = if (selected) AppAccent.copy(alpha = 0.18f) else Color.Transparent,
-        border = if (selected) androidx.compose.foundation.BorderStroke(1.dp, AppAccent) else null,
+            .background(
+                color = when {
+                    selected -> AppAccent.copy(alpha = 0.12f)
+                    hovered -> AppLine.copy(alpha = 0.38f)
+                    else -> Color.Transparent
+                },
+                shape = RoundedCornerShape(8.dp),
+            )
+            .onPointerEvent(PointerEventType.Enter) { hovered = true }
+            .onPointerEvent(PointerEventType.Exit) { hovered = false }
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Box(
+            modifier = Modifier
+                .size(16.dp)
+                .border(1.dp, if (selected) AppAccent else AppLine, CircleShape)
+                .background(if (selected) AppAccent else Color.Transparent, CircleShape),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = number.toString(),
-                modifier = Modifier
-                    .background(if (selected) AppAccent else AppChipBackground, RoundedCornerShape(7.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.labelLarge.copy(color = AppText),
-            )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyLarge.copy(color = if (selected) AppText else AppMuted),
-            )
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .background(AppSidebarBackground, CircleShape),
+                )
+            }
         }
+        Text(
+            text = "$number. $text",
+            style = MaterialTheme.typography.bodyLarge.copy(
+                color = when {
+                    selected -> AppText
+                    hovered -> AppText
+                    else -> AppMuted
+                },
+            ),
+        )
     }
 }
 

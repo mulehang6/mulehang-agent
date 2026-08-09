@@ -9,6 +9,11 @@ import kotlin.test.assertTrue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import com.agent.app.design.AppMarkdownLink
+import java.io.ByteArrayInputStream
+import javax.imageio.ImageIO
+import org.jetbrains.skia.Data
+import org.jetbrains.skia.Surface
+import org.jetbrains.skia.svg.SVGDOM
 
 /** 验证流式 Markdown 与图表的轻量渲染边界。 */
 class AssistantMarkdownRenderPolicyTest {
@@ -63,6 +68,18 @@ class AssistantMarkdownRenderPolicyTest {
         val code = assertIs<AssistantMarkdownBlock.Code>(blocks.single())
         assertEquals("python", code.language)
         assertEquals("def greet():\n    return \"hi\"", code.source)
+    }
+
+    /** Mermaid 在流式阶段仅作为代码显示，围栏闭合后仍保持相同的代码块模型。 */
+    @Test
+    fun `should keep streaming mermaid fences as code blocks`() {
+        val streaming = parseAssistantMarkdownStreamingDocument("```mermaid\ngraph TD\nA --> B")
+        val completed = parseAssistantMarkdownDocument("```mermaid\ngraph TD\nA --> B\n```")
+
+        assertEquals(
+            assertIs<AssistantMarkdownBlock.Code>(completed.blocks.single()).copy(source = "graph TD\nA --> B"),
+            assertIs<AssistantMarkdownBlock.Code>(streaming.blocks.single()),
+        )
     }
 
     /** Python 关键字与字符串必须取得不同于普通文本的高亮颜色。 */
@@ -141,11 +158,185 @@ class AssistantMarkdownRenderPolicyTest {
         assertEquals("Details", document.blocks.single()::class.simpleName)
     }
 
-    /** PlantUML 源码应在本地转换为 SVG，不依赖浏览器或网络服务。 */
+    /** PlantUML 源码应在本地转换为 SVG，缩放时保持矢量清晰。 */
     @Test
     fun `should render plantuml to local svg`() {
         val svg = renderPlantUmlToSvg("@startuml\nAlice -> Bob: Hi\n@enduml")
 
         assertTrue(svg.startsWith("<svg"))
+    }
+
+    /** PlantUML 默认输出应注入深色应用主题，而不是产生纯白画布。 */
+    @Test
+    fun `should apply dark theme to plantuml source`() {
+        val themed = applyPlantUmlDarkTheme("@startuml\nAlice -> Bob: Hi\n@enduml")
+
+        assertTrue(themed.contains("backgroundColor transparent"))
+        assertTrue(themed.contains("defaultFontName Microsoft YaHei"))
+        assertTrue(themed.contains("defaultFontColor #E7EAF0"))
+        assertTrue(themed.contains("ActorBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("ActorFontColor #E7EAF0"))
+        assertTrue(themed.contains("ClassBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("ClassFontColor #E7EAF0"))
+        assertTrue(themed.contains("ComponentBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("ComponentFontColor #E7EAF0"))
+        assertTrue(themed.contains("DatabaseBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("DatabaseFontColor #E7EAF0"))
+        assertTrue(themed.contains("PackageBackgroundColor transparent"))
+        assertTrue(themed.contains("PackageFontColor #E7EAF0"))
+        assertTrue(themed.contains("StateBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("StateFontColor #E7EAF0"))
+        assertTrue(themed.contains("ActivityBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("ActivityFontColor #E7EAF0"))
+        assertTrue(themed.contains("ActivityDiamondBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("ActivityDiamondFontColor #E7EAF0"))
+        assertTrue(themed.contains("SequenceGroupBackgroundColor #2B2D30"))
+        assertTrue(themed.contains("SequenceGroupFontColor #E7EAF0"))
+        assertTrue(themed.contains("SequenceGroupHeaderFontColor #E7EAF0"))
+        assertTrue(themed.contains("skinparam usecase"))
+        assertTrue(themed.contains("BackgroundColor #2B2D30"))
+        assertTrue(themed.contains("FontColor #E7EAF0"))
+    }
+
+    /** Chen 与思维导图的起始指令也必须注入统一主题。 */
+    @Test
+    fun `should apply dark theme to every plantuml start directive`() {
+        val chen = applyPlantUmlDarkTheme("@startchen\nentity CUSTOMER\n@endchen")
+        val mindMap = applyPlantUmlDarkTheme("@startmindmap\n* 在线商店\n@endmindmap")
+
+        assertTrue(chen.contains("defaultFontColor #E7EAF0"))
+        assertTrue(mindMap.contains("defaultFontColor #E7EAF0"))
+    }
+
+    /** 未被 skinparam 覆盖的默认浅色图元与黑色连线应在 SVG 阶段归一化。 */
+    @Test
+    fun `should normalize unthemed svg shape colors`() {
+        val svg = normalizePlantUmlSvgColors("<rect fill=\"#FEFECE\" stroke=\"#181818\"/>")
+
+        assertTrue(svg.contains("fill=\"#2B2D30\""))
+        assertTrue(svg.contains("stroke=\"#9BA9C2\""))
+    }
+
+    /** 内置 C4 标准库应能解析部署图宏，不能退化为 PlantUML 错误图。 */
+    @Test
+    fun `should render C4 deployment standard library`() {
+        val svg = renderPlantUmlToSvg(
+            """
+            @startuml
+            !include <C4/C4_Deployment>
+            Deployment_Node(device, "用户设备", "Laptop") {
+                Container(browser, "浏览器", "Chrome")
+            }
+            @enduml
+            """.trimIndent(),
+        )
+
+        assertFalse(svg.contains("[From string"))
+        assertFalse(svg.contains("Syntax Error"))
+    }
+
+    /** C4 部署图的嵌套节点、数据库与关系声明必须能完整渲染。 */
+    @Test
+    fun `should render nested C4 deployment diagram`() {
+        val svg = renderPlantUmlToSvg(
+            """
+            @startuml
+            !include <C4/C4_Deployment>
+            title C4：Deployment Diagram
+            LAYOUT_WITH_LEGEND()
+
+            Deployment_Node(userDevice, "用户设备", "Laptop / Mobile") {
+                Container(browser, "Web Browser", "Chrome / Safari", "访问在线商店")
+            }
+
+            Deployment_Node(cloud, "云环境", "Public Cloud") {
+                Deployment_Node(cluster, "Kubernetes Cluster", "Kubernetes") {
+                    Deployment_Node(ingress, "Ingress", "Nginx") {
+                        Container(web, "Web Frontend", "React", "前端应用")
+                    }
+
+                    Deployment_Node(appPod, "Application Pod", "Docker") {
+                        Container(api, "Order API", "Spring Boot", "订单服务")
+                    }
+
+                    Deployment_Node(dataPod, "Data Pod", "Managed Database") {
+                        ContainerDb(db, "Order Database", "PostgreSQL", "订单数据")
+                    }
+                }
+            }
+
+            Rel(browser, web, "访问", "HTTPS")
+            Rel(web, api, "调用", "HTTPS")
+            Rel(api, db, "读写", "JDBC")
+            @enduml
+            """.trimIndent(),
+        )
+
+        assertFalse(svg.contains("[From string"))
+        assertFalse(svg.contains("Syntax Error"))
+    }
+
+    /** 中文图表必须将标签转换为 SVG 路径，避免绘制器遗漏文本节点。 */
+    @Test
+    fun `should outline CJK uml labels into svg paths`() {
+        val svg = renderPlantUmlToSvg("@startuml\nAlice -> Bob: 审批请求\n@enduml")
+
+        assertTrue(svg.contains("<path"))
+        assertFalse(svg.contains("<text"))
+    }
+
+    /** 活动图节点必须使用深色表面，避免默认白底与应用浅色文字失去对比。 */
+    @Test
+    fun `should render activity diagram with visible dark theme labels`() {
+        val svg = renderPlantUmlToSvg("@startuml\nstart\n:打开购物网站;\nif (已登录?) then (是)\n:填写收货地址;\nendif\nstop\n@enduml")
+
+        assertTrue(svg.contains("#2B2D30"))
+        assertTrue(svg.contains("#E7EAF0"))
+        assertTrue(svg.contains("<path"))
+        assertTrue(svg.contains("<path fill=\"#E7EAF0\""))
+        assertFalse(svg.contains("<text"))
+    }
+
+    /** 转为轮廓后的中文标签必须可由 Skia SVGDOM 实际绘制。 */
+    @Test
+    fun `should draw outlined CJK svg labels through skia`() {
+        val outlinedSvg = outlineSvgTextAsPaths("""
+            <svg xmlns="http://www.w3.org/2000/svg" width="160" height="64">
+              <text x="8" y="40" fill="#181818" font-family="Microsoft YaHei UI" font-size="28">打开购物网站</text>
+            </svg>
+        """.trimIndent())
+        assertFalse(outlinedSvg.contains("<text"))
+        assertTrue(outlinedSvg.contains("fill=\"#E7EAF0\""))
+        Surface.makeRasterN32Premul(160, 64).use { surface ->
+            SVGDOM(Data.makeFromBytes(outlinedSvg.encodeToByteArray())).use { document ->
+            document.setContainerSize(160f, 64f)
+            document.render(surface.canvas)
+                surface.makeImageSnapshot().use { snapshot ->
+                val png = snapshot.encodeToData()!!.bytes
+                val image = ImageIO.read(ByteArrayInputStream(png))
+                assertTrue(
+                    (0 until image.height).any { y ->
+                        (0 until image.width).any { x -> (image.getRGB(x, y) ushr 24) != 0 }
+                    },
+                )
+            }
+            }
+        }
+    }
+
+    /** 图像尺寸应从 SVG 的 viewBox 按真实比例参与适配，确保大图完整显示。 */
+    @Test
+    fun `should fit plantuml dimensions proportionally`() {
+        val intrinsicSize = svgIntrinsicSize("<svg width=\"2400px\" height=\"1600px\" viewBox=\"0 0 2400 1600\">")
+
+        assertEquals(PlantUmlIntrinsicSize(width = 2400f, height = 1600f), intrinsicSize)
+        assertEquals(0.2f, plantUmlFitScale(intrinsicSize, viewportWidth = 480f, viewportHeight = 460f))
+    }
+
+    /** 适配模式允许缩小大型图，而原始比例与缩放上限仍保持受控。 */
+    @Test
+    fun `should constrain plantuml viewer zoom around its fit scale`() {
+        assertEquals(0.1f, plantUmlZoomedScale(scale = 0.2f, multiplier = 0.1f, minimumScale = 0.1f))
+        assertEquals(3f, plantUmlZoomedScale(scale = 2.9f, multiplier = 2f, minimumScale = 0.1f))
     }
 }

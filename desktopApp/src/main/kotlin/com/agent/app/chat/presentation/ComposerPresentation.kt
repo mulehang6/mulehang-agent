@@ -37,10 +37,18 @@ internal fun reasoningControlLabel(reasoningEffort: ReasoningEffort?): String =
     reasoningEffort?.name?.lowercase()?.replaceFirstChar(Char::uppercase) ?: "推理强度"
 
 /**
- * 生成上下文圆环 hover 文案。
+ * 生成上下文圆环 hover 文案，展示模型窗口、已估算标记数和总窗口上限。
  */
-internal fun buildContextTooltip(usageFraction: Float): String =
-    "已使用 ${formatContextUsagePercent(usageFraction)} 上下文"
+internal fun buildContextTooltip(
+    usageFraction: Float,
+    contextWindow: Int?,
+): String {
+    val percentage = formatContextUsagePercent(usageFraction)
+    val window = contextWindow?.takeIf { it > 0 }
+        ?: return "上下文窗口：\n$percentage 已用\n当前模型未提供窗口大小"
+    val usedTokens = (usageFraction.coerceIn(0f, 1f) * window).toInt()
+    return "上下文窗口：\n$percentage 已用\n已用 ${formatContextTokenCount(usedTokens)} 标记，共\n${formatContextTokenCount(window)}"
+}
 
 /**
  * 生成上下文圆环旁的可见百分比文案。
@@ -84,7 +92,16 @@ private fun formatContextUsagePercent(usageFraction: Float): String {
     if (clamped in 0f..0.001f && clamped > 0f) {
         return "<0.1%"
     }
+    if (clamped in 0f..<0.01f) {
+        return "${"%.1f".format(clamped * 100)}%"
+    }
     return "${(clamped * 100).toInt()}%"
+}
+
+/** 将标记数量格式化为紧凑、可快速扫读的上下文窗口数值。 */
+private fun formatContextTokenCount(tokens: Int): String = when {
+    tokens >= 1_000 -> "${tokens / 1_000}k"
+    else -> tokens.toString()
 }
 
 private const val MIN_VISIBLE_CONTEXT_SWEEP_ANGLE = 6f

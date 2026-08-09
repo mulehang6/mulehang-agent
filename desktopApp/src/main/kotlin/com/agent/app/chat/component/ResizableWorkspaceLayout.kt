@@ -4,15 +4,13 @@ package com.agent.app.chat.component
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,7 +28,6 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.agent.app.design.AppLine
 import com.agent.app.design.DividerHighlightAxis
 import com.agent.app.design.PointerFollowingDividerHighlight
 import java.awt.Cursor
@@ -45,37 +42,31 @@ internal const val TERMINAL_PANEL_EXIT_DURATION_MILLIS = 360
 internal const val TERMINAL_PANEL_CLOSE_DELAY_MILLIS = 32L
 
 /**
- * 将期望的终端高度约束到终端和主区域都可用的范围内。
+ * 将期望的终端宽度约束到终端和主区域都可用的范围内。
  */
-internal fun clampTerminalHeight(
-    requestedHeightPx: Float,
-    availableHeightPx: Float,
-    minimumTerminalHeightPx: Float,
-    minimumWorkspaceHeightPx: Float,
+internal fun clampTerminalWidth(
+    requestedWidthPx: Float,
+    availableWidthPx: Float,
+    minimumTerminalWidthPx: Float,
+    minimumWorkspaceWidthPx: Float,
 ): Float {
-    val upperBound = (availableHeightPx - minimumWorkspaceHeightPx).coerceAtLeast(0f)
-    val lowerBound = minimumTerminalHeightPx.coerceAtMost(upperBound)
-    return requestedHeightPx.coerceIn(lowerBound, upperBound)
+    val upperBound = (availableWidthPx - minimumWorkspaceWidthPx).coerceAtLeast(0f)
+    val lowerBound = minimumTerminalWidthPx.coerceAtMost(upperBound)
+    return requestedWidthPx.coerceIn(lowerBound, upperBound)
 }
 
-/** 终端整体移动期间，主工作区为终端窗口让出的当前高度。 */
-internal fun workspaceHeightDuringTerminalMotion(
-    totalHeightPx: Float,
-    terminalContainerHeightPx: Float,
+/** 终端整体移动期间，主工作区为右侧终端让出的当前宽度。 */
+internal fun workspaceWidthDuringTerminalMotion(
+    totalWidthPx: Float,
+    terminalContainerWidthPx: Float,
     progress: Float,
-): Float = (totalHeightPx - terminalContainerHeightPx * progress).coerceAtLeast(0f)
-
-/** 终端窗口在开合期间的垂直布局位移；零表示已完整停靠在底部。 */
-internal fun terminalPanelTranslationYPx(
-    terminalContainerHeightPx: Float,
-    progress: Float,
-): Float = terminalContainerHeightPx * (1f - progress.coerceIn(0f, 1f))
+): Float = (totalWidthPx - terminalContainerWidthPx * progress).coerceAtLeast(0f)
 
 /** 终端开合过程中容器应占据的实际布局高度。 */
-internal fun terminalContainerHeightDuringMotion(
-    terminalContainerHeightPx: Float,
+internal fun terminalContainerWidthDuringMotion(
+    terminalContainerWidthPx: Float,
     progress: Float,
-): Float = terminalContainerHeightPx * progress.coerceIn(0f, 1f)
+): Float = terminalContainerWidthPx * progress.coerceIn(0f, 1f)
 
 /**
  * 主工作区与终端之间的桌面分割布局。
@@ -90,23 +81,24 @@ internal fun ResizableWorkspaceLayout(
 ) {
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier) {
-        val dividerHeight = 10.dp
-        val dividerHeightPx = with(density) { dividerHeight.toPx() }
-        val availableHeightPx = with(density) { maxHeight.toPx() } - dividerHeightPx
-        val minimumTerminalHeightPx = with(density) { (if (compact) 150.dp else 180.dp).toPx() }
-        val minimumWorkspaceHeightPx = with(density) { (if (compact) 220.dp else 280.dp).toPx() }
-        val defaultTerminalHeightPx = with(density) { (if (compact) 200.dp else 260.dp).toPx() }
-        var terminalHeightPx by remember { mutableFloatStateOf(defaultTerminalHeightPx) }
+        val dividerWidth = 10.dp
+        val dividerWidthPx = with(density) { dividerWidth.toPx() }
+        val availableWidthPx = with(density) { maxWidth.toPx() } - dividerWidthPx
+        val minimumTerminalWidthPx = with(density) { (if (compact) 260.dp else 320.dp).toPx() }
+        val minimumWorkspaceWidthPx = with(density) { (if (compact) 300.dp else 420.dp).toPx() }
+        val defaultTerminalWidthPx = availableWidthPx * 0.5f
+        var terminalWidthPx by remember { mutableFloatStateOf(defaultTerminalWidthPx) }
         var dividerHovered by remember { mutableStateOf(false) }
         var dividerDragging by remember { mutableStateOf(false) }
-        var dividerPointerX by remember { mutableFloatStateOf(0f) }
-        val effectiveTerminalHeightPx = clampTerminalHeight(
-            terminalHeightPx,
-            availableHeightPx,
-            minimumTerminalHeightPx,
-            minimumWorkspaceHeightPx,
+        var dividerPressed by remember { mutableStateOf(false) }
+        var dividerPointerY by remember { mutableFloatStateOf(0f) }
+        val effectiveTerminalWidthPx = clampTerminalWidth(
+            terminalWidthPx,
+            availableWidthPx,
+            minimumTerminalWidthPx,
+            minimumWorkspaceWidthPx,
         )
-        val terminalContainerHeightPx = dividerHeightPx + effectiveTerminalHeightPx
+        val terminalContainerWidthPx = dividerWidthPx + effectiveTerminalWidthPx
         val terminalMotionProgress by animateFloatAsState(
             targetValue = if (terminalVisible) 1f else 0f,
             animationSpec = tween(
@@ -118,21 +110,21 @@ internal fun ResizableWorkspaceLayout(
             ),
             label = "terminal-panel-window-motion",
         )
-        val workspaceHeightPx = workspaceHeightDuringTerminalMotion(
-            totalHeightPx = with(density) { maxHeight.toPx() },
-            terminalContainerHeightPx = terminalContainerHeightPx,
+        val workspaceWidthPx = workspaceWidthDuringTerminalMotion(
+            totalWidthPx = with(density) { maxWidth.toPx() },
+            terminalContainerWidthPx = terminalContainerWidthPx,
             progress = terminalMotionProgress,
         )
-        val animatedTerminalContainerHeightPx = terminalContainerHeightDuringMotion(
-            terminalContainerHeightPx = terminalContainerHeightPx,
+        val animatedTerminalContainerWidthPx = terminalContainerWidthDuringMotion(
+            terminalContainerWidthPx = terminalContainerWidthPx,
             progress = terminalMotionProgress,
         )
-        LaunchedEffect(availableHeightPx, compact) {
-            terminalHeightPx = clampTerminalHeight(
-                terminalHeightPx,
-                availableHeightPx,
-                minimumTerminalHeightPx,
-                minimumWorkspaceHeightPx,
+        LaunchedEffect(availableWidthPx, compact) {
+            terminalWidthPx = clampTerminalWidth(
+                terminalWidthPx,
+                availableWidthPx,
+                minimumTerminalWidthPx,
+                minimumWorkspaceWidthPx,
             )
         }
 
@@ -143,60 +135,73 @@ internal fun ResizableWorkspaceLayout(
         ) {
             workspace(
                 Modifier
-                    .fillMaxWidth()
-                    .height(with(density) { workspaceHeightPx.toDp() }),
+                    .fillMaxHeight()
+                    .width(with(density) { workspaceWidthPx.toDp() }),
             )
-            Column(
+            Row(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(with(density) { animatedTerminalContainerHeightPx.toDp() }),
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(with(density) { animatedTerminalContainerWidthPx.toDp() }),
             ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(dividerHeight)
-                            .pointerHoverIcon(PointerIcon(Cursor(Cursor.N_RESIZE_CURSOR)))
+                            .fillMaxHeight()
+                            .width(dividerWidth)
+                            .pointerHoverIcon(PointerIcon(Cursor(Cursor.E_RESIZE_CURSOR)))
                             .onPointerEvent(PointerEventType.Enter) { event ->
                                 dividerHovered = true
-                                dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                                dividerPointerY = event.changes.firstOrNull()?.position?.y ?: dividerPointerY
                             }
                             .onPointerEvent(PointerEventType.Move) { event ->
-                                dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                                dividerPointerY = event.changes.firstOrNull()?.position?.y ?: dividerPointerY
                             }
                             .onPointerEvent(PointerEventType.Exit) { dividerHovered = false }
-                            .pointerInput(availableHeightPx, compact) {
+                            .onPointerEvent(PointerEventType.Press) { event ->
+                                dividerPressed = true
+                                dividerPointerY = event.changes.firstOrNull()?.position?.y ?: dividerPointerY
+                            }
+                            .onPointerEvent(PointerEventType.Release) { dividerPressed = false }
+                            .pointerInput(availableWidthPx, compact) {
                                 detectDragGestures(
                                     onDragStart = { position ->
                                         dividerDragging = true
-                                        dividerPointerX = position.x
+                                        dividerPressed = true
+                                        dividerPointerY = position.y
                                     },
-                                    onDragEnd = { dividerDragging = false },
-                                    onDragCancel = { dividerDragging = false },
+                                    onDragEnd = {
+                                        dividerDragging = false
+                                        dividerPressed = false
+                                    },
+                                    onDragCancel = {
+                                        dividerDragging = false
+                                        dividerPressed = false
+                                    },
                                 ) { change, dragAmount ->
                                     change.consume()
-                                    dividerPointerX = change.position.x
-                                    terminalHeightPx = clampTerminalHeight(
-                                        terminalHeightPx - dragAmount.y,
-                                        availableHeightPx,
-                                        minimumTerminalHeightPx,
-                                        minimumWorkspaceHeightPx,
+                                    dividerPointerY = change.position.y
+                                    terminalWidthPx = clampTerminalWidth(
+                                        terminalWidthPx - dragAmount.x,
+                                        availableWidthPx,
+                                        minimumTerminalWidthPx,
+                                        minimumWorkspaceWidthPx,
                                     )
                                 }
                             },
                         contentAlignment = Alignment.Center,
                     ) {
                         PointerFollowingDividerHighlight(
-                            axis = DividerHighlightAxis.Horizontal,
-                            pointerPositionPx = dividerPointerX,
+                            axis = DividerHighlightAxis.Vertical,
+                            pointerPositionPx = dividerPointerY,
                             visible = dividerHovered || dividerDragging,
+                            pressed = dividerPressed || dividerDragging,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
                     terminal(
                         Modifier
-                            .fillMaxWidth()
-                            .height(with(density) { effectiveTerminalHeightPx.toDp() }),
+                            .fillMaxHeight()
+                            .width(with(density) { effectiveTerminalWidthPx.toDp() }),
                     )
             }
         }

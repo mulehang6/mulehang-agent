@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.presentation.resolveWorkspaceForTaskCreation
+import com.agent.app.chat.state.ChatTaskGroup
 import com.agent.app.chat.state.ChatTaskListItemUiState
 import com.agent.app.chat.state.ChatTaskStatus
 import com.agent.app.chat.state.ChatWindowState
@@ -97,12 +98,23 @@ internal const val TASK_LIST_ITEM_GAP_DP = 4
 internal const val TASK_CREATE_BUTTON_HEIGHT_DP = 40
 internal const val TASK_SECTION_ROW_HEIGHT_DP = 36
 internal const val TASK_LIST_ITEM_HEIGHT_DP = 40
-internal const val TASK_SECTION_CONTENT_GAP_DP = 4
+/** 工作区名称与其状态分组间保持紧密关联。 */
+internal const val TASK_WORKSPACE_CONTENT_GAP_DP = 2
+/** 状态分组标题与其具体任务间保持紧密关联。 */
+internal const val TASK_SECTION_CONTENT_GAP_DP = 2
+internal const val TASK_SECTION_INDENT_DP = 12
+internal const val TASK_LIST_ITEM_INDENT_DP = 16
 internal const val TITLE_GENERATING_DOT_COUNT = 3
 internal const val TASK_CONTEXT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 80
 
 /** 折叠箭头仅在对应的工作区或状态分组行被鼠标悬浮时显示。 */
 internal fun shouldShowTaskSectionChevron(hovered: Boolean): Boolean = hovered
+
+/**
+ * 已完成任务默认收起，减少任务列表在历史会话较多时的视觉干扰。
+ */
+internal fun shouldCollapseTaskSectionByDefault(group: ChatTaskGroup): Boolean =
+    group == ChatTaskGroup.DONE
 
 /**
  * 返回工作区标题使用的折叠状态键，避免与状态分组的折叠状态混用。
@@ -121,7 +133,7 @@ internal fun shouldShowConversationTitleText(titleState: ConversationTitleState)
 internal fun taskContextMenuLabels(): List<String> = listOf("Fork", "删除", "Archive", "重命名")
 
 internal val TaskContextMenuBackground = Color(0xFF262627)
-internal val TaskContextMenuHoverBackground = Color(0xFF245286)
+internal val TaskContextMenuHoverBackground = Color(0xFF1D3F6E)
 internal val TaskContextMenuBorder = Color(0xFF47494D)
 internal val TaskContextMenuDanger = Color(0xFFFF5C78)
 internal val TaskContextMenuWidth = 180.dp
@@ -167,7 +179,7 @@ internal fun TaskSidebar(
     var searchQuery by remember { mutableStateOf("") }
     var contextMenuTaskId by remember { mutableStateOf<String?>(null) }
     var renamingTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
-    var collapsedSectionKeys by remember { mutableStateOf(emptySet<String>()) }
+    var sectionCollapsedOverrides by remember { mutableStateOf(emptyMap<String, Boolean>()) }
     var collapsedWorkspaceKeys by remember { mutableStateOf(emptySet<String>()) }
     val startTaskInCurrentWorkspace: () -> Unit = {
         val workspacePath = resolveWorkspaceForTaskCreation(
@@ -249,7 +261,7 @@ internal fun TaskSidebar(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             filteredWorkspaces.forEach { workspace ->
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(TASK_WORKSPACE_CONTENT_GAP_DP.dp)) {
                     val workspaceKey = workspaceCollapseKey(workspace.workspacePath)
                     val workspaceCollapsed = workspaceKey in collapsedWorkspaceKeys
                     var workspaceHovered by remember(workspaceKey) { mutableStateOf(false) }
@@ -293,11 +305,15 @@ internal fun TaskSidebar(
                         enter = expandVertically(tween(durationMillis = 200)) + fadeIn(tween(durationMillis = 140)),
                         exit = shrinkVertically(tween(durationMillis = 150)) + fadeOut(tween(durationMillis = 110)),
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(TASK_SECTION_CONTENT_GAP_DP.dp)) {
+                        Column(
+                            modifier = Modifier.padding(start = TASK_SECTION_INDENT_DP.dp),
+                            verticalArrangement = Arrangement.spacedBy(TASK_SECTION_CONTENT_GAP_DP.dp),
+                        ) {
                             workspace.sections.forEach { section ->
                                 Column(verticalArrangement = Arrangement.spacedBy(TASK_SECTION_CONTENT_GAP_DP.dp)) {
                                     val sectionKey = "${workspace.workspacePath}:${section.title}"
-                                    val collapsed = sectionKey in collapsedSectionKeys
+                                    val collapsed = sectionCollapsedOverrides[sectionKey]
+                                        ?: shouldCollapseTaskSectionByDefault(section.group)
                                     var sectionHovered by remember(sectionKey) { mutableStateOf(false) }
                                     Row(
                                         modifier = Modifier
@@ -310,11 +326,7 @@ internal fun TaskSidebar(
                                             .onPointerEvent(PointerEventType.Enter) { sectionHovered = true }
                                             .onPointerEvent(PointerEventType.Exit) { sectionHovered = false }
                                             .clickable {
-                                                collapsedSectionKeys = if (collapsed) {
-                                                    collapsedSectionKeys - sectionKey
-                                                } else {
-                                                    collapsedSectionKeys + sectionKey
-                                                }
+                                                sectionCollapsedOverrides = sectionCollapsedOverrides + (sectionKey to !collapsed)
                                             }
                                             .padding(horizontal = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
@@ -340,7 +352,10 @@ internal fun TaskSidebar(
                                         enter = expandVertically(tween(durationMillis = 200)) + fadeIn(tween(durationMillis = 140)),
                                         exit = shrinkVertically(tween(durationMillis = 150)) + fadeOut(tween(durationMillis = 110)),
                                     ) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(TASK_LIST_ITEM_GAP_DP.dp)) {
+                                        Column(
+                                            modifier = Modifier.padding(start = TASK_LIST_ITEM_INDENT_DP.dp),
+                                            verticalArrangement = Arrangement.spacedBy(TASK_LIST_ITEM_GAP_DP.dp),
+                                        ) {
                                             section.tasks.forEach { task ->
                                                 TaskListItem(
                                                     task = task,
@@ -604,11 +619,7 @@ internal fun TaskContextMenuItem(
     enabled: Boolean = true,
 ) {
     var hovered by remember { mutableStateOf(false) }
-    val backgroundColor by animateColorAsState(
-        targetValue = taskContextMenuItemBackground(hovered = hovered, enabled = enabled),
-        animationSpec = tween(durationMillis = TASK_CONTEXT_MENU_HOVER_TRANSITION_DURATION_MILLIS),
-        label = "task-context-menu-hover",
-    )
+    val backgroundColor = taskContextMenuItemBackground(hovered = hovered, enabled = enabled)
     Row(
         modifier = Modifier
             .fillMaxWidth()

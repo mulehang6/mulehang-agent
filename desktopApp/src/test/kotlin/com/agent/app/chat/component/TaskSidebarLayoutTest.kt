@@ -2,6 +2,7 @@ package com.agent.app.chat.component
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import com.agent.app.chat.state.ChatTaskGroup
 import com.agent.app.chat.state.ConversationTitleState
 
 /**
@@ -28,11 +29,19 @@ class TaskSidebarLayoutTest {
     }
 
     /**
-     * 分组标题与其首条任务之间不得被外层列表的间距放大。
+     * 工作区与状态分组、分组标题与其首条任务之间应紧密相连。
      */
     @Test
-    fun `should keep section header and first task four dp apart`() {
-        assertEquals(4, TASK_SECTION_CONTENT_GAP_DP)
+    fun `should keep hierarchy headers and their content close together`() {
+        assertEquals(2, TASK_WORKSPACE_CONTENT_GAP_DP)
+        assertEquals(2, TASK_SECTION_CONTENT_GAP_DP)
+    }
+
+    /** 工作区、状态分组和具体任务应具有清晰的逐级缩进。 */
+    @Test
+    fun `should indent sections and tasks beneath their workspace`() {
+        assertEquals(12, TASK_SECTION_INDENT_DP)
+        assertEquals(16, TASK_LIST_ITEM_INDENT_DP)
     }
 
     /**
@@ -63,5 +72,12 @@ class TaskSidebarLayoutTest {
     fun `should show section chevrons only while their row hovers`() {
         assertEquals(true, shouldShowTaskSectionChevron(hovered = true))
         assertEquals(false, shouldShowTaskSectionChevron(hovered = false))
+    }
+
+    /** 已完成任务默认收起，但正在进行中的任务保持可见。 */
+    @Test
+    fun `should collapse done task sections by default`() {
+        assertEquals(true, shouldCollapseTaskSectionByDefault(ChatTaskGroup.DONE))
+        assertEquals(false, shouldCollapseTaskSectionByDefault(ChatTaskGroup.RUNNING))
     }
 }

@@ -70,12 +70,18 @@ class ComposerPresentationTest {
     }
 
     /**
-     * 上下文剩余数值只应出现在 hover tooltip 文案中。
+     * 上下文 tooltip 应同时展示占比、已估算标记数和窗口总量。
      */
     @Test
-    fun `should keep context usage value inside tooltip text only`() {
-        assertEquals("已使用 58% 上下文", buildContextTooltip(0.58f))
-        assertEquals("已使用 <0.1% 上下文", buildContextTooltip(0.00002f))
+    fun `should expose detailed context window information inside tooltip`() {
+        assertEquals(
+            "上下文窗口：\n58% 已用\n已用 149k 标记，共\n258k",
+            buildContextTooltip(0.58f, contextWindow = 258_000),
+        )
+        assertEquals(
+            "上下文窗口：\n<0.1% 已用\n当前模型未提供窗口大小",
+            buildContextTooltip(0.00002f, contextWindow = null),
+        )
     }
 
     /**

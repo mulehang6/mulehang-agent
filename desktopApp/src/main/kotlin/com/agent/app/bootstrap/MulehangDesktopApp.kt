@@ -19,6 +19,7 @@ import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSidebarBackground
+import com.agent.app.design.AppTypography
 import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
@@ -92,7 +93,10 @@ internal fun WindowScope.MulehangDesktopApp(
     }
     LaunchedEffect(Unit) {
         runCatching { taskPersistenceCoordinator.load() }
-            .onSuccess(windowState::restoreTasks)
+            .onSuccess { tasks ->
+                windowState.restoreTasks(tasks)
+                taskPersistenceCoordinator.activate(windowState.ui.tasks)
+            }
             .onFailure { windowState.setPersistenceError("历史任务未加载") }
     }
 
@@ -111,6 +115,7 @@ internal fun WindowScope.MulehangDesktopApp(
             onSecondary = Color.White,
             onError = Color.White,
         ),
+        typography = AppTypography,
     ) {
         ChatScreen(
             state = windowState,

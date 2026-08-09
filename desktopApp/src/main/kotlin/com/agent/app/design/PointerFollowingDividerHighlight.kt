@@ -19,6 +19,9 @@ internal const val DIVIDER_HIGHLIGHT_THICKNESS_DP = 3
 /** JetBrains Air 分隔条的蓝色峰值。 */
 internal val DividerAirBlue = Color(0xFF0A6CD9)
 
+/** 鼠标按住分隔条时使用的更亮蓝色，形成明确的直接操控反馈。 */
+internal val DividerPressedBlue = Color(0xFF55A8FF)
+
 /** 指针正下方的蓝色峰值保持满强度，以清晰提示可拖拽边界。 */
 internal const val DIVIDER_HIGHLIGHT_PEAK_ALPHA = 1f
 
@@ -72,6 +75,7 @@ internal fun PointerFollowingDividerHighlight(
     axis: DividerHighlightAxis,
     pointerPositionPx: Float,
     visible: Boolean,
+    pressed: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (!visible) return
@@ -83,6 +87,7 @@ internal fun PointerFollowingDividerHighlight(
             axis = axis,
             pointerPositionPx = pointerPositionPx,
             highlightThicknessPx = highlightThicknessPx,
+            color = if (pressed) DividerPressedBlue else DividerAirBlue,
         )
     }
 }
@@ -92,6 +97,7 @@ private fun DrawScope.drawPointerFollowingDividerHighlight(
     axis: DividerHighlightAxis,
     pointerPositionPx: Float,
     highlightThicknessPx: Float,
+    color: Color,
 ) {
     val trackLengthPx = if (axis == DividerHighlightAxis.Horizontal) size.width else size.height
     if (trackLengthPx <= 0f) return
@@ -116,7 +122,7 @@ private fun DrawScope.drawPointerFollowingDividerHighlight(
     }
     drawRoundRect(
         brush = Brush.linearGradient(
-            colorStops = dividerHighlightGradientStops(peakFraction),
+            colorStops = dividerHighlightGradientStops(peakFraction, color),
             start = gradientStart,
             end = gradientEnd,
         ),
@@ -127,20 +133,20 @@ private fun DrawScope.drawPointerFollowingDividerHighlight(
 }
 
 /** 为完整分隔轴生成以鼠标为峰值、向两端淡出的颜色停靠点。 */
-private fun dividerHighlightGradientStops(peakFraction: Float): Array<Pair<Float, Color>> = when {
+private fun dividerHighlightGradientStops(peakFraction: Float, color: Color): Array<Pair<Float, Color>> = when {
     peakFraction <= 0f -> arrayOf(
-        0f to DividerAirBlue.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
+        0f to color.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
         1f to Color.Transparent,
     )
 
     peakFraction >= 1f -> arrayOf(
         0f to Color.Transparent,
-        1f to DividerAirBlue.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
+        1f to color.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
     )
 
     else -> arrayOf(
         0f to Color.Transparent,
-        peakFraction to DividerAirBlue.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
+        peakFraction to color.copy(alpha = DIVIDER_HIGHLIGHT_PEAK_ALPHA),
         1f to Color.Transparent,
     )
 }

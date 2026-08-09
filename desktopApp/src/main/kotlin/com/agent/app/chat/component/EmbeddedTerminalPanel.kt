@@ -229,7 +229,7 @@ private class JediTermTerminalHandle(
 }
 
 /**
- * 在主工作区底部承载可切换的交互式 PowerShell 终端标签页。
+ * 在主工作区右侧承载可切换的交互式 PowerShell 终端标签页。
  */
 @Composable
 internal fun EmbeddedTerminalPanel(
@@ -414,6 +414,9 @@ private fun TerminalTabChip(
 ) {
     var tabOrigin by remember { mutableStateOf(Offset.Zero) }
     var tabHovered by remember { mutableStateOf(false) }
+    var closeHovered by remember { mutableStateOf(false) }
+    var closePressed by remember { mutableStateOf(false) }
+    val closeVisible = selected || tabHovered
     Row(
         modifier = Modifier
             .padding(end = 4.dp)
@@ -457,13 +460,27 @@ private fun TerminalTabChip(
             modifier = Modifier
                 .padding(start = 6.dp)
                 .size(TERMINAL_CLOSE_BUTTON_SIZE_DP.dp)
-                .clickable(onClick = onClose)
+                .graphicsLayer {
+                    alpha = if (closeVisible) 1f else 0f
+                    scaleX = if (closePressed) 0.94f else 1f
+                    scaleY = if (closePressed) 0.94f else 1f
+                }
+                .clip(RoundedCornerShape(5.dp))
+                .background(if (closeHovered) TerminalTabHoverBackground else Color.Transparent)
+                .onPointerEvent(PointerEventType.Enter) { closeHovered = true }
+                .onPointerEvent(PointerEventType.Exit) {
+                    closeHovered = false
+                    closePressed = false
+                }
+                .onPointerEvent(PointerEventType.Press) { closePressed = true }
+                .onPointerEvent(PointerEventType.Release) { closePressed = false }
+                .clickable(enabled = closeVisible, onClick = onClose)
                 .semantics { contentDescription = "关闭${tab.title}" },
             contentAlignment = Alignment.Center,
         ) {
             TerminalActionGlyph(
                 cross = true,
-                color = AppMuted,
+                color = if (closeHovered) AppText else AppMuted,
                 glowAlpha = 0f,
             )
         }

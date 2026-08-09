@@ -45,8 +45,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -69,6 +71,7 @@ import com.agent.app.chat.presentation.reasoningControlLabel
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.isStoppable
+import com.agent.app.chat.state.resolveContextWindow
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppDanger
@@ -96,11 +99,39 @@ import kotlinx.coroutines.launch
 internal const val PENDING_CARD_ENTER_DURATION_MILLIS = 180
 internal const val PENDING_CARD_EXIT_DURATION_MILLIS = 120
 internal const val PENDING_CARD_ENTER_INITIAL_SCALE = 0.96f
-internal const val COMPOSER_BORDER_FLOW_DURATION_MILLIS = 1_600
+internal const val COMPOSER_BORDER_FLOW_DURATION_MILLIS = 2_200
 
 /** 仅在 Agent 实际执行工具或生成输出时启用 Composer 的流光反馈。 */
 internal fun shouldAnimateComposerBorder(executionState: ExecutionState): Boolean =
     executionState == ExecutionState.Running
+
+/** 描述沿 Composer 边框路径移动的一段连续高亮。 */
+internal data class ComposerBorderFlowSegment(
+    val startDistance: Float,
+    val endDistance: Float,
+)
+
+/**
+ * 将环形边框上的流光拆分为一个或两个可绘制路径段，跨越路径末端时从起点继续。
+ */
+internal fun composerBorderFlowSegments(
+    pathLength: Float,
+    progress: Float,
+    ratio: Float = 0.18f,
+): List<ComposerBorderFlowSegment> {
+    require(pathLength > 0f) { "Path length must be positive" }
+    require(ratio in 0f..1f) { "Flow ratio must be between zero and one" }
+    val head = ((progress % 1f + 1f) % 1f) * pathLength
+    val tail = head - pathLength * ratio
+    return if (tail >= 0f) {
+        listOf(ComposerBorderFlowSegment(tail, head))
+    } else {
+        listOfNotNull(
+            ComposerBorderFlowSegment(tail + pathLength, pathLength).takeIf { it.startDistance < it.endDistance },
+            ComposerBorderFlowSegment(0f, head).takeIf { it.startDistance < it.endDistance },
+        )
+    }
+}
 
 /**
  * Composer 底部可互斥展开的菜单。
@@ -317,31 +348,46 @@ private fun ComposerPanel(
     }
 
     RingIsland(
-        modifier = modifier.drawBehind {
+        modifier = modifier.drawWithContent {
+            drawContent()
             val stroke = 2.dp.toPx()
             val inset = stroke / 2f
             val corner = 18.dp.toPx()
-            val staticColor = AppAccent.copy(alpha = 0.64f)
-            drawRoundRect(
+            val staticColor = AppAccent.copy(alpha = 0.72f)
+            val borderPath = Path().apply {
+                addRoundRect(
+                    androidx.compose.ui.geometry.RoundRect(
+                        left = inset,
+                        top = inset,
+                        right = size.width - inset,
+                        bottom = size.height - inset,
+                        radiusX = corner,
+                        radiusY = corner,
+                    ),
+                )
+            }
+            drawPath(
+                path = borderPath,
                 color = staticColor,
-                topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner),
                 style = Stroke(width = stroke),
             )
             if (shouldAnimateComposerBorder(executionState)) {
-                drawArc(
-                    color = AppAccent,
-                    startAngle = composerBorderProgress * 360f,
-                    sweepAngle = 96f,
-                    useCenter = false,
-                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                    size = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke),
-                    style = Stroke(width = stroke * 1.5f),
-                )
+                val pathMeasure = PathMeasure().apply { setPath(borderPath, forceClosed = true) }
+                composerBorderFlowSegments(pathMeasure.length, composerBorderProgress).forEach { segment ->
+                    val flowPath = Path()
+                    if (pathMeasure.getSegment(segment.startDistance, segment.endDistance, flowPath)) {
+                        drawPath(
+                            path = flowPath,
+                            color = AppAccent,
+                            style = Stroke(width = stroke * 1.3f),
+                        )
+                    }
+                }
             }
         },
         color = ComposerBackground,
+        shape = RoundedCornerShape(18.dp),
+        borderColor = Color.Transparent,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -556,7 +602,10 @@ private fun ComposerPanel(
                     }
                     RingContextIndicator(
                         sweepAngle = contextRingSweepAngle(activeConversation?.contextUsageFraction ?: 0f),
-                        tooltip = buildContextTooltip(activeConversation?.contextUsageFraction ?: 0f),
+                        tooltip = buildContextTooltip(
+                            usageFraction = activeConversation?.contextUsageFraction ?: 0f,
+                            contextWindow = selectedProfile?.let(::resolveContextWindow),
+                        ),
                     )
                 }
                 Row(

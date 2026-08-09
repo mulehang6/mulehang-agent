@@ -634,6 +634,100 @@ class KoogAgentGatewayTest {
     }
 
     /**
+     * Anthropic 要求同一 assistant 消息中的每个 tool_use 都在紧随其后的同一条 user
+     * 消息中获得 tool_result；拆成多条消息会使后续调用被服务端拒绝。
+     */
+    @Test
+    fun `should synthesize orphaned tool results in one user message`() {
+        val messages = buildConversationMessages(
+            history = listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
+                            name = "read_file",
+                            argumentsPreview = "{\"path\":\"README.md\"}",
+                        ),
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-2",
+                            name = "list_dir",
+                            argumentsPreview = "{\"path\":\".\"}",
+                        ),
+                    ),
+                ),
+            ),
+            prompt = "second",
+        )
+
+        assertEquals(4, messages.size)
+        assertEquals(
+            listOf(
+                MessagePart.Tool.Result(
+                    id = "call-1",
+                    tool = "read_file",
+                    output = "工具调用未完成，未产生可用结果。",
+                ),
+                MessagePart.Tool.Result(
+                    id = "call-2",
+                    tool = "list_dir",
+                    output = "工具调用未完成，未产生可用结果。",
+                ),
+            ),
+            assertIs<Message.User>(messages[2]).parts,
+        )
+        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[3]).parts)
+    }
+
+    /**
+     * 多个已完成工具调用也必须合并回放，保证 Anthropic 将每个 tool_result 视为同一轮
+     * tool_use 的直接响应。
+     */
+    @Test
+    fun `should replay completed tool results in one user message`() {
+        val messages = buildConversationMessages(
+            history = listOf(
+                AgentConversationHistoryMessage.User("first"),
+                AgentConversationHistoryMessage.Assistant(
+                    parts = listOf(
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-1",
+                            name = "read_file",
+                            argumentsPreview = "{\"path\":\"README.md\"}",
+                        ),
+                        AgentConversationHistoryPart.ToolCall(
+                            id = "call-2",
+                            name = "list_dir",
+                            argumentsPreview = "{\"path\":\".\"}",
+                        ),
+                        AgentConversationHistoryPart.ToolResult(
+                            id = "call-1",
+                            name = "read_file",
+                            resultPreview = "README",
+                        ),
+                        AgentConversationHistoryPart.ToolResult(
+                            id = "call-2",
+                            name = "list_dir",
+                            resultPreview = "src",
+                        ),
+                    ),
+                ),
+            ),
+            prompt = "second",
+        )
+
+        assertEquals(4, messages.size)
+        assertEquals(
+            listOf(
+                MessagePart.Tool.Result(id = "call-1", tool = "read_file", output = "README"),
+                MessagePart.Tool.Result(id = "call-2", tool = "list_dir", output = "src"),
+            ),
+            assertIs<Message.User>(messages[2]).parts,
+        )
+        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[3]).parts)
+    }
+
+    /**
      * ask_user 通过交互桥恢复时，应先发出问题事件，再完成当前轮次。
      */
     @Test

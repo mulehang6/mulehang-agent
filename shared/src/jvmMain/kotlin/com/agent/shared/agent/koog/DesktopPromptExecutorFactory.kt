@@ -70,7 +70,8 @@ internal object DesktopKoogHttpClientFactoryProvider {
 }
 
 /**
- * 在 SSE JSON 解码前滤除 legacy `[DONE]` 终止标记，并补齐 Responses 重放元数据的 HTTP client 装饰器。
+ * 在 SSE JSON 解码前滤除 legacy `[DONE]` 终止标记及 Koog 当前无法承载的流式元数据，
+ * 并补齐 Responses 重放元数据的 HTTP client 装饰器。
  *
  * `[DONE]` 是 OpenAI-compatible 流式传输的可选终止信号而非 JSON 事件；按传输协议过滤
  * 能让 Responses、Chat Completions 与任意兼容中转站共用同一行为。
@@ -116,16 +117,23 @@ internal class SseTerminatorFilteringKoogHttpClient(
  *
  * Koog 1.1.1 不消费 Responses 的 content-part 生命周期事件，却会先反序列化其 `part`。
  * 在传输层跳过这些事件，可兼容尚未被 Koog 注册的合法 part 类型，同时保留实际增量事件。
+ *
+ * Anthropic extended thinking 的 `signature_delta` 仅承载签名元数据；Koog 1.1.1 的
+ * Anthropic 流式实现未将它写入 [ai.koog.prompt.streaming.StreamFrame.ReasoningComplete]，
+ * 并会为其记录警告。该版本本就不会把该签名回写到 reasoning frame，因此在此过滤只消除
+ * 无效警告，不改变现有的模型上下文。
  */
 internal fun shouldDecodeSseData(data: String?): Boolean {
     val normalizedData = data?.trim()
     if (normalizedData == "[DONE]") return false
     if (normalizedData == null) return true
     return runCatching {
-        Json.parseToJsonElement(normalizedData)
-            .jsonObject["type"]
-            ?.jsonPrimitive
-            ?.content !in RESPONSE_CONTENT_PART_LIFECYCLE_TYPES
+        val event = Json.parseToJsonElement(normalizedData).jsonObject
+        val eventType = event["type"]?.jsonPrimitive?.content
+        eventType !in RESPONSE_CONTENT_PART_LIFECYCLE_TYPES &&
+            !(eventType == ANTHROPIC_CONTENT_BLOCK_DELTA &&
+                event["delta"]?.jsonObject?.get("type")?.jsonPrimitive?.content in
+                    UNSUPPORTED_ANTHROPIC_STREAM_DELTA_TYPES)
     }.getOrDefault(true)
 }
 
@@ -133,6 +141,10 @@ private val RESPONSE_CONTENT_PART_LIFECYCLE_TYPES = setOf(
     "response.content_part.added",
     "response.content_part.done",
 )
+
+private const val ANTHROPIC_CONTENT_BLOCK_DELTA = "content_block_delta"
+
+private val UNSUPPORTED_ANTHROPIC_STREAM_DELTA_TYPES = setOf("signature_delta")
 
 /**
  * 移除 Responses 事件中 Koog 不消费、但其枚举可能无法识别的推理配置回显，并为空的

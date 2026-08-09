@@ -45,6 +45,24 @@ class SseTerminatorFilteringKoogHttpClientTest {
     }
 
     /**
+     * Koog 1.1.1 的 Anthropic 流式实现不会将 thinking signature 写入 reasoning frame；
+     * 过滤该元数据事件可避免客户端产生无效警告，同时必须保留真正的思考文本增量。
+     */
+    @Test
+    fun `should filter unsupported anthropic signature delta before json decoding`() {
+        assertFalse(
+            shouldDecodeSseData(
+                """{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}""",
+            ),
+        )
+        assertTrue(
+            shouldDecodeSseData(
+                """{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"reasoning"}}""",
+            ),
+        )
+    }
+
+    /**
      * 服务端回显的推理配置不参与流帧映射，未知档位不能阻断 Responses 解码。
      */
     @Test

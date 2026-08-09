@@ -1,35 +1,16 @@
 package com.agent.app.chat.state
 
-import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.app.tool.interaction.ApprovalResponse
-import com.agent.shared.agent.api.AgentConversationHistoryMessage
-import com.agent.shared.agent.api.AgentConversationHistoryPart
-import com.agent.shared.agent.api.AgentGateway
-import com.agent.shared.agent.api.AgentRunRequest
-import com.agent.shared.agent.api.AgentStreamEvent
-import com.agent.shared.agent.api.ConversationTitleGenerator
-import com.agent.shared.agent.api.ConversationTitleRequest
-import com.agent.shared.agent.api.ReasoningEffort
-import com.agent.shared.chat.model.AppError
-import com.agent.shared.chat.model.AnsweredQuestionsItem
-import com.agent.shared.chat.model.ChatMessageItem
-import com.agent.shared.chat.model.ChatRole
-import com.agent.shared.chat.model.ConversationItem
-import com.agent.shared.chat.model.ExecutionState
-import com.agent.shared.chat.model.ReasoningItem
-import com.agent.shared.chat.model.ToolEventItem
-import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
+import com.agent.shared.agent.api.*
+import com.agent.shared.chat.model.*
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ProviderType
-import com.agent.shared.tool.model.ApprovalRequest
-import com.agent.shared.tool.model.PermissionPreset
-import com.agent.shared.tool.model.QuestionRequest
-import com.agent.shared.tool.model.QuestionAnswer
-import com.agent.shared.tool.model.QuestionPrompt
+import com.agent.shared.tool.model.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,18 +18,8 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
+import kotlinx.coroutines.test.*
+import kotlin.test.*
 
 /**
  * 验证桌面聊天窗口状态的消息发送流转。
@@ -598,7 +569,7 @@ class ChatWindowStateTest {
                     id = "waiting-question",
                     title = "Question",
                     workspacePath = "E:\\abc\\def",
-                    items = listOf(ChatMessageItem(com.agent.shared.chat.model.ChatMessage(ChatRole.User, "pending"))),
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "pending"))),
                     executionState = ExecutionState.WaitingForUserInput,
                 ),
             ),
@@ -610,7 +581,7 @@ class ChatWindowStateTest {
                     id = "waiting-approval",
                     title = "Approval",
                     workspacePath = "E:\\abc\\def",
-                    items = listOf(ChatMessageItem(com.agent.shared.chat.model.ChatMessage(ChatRole.User, "pending"))),
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "pending"))),
                     executionState = ExecutionState.WaitingForApproval,
                 ),
             ),
@@ -741,7 +712,10 @@ class ChatWindowStateTest {
             ),
         )
 
-        assertEquals(0.1f, state.ui.activeConversation.contextUsageFraction)
+        assertEquals(
+            estimateContextUsage(state.ui.activeConversation.items, 0, 200),
+            state.ui.activeConversation.contextUsageFraction,
+        )
     }
 
     /**
@@ -1020,11 +994,14 @@ class ChatWindowStateTest {
         state.send("a".repeat(80))
         advanceUntilIdle()
 
-        assertEquals(0.2f, state.ui.activeConversation.contextUsageFraction)
+        assertEquals(
+            estimateContextUsage(state.ui.activeConversation.items, 0, 100),
+            state.ui.activeConversation.contextUsageFraction,
+        )
     }
 
     /**
-     * 空会话的上下文占用应按 profile limit 初始化为 0，而不是沿用占位百分比。
+     * 空会话的上下文占用应按 profile limit 计入固定系统提示词。
      */
     @Test
     fun `should initialize context usage from active profile context limit`() = runTest(dispatcher) {
@@ -1041,7 +1018,10 @@ class ChatWindowStateTest {
             projectPath = "E:\\abc\\def",
         )
 
-        assertEquals(0f, state.ui.activeConversation.contextUsageFraction)
+        assertEquals(
+            estimateContextUsage(emptyList(), 0, 100),
+            state.ui.activeConversation.contextUsageFraction,
+        )
     }
 
     /**
@@ -1070,7 +1050,10 @@ class ChatWindowStateTest {
         advanceUntilIdle()
         state.selectProfile(largeContextProfile.id)
 
-        assertEquals(0.1f, state.ui.activeConversation.contextUsageFraction)
+        assertEquals(
+            estimateContextUsage(state.ui.activeConversation.items, 0, 200),
+            state.ui.activeConversation.contextUsageFraction,
+        )
     }
 
     /**

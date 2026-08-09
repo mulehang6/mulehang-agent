@@ -1,7 +1,7 @@
 package com.agent.app.chat.state
 
-import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.session.AppSessionSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,7 +33,10 @@ class ConversationFactoryTest {
         assertEquals("新建对话", result.title)
         assertEquals("E:\\workspace", result.workspacePath)
         assertEquals(ExecutionState.Idle, result.executionState)
-        assertEquals(0f, result.contextUsageFraction)
+        assertEquals(
+            estimateContextUsage(emptyList(), 0, 100),
+            result.contextUsageFraction,
+        )
         assertTrue(result.isEmptyDefaultConversation())
         assertEquals("重构 ChatWindowState", buildConversationTitle("  重构 ChatWindowState\n第二行  "))
     }

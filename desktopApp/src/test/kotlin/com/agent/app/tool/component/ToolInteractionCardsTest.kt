@@ -44,6 +44,15 @@ class ToolInteractionCardsTest {
         assertEquals(true, canSubmitQuestionnaire(listOf("UI", "中文")))
     }
 
+    /** 问卷在最后一个标签页前只提供下一题动作，且不会越过末题。 */
+    @Test
+    fun `questionnaire navigates between question tabs before final submission`() {
+        assertEquals("Next", questionnaireActionLabel(activeIndex = 0, questionCount = 3))
+        assertEquals("Submit answers", questionnaireActionLabel(activeIndex = 2, questionCount = 3))
+        assertEquals(1, nextQuestionnaireTabIndex(activeIndex = 0, questionCount = 3))
+        assertEquals(2, nextQuestionnaireTabIndex(activeIndex = 2, questionCount = 3))
+    }
+
     /** 自由输入仅在去除空白后仍含内容时才能提交。 */
     @Test
     fun `question free text submit should require non blank content`() {

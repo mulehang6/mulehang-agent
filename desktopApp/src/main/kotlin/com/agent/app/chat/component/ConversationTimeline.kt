@@ -2,127 +2,43 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.LocalScrollbarStyle
-import androidx.compose.foundation.VerticalScrollbar
-import androidx.compose.foundation.rememberScrollbarAdapter
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.skiaCanvas
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.Dp
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import com.agent.app.chat.presentation.buildReasoningHeadline
-import com.agent.app.chat.presentation.buildSecondaryStatus
-import com.agent.app.chat.presentation.buildToolEventInlineInput
-import com.agent.app.chat.presentation.buildToolEventHeadline
-import com.agent.app.chat.presentation.buildToolEventOperationIntent
-import com.agent.app.chat.presentation.isTerminalToolEvent
-import com.agent.app.chat.presentation.shouldShowToolEventHeadline
-import com.agent.app.chat.presentation.toolEventHasDetails
-import com.agent.app.chat.presentation.toolEventOutputText
-import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
-import com.agent.app.chat.presentation.shouldAutoExpandRunningTerminalOutput
+import com.agent.app.chat.presentation.*
 import com.agent.app.chat.state.ChatConversationUiState
-import com.agent.app.design.AppDanger
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppHoverBackground
-import com.agent.app.design.AppLine
-import com.agent.app.design.AppMuted
-import com.agent.app.design.AppPanelBackground
-import com.agent.app.design.AppReasoning
-import com.agent.app.design.AppSuccess
-import com.agent.app.design.AppText
-import com.agent.app.design.AppUserCardBackground
-import com.agent.shared.chat.model.ChatMessageItem
-import com.agent.shared.chat.model.AnsweredQuestionsItem
-import com.agent.shared.chat.model.ChatRole
-import com.agent.shared.chat.model.ExecutionState
-import com.agent.shared.chat.model.ReasoningItem
-import com.agent.shared.chat.model.ToolEventItem
-import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.app.design.*
+import com.agent.shared.chat.model.*
 import com.halilibo.richtext.markdown.Markdown
 import com.halilibo.richtext.ui.BasicRichText
-import com.halilibo.richtext.ui.RichTextThemeProvider
 import com.halilibo.richtext.ui.RichTextStyle
+import com.halilibo.richtext.ui.RichTextThemeProvider
 import com.halilibo.richtext.ui.string.RichTextStringStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlin.time.Duration.Companion.milliseconds
 import org.jetbrains.skia.Data
 import org.jetbrains.skia.svg.SVGDOM
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 时间线在渲染前使用的展示段，不改变底层会话事件。
@@ -132,7 +48,7 @@ internal sealed interface TimelineDisplayItem {
     val itemCount: Int
 
     /** 不参与工具合并的普通时间线项。 */
-    data class Content(val item: com.agent.shared.chat.model.ConversationItem) : TimelineDisplayItem {
+    data class Content(val item: ConversationItem) : TimelineDisplayItem {
         override val itemCount: Int = 1
     }
 
@@ -146,7 +62,7 @@ internal sealed interface TimelineDisplayItem {
  * 合并相邻工具调用；状态文本与其他时间线项均构成明确边界。
  */
 internal fun groupTimelineItems(
-    items: List<com.agent.shared.chat.model.ConversationItem>,
+    items: List<ConversationItem>,
 ): List<TimelineDisplayItem> {
     val result = mutableListOf<TimelineDisplayItem>()
     val pendingTools = mutableListOf<ToolEventItem>()
@@ -620,7 +536,7 @@ private fun PlantUmlSvg(svg: String) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         color = Color.White,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
+        border = BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
     ) {
         Canvas(
             modifier = Modifier
@@ -838,7 +754,9 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
                 modifier = Modifier.padding(start = 12.dp, top = 3.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                TimelineToolCardStack(displayItems)
+                displayItems.forEach { item ->
+                    TimelineToolStackCard(item = item, preview = false)
+                }
             }
         }
     }
@@ -856,13 +774,19 @@ private fun TimelineAnswersItem(item: AnsweredQuestionsItem) {
             .clickable { expanded = !expanded },
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = "▣  Answers",
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = AppText,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AnswersGlyphIcon(tint = AppText)
+            Text(
+                text = "Answers",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = AppText,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+            )
+        }
         AnimatedVisibility(
             visible = expanded,
             enter = expandVertically(tween(durationMillis = 180)) + fadeIn(tween(durationMillis = 150)),
@@ -885,6 +809,42 @@ private fun TimelineAnswersItem(item: AnsweredQuestionsItem) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** 绘制代表已提交问答的对话气泡图标，避免使用辨识度低的文字占位符。 */
+@Composable
+private fun AnswersGlyphIcon(tint: Color) {
+    Canvas(modifier = Modifier.size(18.dp)) {
+        val stroke = 1.6.dp.toPx()
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(size.width * 0.12f, size.height * 0.12f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.76f, size.height * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.34f, size.height * 0.74f),
+            end = Offset(size.width * 0.25f, size.height * 0.9f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.25f, size.height * 0.9f),
+            end = Offset(size.width * 0.49f, size.height * 0.76f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        listOf(0.32f, 0.5f, 0.68f).forEach { xRatio ->
+            drawCircle(
+                color = tint,
+                radius = stroke * 0.42f,
+                center = Offset(size.width * xRatio, size.height * 0.43f),
+            )
         }
     }
 }
@@ -971,7 +931,7 @@ private fun TimelineToolStackCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         color = AppPanelBackground,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
+        border = BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
     ) {
         TimelineToolTextRow(
             item = item,
@@ -1102,7 +1062,7 @@ private fun TimelineReasoningGlyph(streaming: Boolean, tint: Color) {
         targetValue = 1.08f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 900),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+            repeatMode = RepeatMode.Reverse,
         ),
         label = "timeline-reasoning-glyph-breathe",
     )
@@ -1374,7 +1334,7 @@ private fun TimelineToolEvent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(10.dp),
             color = AppPanelBackground,
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
+            border = BorderStroke(1.dp, AppLine.copy(alpha = 0.65f)),
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),

@@ -67,6 +67,12 @@ data class ChatConversationUiState(
     val title: String,
     val titleState: ConversationTitleState = ConversationTitleState.NOT_REQUESTED,
     val workspacePath: String,
+    /** 用户设置的工作区显示名；为空时使用路径末级名称。 */
+    val workspaceName: String? = null,
+    /** 解除关联前的工作目录；空路径历史可借此在重新选择同一路径时恢复。 */
+    val detachedWorkspacePath: String? = null,
+    /** 解除关联前的工作区显示名。 */
+    val detachedWorkspaceName: String? = null,
     val items: List<ConversationItem> = emptyList(),
     val attachments: List<ChatAttachmentUiState> = emptyList(),
     val history: List<AgentConversationHistoryMessage> = emptyList(),
@@ -187,11 +193,12 @@ data class ChatWindowUiState(
      */
     val workspaceGroups: List<WorkspaceConversationGroupUiState>
         get() = tasks
+            .filter { it.workspacePath.isNotBlank() }
             .groupBy { it.workspacePath }
             .map { (workspacePath, conversations) ->
                 WorkspaceConversationGroupUiState(
                     workspacePath = workspacePath,
-                    label = buildWorkspaceLabel(workspacePath),
+                    label = buildWorkspaceLabel(workspacePath, conversations.firstOrNull()?.workspaceName),
                     conversations = conversations,
                 )
             }
@@ -200,7 +207,9 @@ data class ChatWindowUiState(
      * 当前激活线程所属的工作目录标签。
      */
     val activeWorkspaceLabel: String
-        get() = activeConversationOrNull?.workspacePath?.let(::buildWorkspaceLabel) ?: "请选择工作区"
+        get() = activeConversationOrNull?.let { conversation ->
+            buildWorkspaceLabel(conversation.workspacePath, conversation.workspaceName)
+        } ?: "请选择工作区"
 
     /**
      * 原型 task-first 侧栏展示数据。
@@ -229,11 +238,12 @@ data class ChatWindowUiState(
      */
     val workspaceTaskSections: List<WorkspaceTaskSectionUiState>
         get() = tasks
+            .filter { it.workspacePath.isNotBlank() }
             .groupBy { it.workspacePath }
             .map { (workspacePath, conversations) ->
                 WorkspaceTaskSectionUiState(
                     workspacePath = workspacePath,
-                    label = buildWorkspaceLabel(workspacePath),
+                    label = buildWorkspaceLabel(workspacePath, conversations.firstOrNull()?.workspaceName),
                     sections = listOf(
                         ChatTaskSectionUiState(
                             group = ChatTaskGroup.RUNNING,
@@ -266,8 +276,10 @@ internal fun ExecutionState.isStoppable(): Boolean =
 /**
  * 将工作目录映射为侧栏分组标题。
  */
-internal fun buildWorkspaceLabel(path: String): String =
-    path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/')
+internal fun buildWorkspaceLabel(path: String, workspaceName: String? = null): String =
+    workspaceName?.trim()?.takeIf(String::isNotBlank)
+        ?: path.trimEnd('\\', '/').substringAfterLast('\\').substringAfterLast('/')
+            .ifBlank { "未关联历史" }
 
 /**
  * 根据当前会话是否仍在执行，推导原型侧栏中的 task 分组。
@@ -323,6 +335,6 @@ internal fun buildTaskSubtitle(conversation: ChatConversationUiState): String =
         ?.firstOrNull(String::isNotBlank)
         ?.trim()
         ?.take(TASK_SUBTITLE_MAX_LENGTH)
-        ?: conversation.workspacePath
+        ?: buildWorkspaceLabel(conversation.workspacePath, conversation.workspaceName)
 
 private const val TASK_SUBTITLE_MAX_LENGTH = 52

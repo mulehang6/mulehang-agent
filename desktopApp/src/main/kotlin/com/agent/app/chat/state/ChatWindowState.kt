@@ -45,6 +45,7 @@ class ChatWindowState(
     private val persistenceCoordinator: TaskPersistenceCoordinator? = null,
     private val conversationTitleGenerator: ConversationTitleGenerator? = null,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val workspaceDirectoryExists: (String) -> Boolean = { path -> path.isNotBlank() },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
@@ -202,30 +203,37 @@ class ChatWindowState(
      * 在指定工作目录下新建对话并切换焦点。
      */
     fun createConversationForWorkspace(workspacePath: String) {
-        onWorkspaceSelected(workspacePath)
-        val reusableConversation = ui.tasks.firstOrNull { conversation ->
-            conversation.workspacePath == workspacePath && conversation.isEmptyDefaultConversation()
+        val normalizedPath = workspacePath.trim()
+        onWorkspaceSelected(normalizedPath)
+        val restoredTasks = restoreDetachedWorkspaceHistory(
+            conversations = ui.tasks,
+            workspacePath = normalizedPath,
+        )
+        val reusableConversation = restoredTasks.firstOrNull { conversation ->
+            conversation.workspacePath == normalizedPath && conversation.isEmptyDefaultConversation()
         }
         if (reusableConversation != null) {
             ui = ui.copy(
+                tasks = restoredTasks,
                 activeTaskId = reusableConversation.id,
                 draft = "",
             )
+            persistenceCoordinator?.schedule(ui.tasks)
             return
         }
         val preferenceSource = ui.activeConversationOrNull
         val selectedProfile = activeProfile
         val conversation = newConversation(
-            workspacePath = workspacePath,
+            workspacePath = normalizedPath,
             contextWindow = selectedProfile?.let(::contextWindowFor),
             profileId = preferenceSource?.profileId ?: selectedProfile?.id,
             reasoningEffort = preferenceSource?.reasoningEffort
                 ?: selectedProfile?.let(::defaultReasoningEffortFor)
                 ?: ReasoningEffort.MEDIUM,
             permissionPreset = preferenceSource?.permissionPreset ?: PermissionPreset.DEFAULT,
-        )
-        val updatedTasks = if (shouldReplaceActiveEmptyConversation(workspacePath)) {
-            ui.tasks.map { existing ->
+        ).copy(workspaceName = workspaceNameFor(normalizedPath, restoredTasks))
+        val updatedTasks = if (shouldReplaceActiveEmptyConversation(normalizedPath)) {
+            restoredTasks.map { existing ->
                 if (existing.id == ui.activeTaskId) {
                     conversation
                 } else {
@@ -233,7 +241,7 @@ class ChatWindowState(
                 }
             }
         } else {
-            listOf(conversation) + ui.tasks
+            listOf(conversation) + restoredTasks
         }
         ui = ui.copy(
             tasks = updatedTasks,
@@ -241,6 +249,202 @@ class ChatWindowState(
             draft = "",
         )
         persistenceCoordinator?.schedule(ui.tasks)
+    }
+
+    /** 返回尚无来源目录的旧版隐藏历史数量，供界面在批量恢复前请求确认。 */
+    val legacyUnlinkedHistoryCount: Int
+        get() = ui.tasks.count { conversation ->
+            conversation.workspacePath.isBlank() &&
+                    conversation.detachedWorkspacePath == null &&
+                    !conversation.isEmptyDefaultConversation()
+        }
+
+    /** 将旧版无来源隐藏历史批量恢复到用户明确选择的目录。 */
+    fun restoreLegacyUnlinkedHistory(workspacePath: String): String? {
+        val normalizedPath = workspacePath.trim()
+        if (!workspaceDirectoryExists(normalizedPath)) return "请选择存在的工作目录。"
+        if (legacyUnlinkedHistoryCount == 0) return null
+        val targetWorkspaceName = workspaceNameFor(normalizedPath, ui.tasks)
+        ui = ui.copy(
+            tasks = ui.tasks.map { conversation ->
+                if (
+                    conversation.workspacePath.isBlank() &&
+                    conversation.detachedWorkspacePath == null &&
+                    !conversation.isEmptyDefaultConversation()
+                ) {
+                    conversation.copy(
+                        workspacePath = normalizedPath,
+                        workspaceName = targetWorkspaceName,
+                        detachedWorkspacePath = null,
+                        detachedWorkspaceName = null,
+                        updatedAt = clock(),
+                    )
+                } else {
+                    conversation
+                }
+            },
+        )
+        persistenceCoordinator?.schedule(ui.tasks)
+        return null
+    }
+
+    /** 返回当前会话不可执行时应展示的工作目录说明。 */
+    fun workspaceIssue(conversation: ChatConversationUiState): String? =
+        workspaceIssueForPath(conversation.workspacePath)
+
+    /** 返回指定目录不可执行时的用户可读原因。 */
+    fun workspaceIssueForPath(workspacePath: String): String? = when {
+        workspacePath.isBlank() -> "此历史任务尚未关联工作目录。"
+        !workspaceDirectoryExists(workspacePath) -> "工作目录已不存在：$workspacePath"
+        else -> null
+    }
+
+    /** 更新一个工作区下所有任务的显示名称与目录；目标目录已有历史时合并。 */
+    fun editWorkspace(
+        previousPath: String,
+        name: String,
+        path: String,
+    ): String? {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return "工作区名称不能为空。"
+        return migrateWorkspace(
+            previousPath = previousPath,
+            path = path,
+            explicitWorkspaceName = normalizedName,
+        )
+    }
+
+    /** 将一个已关联工作区完整迁移至新目录，并在需要时与目标目录历史合并。 */
+    fun relinkWorkspace(previousPath: String, path: String): String? = migrateWorkspace(
+        previousPath = previousPath,
+        path = path,
+        explicitWorkspaceName = null,
+    )
+
+    /** 迁移工作区的内部实现；显式名称会同步覆盖已合并目标组的显示名称。 */
+    private fun migrateWorkspace(
+        previousPath: String,
+        path: String,
+        explicitWorkspaceName: String?,
+    ): String? {
+        val normalizedPath = path.trim()
+        if (previousPath.isBlank()) return "未关联历史请逐条重新关联工作目录。"
+        if (!workspaceDirectoryExists(normalizedPath)) return "请选择存在的工作目录。"
+        val targetWorkspaceName = explicitWorkspaceName
+            ?: workspaceNameFor(normalizedPath, ui.tasks)
+        val migratedTasks = ui.tasks.map { conversation ->
+            if (conversation.workspacePath == previousPath) {
+                conversation.copy(
+                    workspacePath = normalizedPath,
+                    workspaceName = targetWorkspaceName,
+                    detachedWorkspacePath = null,
+                    detachedWorkspaceName = null,
+                    updatedAt = clock(),
+                )
+            } else if (explicitWorkspaceName != null && conversation.workspacePath == normalizedPath) {
+                conversation.copy(
+                    workspaceName = targetWorkspaceName,
+                    updatedAt = clock(),
+                )
+            } else {
+                conversation
+            }
+        }
+        ui = ui.copy(
+            tasks = restoreDetachedWorkspaceHistory(migratedTasks, normalizedPath),
+        )
+        persistenceCoordinator?.schedule(ui.tasks)
+        return null
+    }
+
+    /**
+     * 解除工作区目录关联，并删除不含历史的默认占位任务。
+     *
+     * 若正在删除当前工作区，则切换到最近使用且仍可访问的其他工作区的新任务；没有候选时回到欢迎页。
+     */
+    fun disconnectWorkspace(workspacePath: String) {
+        val activeConversation = ui.activeConversationOrNull
+        val isDisconnectingActiveWorkspace = activeConversation?.workspacePath == workspacePath
+        val fallbackWorkspacePath = if (isDisconnectingActiveWorkspace) {
+            findRecentAvailableWorkspacePath(excludedWorkspacePath = workspacePath)
+        } else {
+            null
+        }
+        val removedTaskIds = ui.tasks
+            .filter { it.workspacePath == workspacePath && it.isEmptyDefaultConversation() }
+            .map(ChatConversationUiState::id)
+            .toSet()
+        val retainedTasks = ui.tasks
+            .filterNot { it.id in removedTaskIds }
+            .map { conversation ->
+                if (conversation.workspacePath == workspacePath) {
+                    conversation.copy(
+                        workspacePath = "",
+                        workspaceName = null,
+                        detachedWorkspacePath = workspacePath,
+                        detachedWorkspaceName = conversation.workspaceName,
+                        updatedAt = clock(),
+                    )
+                } else {
+                    conversation
+                }
+            }
+        val fallbackConversation = fallbackWorkspacePath?.let { fallbackPath ->
+            retainedTasks.firstOrNull { conversation ->
+                conversation.workspacePath == fallbackPath && conversation.isEmptyDefaultConversation()
+            } ?: newConversation(
+                workspacePath = fallbackPath,
+                contextWindow = activeProfile?.let(::contextWindowFor),
+                profileId = activeConversation?.profileId ?: activeProfile?.id,
+                reasoningEffort = activeConversation?.reasoningEffort
+                    ?: activeProfile?.let(::defaultReasoningEffortFor)
+                    ?: ReasoningEffort.MEDIUM,
+                permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT,
+            ).copy(
+                workspaceName = retainedTasks.firstOrNull { it.workspacePath == fallbackPath }?.workspaceName,
+            )
+        }
+        val updatedTasks = if (fallbackConversation != null && fallbackConversation !in retainedTasks) {
+            listOf(fallbackConversation) + retainedTasks
+        } else {
+            retainedTasks
+        }
+        ui = ui.copy(
+            tasks = updatedTasks,
+            activeTaskId = if (isDisconnectingActiveWorkspace) {
+                fallbackConversation?.id.orEmpty()
+            } else if (ui.activeTaskId in removedTaskIds) {
+                updatedTasks.firstOrNull()?.id.orEmpty()
+            } else {
+                ui.activeTaskId
+            },
+            draft = if (isDisconnectingActiveWorkspace) "" else ui.draft,
+        )
+        persistenceCoordinator?.schedule(ui.tasks)
+    }
+
+    /** 为一条未关联或失效历史任务重新选择可执行工作目录。 */
+    fun relinkConversationWorkspace(conversationId: String, workspacePath: String): String? {
+        val normalizedPath = workspacePath.trim()
+        if (!workspaceDirectoryExists(normalizedPath)) return "请选择存在的工作目录。"
+        val targetWorkspaceName = workspaceNameFor(normalizedPath, ui.tasks)
+        val relinkedTasks = ui.tasks.map { conversation ->
+            if (conversation.id == conversationId) {
+                conversation.copy(
+                    workspacePath = normalizedPath,
+                    workspaceName = targetWorkspaceName,
+                    detachedWorkspacePath = null,
+                    detachedWorkspaceName = null,
+                    executionState = ExecutionState.Idle,
+                    updatedAt = clock(),
+                )
+            } else {
+                conversation
+            }
+        }
+        ui = ui.copy(tasks = restoreDetachedWorkspaceHistory(relinkedTasks, normalizedPath))
+        persistenceCoordinator?.schedule(ui.tasks)
+        return null
     }
 
     /**
@@ -464,6 +668,19 @@ class ChatWindowState(
         }
 
         val sourceConversation = findConversation(targetConversationId)
+        workspaceIssue(sourceConversation)?.let { message ->
+            mutateConversation(targetConversationId) { conversation ->
+                conversation.copy(
+                    executionState = ExecutionState.Failed(
+                        AppError(
+                            title = "工作目录不可用",
+                            message = message,
+                        ),
+                    ),
+                )
+            }
+            return
+        }
         val profile = profileForConversation(sourceConversation)
         if (profile == null) {
             mutateActiveConversation { conversation ->
@@ -833,6 +1050,70 @@ class ChatWindowState(
     private fun shouldReplaceActiveEmptyConversation(workspacePath: String): Boolean {
         val activeConversation = ui.activeConversationOrNull ?: return false
         return activeConversation.workspacePath == workspacePath && activeConversation.isEmptyDefaultConversation()
+    }
+
+    /**
+     * 在移除当前工作区前，从其他仍可访问的工作区中找出最近更新的目录。
+     *
+     * 相同更新时间沿用任务列表顺序，保证选择结果稳定。
+     */
+    private fun findRecentAvailableWorkspacePath(excludedWorkspacePath: String): String? = ui.tasks
+        .asSequence()
+        .filter { conversation ->
+            conversation.workspacePath.isNotBlank() &&
+                    conversation.workspacePath != excludedWorkspacePath &&
+                    workspaceDirectoryExists(conversation.workspacePath)
+        }
+        .maxByOrNull(ChatConversationUiState::updatedAt)
+        ?.workspacePath
+
+    /** 解析关联或恢复工作区时应使用的名称，优先保留目标组已有的用户命名。 */
+    private fun workspaceNameFor(
+        workspacePath: String,
+        conversations: List<ChatConversationUiState>,
+    ): String = conversations.firstNotNullOfOrNull { conversation ->
+        conversation.workspaceName
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.takeIf { conversation.workspacePath == workspacePath }
+    } ?: conversations.firstNotNullOfOrNull { conversation ->
+        conversation.detachedWorkspaceName
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.takeIf {
+                conversation.workspacePath.isBlank() && conversation.detachedWorkspacePath == workspacePath
+            }
+    }
+        ?: buildWorkspaceLabel(workspacePath)
+
+    /** 将解除前目录与当前所选目录精确匹配的隐藏历史恢复到同一个工作区。 */
+    private fun restoreDetachedWorkspaceHistory(
+        conversations: List<ChatConversationUiState>,
+        workspacePath: String,
+    ): List<ChatConversationUiState> {
+        if (conversations.none { it.workspacePath.isBlank() && it.detachedWorkspacePath == workspacePath }) {
+            return conversations
+        }
+        val targetWorkspaceName = workspaceNameFor(workspacePath, conversations)
+        return conversations.map { conversation ->
+            when {
+                conversation.workspacePath.isBlank() && conversation.detachedWorkspacePath == workspacePath -> {
+                    conversation.copy(
+                        workspacePath = workspacePath,
+                        workspaceName = targetWorkspaceName,
+                        detachedWorkspacePath = null,
+                        detachedWorkspaceName = null,
+                        updatedAt = clock(),
+                    )
+                }
+
+                conversation.workspacePath == workspacePath && conversation.workspaceName.isNullOrBlank() -> {
+                    conversation.copy(workspaceName = targetWorkspaceName)
+                }
+
+                else -> conversation
+            }
+        }
     }
 
     /**

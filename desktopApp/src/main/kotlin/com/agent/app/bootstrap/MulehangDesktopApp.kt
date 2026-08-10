@@ -33,6 +33,7 @@ import com.agent.shared.session.DesktopAppSessionRepository
 import com.agent.shared.session.DesktopUiStateStore
 import com.agent.shared.session.LoadAppSessionUseCase
 import com.agent.shared.chat.persistence.SqliteTaskRepository
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -81,6 +82,9 @@ internal fun WindowScope.MulehangDesktopApp(
             },
             persistenceCoordinator = taskPersistenceCoordinator,
             conversationTitleGenerator = KoogConversationTitleGenerator(),
+            workspaceDirectoryExists = { path ->
+                path.isNotBlank() && runCatching { Files.isDirectory(Paths.get(path)) }.getOrDefault(false)
+            },
         )
     }
     stateHolder.value = windowState

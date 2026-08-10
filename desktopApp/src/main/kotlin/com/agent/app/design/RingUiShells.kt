@@ -274,7 +274,7 @@ internal fun RingPrimaryButton(
                 .then(if (tooltip != null) Modifier.semantics { contentDescription = tooltip } else Modifier),
             interactionSource = interactionSource,
             shape = RoundedCornerShape(if (compact) 10.dp else 12.dp),
-            contentPadding = if (compact) PaddingValues(0.dp) else ButtonDefaults.ContentPadding,
+            contentPadding = ringPrimaryButtonContentPadding(compact),
             colors = ButtonDefaults.buttonColors(
                 containerColor = containerColor,
                 contentColor = Color.White,
@@ -319,31 +319,41 @@ internal fun RingIsland(
  */
 internal const val SELECT_POPUP_FOCUSABLE = false
 
-/** Composer 下拉框说明在持续悬停多久后显示。 */
-internal const val SELECT_TOOLTIP_DELAY_MILLIS = 1500L
-
 /** 下拉菜单项的悬浮反馈即时切换，避免高频指针移动出现滞后。 */
 internal const val SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 0
 
-private val SelectPopupMenuHoverBackground = Color(0xFF2E436E)
-private val SelectPopupMenuBorder = Color(0xFF393B40)
-private val SelectPopupMenuShape = RoundedCornerShape(12.dp)
-private val SelectPopupMenuItemShape = RoundedCornerShape(8.dp)
+/** 浮动菜单作为唯一的外层岛屿，承载所有普通和右键菜单。 */
+internal val PopupMenuBackground = Color(0xFF252629)
+internal val PopupMenuHoverBackground = Color(0xFF2E2F32)
+internal val PopupMenuSelectedBackground = Color(0xFF194474)
+internal val PopupMenuBorder = Color(0xFF3A3B3E)
+internal val PopupMenuShape = RoundedCornerShape(12.dp)
+internal val PopupMenuItemShape = RoundedCornerShape(8.dp)
+internal val PopupMenuShadowElevation = 28.dp
+private val SelectChipInteractionBackground = Color(0xFF35383E)
 private val LocalSelectMenuItemsVisible = compositionLocalOf { true }
 private val LocalSelectMenuOpensUpward = compositionLocalOf { false }
 
 /**
- * 返回下拉菜单项的底色：保留选中态，同时让可用项在悬浮时切换为 Air 蓝色高亮。
+ * 返回下拉菜单项的底色：选中态优先于悬浮态，避免当前值在指针经过时丢失识别。
  */
 internal fun selectMenuItemBackground(
     selected: Boolean,
     hovered: Boolean,
     enabled: Boolean,
+    hoverBackground: Color = PopupMenuHoverBackground,
 ): Color = when {
-    hovered && enabled -> SelectPopupMenuHoverBackground
-    selected -> AppSelectedBackground
+    selected -> PopupMenuSelectedBackground
+    hovered && enabled -> hoverBackground
     else -> Color.Transparent
 }
+
+/** 无框选择器仅在悬浮或展开时显示紧凑的交互底色。 */
+internal fun selectChipTriggerBackground(expanded: Boolean, hovered: Boolean): Color =
+    if (expanded || hovered) SelectChipInteractionBackground else Color.Transparent
+
+/** 下拉箭头仅在可交互的悬浮或展开状态出现，保持静态工具栏更安静。 */
+internal fun shouldShowSelectChipArrow(expanded: Boolean, hovered: Boolean): Boolean = expanded || hovered
 
 /**
  * 以按下 trigger 时的展开状态为准，避免 popup 的外部关闭先改写受控状态。
@@ -363,7 +373,6 @@ internal fun selectMenuOpensUpward(
 internal fun RingSelectChip(
     label: String,
     expanded: Boolean,
-    tone: Color = AppChipBackground,
     onExpandedChange: (Boolean) -> Unit,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
@@ -373,7 +382,6 @@ internal fun RingSelectChip(
     RingTooltip(
         text = tooltip,
         belowAnchor = true,
-        hoverDelayMillis = SELECT_TOOLTIP_DELAY_MILLIS,
     ) {
         var hovered by remember { mutableStateOf(false) }
         val density = LocalDensity.current
@@ -407,19 +415,13 @@ internal fun RingSelectChip(
             }
         }
         Box {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = when {
-                    expanded -> AppPanelBackground
-                    hovered -> AppHoverBackground
-                    else -> tone
-                },
-                border = BorderStroke(
-                    1.dp,
-                    if (expanded) AppAccent.copy(alpha = 0.72f) else AppLine,
-                ),
+            Row(
                 modifier = modifier
                     .graphicsLayer(scaleX = scale, scaleY = scale)
+                    .background(
+                        color = selectChipTriggerBackground(expanded = expanded, hovered = hovered),
+                        shape = RoundedCornerShape(8.dp),
+                    )
                     .onGloballyPositioned { coordinates ->
                         anchorWidth = with(density) { coordinates.size.width.toDp() }
                         anchorTopInWindowPx = coordinates.positionInWindow().y
@@ -443,20 +445,19 @@ internal fun RingSelectChip(
                         expandedAtPointerPress = null
                         onExpandedChange(shouldExpand)
                     }
-                    .then(if (tooltip != null) Modifier.semantics { contentDescription = tooltip } else Modifier),
+                    .then(if (tooltip != null) Modifier.semantics { contentDescription = tooltip } else Modifier)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = label,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelMedium.copy(color = AppText),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                Text(
+                    text = label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium.copy(color = AppText),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (shouldShowSelectChipArrow(expanded = expanded, hovered = hovered)) {
                     Text(
                         text = "▾",
                         modifier = Modifier.graphicsLayer(rotationZ = arrowRotation),
@@ -485,11 +486,11 @@ internal fun RingSelectChip(
                     },
                 offset = DpOffset(0.dp, (-4).dp),
                 properties = PopupProperties(focusable = SELECT_POPUP_FOCUSABLE),
-                shape = SelectPopupMenuShape,
-                containerColor = AppSidebarBackground,
+                shape = PopupMenuShape,
+                containerColor = PopupMenuBackground,
                 tonalElevation = 0.dp,
-                shadowElevation = 12.dp,
-                border = BorderStroke(1.dp, SelectPopupMenuBorder),
+                shadowElevation = PopupMenuShadowElevation,
+                border = BorderStroke(1.dp, PopupMenuBorder),
             ) {
                 CompositionLocalProvider(
                     LocalSelectMenuItemsVisible provides menuItemsVisible,
@@ -603,6 +604,7 @@ internal fun RingTooltip(
     text: String?,
     belowAnchor: Boolean = false,
     hoverDelayMillis: Long = 0L,
+    externalHovered: Boolean? = null,
     content: @Composable () -> Unit,
 ) {
     if (text == null) {
@@ -615,8 +617,9 @@ internal fun RingTooltip(
     // Material 默认 tooltip 会自动超时；所有 hover 信息统一改为显式、持续的状态控制。
     val state = rememberTooltipState(isPersistent = true)
     var hovered by remember { mutableStateOf(false) }
-    LaunchedEffect(hovered, hoverDelayMillis) {
-        if (hovered) {
+    val effectiveHovered = externalHovered ?: hovered
+    LaunchedEffect(effectiveHovered, hoverDelayMillis) {
+        if (effectiveHovered) {
             if (hoverDelayMillis > 0L) {
                 delay(hoverDelayMillis.milliseconds)
             }
@@ -629,15 +632,15 @@ internal fun RingTooltip(
         positionProvider = positionProvider,
         tooltip = {
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = AppChipBackground,
+                shape = RoundedCornerShape(8.dp),
+                color = AppSidebarBackground,
                 border = BorderStroke(1.dp, AppLine),
-                shadowElevation = 8.dp,
+                shadowElevation = 4.dp,
             ) {
                 Text(
                     text = text,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(
                         color = AppText,
                         textAlign = TextAlign.Center,
                     ),
@@ -968,6 +971,7 @@ internal fun RingDropdownMenuItem(
     itemCount: Int = 1,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    hoverBackground: Color = PopupMenuHoverBackground,
 ) {
     var hovered by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -1001,10 +1005,11 @@ internal fun RingDropdownMenuItem(
         selected = selected,
         hovered = hovered,
         enabled = enabled,
+        hoverBackground = hoverBackground,
     )
     Row(
         modifier = modifier
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = 10.dp, vertical = 3.dp)
             .fillMaxWidth()
             .height(36.dp)
             .graphicsLayer {
@@ -1013,11 +1018,11 @@ internal fun RingDropdownMenuItem(
                 alpha = entranceAlpha
                 translationY = entranceTranslationYDp * density.density
             }
-            .background(backgroundColor, SelectPopupMenuItemShape)
+            .background(backgroundColor, PopupMenuItemShape)
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -1032,6 +1037,10 @@ internal fun RingDropdownMenuItem(
         )
     }
 }
+
+/** 为图标按钮保留紧凑尺寸，文字按钮使用 Material 默认安全内边距。 */
+internal fun ringPrimaryButtonContentPadding(compact: Boolean): PaddingValues =
+    if (compact) PaddingValues(0.dp) else ButtonDefaults.ContentPadding
 
 /** 权限模式菜单中的双行说明选项，使用标签区分风险级别。 */
 @Composable
@@ -1073,13 +1082,14 @@ internal fun RingPermissionDropdownMenuItem(
         animationSpec = entranceSpec,
         label = "permission-popup-menu-$entranceIndex-translation-y",
     )
-    val backgroundColor = when {
-        hovered || selected -> SelectPopupMenuHoverBackground
-        else -> Color.Transparent
-    }
+    val backgroundColor = selectMenuItemBackground(
+        selected = selected,
+        hovered = hovered,
+        enabled = true,
+    )
     Column(
         modifier = modifier
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .padding(horizontal = 10.dp, vertical = 3.dp)
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = entranceScale
@@ -1087,7 +1097,7 @@ internal fun RingPermissionDropdownMenuItem(
                 alpha = entranceAlpha
                 translationY = entranceTranslationYDp * density.density
             }
-            .background(backgroundColor, SelectPopupMenuItemShape)
+            .background(backgroundColor, PopupMenuItemShape)
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(onClick = onClick)

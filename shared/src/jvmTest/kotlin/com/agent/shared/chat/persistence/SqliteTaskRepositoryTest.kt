@@ -101,6 +101,9 @@ class SqliteTaskRepositoryTest {
         val migratedTask = tasks.single()
         assertEquals("task-legacy", migratedTask.id)
         assertEquals("旧版本任务", migratedTask.title)
+        assertEquals(null, migratedTask.workspaceName)
+        assertEquals(null, migratedTask.detachedWorkspacePath)
+        assertEquals(null, migratedTask.detachedWorkspaceName)
         assertEquals(null, migratedTask.profileId)
         assertEquals("DEFAULT", migratedTask.permissionPreset)
         assertTrue(Files.isDirectory(backupDirectory))
@@ -186,6 +189,9 @@ class SqliteTaskRepositoryTest {
         id = "task-1",
         title = "持久化测试",
         workspacePath = "D:\\workspace",
+        workspaceName = "测试工作区",
+        detachedWorkspacePath = "D:\\previous-workspace",
+        detachedWorkspaceName = "旧工作区",
         reasoningEffort = "HIGH",
         contextUsageFraction = 0.5f,
         executionState = "IDLE",

@@ -20,7 +20,8 @@ class SqliteTaskRepository(
         openConnection().use { connection ->
             connection.prepareStatement(
                 """
-                SELECT id, title, workspace_path, reasoning_effort, profile_id, permission_preset,
+                SELECT id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
+                    reasoning_effort, profile_id, permission_preset,
                     context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json,
                     updated_at
                 FROM task
@@ -36,6 +37,9 @@ class SqliteTaskRepository(
                                     id = taskId,
                                     title = resultSet.getString("title"),
                                     workspacePath = resultSet.getString("workspace_path"),
+                                    workspaceName = resultSet.getString("workspace_name"),
+                                    detachedWorkspacePath = resultSet.getString("detached_workspace_path"),
+                                    detachedWorkspaceName = resultSet.getString("detached_workspace_name"),
                                     reasoningEffort = resultSet.getString("reasoning_effort"),
                                     profileId = resultSet.getString("profile_id"),
                                     permissionPreset = resultSet.getString("permission_preset"),
@@ -119,6 +123,8 @@ class SqliteTaskRepository(
         val pendingMigrations = listOf(
             INITIAL_SCHEMA_VERSION,
             SESSION_PREFERENCES_SCHEMA_VERSION,
+            WORKSPACE_NAME_SCHEMA_VERSION,
+            DETACHED_WORKSPACE_SCHEMA_VERSION,
         ).filterNot { version -> isMigrationApplied(connection, version) }
         if (pendingMigrations.isNotEmpty() && hasTaskTable(connection)) {
             backupDatabaseBeforeMigration(connection)
@@ -175,6 +181,19 @@ class SqliteTaskRepository(
                     statement.executeUpdate("ALTER TABLE task ADD COLUMN permission_preset TEXT NOT NULL DEFAULT 'DEFAULT'")
                 }
                 recordMigration(this, SESSION_PREFERENCES_SCHEMA_VERSION)
+            }
+            if (!isMigrationApplied(this, WORKSPACE_NAME_SCHEMA_VERSION)) {
+                createStatement().use { statement ->
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN workspace_name TEXT")
+                }
+                recordMigration(this, WORKSPACE_NAME_SCHEMA_VERSION)
+            }
+            if (!isMigrationApplied(this, DETACHED_WORKSPACE_SCHEMA_VERSION)) {
+                createStatement().use { statement ->
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN detached_workspace_path TEXT")
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN detached_workspace_name TEXT")
+                }
+                recordMigration(this, DETACHED_WORKSPACE_SCHEMA_VERSION)
             }
         }
     }
@@ -284,25 +303,29 @@ class SqliteTaskRepository(
         connection.prepareStatement(
             """
             INSERT INTO task(
-                id, title, workspace_path, reasoning_effort, profile_id, permission_preset,
+                id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
+                reasoning_effort, profile_id, permission_preset,
                 context_usage_fraction, execution_state, execution_error_title, execution_error_message,
                 attachments_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, task.id)
             statement.setString(2, task.title)
             statement.setString(3, task.workspacePath)
-            statement.setString(4, task.reasoningEffort)
-            statement.setString(5, task.profileId)
-            statement.setString(6, task.permissionPreset)
-            statement.setFloat(7, task.contextUsageFraction)
-            statement.setString(8, task.executionState)
-            statement.setString(9, task.executionErrorTitle)
-            statement.setString(10, task.executionErrorMessage)
-            statement.setString(11, task.attachmentsJson)
-            statement.setLong(12, now)
-            statement.setLong(13, task.updatedAt)
+            statement.setString(4, task.workspaceName)
+            statement.setString(5, task.detachedWorkspacePath)
+            statement.setString(6, task.detachedWorkspaceName)
+            statement.setString(7, task.reasoningEffort)
+            statement.setString(8, task.profileId)
+            statement.setString(9, task.permissionPreset)
+            statement.setFloat(10, task.contextUsageFraction)
+            statement.setString(11, task.executionState)
+            statement.setString(12, task.executionErrorTitle)
+            statement.setString(13, task.executionErrorMessage)
+            statement.setString(14, task.attachmentsJson)
+            statement.setLong(15, now)
+            statement.setLong(16, task.updatedAt)
             statement.executeUpdate()
         }
     }
@@ -362,6 +385,8 @@ class SqliteTaskRepository(
     private companion object {
         const val INITIAL_SCHEMA_VERSION = 1
         const val SESSION_PREFERENCES_SCHEMA_VERSION = 2
+        const val WORKSPACE_NAME_SCHEMA_VERSION = 3
+        const val DETACHED_WORKSPACE_SCHEMA_VERSION = 4
         const val TASK_BACKUP_DIRECTORY_NAME = "tasks-backups"
         const val TASK_BACKUP_RETENTION_COUNT = 3
     }

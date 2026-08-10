@@ -7,6 +7,12 @@ data class PersistedTask(
     val id: String,
     val title: String,
     val workspacePath: String,
+    /** 用户为工作区指定的显示名称；为空时由路径末级目录回退。 */
+    val workspaceName: String? = null,
+    /** 工作区解除关联前的目录，用于后续精确恢复历史。 */
+    val detachedWorkspacePath: String? = null,
+    /** 工作区解除关联前的显示名称，用于恢复时保留用户命名。 */
+    val detachedWorkspaceName: String? = null,
     val reasoningEffort: String,
     val profileId: String? = null,
     val permissionPreset: String = "DEFAULT",

@@ -1743,6 +1743,316 @@ class ChatWindowStateTest {
         assertEquals(listOf("UI", "中文"), answers.answers.map(QuestionAnswer::answer))
     }
 
+    /** 已移动的工作目录必须在进入 Agent 前拦截，并保留用户草稿。 */
+    @Test
+    fun `should keep draft and avoid agent call when workspace directory is unavailable`() = runTest(dispatcher) {
+        var calls = 0
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(object : AgentGateway {
+                override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                    calls += 1
+                    return flowOf(AgentStreamEvent.Completed("unexpected"))
+                }
+            }),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\moved",
+            workspaceDirectoryExists = { false },
+        )
+
+        state.updateDraft("保留这条草稿")
+        state.sendDraft()
+
+        assertEquals(0, calls)
+        assertEquals("保留这条草稿", state.ui.draft)
+        assertEquals("工作目录不可用", (state.ui.activeConversation.executionState as ExecutionState.Failed).error.title)
+        assertTrue(state.ui.activeConversation.items.isEmpty())
+    }
+
+    /** 编辑工作区应将旧组迁入目标目录，并以显式名称覆盖合并后的分组。 */
+    @Test
+    fun `should merge workspace histories when editing into an existing target`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\old",
+            workspaceDirectoryExists = { true },
+        )
+
+        state.send("旧目录历史")
+        advanceUntilIdle()
+        state.createConversationForWorkspace("E:\\new")
+        state.send("目标目录历史")
+        advanceUntilIdle()
+        assertEquals(null, state.editWorkspace("E:\\old", "合并后的工作区", "E:\\new"))
+
+        assertTrue(state.ui.tasks.all { it.workspacePath == "E:\\new" })
+        assertTrue(state.ui.tasks.all { it.workspaceName == "合并后的工作区" })
+        assertEquals(1, state.ui.workspaceTaskSections.size)
+        assertEquals("E:\\new", state.ui.workspaceTaskSections.single().workspacePath)
+    }
+
+    /** 修复卡片迁移到已有目录时采用目标工作区现有名称。 */
+    @Test
+    fun `should preserve target workspace name when relinking workspace`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\old",
+            workspaceDirectoryExists = { true },
+        )
+
+        state.createConversationForWorkspace("E:\\new")
+        assertEquals(null, state.editWorkspace("E:\\new", "目标工作区", "E:\\new"))
+        assertEquals(null, state.relinkWorkspace("E:\\old", "E:\\new"))
+
+        assertTrue(state.ui.tasks.all { it.workspacePath == "E:\\new" })
+        assertTrue(state.ui.tasks.all { it.workspaceName == "目标工作区" })
+    }
+
+    /** 删除工作区仅解除全部任务的目录关联，不删除会话历史。 */
+    @Test
+    fun `should disconnect workspace while retaining conversation history`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\workspace",
+            workspaceDirectoryExists = { true },
+        )
+        state.send("保留历史")
+        advanceUntilIdle()
+        val taskCount = state.ui.tasks.size
+
+        state.disconnectWorkspace("E:\\workspace")
+
+        assertEquals(taskCount, state.ui.tasks.size)
+        assertEquals("", state.ui.activeTaskId)
+        assertEquals(null, state.ui.activeConversationOrNull)
+        assertEquals("", state.ui.tasks.single().workspacePath)
+        assertEquals(null, state.ui.tasks.single().workspaceName)
+        assertTrue(state.ui.tasks.single().history.isNotEmpty())
+        assertTrue(state.ui.workspaceTaskSections.isEmpty())
+    }
+
+    /** 删除当前工作区时，应跳转到最近更新且目录可用的其他工作区的新任务。 */
+    @Test
+    fun `should switch active workspace deletion to newest available workspace task`() = runTest(dispatcher) {
+        var now = 100L
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\current",
+            clock = { now },
+            workspaceDirectoryExists = { it != "E:\\invalid" },
+        )
+        val currentConversationId = state.ui.activeConversationId
+        state.send("保留当前历史")
+        advanceUntilIdle()
+        now = 200L
+        state.createConversationForWorkspace("E:\\older")
+        state.send("较早工作区历史")
+        advanceUntilIdle()
+        now = 300L
+        state.createConversationForWorkspace("E:\\newer")
+        state.send("较新工作区历史")
+        advanceUntilIdle()
+        now = 400L
+        state.createConversationForWorkspace("E:\\invalid")
+        state.send("不可用工作区历史")
+        advanceUntilIdle()
+        state.selectConversation(currentConversationId)
+        state.updateDraft("删除前草稿")
+
+        state.disconnectWorkspace("E:\\current")
+
+        assertEquals("E:\\newer", state.ui.activeConversation.workspacePath)
+        assertTrue(state.ui.activeConversation.isEmptyDefaultConversation())
+        assertEquals(2, state.ui.tasks.count { it.workspacePath == "E:\\newer" })
+        assertEquals("", state.ui.draft)
+        assertEquals("", state.findConversation(currentConversationId).workspacePath)
+    }
+
+    /** 回退工作区已有空白任务时，应直接复用，避免重复创建新任务。 */
+    @Test
+    fun `should reuse fallback workspace empty task when disconnecting active workspace`() = runTest(dispatcher) {
+        var now = 100L
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\current",
+            clock = { now },
+            workspaceDirectoryExists = { true },
+        )
+        val currentConversationId = state.ui.activeConversationId
+        state.send("保留当前历史")
+        advanceUntilIdle()
+        now = 200L
+        state.createConversationForWorkspace("E:\\target")
+        val reusableConversationId = state.ui.activeConversationId
+        state.selectConversation(currentConversationId)
+
+        state.disconnectWorkspace("E:\\current")
+
+        assertEquals(reusableConversationId, state.ui.activeTaskId)
+        assertEquals(2, state.ui.tasks.size)
+        assertTrue(state.ui.activeConversation.isEmptyDefaultConversation())
+    }
+
+    /** 无有效回退目录时应保留历史并回到欢迎页。 */
+    @Test
+    fun `should return to welcome state when no available workspace remains`() = runTest(dispatcher) {
+        var now = 100L
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\current",
+            clock = { now },
+            workspaceDirectoryExists = { it == "E:\\current" },
+        )
+        val currentConversationId = state.ui.activeConversationId
+        state.send("保留当前历史")
+        advanceUntilIdle()
+        now = 200L
+        state.createConversationForWorkspace("E:\\unavailable")
+        val unavailableConversationId = state.ui.activeConversationId
+        state.send("不可用工作区历史")
+        advanceUntilIdle()
+        state.selectConversation(currentConversationId)
+        state.updateDraft("删除前草稿")
+
+        state.disconnectWorkspace("E:\\current")
+
+        assertEquals("", state.ui.activeTaskId)
+        assertEquals(null, state.ui.activeConversationOrNull)
+        assertEquals("", state.ui.draft)
+        assertEquals("", state.findConversation(currentConversationId).workspacePath)
+        assertTrue(state.ui.tasks.any { it.id == unavailableConversationId })
+    }
+
+    /** 删除非当前工作区不得打断当前会话或清空草稿。 */
+    @Test
+    fun `should retain active conversation when disconnecting another workspace`() = runTest(dispatcher) {
+        var now = 100L
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\active",
+            clock = { now },
+            workspaceDirectoryExists = { true },
+        )
+        val activeConversationId = state.ui.activeConversationId
+        now = 200L
+        state.createConversationForWorkspace("E:\\disconnected")
+        state.send("保留历史")
+        advanceUntilIdle()
+        state.selectConversation(activeConversationId)
+        state.updateDraft("继续编辑")
+
+        state.disconnectWorkspace("E:\\disconnected")
+
+        assertEquals(activeConversationId, state.ui.activeTaskId)
+        assertEquals("E:\\active", state.ui.activeConversation.workspacePath)
+        assertEquals("继续编辑", state.ui.draft)
+        assertEquals(
+            "",
+            state.ui.tasks.single { it.workspacePath.isBlank() && it.title != DEFAULT_CONVERSATION_TITLE }.workspacePath,
+        )
+    }
+
+    /** 删除后重新选择原目录，应恢复历史并保留用户设置的工作区名称。 */
+    @Test
+    fun `should restore detached history when selecting its original workspace`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\crud",
+            workspaceDirectoryExists = { true },
+        )
+        val historyConversationId = state.ui.activeConversationId
+        assertEquals(null, state.editWorkspace("E:\\crud", "CRUD 历史", "E:\\crud"))
+        state.send("保留的 crud 历史")
+        advanceUntilIdle()
+
+        state.disconnectWorkspace("E:\\crud")
+
+        assertEquals("", state.findConversation(historyConversationId).workspacePath)
+        assertEquals("E:\\crud", state.findConversation(historyConversationId).detachedWorkspacePath)
+        assertEquals("CRUD 历史", state.findConversation(historyConversationId).detachedWorkspaceName)
+
+        state.createConversationForWorkspace("E:\\crud")
+
+        assertEquals("E:\\crud", state.findConversation(historyConversationId).workspacePath)
+        assertEquals(null, state.findConversation(historyConversationId).detachedWorkspacePath)
+        assertEquals("CRUD 历史", state.findConversation(historyConversationId).workspaceName)
+        assertEquals(2, state.ui.tasks.count { it.workspacePath == "E:\\crud" })
+        assertEquals("CRUD 历史", state.ui.workspaceTaskSections.single().label)
+    }
+
+    /** 路径不同时不得自动认领已解除关联的其他工作区历史。 */
+    @Test
+    fun `should not restore detached history for a different workspace path`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\crud",
+            workspaceDirectoryExists = { true },
+        )
+        val historyConversationId = state.ui.activeConversationId
+        state.send("保留的 crud 历史")
+        advanceUntilIdle()
+        state.disconnectWorkspace("E:\\crud")
+
+        state.createConversationForWorkspace("E:\\other")
+
+        assertEquals("", state.findConversation(historyConversationId).workspacePath)
+        assertEquals("E:\\crud", state.findConversation(historyConversationId).detachedWorkspacePath)
+        assertEquals("E:\\other", state.ui.activeConversation.workspacePath)
+    }
+
+    /** 旧版无来源隐藏历史仅在用户明确恢复后归入所选工作区。 */
+    @Test
+    fun `should restore legacy unlinked history only after explicit confirmation`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\active",
+            workspaceDirectoryExists = { true },
+        )
+        state.restoreTasks(
+            listOf(
+                ChatConversationUiState(
+                    id = "legacy-history",
+                    title = "旧版隐藏历史",
+                    workspacePath = "",
+                    items = listOf(ChatMessageItem(ChatMessage(ChatRole.User, "需要恢复"))),
+                ),
+            ),
+        )
+
+        assertEquals(1, state.legacyUnlinkedHistoryCount)
+        assertEquals(null, state.restoreLegacyUnlinkedHistory("E:\\crud"))
+
+        assertEquals(0, state.legacyUnlinkedHistoryCount)
+        assertEquals("E:\\crud", state.findConversation("legacy-history").workspacePath)
+        assertEquals(null, state.findConversation("legacy-history").detachedWorkspacePath)
+    }
+
+    /** 删除工作区时不应将空白默认对话留在未关联历史中。 */
+    @Test
+    fun `should remove empty placeholder when disconnecting workspace`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\workspace",
+            workspaceDirectoryExists = { true },
+        )
+
+        state.disconnectWorkspace("E:\\workspace")
+
+        assertTrue(state.ui.tasks.isEmpty())
+        assertEquals("", state.ui.activeTaskId)
+        assertTrue(state.ui.workspaceTaskSections.isEmpty())
+    }
+
     private fun profile(
         model: String = "gpt-4.1",
         limit: ModelLimit? = null,

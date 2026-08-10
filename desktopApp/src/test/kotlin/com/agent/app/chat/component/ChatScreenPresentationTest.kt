@@ -5,9 +5,12 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
+import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.AirSidebarStyle
 import com.agent.app.design.AppHeaderBackground
@@ -23,20 +26,27 @@ import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.COMPOSER_PRIMARY_GLYPH_SIZE_DP
 import com.agent.app.design.RAIL_ACTION_SIZE_DP
 import com.agent.app.design.RightRailGlyph
+import com.agent.app.design.PopupMenuBackground
+import com.agent.app.design.PopupMenuHoverBackground
+import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.app.design.PopupMenuShadowElevation
 import com.agent.app.design.SELECT_POPUP_FOCUSABLE
 import com.agent.app.design.SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS
-import com.agent.app.design.SELECT_TOOLTIP_DELAY_MILLIS
 import com.agent.app.design.buildHeaderActions
 import com.agent.app.design.buildRightRailGroups
 import com.agent.app.design.desiredSelectExpandedState
 import com.agent.app.design.menuGrowthTargets
+import com.agent.app.design.ringPrimaryButtonContentPadding
 import com.agent.app.design.selectMenuItemBackground
+import com.agent.app.design.selectChipTriggerBackground
+import com.agent.app.design.shouldShowSelectChipArrow
 import com.agent.app.design.workspaceBackdropOffset
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.tool.model.PermissionPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -187,7 +197,7 @@ class ChatScreenPresentationTest {
         hitTarget.updateActions(
             onClientMouseEvent = {},
             onClick = {},
-            tooltip = "显示任务侧栏",
+            onHoverChanged = {},
         )
 
         assertEquals(java.awt.Color(0x1E, 0x1F, 0x22), interopHost.background)
@@ -217,14 +227,23 @@ class ChatScreenPresentationTest {
     @Test
     fun `should expose the same task context menu actions everywhere`() {
         assertEquals(listOf("Fork", "删除", "Archive", "重命名"), taskContextMenuLabels())
+        assertEquals(listOf("编辑", "删除"), workspaceContextMenuLabels())
     }
 
-    /** Air 风格菜单只在悬浮可用操作时显示蓝色圆角高亮。 */
+    /** 右键菜单只在悬浮可用操作时显示明确的选中蓝色。 */
     @Test
-    fun `should use air blue highlight only while task menu item hovers`() {
+    fun `should use selected blue only while task menu item hovers`() {
         assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = false, enabled = true))
-        assertEquals(Color(0xFF1D3F6E), taskContextMenuItemBackground(hovered = true, enabled = true))
+        assertEquals(PopupMenuSelectedBackground, taskContextMenuItemBackground(hovered = true, enabled = true))
         assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = true, enabled = false))
+        assertEquals(RectangleShape, TaskContextMenuItemShape)
+    }
+
+    /** 下拉菜单与右键菜单使用更明确的共享浮层阴影。 */
+    @Test
+    fun `should use the stronger shared popup menu shadow`() {
+        assertEquals(28.dp, PopupMenuShadowElevation)
+        assertEquals(PopupMenuShadowElevation, TaskContextMenuShadowElevation)
     }
 
     /** Air 风格菜单应保持紧凑，不能按参考截图的物理像素尺寸直接放大。 */
@@ -696,20 +715,14 @@ class ChatScreenPresentationTest {
         assertEquals(HeaderGlyph.STOP, composerPrimaryActionGlyph(danger = true))
     }
 
-    /**
-     * Composer 下拉框说明需要延迟出现，避免快速经过控件时产生视觉噪声。
-     */
+    /** 下拉菜单在 Islands 外层岛内区分静止、悬浮和选中条目。 */
     @Test
-    fun `should delay composer select tooltips`() {
-        assertEquals(1500L, SELECT_TOOLTIP_DELAY_MILLIS)
-    }
-
-    /** 下拉菜单弹出层沿用 Air 菜单的蓝色悬浮高亮，但悬浮切换必须即时完成。 */
-    @Test
-    fun `should use air hover treatment for select popup menu items`() {
+    fun `should use shared popup menu item colors`() {
         assertEquals(Color.Transparent, selectMenuItemBackground(selected = false, hovered = false, enabled = true))
-        assertEquals(Color(0xFF2E436E), selectMenuItemBackground(selected = false, hovered = true, enabled = true))
-        assertEquals(Color(0xFF2E436E), selectMenuItemBackground(selected = true, hovered = false, enabled = true))
+        assertEquals(PopupMenuHoverBackground, selectMenuItemBackground(selected = false, hovered = true, enabled = true))
+        assertEquals(PopupMenuSelectedBackground, selectMenuItemBackground(selected = true, hovered = false, enabled = true))
+        assertEquals(PopupMenuSelectedBackground, selectMenuItemBackground(selected = true, hovered = true, enabled = true))
+        assertEquals(Color(0xFF252629), PopupMenuBackground)
         assertEquals(0, SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS)
     }
 
@@ -1190,6 +1203,14 @@ class ChatScreenPresentationTest {
                 ),
             ),
         )
+        assertEquals(
+            androidx.compose.ui.unit.DpOffset(108.dp, (-10).dp),
+            contextMenuOffsetForPointer(
+                pointerPosition = Offset(200f, 60f),
+                anchorHeightPixels = 80,
+                density = 2f,
+            ),
+        )
     }
 
     /** 目录与编辑工具应使用区别于通用搜索和读取的专属图标。 */
@@ -1250,16 +1271,33 @@ class ChatScreenPresentationTest {
         assertEquals(270f, terminalContainerWidthDuringMotion(270f, 1f))
     }
 
-    /** 工具组仅在所有工具结束后自动收起，且每个组由自身状态独立驱动。 */
+    /** 工具组首次渲染始终收起，不再等待完成状态异步收起。 */
     @Test
-    fun `should auto collapse each completed tool group independently`() {
-        assertEquals(false, shouldAutoCollapseTimelineToolGroup(listOf(toolEvent("first", ToolEventStatus.Started))))
-        assertEquals(true, shouldAutoCollapseTimelineToolGroup(listOf(toolEvent("first", ToolEventStatus.Finished))))
-        assertEquals(true, shouldAutoCollapseTimelineToolGroup(listOf(
-            toolEvent("first", ToolEventStatus.Finished),
-            toolEvent("second", ToolEventStatus.Failed),
-        )))
-        assertEquals(false, shouldAutoCollapseTimelineToolGroup(emptyList()))
+    fun `should start every tool group collapsed`() {
+        assertEquals(false, initialTimelineToolGroupExpanded())
+    }
+
+    /** Git 失败文本不得进入标题栏，空分支也不应渲染分支胶囊。 */
+    @Test
+    fun `should hide failed git branch output from header`() {
+        assertEquals("", resolveHeaderBranchOutput(128, "fatal: cannot change to 'missing'"))
+        assertEquals("main", resolveHeaderBranchOutput(0, " main\n"))
+        assertEquals(false, shouldShowHeaderBranchChip(""))
+        assertEquals(true, shouldShowHeaderBranchChip("main"))
+    }
+
+    /** 工作目录修复卡片属于 Composer 上方的交互区域。 */
+    @Test
+    fun `should show workspace repair above the composer`() {
+        assertEquals(true, shouldShowWorkspaceRepairCard("工作目录已不存在"))
+        assertEquals(false, shouldShowWorkspaceRepairCard(null))
+    }
+
+    /** 修复卡片使用的文字按钮必须保留可点击的内容内边距。 */
+    @Test
+    fun `should keep padding for workspace repair text buttons`() {
+        assertTrue(ringPrimaryButtonContentPadding(false).calculateLeftPadding(LayoutDirection.Ltr) > 0.dp)
+        assertEquals(0.dp, ringPrimaryButtonContentPadding(true).calculateLeftPadding(LayoutDirection.Ltr))
     }
 
     /** 思考内容保持块级展示时，标题与正文都应具备清晰的可读字号。 */
@@ -1332,6 +1370,69 @@ class ChatScreenPresentationTest {
     @Test
     fun `should use an English executed tools headline`() {
         assertEquals("Executed tools · 2", buildToolGroupHeadline(2))
+    }
+
+    /** 权限选择器与菜单必须共享英文模式名及风险色。 */
+    @Test
+    fun `should use English permission labels with matching semantic colors`() {
+        val expectedModes = mapOf(
+            PermissionPreset.DEFAULT to ("Ask" to Color(0xFF5A5C60)),
+            PermissionPreset.AUTO to ("Auto" to Color(0xFF245286)),
+            PermissionPreset.EDIT_ALLOW to ("Allow Edits" to Color(0xFF76561B)),
+            PermissionPreset.PLAN to ("Plan" to Color(0xFF55479A)),
+            PermissionPreset.BRAVE to ("Full Access" to Color(0xFF8E3541)),
+        )
+
+        expectedModes.forEach { (preset, expected) ->
+            val presentation = permissionPresentation(preset)
+
+            assertEquals(expected.first, presentation.label)
+            assertEquals(expected.second, presentation.tone)
+        }
+    }
+
+    /** 无框选择器只在悬浮或展开时提供轻量底色。 */
+    @Test
+    fun `should show compact background only while selector is active`() {
+        assertEquals(Color.Transparent, selectChipTriggerBackground(expanded = false, hovered = false))
+        assertEquals(Color(0xFF35383E), selectChipTriggerBackground(expanded = false, hovered = true))
+        assertEquals(Color(0xFF35383E), selectChipTriggerBackground(expanded = true, hovered = false))
+        assertEquals(false, shouldShowSelectChipArrow(expanded = false, hovered = false))
+        assertEquals(true, shouldShowSelectChipArrow(expanded = false, hovered = true))
+        assertEquals(true, shouldShowSelectChipArrow(expanded = true, hovered = false))
+    }
+
+    /** 权限色应改为 Composer 的静态和流动边框色，Ask 沿用既有蓝色。 */
+    @Test
+    fun `should map permission modes to composer border tones`() {
+        val expectedTones = mapOf(
+            PermissionPreset.DEFAULT to AppAccent,
+            PermissionPreset.AUTO to Color(0xFF245286),
+            PermissionPreset.EDIT_ALLOW to Color(0xFF76561B),
+            PermissionPreset.PLAN to Color(0xFF55479A),
+            PermissionPreset.BRAVE to Color(0xFF8E3541),
+        )
+
+        expectedTones.forEach { (preset, expectedTone) ->
+            assertEquals(expectedTone, composerBorderTone(preset))
+        }
+    }
+
+    /** 任务与工作区右键菜单应复用选择菜单的 Islands 外层色板。 */
+    @Test
+    fun `should reuse popup menu palette for task context menus`() {
+        assertEquals(PopupMenuBackground, TaskContextMenuBackground)
+        assertEquals(PopupMenuSelectedBackground, TaskContextMenuHoverBackground)
+        assertEquals(PopupMenuSelectedBackground, selectMenuItemBackground(selected = true, hovered = false, enabled = true))
+    }
+
+    /** 历史、运行中和完成态工具均从收起状态开始。 */
+    @Test
+    fun `should default tool groups and events to collapsed`() {
+        assertEquals(false, initialTimelineToolGroupExpanded())
+        ToolEventStatus.entries.forEach { status ->
+            assertEquals(false, shouldExpandToolEventByDefault(toolEvent("read_file", status)))
+        }
     }
 }
 

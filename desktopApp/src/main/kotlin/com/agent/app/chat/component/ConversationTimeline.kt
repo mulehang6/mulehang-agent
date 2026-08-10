@@ -348,9 +348,8 @@ private fun toolGroupSummary(item: ToolEventItem): String {
 /** 仅进行中的工具让图标本体持续运动，完成与失败状态保持静止。 */
 internal fun shouldAnimateTimelineToolGlyph(status: ToolEventStatus): Boolean = status == ToolEventStatus.Started
 
-/** 组内不存在进行中的工具时，工具组应自行收起。 */
-internal fun shouldAutoCollapseTimelineToolGroup(items: List<ToolEventItem>): Boolean =
-    items.isNotEmpty() && items.none { it.status == ToolEventStatus.Started }
+/** 工具组默认收起，由用户决定何时查看批量工具详情。 */
+internal fun initialTimelineToolGroupExpanded(): Boolean = false
 
 /** 单独呈现的成功终端工具应在展示完成反馈后自动收起输出。 */
 internal fun shouldAutoCollapseStandaloneTerminalTool(item: ToolEventItem): Boolean =
@@ -1092,17 +1091,11 @@ private fun TimelineReasoningItem(item: ReasoningItem) {
  */
 @Composable
 private fun TimelineToolGroup(items: List<ToolEventItem>) {
-    var expanded by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(true) }
-    var userSetExpansion by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(false) }
+    var expanded by remember(items.map(ToolEventItem::toolCallId)) {
+        mutableStateOf(initialTimelineToolGroupExpanded())
+    }
     var hovered by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(false) }
     val displayItems = items.map { item -> rememberTimelineToolDisplayItem(item) }
-    val shouldAutoCollapse = shouldAutoCollapseTimelineToolGroup(displayItems)
-    LaunchedEffect(displayItems.map(ToolEventItem::status), userSetExpansion) {
-        if (!userSetExpansion && shouldAutoCollapse) {
-            delay(TOOL_GROUP_AUTO_COLLAPSE_DELAY_MILLIS.milliseconds)
-            expanded = false
-        }
-    }
     val chevronRotation by animateFloatAsState(
         targetValue = toolEventChevronRotation(expanded),
         animationSpec = tween(
@@ -1127,7 +1120,6 @@ private fun TimelineToolGroup(items: List<ToolEventItem>) {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) {
-                userSetExpansion = true
                 expanded = !expanded
             }
                 .padding(horizontal = 4.dp, vertical = TOOL_EVENT_ROW_VERTICAL_PADDING_DP.dp),
@@ -1358,20 +1350,8 @@ private fun rememberTimelineToolDisplayItem(item: ToolEventItem): ToolEventItem 
             startedAtMillis = System.currentTimeMillis()
             displayItem = item
         } else if (!hasSeenStartedState) {
-            if (shouldSynthesizeRunningToolDisplay(item)) {
-                hasSeenStartedState = true
-                startedAtMillis = System.currentTimeMillis()
-                displayItem = item.copy(status = ToolEventStatus.Started)
-                delay(TOOL_MINIMUM_RUNNING_DISPLAY_MILLIS.milliseconds)
-            }
             displayItem = item
         } else {
-            val remainingDelayMillis = toolCompletionDelayMillis(
-                item = item,
-                startedAtMillis = startedAtMillis,
-                nowMillis = System.currentTimeMillis(),
-            )
-            if (remainingDelayMillis > 0L) delay(remainingDelayMillis.milliseconds)
             displayItem = item
         }
     }
@@ -1381,12 +1361,12 @@ private fun rememberTimelineToolDisplayItem(item: ToolEventItem): ToolEventItem 
 /**
  * 快速完成的非终端工具首次进入组合时，先构造运行态以保证图标动效可见。
  */
-internal fun initialTimelineToolDisplayItem(item: ToolEventItem): ToolEventItem =
-    if (shouldSynthesizeRunningToolDisplay(item)) item.copy(status = ToolEventStatus.Started) else item
+internal fun initialTimelineToolDisplayItem(item: ToolEventItem): ToolEventItem = item
 
 /** 只有真实完成或失败的非终端工具需要补足此前未观测到的运行态。 */
+@Suppress("UNUSED_PARAMETER")
 internal fun shouldSynthesizeRunningToolDisplay(item: ToolEventItem): Boolean =
-    !isTerminalToolEvent(item) && item.status in setOf(ToolEventStatus.Finished, ToolEventStatus.Failed)
+    false
 
 /** 渲染工具组中前景当前卡和一张带纵深反馈的后置预览卡。 */
 @Composable

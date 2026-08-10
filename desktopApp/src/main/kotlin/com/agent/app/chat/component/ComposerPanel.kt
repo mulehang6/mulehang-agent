@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -72,9 +73,10 @@ import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.state.resolveContextWindow
+import com.agent.app.platform.pickWorkspaceDirectory
 import com.agent.app.design.AppAccent
-import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppDanger
+import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
@@ -242,6 +244,31 @@ internal fun FooterComposerSection(
                     conversation = conversation,
                     state = state,
                 )
+                state.workspaceIssue(conversation)
+                    .takeIf(::shouldShowWorkspaceRepairCard)
+                    ?.let { message ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            WorkspaceRepairCard(
+                                message = message,
+                                onRelink = {
+                                pickWorkspaceDirectory()?.let { path ->
+                                        if (conversation.workspacePath.isBlank()) {
+                                            state.relinkConversationWorkspace(conversation.id, path)
+                                        } else {
+                                            state.relinkWorkspace(conversation.workspacePath, path)
+                                        }
+                                }
+                                },
+                                onDisconnect = { state.disconnectWorkspace(conversation.workspacePath) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 32.dp),
+                            )
+                        }
+                    }
             }
             ComposerPanel(
                 state = state,
@@ -250,6 +277,50 @@ internal fun FooterComposerSection(
                 composerInputMaxHeight = composerInputMaxHeight,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+/** 工作目录错误与权限、提问共用 Composer 上方的交互卡片区域。 */
+internal fun shouldShowWorkspaceRepairCard(workspaceIssue: String?): Boolean = workspaceIssue != null
+
+/** 在 Composer 上方提供可恢复的工作目录操作。 */
+@Composable
+private fun WorkspaceRepairCard(
+    message: String,
+    onRelink: () -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = AppDanger.copy(alpha = 0.12f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AppDanger.copy(alpha = 0.42f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "工作目录不可用",
+                style = MaterialTheme.typography.titleSmall.copy(color = AppText),
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RingPrimaryButton(
+                    text = "更新工作目录",
+                    onClick = onRelink,
+                )
+                RingPrimaryButton(
+                    text = "移除工作目录",
+                    onClick = onDisconnect,
+                    containerColor = AppDanger.copy(alpha = 0.78f),
+                )
+            }
         }
     }
 }
@@ -333,6 +404,7 @@ private fun ComposerPanel(
         label = "composer-border-progress",
     )
     val permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT
+    val composerBorderColor = composerBorderTone(permissionPreset)
     val primaryActionVisual = buildComposerPrimaryActionVisual(executionState)
     val providerProfiles = groupProfilesByProvider(profiles)
     val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
@@ -353,7 +425,7 @@ private fun ComposerPanel(
             val stroke = 2.dp.toPx()
             val inset = stroke / 2f
             val corner = 18.dp.toPx()
-            val staticColor = AppAccent.copy(alpha = 0.72f)
+            val staticColor = composerBorderColor.copy(alpha = 0.72f)
             val borderPath = Path().apply {
                 addRoundRect(
                     androidx.compose.ui.geometry.RoundRect(
@@ -378,7 +450,7 @@ private fun ComposerPanel(
                     if (pathMeasure.getSegment(segment.startDistance, segment.endDistance, flowPath)) {
                         drawPath(
                             path = flowPath,
-                            color = AppAccent,
+                            color = composerBorderColor,
                             style = Stroke(width = stroke * 1.3f),
                         )
                     }
@@ -613,9 +685,8 @@ private fun ComposerPanel(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RingSelectChip(
-                        label = permissionLabel(permissionPreset),
+                        label = permissionPresentation(permissionPreset).label,
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
-                        tone = permissionTone(permissionPreset),
                         onExpandedChange = { shouldExpand ->
                             expandedMenu = ComposerMenu.PERMISSION.takeIf { shouldExpand }
                         },
@@ -626,15 +697,15 @@ private fun ComposerPanel(
                         tooltip = "选择执行权限",
                     ) {
                         Text(
-                            text = "权限模式",
+                            text = "Permission mode",
                             modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 6.dp),
                             style = androidx.compose.material3.MaterialTheme.typography.titleSmall.copy(color = AppMuted),
                         )
                         PermissionPreset.entries.forEachIndexed { index, preset ->
                             RingPermissionDropdownMenuItem(
-                                description = permissionDescription(preset),
-                                badge = permissionBadge(preset),
-                                badgeColor = permissionBadgeColor(preset),
+                                description = permissionPresentation(preset).description,
+                                badge = permissionPresentation(preset).label,
+                                badgeColor = permissionPresentation(preset).tone,
                                 selected = preset == permissionPreset,
                                 itemIndex = index,
                                 itemCount = PermissionPreset.entries.size,
@@ -675,51 +746,48 @@ internal fun shouldSubmitComposerKey(
     isShiftPressed: Boolean,
 ): Boolean = key == Key.Enter && eventType == KeyEventType.KeyUp && !isShiftPressed
 
-/**
- * 选择权限文案。
- */
-private fun permissionLabel(permissionPreset: PermissionPreset): String = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> "操作前询问"
-    PermissionPreset.AUTO -> "自动"
-    PermissionPreset.EDIT_ALLOW -> "允许编辑"
-    PermissionPreset.PLAN -> "仅规划"
-    PermissionPreset.BRAVE -> "全部允许"
+/** 权限模式在选择器及菜单中共用的文案与风险色。 */
+internal data class PermissionPresentation(
+    val label: String,
+    val description: String,
+    val tone: Color,
+)
+
+/** 为每种权限模式提供唯一且一致的展示信息。 */
+internal fun permissionPresentation(permissionPreset: PermissionPreset): PermissionPresentation = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> PermissionPresentation(
+        label = "Ask",
+        description = "首次使用每种工具时请求确认",
+        tone = Color(0xFF5A5C60),
+    )
+
+    PermissionPreset.AUTO -> PermissionPresentation(
+        label = "Auto",
+        description = "自动执行安全的只读操作",
+        tone = Color(0xFF245286),
+    )
+
+    PermissionPreset.EDIT_ALLOW -> PermissionPresentation(
+        label = "Allow Edits",
+        description = "自动接受文件编辑权限",
+        tone = Color(0xFF76561B),
+    )
+
+    PermissionPreset.PLAN -> PermissionPresentation(
+        label = "Plan",
+        description = "修改前先完成计划",
+        tone = Color(0xFF55479A),
+    )
+
+    PermissionPreset.BRAVE -> PermissionPresentation(
+        label = "Full Access",
+        description = "跳过所有权限确认",
+        tone = Color(0xFF8E3541),
+    )
 }
 
-/**
- * 权限色调。
- */
-private fun permissionTone(permissionPreset: PermissionPreset): Color = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> AppChipBackground
-    PermissionPreset.AUTO -> Color(0xFF204B8F)
-    PermissionPreset.EDIT_ALLOW -> Color(0xFF66511C)
-    PermissionPreset.PLAN -> Color(0xFF434750)
-    PermissionPreset.BRAVE -> Color(0xFF652E36)
-}
-
-/** 权限模式在菜单内的简短说明。 */
-private fun permissionDescription(permissionPreset: PermissionPreset): String = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> "首次使用每种工具时请求确认"
-    PermissionPreset.AUTO -> "自动执行安全的只读操作"
-    PermissionPreset.EDIT_ALLOW -> "自动接受文件编辑权限"
-    PermissionPreset.PLAN -> "修改前先完成计划"
-    PermissionPreset.BRAVE -> "跳过所有权限确认"
-}
-
-/** 权限模式的视觉标签。 */
-private fun permissionBadge(permissionPreset: PermissionPreset): String = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> "询问"
-    PermissionPreset.AUTO -> "自动"
-    PermissionPreset.EDIT_ALLOW -> "允许编辑"
-    PermissionPreset.PLAN -> "计划"
-    PermissionPreset.BRAVE -> "完全访问"
-}
-
-/** 权限模式的风险级别色。 */
-private fun permissionBadgeColor(permissionPreset: PermissionPreset): Color = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> Color(0xFF5A5C60)
-    PermissionPreset.AUTO -> Color(0xFF245286)
-    PermissionPreset.EDIT_ALLOW -> Color(0xFF55479A)
-    PermissionPreset.PLAN -> Color(0xFF76561B)
-    PermissionPreset.BRAVE -> Color(0xFF8E3541)
+/** Ask 沿用当前蓝色，其他权限模式使用其菜单徽标的语义色描绘 Composer 边框。 */
+internal fun composerBorderTone(permissionPreset: PermissionPreset): Color = when (permissionPreset) {
+    PermissionPreset.DEFAULT -> AppAccent
+    else -> permissionPresentation(permissionPreset).tone
 }

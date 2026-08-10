@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.DropdownMenu
@@ -65,6 +66,7 @@ import com.agent.app.design.AppText
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.MenuGrowthOrigin
 import com.agent.app.design.RingHeaderActionButton
+import com.agent.app.design.RingTooltip
 import com.agent.app.design.menuGrowthTransformOrigin
 import com.agent.app.design.rememberMenuGrowthMotion
 import mulehang_agent.desktopapp.generated.resources.Res
@@ -141,6 +143,7 @@ internal fun WindowScope.ChatHeader(
     var projectIconMenuExpanded by remember { mutableStateOf(false) }
     var projectIconHovered by remember { mutableStateOf(false) }
     var projectIconPressed by remember { mutableStateOf(false) }
+    var sidebarMenuHovered by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val projectIconPainter = painterResource(Res.drawable.mulehang_agent)
     val taskContextMenuMotion = rememberMenuGrowthMotion(
@@ -155,9 +158,13 @@ internal fun WindowScope.ChatHeader(
         )
     } ?: DpOffset.Zero
     LaunchedEffect(activeConversation?.workspacePath) {
-        branchName = activeConversation?.workspacePath?.let { workspacePath ->
+        branchName = activeConversation
+            ?.takeIf { state.workspaceIssue(it) == null }
+            ?.workspacePath
+            ?.let { workspacePath ->
             readWorkspaceBranch(workspacePath)
-        } ?: ""
+            }
+            .orEmpty()
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -235,6 +242,8 @@ internal fun WindowScope.ChatHeader(
                         onClientMouseEvent = onTitleBarClientPointerEvent,
                         onClick = onToggleSidebar,
                         tooltip = menuTooltip,
+                        hovered = sidebarMenuHovered,
+                        onHoverChanged = { sidebarMenuHovered = it },
                     )
                 } else {
                     RingHeaderActionButton(
@@ -258,11 +267,13 @@ internal fun WindowScope.ChatHeader(
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         activeConversation?.let { conversation ->
                             Text(
-                                text = "${buildWorkspaceLabel(conversation.workspacePath)} :",
+                                text = "${buildWorkspaceLabel(conversation.workspacePath, conversation.workspaceName)} :",
+                                modifier = Modifier.widthIn(max = 192.dp),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelMedium.copy(
@@ -271,10 +282,12 @@ internal fun WindowScope.ChatHeader(
                                     fontWeight = FontWeight.Medium,
                                 ),
                             )
-                            Box(
+                            if (shouldShowHeaderBranchChip(branchName)) {
+                                Box(
                                 modifier = Modifier
                                     .padding(start = 4.dp)
                                     .height(HEADER_BRANCH_CHIP_HEIGHT_DP.dp)
+                                    .widthIn(max = 220.dp)
                                     .onGloballyPositioned { coordinates ->
                                         branchOrigin = coordinates.positionInRoot()
                                     }
@@ -354,19 +367,21 @@ internal fun WindowScope.ChatHeader(
                                     Spacer(modifier = Modifier.width(HEADER_BRANCH_CHIP_HORIZONTAL_PADDING_DP.dp))
                                 }
                             }
-                            Text(
-                                text = "/",
-                                modifier = Modifier.padding(start = 4.dp),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    color = AppText,
-                                    fontSize = HEADER_TASK_TITLE_FONT_SIZE_SP.sp,
-                                    fontWeight = FontWeight.Medium,
-                                ),
-                            )
+                                Text(
+                                    text = "/",
+                                    modifier = Modifier.padding(start = 4.dp),
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        color = AppText,
+                                        fontSize = HEADER_TASK_TITLE_FONT_SIZE_SP.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                                )
+                            }
                             Box(
                                 modifier = Modifier
                                     .height(HEADER_TASK_CHIP_HEIGHT_DP.dp)
                                     .padding(start = 4.dp)
+                                    .weight(1f, fill = false)
                                     .onSizeChanged { size ->
                                         taskTitleHeightPixels = size.height
                                     }
@@ -458,7 +473,7 @@ internal fun WindowScope.ChatHeader(
                                     shape = TaskContextMenuShape,
                                     containerColor = TaskContextMenuBackground,
                                     tonalElevation = 0.dp,
-                                    shadowElevation = 12.dp,
+                                    shadowElevation = TaskContextMenuShadowElevation,
                                     border = androidx.compose.foundation.BorderStroke(
                                         onePhysicalPixel(density.density),
                                         TaskContextMenuBorder,
@@ -564,18 +579,26 @@ private fun copyHeaderBranchToClipboard(branch: String) {
 /** 返回复制分支后显示在全局 toast 中的反馈文案。 */
 internal fun headerBranchCopiedFeedbackMessage(): String = "已复制"
 
+/** 仅将成功读取到的非空分支名渲染为标题栏胶囊。 */
+internal fun shouldShowHeaderBranchChip(branchName: String): Boolean = branchName.isNotBlank()
+
+/** Git 调用失败时丢弃标准输出，避免错误文本污染标题栏。 */
+internal fun resolveHeaderBranchOutput(exitCode: Int, output: String): String =
+    output.trim().takeIf { exitCode == 0 }.orEmpty()
+
 /**
  * 在后台读取工作区当前 Git 分支；非 Git 工作区保留清晰的回退文案。
  */
 private suspend fun readWorkspaceBranch(workspacePath: String): String = withContext(Dispatchers.IO) {
     runCatching {
-        ProcessBuilder("git", "-C", workspacePath, "branch", "--show-current")
-            .redirectErrorStream(true)
+        val process = ProcessBuilder("git", "-C", workspacePath, "branch", "--show-current")
             .start()
-            .inputStream
+        val branch = process.inputStream
             .bufferedReader()
             .use { it.readText().trim() }
-    }.getOrNull().orEmpty().ifBlank { "未检测到分支" }
+        process.errorStream.bufferedReader().use { it.readText() }
+        resolveHeaderBranchOutput(process.waitFor(), branch)
+    }.getOrDefault("")
 }
 
 /**
@@ -586,25 +609,29 @@ private fun NativeTitleBarMenuButton(
     onClientMouseEvent: () -> Unit,
     onClick: () -> Unit,
     tooltip: String,
+    hovered: Boolean,
+    onHoverChanged: (Boolean) -> Unit,
 ) {
-    SwingPanel(
-        factory = {
-            createNativeTitleBarMenuHitTarget(
-                onClientMouseEvent = onClientMouseEvent,
-                onClick = onClick,
-                tooltip = tooltip,
-            )
-        },
-        update = { component ->
-            component.updateActions(
-                onClientMouseEvent = onClientMouseEvent,
-                onClick = onClick,
-                tooltip = tooltip,
-            )
-        },
-        modifier = Modifier.size(36.dp),
-        background = AppHeaderBackground,
-    )
+    RingTooltip(text = tooltip, belowAnchor = true, externalHovered = hovered) {
+        SwingPanel(
+            factory = {
+                createNativeTitleBarMenuHitTarget(
+                    onClientMouseEvent = onClientMouseEvent,
+                    onClick = onClick,
+                    onHoverChanged = onHoverChanged,
+                )
+            },
+            update = { component ->
+                component.updateActions(
+                    onClientMouseEvent = onClientMouseEvent,
+                    onClick = onClick,
+                    onHoverChanged = onHoverChanged,
+                )
+            },
+            modifier = Modifier.size(36.dp),
+            background = AppHeaderBackground,
+        )
+    }
 }
 
 /**
@@ -649,11 +676,11 @@ private fun NativeTitleBarTaskHitOverlay(
 internal fun createNativeTitleBarMenuHitTarget(
     onClientMouseEvent: () -> Unit,
     onClick: () -> Unit,
-    tooltip: String = "显示任务侧栏",
+    onHoverChanged: (Boolean) -> Unit = {},
 ): NativeTitleBarMenuHitTarget = NativeTitleBarMenuHitTarget(
     onClientMouseEvent = onClientMouseEvent,
     onClick = onClick,
-    tooltip = tooltip,
+    onHoverChanged = onHoverChanged,
 )
 
 /**
@@ -891,10 +918,11 @@ internal class NativeTitleBarTaskHitTarget(
 internal class NativeTitleBarMenuHitTarget(
     onClientMouseEvent: () -> Unit,
     onClick: () -> Unit,
-    tooltip: String,
+    onHoverChanged: (Boolean) -> Unit,
 ) : JPanel() {
     private var clientMouseEventAction = onClientMouseEvent
     private var clickAction = onClick
+    private var hoverChangedAction = onHoverChanged
     private var hovered = false
     private var pressed = false
 
@@ -920,12 +948,14 @@ internal class NativeTitleBarMenuHitTarget(
         override fun mouseEntered(event: MouseEvent) {
             markClientArea()
             hovered = true
+            hoverChangedAction(true)
             repaint()
         }
 
         override fun mouseExited(event: MouseEvent) {
             hovered = false
             pressed = false
+            hoverChangedAction(false)
             repaint()
         }
 
@@ -938,8 +968,7 @@ internal class NativeTitleBarMenuHitTarget(
         background = NATIVE_TITLE_BAR_MENU_BACKGROUND
         isOpaque = true
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-        toolTipText = tooltip
-        getAccessibleContext()?.accessibleName = tooltip
+        getAccessibleContext()?.accessibleName = "显示任务侧栏"
         addMouseListener(pointerAdapter)
         addMouseMotionListener(pointerAdapter)
     }
@@ -958,12 +987,12 @@ internal class NativeTitleBarMenuHitTarget(
     fun updateActions(
         onClientMouseEvent: () -> Unit,
         onClick: () -> Unit,
-        tooltip: String,
+        onHoverChanged: (Boolean) -> Unit,
     ) {
         clientMouseEventAction = onClientMouseEvent
         clickAction = onClick
-        toolTipText = tooltip
-        getAccessibleContext()?.accessibleName = tooltip
+        hoverChangedAction = onHoverChanged
+        getAccessibleContext()?.accessibleName = "显示任务侧栏"
         synchronizeNativeTitleBarMenuInteropBackground(this)
     }
 

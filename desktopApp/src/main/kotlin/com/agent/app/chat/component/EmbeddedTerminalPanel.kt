@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,10 +47,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.MenuGrowthOrigin
+import com.agent.app.design.PopupMenuBackground
+import com.agent.app.design.PopupMenuBorder
+import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.app.design.PopupMenuShape
+import com.agent.app.design.PopupMenuShadowElevation
+import com.agent.app.design.RingDropdownMenuItem
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.RightRailGlyphIcon
 import com.agent.app.design.menuGrowthTransformOrigin
@@ -366,13 +370,15 @@ internal fun EmbeddedTerminalPanel(
                     alpha = contextMenuMotion.alpha
                     translationY = contextMenuMotion.translationYDp * density.density
                 },
-            shape = RoundedCornerShape(8.dp),
-            containerColor = TerminalTabActiveBackground,
+            shape = PopupMenuShape,
+            containerColor = PopupMenuBackground,
             tonalElevation = 0.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.52f)),
+            shadowElevation = PopupMenuShadowElevation,
+            border = androidx.compose.foundation.BorderStroke(1.dp, PopupMenuBorder),
         ) {
             TerminalContextMenuItem(
                 text = contextMenuLabels[0],
+                itemIndex = 0,
                 onClick = {
                     contextMenuTabId = null
                     onAddTab()
@@ -380,6 +386,7 @@ internal fun EmbeddedTerminalPanel(
             )
             TerminalContextMenuItem(
                 text = contextMenuLabels[1],
+                itemIndex = 1,
                 onClick = {
                     contextMenuTabId?.let(onCloseTab)
                     contextMenuTabId = null
@@ -387,6 +394,7 @@ internal fun EmbeddedTerminalPanel(
             )
             TerminalContextMenuItem(
                 text = contextMenuLabels[2],
+                itemIndex = 2,
                 onClick = {
                     contextMenuTabId?.let(onCloseOtherTabs)
                     contextMenuTabId = null
@@ -520,16 +528,16 @@ private fun TerminalActionGlyph(
 @Composable
 private fun TerminalContextMenuItem(
     text: String,
+    itemIndex: Int,
     onClick: () -> Unit,
 ) {
-    DropdownMenuItem(
-        text = {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium.copy(color = AppText),
-            )
-        },
+    RingDropdownMenuItem(
+        text = text,
+        selected = false,
         onClick = onClick,
+        itemIndex = itemIndex,
+        itemCount = 3,
+        hoverBackground = PopupMenuSelectedBackground,
     )
 }
 

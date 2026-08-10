@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -74,6 +75,7 @@ import com.agent.app.chat.state.ChatTaskListItemUiState
 import com.agent.app.chat.state.ChatTaskStatus
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.ConversationTitleState
+import com.agent.app.chat.state.WorkspaceTaskSectionUiState
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppHoverBackground
@@ -82,6 +84,11 @@ import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
+import com.agent.app.design.PopupMenuBackground
+import com.agent.app.design.PopupMenuBorder
+import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.app.design.PopupMenuShadowElevation
+import com.agent.app.design.PopupMenuShape
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.MenuGrowthOrigin
 import com.agent.app.design.RingHeaderActionButton
@@ -132,18 +139,23 @@ internal fun shouldShowConversationTitleText(titleState: ConversationTitleState)
  */
 internal fun taskContextMenuLabels(): List<String> = listOf("Fork", "删除", "Archive", "重命名")
 
-internal val TaskContextMenuBackground = Color(0xFF262627)
-internal val TaskContextMenuHoverBackground = Color(0xFF1D3F6E)
-internal val TaskContextMenuBorder = Color(0xFF47494D)
+/** 返回工作区右键菜单的紧凑操作文案。 */
+internal fun workspaceContextMenuLabels(): List<String> = listOf("编辑", "删除")
+
+internal val TaskContextMenuBackground = PopupMenuBackground
+internal val TaskContextMenuHoverBackground = PopupMenuSelectedBackground
+internal val TaskContextMenuBorder = PopupMenuBorder
+internal val TaskContextMenuShadowElevation = PopupMenuShadowElevation
 internal val TaskContextMenuDanger = Color(0xFFFF5C78)
 internal val TaskContextMenuWidth = 180.dp
-internal val TaskContextMenuShape = RoundedCornerShape(12.dp)
-internal val TaskContextMenuItemShape = RoundedCornerShape(8.dp)
+internal val TaskContextMenuShape = PopupMenuShape
+/** 右键菜单悬浮条保持直角，避免圆角裁切处露出菜单底色。 */
+internal val TaskContextMenuItemShape = RectangleShape
 internal val TaskContextMenuItemHeight = 36.dp
 private val TaskSectionHoverBackground = Color(0xFF303744)
 
 /**
- * 仅当可用菜单项被悬浮时显示 JetBrains Air 风格的蓝色高亮。
+ * 仅当可用菜单项被悬浮时显示选中蓝色，保持右键操作的明确反馈。
  */
 internal fun taskContextMenuItemBackground(
     hovered: Boolean,
@@ -179,8 +191,15 @@ internal fun TaskSidebar(
     var searchQuery by remember { mutableStateOf("") }
     var contextMenuTaskId by remember { mutableStateOf<String?>(null) }
     var renamingTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
+    var workspaceContextMenuPath by remember { mutableStateOf<String?>(null) }
+    var workspaceContextMenuClickPosition by remember { mutableStateOf(Offset.Zero) }
+    var workspaceContextMenuAnchorHeightPixels by remember { mutableStateOf(0) }
+    var editingWorkspace by remember { mutableStateOf<WorkspaceTaskSectionUiState?>(null) }
+    var disconnectingWorkspace by remember { mutableStateOf<WorkspaceTaskSectionUiState?>(null) }
+    var legacyRestoreWorkspacePath by remember { mutableStateOf<String?>(null) }
     var sectionCollapsedOverrides by remember { mutableStateOf(emptyMap<String, Boolean>()) }
     var collapsedWorkspaceKeys by remember { mutableStateOf(emptySet<String>()) }
+    val density = LocalDensity.current
     val startTaskInCurrentWorkspace: () -> Unit = {
         val workspacePath = resolveWorkspaceForTaskCreation(
             activeWorkspacePath = state.ui.activeConversationOrNull?.workspacePath,
@@ -198,7 +217,11 @@ internal fun TaskSidebar(
             pickWorkspaceDirectory = ::pickWorkspaceDirectory,
         )
         if (workspacePath != null) {
-            state.createConversationForWorkspace(workspacePath)
+            if (state.legacyUnlinkedHistoryCount > 0) {
+                legacyRestoreWorkspacePath = workspacePath
+            } else {
+                state.createConversationForWorkspace(workspacePath)
+            }
         }
     }
     val filteredWorkspaces = remember(state.ui.workspaceTaskSections, searchQuery) {
@@ -265,16 +288,27 @@ internal fun TaskSidebar(
                     val workspaceKey = workspaceCollapseKey(workspace.workspacePath)
                     val workspaceCollapsed = workspaceKey in collapsedWorkspaceKeys
                     var workspaceHovered by remember(workspaceKey) { mutableStateOf(false) }
+                    var workspaceHeaderHeightPixels by remember(workspaceKey) { mutableStateOf(0) }
+                    val workspaceIssue = state.workspaceIssueForPath(workspace.workspacePath)
+                    Box {
                     RingTooltip(text = workspace.workspacePath) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(TASK_SECTION_ROW_HEIGHT_DP.dp)
-                                .background(
-                                    color = if (workspaceHovered) TaskSectionHoverBackground else Color.Transparent,
-                                    shape = RoundedCornerShape(10.dp),
-                                )
-                                .onPointerEvent(PointerEventType.Enter) { workspaceHovered = true }
+                                 .onSizeChanged { size -> workspaceHeaderHeightPixels = size.height }
+                                 .background(
+                                     color = if (workspaceHovered) TaskSectionHoverBackground else Color.Transparent,
+                                     shape = RoundedCornerShape(10.dp),
+                                 )
+                                 .onPointerEvent(PointerEventType.Press) { event ->
+                                      if (event.buttons.isSecondaryPressed && workspace.workspacePath.isNotBlank()) {
+                                          workspaceContextMenuClickPosition = event.changes.firstOrNull()?.position ?: Offset.Zero
+                                          workspaceContextMenuAnchorHeightPixels = workspaceHeaderHeightPixels
+                                          workspaceContextMenuPath = workspace.workspacePath
+                                     }
+                                 }
+                                 .onPointerEvent(PointerEventType.Enter) { workspaceHovered = true }
                                 .onPointerEvent(PointerEventType.Exit) { workspaceHovered = false }
                                 .clickable {
                                     collapsedWorkspaceKeys = if (workspaceCollapsed) {
@@ -294,11 +328,54 @@ internal fun TaskSidebar(
                                     fontWeight = FontWeight.SemiBold,
                                 ),
                             )
+                            workspaceIssue?.let {
+                                Text(
+                                    text = if (workspace.workspacePath.isBlank()) "未关联" else "路径不可用",
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(color = AppDanger),
+                                )
+                            }
                             TaskSectionChevronSlot(
                                 expanded = !workspaceCollapsed,
                                 visible = shouldShowTaskSectionChevron(workspaceHovered),
                             )
                         }
+                    }
+                    if (workspace.workspacePath.isNotBlank()) {
+                        val workspaceContextMenuOffset = contextMenuOffsetForPointer(
+                            pointerPosition = workspaceContextMenuClickPosition,
+                            anchorHeightPixels = workspaceContextMenuAnchorHeightPixels,
+                            density = density.density,
+                        )
+                        DropdownMenu(
+                            expanded = workspaceContextMenuPath == workspace.workspacePath,
+                            onDismissRequest = { workspaceContextMenuPath = null },
+                            offset = workspaceContextMenuOffset,
+                            modifier = Modifier.width(TaskContextMenuWidth),
+                            shape = TaskContextMenuShape,
+                            containerColor = TaskContextMenuBackground,
+                            tonalElevation = 0.dp,
+                            shadowElevation = TaskContextMenuShadowElevation,
+                            border = BorderStroke(onePhysicalPixel(LocalDensity.current.density), TaskContextMenuBorder),
+                        ) {
+                            TaskContextMenuItem(
+                                text = workspaceContextMenuLabels().first(),
+                                color = AppText,
+                                onClick = {
+                                    workspaceContextMenuPath = null
+                                    editingWorkspace = workspace
+                                },
+                            )
+                            TaskContextMenuItem(
+                                text = workspaceContextMenuLabels().last(),
+                                color = TaskContextMenuDanger,
+                                onClick = {
+                                    workspaceContextMenuPath = null
+                                    disconnectingWorkspace = workspace
+                                },
+                            )
+                        }
+                    }
                     }
                     AnimatedVisibility(
                         visible = !workspaceCollapsed,
@@ -390,6 +467,86 @@ internal fun TaskSidebar(
                 onConfirm = { title ->
                     state.renameConversation(task.id, title)
                     renamingTask = null
+                },
+            )
+        }
+        editingWorkspace?.let { workspace ->
+            WorkspaceEditDialog(
+                workspace = workspace,
+                onDismiss = { editingWorkspace = null },
+                onConfirm = { name, path -> state.editWorkspace(workspace.workspacePath, name, path) },
+            )
+        }
+        legacyRestoreWorkspacePath?.let { workspacePath ->
+            AlertDialog(
+                onDismissRequest = {
+                    state.createConversationForWorkspace(workspacePath)
+                    legacyRestoreWorkspacePath = null
+                },
+                containerColor = AppSidebarBackground,
+                titleContentColor = AppText,
+                textContentColor = AppText,
+                title = { Text("恢复隐藏历史") },
+                text = {
+                    Text(
+                        "发现 ${state.legacyUnlinkedHistoryCount} 条无来源隐藏历史，是否恢复到“$workspacePath”？",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            state.restoreLegacyUnlinkedHistory(workspacePath)
+                            state.createConversationForWorkspace(workspacePath)
+                            legacyRestoreWorkspacePath = null
+                        },
+                    ) {
+                        Text("恢复历史", color = AppAccent)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            state.createConversationForWorkspace(workspacePath)
+                            legacyRestoreWorkspacePath = null
+                        },
+                    ) {
+                        Text("暂不恢复")
+                    }
+                },
+            )
+        }
+        disconnectingWorkspace?.let { workspace ->
+            val isDisconnectingActiveWorkspace =
+                state.ui.activeConversationOrNull?.workspacePath == workspace.workspacePath
+            AlertDialog(
+                onDismissRequest = { disconnectingWorkspace = null },
+                containerColor = AppSidebarBackground,
+                titleContentColor = AppText,
+                textContentColor = AppText,
+                title = { Text("解除工作区关联") },
+                text = {
+                    Text(
+                        if (isDisconnectingActiveWorkspace) {
+                            "“${workspace.label}”下的任务将保留为未关联历史，并切换到最近可用工作区的新任务；若无可用工作区则返回欢迎页。"
+                        } else {
+                            "“${workspace.label}”下的任务将保留为未关联历史，之后可重新关联目录。"
+                        },
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            state.disconnectWorkspace(workspace.workspacePath)
+                            disconnectingWorkspace = null
+                        },
+                    ) {
+                        Text("解除关联", color = TaskContextMenuDanger)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { disconnectingWorkspace = null }) {
+                        Text("取消", color = AppMuted)
+                    }
                 },
             )
         }
@@ -565,7 +722,7 @@ private fun TaskListItem(
             shape = TaskContextMenuShape,
             containerColor = TaskContextMenuBackground,
             tonalElevation = 0.dp,
-            shadowElevation = 12.dp,
+            shadowElevation = TaskContextMenuShadowElevation,
             border = BorderStroke(onePhysicalPixel(density.density), TaskContextMenuBorder),
         ) {
             TaskContextMenuActions(
@@ -622,6 +779,7 @@ internal fun TaskContextMenuItem(
     val backgroundColor = taskContextMenuItemBackground(hovered = hovered, enabled = enabled)
     Row(
         modifier = Modifier
+            .padding(horizontal = 10.dp, vertical = 3.dp)
             .fillMaxWidth()
             .height(TaskContextMenuItemHeight)
             .background(
@@ -631,7 +789,7 @@ internal fun TaskContextMenuItem(
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -675,6 +833,80 @@ internal fun TaskRenameDialog(
                 onClick = { onConfirm(title) },
             ) {
                 Text("重命名", color = AppAccent)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = AppMuted)
+            }
+        },
+    )
+}
+
+/** 编辑一个工作区的显示名称与实际目录，并将更新应用到该组历史任务。 */
+@Composable
+internal fun WorkspaceEditDialog(
+    workspace: WorkspaceTaskSectionUiState,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, path: String) -> String?,
+) {
+    var name by remember(workspace.workspacePath) { mutableStateOf(workspace.label) }
+    var path by remember(workspace.workspacePath) { mutableStateOf(workspace.workspacePath) }
+    var validationMessage by remember(workspace.workspacePath) { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AppSidebarBackground,
+        titleContentColor = AppText,
+        textContentColor = AppText,
+        title = { Text("编辑工作区") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        validationMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("工作区名称") },
+                )
+                OutlinedTextField(
+                    value = path,
+                    onValueChange = {
+                        path = it
+                        validationMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("工作目录") },
+                )
+                TextButton(
+                    onClick = {
+                        pickWorkspaceDirectory()?.let { selectedPath ->
+                            path = selectedPath
+                            validationMessage = null
+                        }
+                    },
+                ) {
+                    Text("选择目录", color = AppAccent)
+                }
+                validationMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall.copy(color = AppDanger),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    validationMessage = onConfirm(name, path)
+                    if (validationMessage == null) onDismiss()
+                },
+            ) {
+                Text("保存", color = AppAccent)
             }
         },
         dismissButton = {

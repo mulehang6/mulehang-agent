@@ -1,1 +1,1 @@
-读取AGENTS.md
+[AGENTS.md](./AGENTS.md)

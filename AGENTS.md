@@ -22,6 +22,12 @@
 
 Kotlin 使用 4 空格、尾随逗号、无制表符；类型为 `PascalCase`，成员为 `camelCase`，常量为 `UPPER_SNAKE_CASE`。生产类、对象、数据类和函数写简短 KDoc，注释说明约束或原因。可复用规则放入 `shared/src/commonMain`，JVM 实现放入 `shared/src/jvmMain`，UI 类型留在 `desktopApp`。
 
+## 代码结构与大文件治理
+
+每个文件应围绕单一、内聚的职责组织。生产 Kotlin 文件超过 500 行、测试 Kotlin 文件超过 800 行时，必须在同次改动中按职责或被测主题拆分；即使未到阈值，只要一个文件混合了渲染、交互策略、平台适配、状态转换或无关测试场景，也应优先拆分。阈值是评审触发条件，不是保留混杂职责的上限。
+
+入口 Composable 和状态门面只负责装配协作者；渲染叶子、纯交互策略、平台适配与状态转换应放在聚焦文件中。不得为了满足行数限制新增无意义的透传包装；拆分时保持 `shared` 到 `desktopApp` 的单向依赖，并同步迁移或补充聚焦的回归测试与 KDoc。
+
 测试使用 `kotlin.test` 与 JUnit 5，协程测试使用 `kotlinx-coroutines-test`。测试文件以被测对象命名，例如 `SettingsMergerTest.kt`；新功能与缺陷修复必须覆盖错误分支和状态流转。
 
 每个类及函数都应该写上适当长度的注释

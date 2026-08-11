@@ -22,6 +22,10 @@ Check IntelliJ IDEA run configurations before running targets, and use the narro
 
 Use Kotlin official style: four-space indentation, trailing commas, no tabs, `PascalCase` types and `camelCase` functions and properties. Place new code in the closest existing functional package (`bootstrap`, `chat`, `tool`, `design`, or `platform`). Keep composables small and let `shared` own reusable domain rules.
 
+## Structure and File Size
+
+Split production Kotlin files above 500 lines and test Kotlin files above 800 lines in the same change; split earlier when a file combines screen assembly, leaf rendering, interaction policy, platform interop, or unrelated test scenarios. Screen-level Composables and `ChatWindowState`-style facades may coordinate dependencies, but leaf UI, pure presentation rules, terminal/Swing adapters, and state-transition helpers must stay in focused files. Preserve current Compose behavior when moving code, and add or move regression tests with extracted pure rules.
+
 Production classes, data classes, objects, and functions need concise KDoc. Comments should explain constraints and intent rather than restating code. Avoid unrelated refactors or broad formatting changes.
 
 ## Testing

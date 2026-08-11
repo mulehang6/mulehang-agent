@@ -22,6 +22,10 @@ Use the smallest relevant task first. Before executing a configuration, inspect 
 
 Follow Kotlin official formatting: four-space indentation, trailing commas, no tabs, `PascalCase` types and `camelCase` members. Keep files focused and avoid speculative abstractions. Public production classes, data classes, objects, and functions need brief KDoc describing their responsibility, inputs/outputs, or notable side effects.
 
+## Structure and File Size
+
+Split production Kotlin files above 500 lines and test Kotlin files above 800 lines in the same change; split earlier when one file mixes domain transformations, persistence or provider integration, process/environment access, and unrelated test scenarios. Keep `commonMain` contracts and platform-neutral rules separate from `jvmMain` adapters, and do not introduce dependency inversion or pass-through wrappers solely to meet a line limit. Move or add focused regression tests together with extracted state transitions, mappings, and error paths.
+
 ## Testing
 
 Use `kotlin.test`, executed by JUnit 5; use `kotlinx-coroutines-test` for coroutine behavior. Name tests after the subject, such as `SettingsMergerTest.kt`, and use descriptive backticked test names. New behavior and fixes require tests, especially configuration precedence, provider selection, session transitions, permission decisions, and tool-event ordering.

@@ -602,7 +602,6 @@ private fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
                         },
-                        modifier = Modifier.width(if (compact) 96.dp else 120.dp),
                         tooltip = "选择服务商",
                     ) {
                         providerProfiles.entries.forEachIndexed { index, (_, providerModels) ->
@@ -628,7 +627,6 @@ private fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
                         },
-                        modifier = Modifier.width(if (compact) 124.dp else 152.dp),
                         tooltip = "选择模型",
                     ) {
                         currentProviderProfiles.forEachIndexed { index, profile ->
@@ -654,7 +652,6 @@ private fun ComposerPanel(
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
                             },
-                            modifier = Modifier.width(if (compact) 104.dp else 120.dp),
                             tooltip = "选择推理强度",
                         ) {
                         selectedVariants.forEachIndexed { index, variant ->
@@ -693,7 +690,6 @@ private fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
                         },
-                        modifier = Modifier.width(126.dp),
                         tooltip = "选择执行权限",
                     ) {
                         Text(

@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -86,13 +87,15 @@ import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
 import com.agent.app.design.PopupMenuBackground
 import com.agent.app.design.PopupMenuBorder
+import com.agent.app.design.PopupMenuItemShape
 import com.agent.app.design.PopupMenuSelectedBackground
-import com.agent.app.design.PopupMenuShadowElevation
 import com.agent.app.design.PopupMenuShape
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.MenuGrowthOrigin
 import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.RingInputField
+import com.agent.app.design.PopupMenuShadowInset
+import com.agent.app.design.popupMenuSurface
 import com.agent.app.design.RingPrimaryButton
 import com.agent.app.design.RingTooltip
 import com.agent.app.design.menuGrowthTransformOrigin
@@ -145,12 +148,11 @@ internal fun workspaceContextMenuLabels(): List<String> = listOf("编辑", "删�
 internal val TaskContextMenuBackground = PopupMenuBackground
 internal val TaskContextMenuHoverBackground = PopupMenuSelectedBackground
 internal val TaskContextMenuBorder = PopupMenuBorder
-internal val TaskContextMenuShadowElevation = PopupMenuShadowElevation
 internal val TaskContextMenuDanger = Color(0xFFFF5C78)
 internal val TaskContextMenuWidth = 180.dp
 internal val TaskContextMenuShape = PopupMenuShape
-/** 右键菜单悬浮条保持直角，避免圆角裁切处露出菜单底色。 */
-internal val TaskContextMenuItemShape = RectangleShape
+/** 右键菜单项沿用共享菜单的圆角悬浮面。 */
+internal val TaskContextMenuItemShape = PopupMenuItemShape
 internal val TaskContextMenuItemHeight = 36.dp
 private val TaskSectionHoverBackground = Color(0xFF303744)
 
@@ -174,9 +176,10 @@ internal fun contextMenuOffsetForPointer(
     pointerPosition: Offset,
     anchorHeightPixels: Int,
     density: Float,
+    shadowInset: Dp,
 ): DpOffset = DpOffset(
-    x = (pointerPosition.x / density).dp + 8.dp,
-    y = ((pointerPosition.y - anchorHeightPixels) / density).dp,
+    x = (pointerPosition.x / density).dp + 8.dp - shadowInset,
+    y = ((pointerPosition.y - anchorHeightPixels) / density).dp - shadowInset,
 )
 
 /**
@@ -346,17 +349,21 @@ internal fun TaskSidebar(
                             pointerPosition = workspaceContextMenuClickPosition,
                             anchorHeightPixels = workspaceContextMenuAnchorHeightPixels,
                             density = density.density,
+                            shadowInset = PopupMenuShadowInset,
                         )
                         DropdownMenu(
                             expanded = workspaceContextMenuPath == workspace.workspacePath,
                             onDismissRequest = { workspaceContextMenuPath = null },
                             offset = workspaceContextMenuOffset,
-                            modifier = Modifier.width(TaskContextMenuWidth),
+                            modifier = Modifier
+                                .padding(PopupMenuShadowInset)
+                                .width(TaskContextMenuWidth)
+                                .popupMenuSurface(),
                             shape = TaskContextMenuShape,
-                            containerColor = TaskContextMenuBackground,
+                            containerColor = Color.Transparent,
                             tonalElevation = 0.dp,
-                            shadowElevation = TaskContextMenuShadowElevation,
-                            border = BorderStroke(onePhysicalPixel(LocalDensity.current.density), TaskContextMenuBorder),
+                            shadowElevation = 0.dp,
+                            border = null,
                         ) {
                             TaskContextMenuItem(
                                 text = workspaceContextMenuLabels().first(),
@@ -635,6 +642,7 @@ private fun TaskListItem(
         pointerPosition = contextMenuClickPosition,
         anchorHeightPixels = anchorHeightPixels,
         density = density.density,
+        shadowInset = PopupMenuShadowInset,
     )
     Box(
         modifier = Modifier
@@ -711,6 +719,7 @@ private fun TaskListItem(
             onDismissRequest = onDismissContextMenu,
             offset = contextMenuOffset,
             modifier = Modifier
+                .padding(PopupMenuShadowInset)
                 .width(TaskContextMenuWidth)
                 .graphicsLayer {
                     transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Context)
@@ -718,12 +727,13 @@ private fun TaskListItem(
                     scaleY = contextMenuMotion.scale
                     alpha = contextMenuMotion.alpha
                     translationY = contextMenuMotion.translationYDp * density.density
-                },
+                }
+                .popupMenuSurface(),
             shape = TaskContextMenuShape,
-            containerColor = TaskContextMenuBackground,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
-            shadowElevation = TaskContextMenuShadowElevation,
-            border = BorderStroke(onePhysicalPixel(density.density), TaskContextMenuBorder),
+            shadowElevation = 0.dp,
+            border = null,
         ) {
             TaskContextMenuActions(
                 onDelete = onDelete,
@@ -776,6 +786,7 @@ internal fun TaskContextMenuItem(
     enabled: Boolean = true,
 ) {
     var hovered by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
     val backgroundColor = taskContextMenuItemBackground(hovered = hovered, enabled = enabled)
     Row(
         modifier = Modifier
@@ -788,7 +799,12 @@ internal fun TaskContextMenuItem(
             )
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            )
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

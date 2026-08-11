@@ -5,7 +5,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.buildWorkspaceLabel
@@ -28,8 +27,11 @@ import com.agent.app.design.RAIL_ACTION_SIZE_DP
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.PopupMenuBackground
 import com.agent.app.design.PopupMenuHoverBackground
+import com.agent.app.design.PopupMenuItemShape
 import com.agent.app.design.PopupMenuSelectedBackground
-import com.agent.app.design.PopupMenuShadowElevation
+import com.agent.app.design.PopupMenuContactShadow
+import com.agent.app.design.PopupMenuDiffuseShadow
+import com.agent.app.design.PopupMenuShadowInset
 import com.agent.app.design.SELECT_POPUP_FOCUSABLE
 import com.agent.app.design.SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS
 import com.agent.app.design.buildHeaderActions
@@ -38,6 +40,7 @@ import com.agent.app.design.desiredSelectExpandedState
 import com.agent.app.design.menuGrowthTargets
 import com.agent.app.design.ringPrimaryButtonContentPadding
 import com.agent.app.design.selectMenuItemBackground
+import com.agent.app.design.selectChipChevronRotation
 import com.agent.app.design.selectChipTriggerBackground
 import com.agent.app.design.shouldShowSelectChipArrow
 import com.agent.app.design.workspaceBackdropOffset
@@ -234,16 +237,28 @@ class ChatScreenPresentationTest {
     @Test
     fun `should use selected blue only while task menu item hovers`() {
         assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = false, enabled = true))
+        assertEquals(Color(0xFF194474), TaskContextMenuHoverBackground)
         assertEquals(PopupMenuSelectedBackground, taskContextMenuItemBackground(hovered = true, enabled = true))
         assertEquals(Color.Transparent, taskContextMenuItemBackground(hovered = true, enabled = false))
-        assertEquals(RectangleShape, TaskContextMenuItemShape)
+        assertEquals(PopupMenuItemShape, TaskContextMenuItemShape)
     }
 
-    /** 下拉菜单与右键菜单使用更明确的共享浮层阴影。 */
+    /** 下拉菜单与右键菜单使用共享的向下双层阴影。 */
     @Test
-    fun `should use the stronger shared popup menu shadow`() {
-        assertEquals(28.dp, PopupMenuShadowElevation)
-        assertEquals(PopupMenuShadowElevation, TaskContextMenuShadowElevation)
+    fun `should use bottom focused shared popup menu shadows`() {
+        assertEquals(6.dp, PopupMenuDiffuseShadow.radius)
+        assertEquals(0.dp, PopupMenuDiffuseShadow.spread)
+        assertEquals(Color.Black, PopupMenuDiffuseShadow.color)
+        assertEquals(0.dp, PopupMenuDiffuseShadow.offset.x)
+        assertEquals(4.dp, PopupMenuDiffuseShadow.offset.y)
+        assertEquals(0.36f, PopupMenuDiffuseShadow.alpha)
+        assertEquals(1.dp, PopupMenuContactShadow.radius)
+        assertEquals(0.dp, PopupMenuContactShadow.spread)
+        assertEquals(Color.Black, PopupMenuContactShadow.color)
+        assertEquals(0.dp, PopupMenuContactShadow.offset.x)
+        assertEquals(2.dp, PopupMenuContactShadow.offset.y)
+        assertEquals(0.55f, PopupMenuContactShadow.alpha)
+        assertEquals(10.dp, PopupMenuShadowInset)
     }
 
     /** Air 风格菜单应保持紧凑，不能按参考截图的物理像素尺寸直接放大。 */
@@ -270,11 +285,12 @@ class ChatScreenPresentationTest {
     @Test
     fun `should place task context menu beside pointer`() {
         assertEquals(
-            androidx.compose.ui.unit.DpOffset(58.dp, (-20).dp),
+            androidx.compose.ui.unit.DpOffset(48.dp, (-30).dp),
             contextMenuOffsetForPointer(
                 pointerPosition = Offset(100f, 40f),
                 anchorHeightPixels = 80,
                 density = 2f,
+                shadowInset = PopupMenuShadowInset,
             ),
         )
     }
@@ -1204,11 +1220,12 @@ class ChatScreenPresentationTest {
             ),
         )
         assertEquals(
-            androidx.compose.ui.unit.DpOffset(108.dp, (-10).dp),
+            androidx.compose.ui.unit.DpOffset(98.dp, (-20).dp),
             contextMenuOffsetForPointer(
                 pointerPosition = Offset(200f, 60f),
                 anchorHeightPixels = 80,
                 density = 2f,
+                shadowInset = PopupMenuShadowInset,
             ),
         )
     }
@@ -1400,6 +1417,8 @@ class ChatScreenPresentationTest {
         assertEquals(false, shouldShowSelectChipArrow(expanded = false, hovered = false))
         assertEquals(true, shouldShowSelectChipArrow(expanded = false, hovered = true))
         assertEquals(true, shouldShowSelectChipArrow(expanded = true, hovered = false))
+        assertEquals(90f, selectChipChevronRotation(expanded = false))
+        assertEquals(-90f, selectChipChevronRotation(expanded = true))
     }
 
     /** 权限色应改为 Composer 的静态和流动边框色，Ask 沿用既有蓝色。 */

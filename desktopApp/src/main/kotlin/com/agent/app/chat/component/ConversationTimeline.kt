@@ -1810,25 +1810,6 @@ private fun DetailIsland(content: @Composable () -> Unit) {
     )
 }
 
-/**
- * 绘制与展开状态同步旋转的轻量箭头。
- */
-@Composable
-private fun ToolEventChevron(
-    rotation: Float,
-    tint: Color = AppMuted,
-) {
-    Canvas(
-        modifier = Modifier
-            .size(16.dp)
-            .graphicsLayer { rotationZ = rotation },
-    ) {
-        val stroke = 1.8.dp.toPx()
-        drawLine(tint, Offset(size.width * 0.34f, size.height * 0.22f), Offset(size.width * 0.64f, size.height * 0.5f), stroke, StrokeCap.Round)
-        drawLine(tint, Offset(size.width * 0.64f, size.height * 0.5f), Offset(size.width * 0.34f, size.height * 0.78f), stroke, StrokeCap.Round)
-    }
-}
-
 /** 工具行仅在鼠标悬浮时展示展开方向，避免静态时间线产生视觉噪声。 */
 internal fun shouldShowTimelineToolChevron(hovered: Boolean): Boolean = hovered
 
@@ -1844,7 +1825,7 @@ private fun TimelineToolChevronSlot(
             .graphicsLayer { alpha = if (visible) 1f else 0f },
         contentAlignment = Alignment.Center,
     ) {
-        ToolEventChevron(rotation = rotation)
+        RingChevron(rotation = rotation)
     }
 }
 

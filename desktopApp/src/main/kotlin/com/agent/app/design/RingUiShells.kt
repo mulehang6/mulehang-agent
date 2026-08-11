@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -47,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -54,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -329,7 +332,25 @@ internal val PopupMenuSelectedBackground = Color(0xFF194474)
 internal val PopupMenuBorder = Color(0xFF3A3B3E)
 internal val PopupMenuShape = RoundedCornerShape(12.dp)
 internal val PopupMenuItemShape = RoundedCornerShape(8.dp)
-internal val PopupMenuShadowElevation = 28.dp
+
+/** 菜单的扩散阴影向下投射，建立克制而清晰的悬浮层级。 */
+internal val PopupMenuDiffuseShadow = Shadow(
+    radius = 6.dp,
+    spread = 0.dp,
+    color = Color.Black,
+    offset = DpOffset(0.dp, 4.dp),
+    alpha = 0.36f,
+)
+/** 菜单的接触阴影强化下边缘，避免扩散层在深色背景中显得模糊。 */
+internal val PopupMenuContactShadow = Shadow(
+    radius = 1.dp,
+    spread = 0.dp,
+    color = Color.Black,
+    offset = DpOffset(0.dp, 2.dp),
+    alpha = 0.55f,
+)
+/** 为向下投射的阴影预留紧凑绘制空间，避免弹层边缘截断。 */
+internal val PopupMenuShadowInset = 10.dp
 private val SelectChipInteractionBackground = Color(0xFF35383E)
 private val LocalSelectMenuItemsVisible = compositionLocalOf { true }
 private val LocalSelectMenuOpensUpward = compositionLocalOf { false }
@@ -354,6 +375,22 @@ internal fun selectChipTriggerBackground(expanded: Boolean, hovered: Boolean): C
 
 /** 下拉箭头仅在可交互的悬浮或展开状态出现，保持静态工具栏更安静。 */
 internal fun shouldShowSelectChipArrow(expanded: Boolean, hovered: Boolean): Boolean = expanded || hovered
+
+/** 下拉选择器在收起时朝下、展开时朝上，明确提示可展开状态。 */
+internal fun selectChipChevronRotation(expanded: Boolean): Float = if (expanded) -90f else 90f
+
+/** 返回用于抵消四边阴影留白的下拉菜单外层偏移。 */
+internal fun selectMenuPopupOffset(opensUpward: Boolean): DpOffset = DpOffset(
+    x = -PopupMenuShadowInset,
+    y = if (opensUpward) PopupMenuShadowInset else -PopupMenuShadowInset,
+)
+
+/** 在实际菜单表面绘制向下集中的双层圆角阴影。 */
+internal fun Modifier.popupMenuSurface(): Modifier =
+    dropShadow(PopupMenuShape, PopupMenuDiffuseShadow)
+        .dropShadow(PopupMenuShape, PopupMenuContactShadow)
+        .background(PopupMenuBackground, PopupMenuShape)
+        .border(1.dp, PopupMenuBorder, PopupMenuShape)
 
 /**
  * 以按下 trigger 时的展开状态为准，避免 popup 的外部关闭先改写受控状态。
@@ -397,7 +434,6 @@ internal fun RingSelectChip(
             anchorTopPx = anchorTopInWindowPx,
         )
         val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(120))
-        val arrowRotation by animateFloatAsState(if (expanded) 180f else 0f, tween(120))
         val popupMotion = rememberMenuGrowthMotion(
             expanded = expanded,
             label = "select-popup",
@@ -452,23 +488,23 @@ internal fun RingSelectChip(
             ) {
                 Text(
                     text = label,
-                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium.copy(color = AppText),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (shouldShowSelectChipArrow(expanded = expanded, hovered = hovered)) {
-                    Text(
-                        text = "▾",
-                        modifier = Modifier.graphicsLayer(rotationZ = arrowRotation),
-                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                    RingChevron(
+                        rotation = selectChipChevronRotation(expanded = expanded),
+                        tint = AppMuted,
                     )
                 }
             }
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = onDismissRequest,
+                offset = selectMenuPopupOffset(opensUpward = popupOpensUpward),
                 modifier = Modifier
+                    .padding(PopupMenuShadowInset)
                     .widthIn(min = anchorWidth, max = 280.dp)
                     .onGloballyPositioned { coordinates ->
                         popupTopInWindowPx = coordinates.positionInWindow().y
@@ -483,14 +519,14 @@ internal fun RingSelectChip(
                         scaleY = popupMotion.scale
                         alpha = popupMotion.alpha
                         translationY = popupMotion.translationYDp * density.density
-                    },
-                offset = DpOffset(0.dp, (-4).dp),
+                    }
+                    .popupMenuSurface(),
                 properties = PopupProperties(focusable = SELECT_POPUP_FOCUSABLE),
                 shape = PopupMenuShape,
-                containerColor = PopupMenuBackground,
+                containerColor = Color.Transparent,
                 tonalElevation = 0.dp,
-                shadowElevation = PopupMenuShadowElevation,
-                border = BorderStroke(1.dp, PopupMenuBorder),
+                shadowElevation = 0.dp,
+                border = null,
             ) {
                 CompositionLocalProvider(
                     LocalSelectMenuItemsVisible provides menuItemsVisible,
@@ -1361,6 +1397,36 @@ internal fun RightRailGlyphIcon(
                 }
             }
         }
+    }
+}
+
+/** 在紧凑菜单与时间线中绘制可旋转的双线箭头。 */
+@Composable
+internal fun RingChevron(
+    rotation: Float,
+    tint: Color = AppMuted,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(
+        modifier = modifier
+            .size(16.dp)
+            .graphicsLayer { rotationZ = rotation },
+    ) {
+        val strokeWidth = 1.6.dp.toPx()
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.38f, size.height * 0.28f),
+            end = Offset(size.width * 0.64f, size.height * 0.5f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = tint,
+            start = Offset(size.width * 0.64f, size.height * 0.5f),
+            end = Offset(size.width * 0.38f, size.height * 0.72f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
     }
 }
 

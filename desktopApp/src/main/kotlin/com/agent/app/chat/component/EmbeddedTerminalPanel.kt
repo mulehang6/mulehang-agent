@@ -18,8 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,8 +54,9 @@ import com.agent.app.design.PopupMenuBackground
 import com.agent.app.design.PopupMenuBorder
 import com.agent.app.design.PopupMenuSelectedBackground
 import com.agent.app.design.PopupMenuShape
-import com.agent.app.design.PopupMenuShadowElevation
 import com.agent.app.design.RingDropdownMenuItem
+import com.agent.app.design.PopupMenuShadowInset
+import com.agent.app.design.popupMenuSurface
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.RightRailGlyphIcon
 import com.agent.app.design.menuGrowthTransformOrigin
@@ -362,6 +363,7 @@ internal fun EmbeddedTerminalPanel(
             onDismissRequest = { contextMenuTabId = null },
             offset = contextMenuOffset,
             modifier = Modifier
+                .padding(PopupMenuShadowInset)
                 .width(152.dp)
                 .graphicsLayer {
                     transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Context)
@@ -369,12 +371,13 @@ internal fun EmbeddedTerminalPanel(
                     scaleY = contextMenuMotion.scale
                     alpha = contextMenuMotion.alpha
                     translationY = contextMenuMotion.translationYDp * density.density
-                },
+                }
+                .popupMenuSurface(),
             shape = PopupMenuShape,
-            containerColor = PopupMenuBackground,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp,
-            shadowElevation = PopupMenuShadowElevation,
-            border = androidx.compose.foundation.BorderStroke(1.dp, PopupMenuBorder),
+            shadowElevation = 0.dp,
+            border = null,
         ) {
             TerminalContextMenuItem(
                 text = contextMenuLabels[0],

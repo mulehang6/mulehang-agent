@@ -1,6 +1,8 @@
 package com.agent.app.design
 
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -35,6 +37,13 @@ class MenuGrowthMotionTest {
     fun `should infer select menu growth direction from popup placement`() {
         assertEquals(true, selectMenuOpensUpward(popupTopPx = 120f, anchorTopPx = 200f))
         assertEquals(false, selectMenuOpensUpward(popupTopPx = 240f, anchorTopPx = 200f))
+    }
+
+    /** 紧凑阴影留白不应改变下拉菜单可见表面相对触发器的位置。 */
+    @Test
+    fun `should compensate select menu position for shadow inset`() {
+        assertEquals(DpOffset((-10).dp, (-10).dp), selectMenuPopupOffset(opensUpward = false))
+        assertEquals(DpOffset((-10).dp, 10.dp), selectMenuPopupOffset(opensUpward = true))
     }
 
     /** Air 分隔光带以鼠标位置为峰值，并向影响范围边缘逐步衰减。 */

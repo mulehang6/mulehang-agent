@@ -65,7 +65,12 @@ import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.MenuGrowthOrigin
+import com.agent.app.design.PopupMenuBackground
+import com.agent.app.design.PopupMenuBorder
+import com.agent.app.design.PopupMenuShape
 import com.agent.app.design.RingHeaderActionButton
+import com.agent.app.design.PopupMenuShadowInset
+import com.agent.app.design.popupMenuSurface
 import com.agent.app.design.RingTooltip
 import com.agent.app.design.menuGrowthTransformOrigin
 import com.agent.app.design.rememberMenuGrowthMotion
@@ -155,6 +160,7 @@ internal fun WindowScope.ChatHeader(
             pointerPosition = pointerPosition,
             anchorHeightPixels = taskTitleHeightPixels,
             density = density.density,
+            shadowInset = PopupMenuShadowInset,
         )
     } ?: DpOffset.Zero
     LaunchedEffect(activeConversation?.workspacePath) {
@@ -226,8 +232,15 @@ internal fun WindowScope.ChatHeader(
                     expanded = projectIconMenuExpanded,
                     onDismissRequest = { projectIconMenuExpanded = false },
                     modifier = Modifier
+                        .padding(PopupMenuShadowInset)
                         .width(HEADER_PROJECT_ICON_MENU_WIDTH_DP.dp)
-                        .height(HEADER_PROJECT_ICON_MENU_HEIGHT_DP.dp),
+                        .height(HEADER_PROJECT_ICON_MENU_HEIGHT_DP.dp)
+                        .popupMenuSurface(),
+                    shape = PopupMenuShape,
+                    containerColor = Color.Transparent,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                    border = null,
                 ) {
                     Spacer(modifier = Modifier.fillMaxSize())
                 }
@@ -462,6 +475,7 @@ internal fun WindowScope.ChatHeader(
                                     onDismissRequest = { taskContextMenuExpanded = false },
                                     offset = taskContextMenuOffset,
                                     modifier = Modifier
+                                        .padding(PopupMenuShadowInset)
                                         .width(TaskContextMenuWidth)
                                         .graphicsLayer {
                                             transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Context)
@@ -469,15 +483,13 @@ internal fun WindowScope.ChatHeader(
                                             scaleY = taskContextMenuMotion.scale
                                             alpha = taskContextMenuMotion.alpha
                                             translationY = taskContextMenuMotion.translationYDp * density.density
-                                        },
+                                        }
+                                        .popupMenuSurface(),
                                     shape = TaskContextMenuShape,
-                                    containerColor = TaskContextMenuBackground,
+                                    containerColor = Color.Transparent,
                                     tonalElevation = 0.dp,
-                                    shadowElevation = TaskContextMenuShadowElevation,
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        onePhysicalPixel(density.density),
-                                        TaskContextMenuBorder,
-                                    ),
+                                    shadowElevation = 0.dp,
+                                    border = null,
                                 ) {
                                     TaskContextMenuActions(
                                         onDelete = {

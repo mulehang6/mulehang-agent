@@ -2,21 +2,15 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -28,16 +22,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,347 +36,60 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
 import com.agent.app.chat.presentation.buildContextTooltip
 import com.agent.app.chat.presentation.contextRingSweepAngle
 import com.agent.app.chat.presentation.groupProfilesByProvider
 import com.agent.app.chat.presentation.modelVariantsFor
 import com.agent.app.chat.presentation.reasoningControlLabel
-import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.state.resolveContextWindow
-import com.agent.app.platform.pickWorkspaceDirectory
 import com.agent.app.design.AppAccent
-import com.agent.app.design.AppDanger
 import com.agent.app.design.AppChipBackground
+import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.RingContextIndicator
 import com.agent.app.design.RingDropdownMenuItem
+import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.RingInputField
 import com.agent.app.design.RingIsland
-import com.agent.app.design.RingPrimaryButton
 import com.agent.app.design.RingPermissionDropdownMenuItem
+import com.agent.app.design.RingPrimaryButton
 import com.agent.app.design.RingSelectChip
 import com.agent.app.design.RingTooltip
 import com.agent.app.platform.pickFiles
-import com.agent.app.tool.component.QuestionCard
-import com.agent.app.tool.component.ApprovalCard
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.launch
-
-internal const val PENDING_CARD_ENTER_DURATION_MILLIS = 180
-internal const val PENDING_CARD_EXIT_DURATION_MILLIS = 120
-internal const val PENDING_CARD_ENTER_INITIAL_SCALE = 0.96f
-internal const val COMPOSER_BORDER_FLOW_DURATION_MILLIS = 2_200
-
-/** 仅在 Agent 实际执行工具或生成输出时启用 Composer 的流光反馈。 */
-internal fun shouldAnimateComposerBorder(executionState: ExecutionState): Boolean =
-    executionState == ExecutionState.Running
-
-/** 描述沿 Composer 边框路径移动的一段连续高亮。 */
-internal data class ComposerBorderFlowSegment(
-    val startDistance: Float,
-    val endDistance: Float,
-)
-
-/**
- * 将环形边框上的流光拆分为一个或两个可绘制路径段，跨越路径末端时从起点继续。
- */
-internal fun composerBorderFlowSegments(
-    pathLength: Float,
-    progress: Float,
-    ratio: Float = 0.18f,
-): List<ComposerBorderFlowSegment> {
-    require(pathLength > 0f) { "Path length must be positive" }
-    require(ratio in 0f..1f) { "Flow ratio must be between zero and one" }
-    val head = ((progress % 1f + 1f) % 1f) * pathLength
-    val tail = head - pathLength * ratio
-    return if (tail >= 0f) {
-        listOf(ComposerBorderFlowSegment(tail, head))
-    } else {
-        listOfNotNull(
-            ComposerBorderFlowSegment(tail + pathLength, pathLength).takeIf { it.startDistance < it.endDistance },
-            ComposerBorderFlowSegment(0f, head).takeIf { it.startDistance < it.endDistance },
-        )
-    }
-}
-
-/**
- * Composer 底部可互斥展开的菜单。
- */
-internal enum class ComposerMenu {
-    PROVIDER,
-    MODEL,
-    REASONING,
-    PERMISSION,
-}
-
-/**
- * 点击另一触发器时直接切换菜单，重复点击当前触发器时关闭。
- */
-internal fun nextComposerMenu(
-    current: ComposerMenu?,
-    requested: ComposerMenu,
-): ComposerMenu? = requested.takeUnless { it == current }
-
-/**
- * 旧 popup 的延迟关闭回调只能关闭自己，不能覆盖刚切换的新菜单。
- */
-internal fun dismissComposerMenu(
-    current: ComposerMenu?,
-    dismissed: ComposerMenu,
-): ComposerMenu? = current.takeUnless { it == dismissed }
-
-/**
- * 将 Composer 主动作状态映射为矢量图标。
- */
-internal fun composerPrimaryActionGlyph(danger: Boolean): HeaderGlyph =
-    if (danger) HeaderGlyph.STOP else HeaderGlyph.SEND
-
-/**
- * 输入框最多占用主工作区的一半，确保时间线始终保留足够的可见空间。
- */
-internal fun maxComposerInputHeight(workspaceHeight: Dp): Dp = workspaceHeight / 2
-
-/**
- * 仅在输入内容超过可见区域时显示输入区滚动条。
- */
-internal fun shouldShowComposerInputScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
-
-/**
- * 拖选文本接近输入框边缘时返回应执行的滚动增量，中央区域保持静止。
- */
-internal fun composerSelectionScrollDelta(pointerY: Float, viewportHeight: Int): Float = when {
-    pointerY < 18f -> -24f
-    pointerY > viewportHeight - 18f -> 24f
-    else -> 0f
-}
-
-/**
- * Shift 加方向键扩展选择范围时，让外层输入区域跟随选区继续滚动。
- */
-internal fun composerKeyboardSelectionScrollDelta(
-    key: Key,
-    isShiftPressed: Boolean,
-): Float = if (!isShiftPressed) {
-    0f
-} else {
-    when (key) {
-        Key.DirectionUp -> -28f
-        Key.DirectionDown -> 28f
-        else -> 0f
-    }
-}
-
-/**
- * 原型下方 plan + composer 区域。
- */
-@Composable
-internal fun FooterComposerSection(
-    state: ChatWindowState,
-    compact: Boolean,
-    onSendDraft: () -> Unit,
-    composerInputMaxHeight: Dp = 320.dp,
-) {
-    val activeConversation = state.ui.activeConversationOrNull
-    val planCard = activeConversation?.let { extractPlanCard(it.items) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                start = if (compact) 12.dp else 32.dp,
-                top = 0.dp,
-                end = if (compact) 12.dp else 32.dp,
-                bottom = if (compact) 12.dp else 20.dp,
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 720.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (planCard != null) {
-                PlanCard(
-                    title = planCard.title,
-                    entries = planCard.entries,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            activeConversation?.let { conversation ->
-                PendingInteractionCards(
-                    conversation = conversation,
-                    state = state,
-                )
-                state.workspaceIssue(conversation)
-                    .takeIf(::shouldShowWorkspaceRepairCard)
-                    ?.let { message ->
-                        Box(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            WorkspaceRepairCard(
-                                message = message,
-                                onRelink = {
-                                pickWorkspaceDirectory()?.let { path ->
-                                        if (conversation.workspacePath.isBlank()) {
-                                            state.relinkConversationWorkspace(conversation.id, path)
-                                        } else {
-                                            state.relinkWorkspace(conversation.workspacePath, path)
-                                        }
-                                }
-                                },
-                                onDisconnect = { state.disconnectWorkspace(conversation.workspacePath) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 32.dp),
-                            )
-                        }
-                    }
-            }
-            ComposerPanel(
-                state = state,
-                compact = compact,
-                onSendDraft = onSendDraft,
-                composerInputMaxHeight = composerInputMaxHeight,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
-/** 工作目录错误与权限、提问共用 Composer 上方的交互卡片区域。 */
-internal fun shouldShowWorkspaceRepairCard(workspaceIssue: String?): Boolean = workspaceIssue != null
-
-/** 在 Composer 上方提供可恢复的工作目录操作。 */
-@Composable
-private fun WorkspaceRepairCard(
-    message: String,
-    onRelink: () -> Unit,
-    onDisconnect: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = AppDanger.copy(alpha = 0.12f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppDanger.copy(alpha = 0.42f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "工作目录不可用",
-                style = MaterialTheme.typography.titleSmall.copy(color = AppText),
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RingPrimaryButton(
-                    text = "更新工作目录",
-                    onClick = onRelink,
-                )
-                RingPrimaryButton(
-                    text = "移除工作目录",
-                    onClick = onDisconnect,
-                    containerColor = AppDanger.copy(alpha = 0.78f),
-                )
-            }
-        }
-    }
-}
-
-/**
- * 在 composer 上方叠加展示挂起的问题或审批卡片。
- */
-@Composable
-internal fun PendingInteractionCards(
-    conversation: ChatConversationUiState,
-    state: ChatWindowState,
-) {
-    val pendingQuestion = conversation.pendingQuestion
-    val pendingApproval = conversation.pendingApproval
-    var isReadyForEntryAnimation by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        isReadyForEntryAnimation = true
-    }
-
-    AnimatedVisibility(
-        visible = pendingInteractionCardVisibility(
-            isReadyForEntryAnimation = isReadyForEntryAnimation,
-            hasPendingQuestion = pendingQuestion != null,
-            hasPendingApproval = pendingApproval != null,
-        ),
-        enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
-                slideInVertically(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) { height -> height / 8 } +
-                scaleIn(
-                    initialScale = PENDING_CARD_ENTER_INITIAL_SCALE,
-                    animationSpec = tween(PENDING_CARD_ENTER_DURATION_MILLIS),
-                ),
-        exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
-                slideOutVertically(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) { height -> -height / 12 },
-    ) {
-        when {
-            pendingQuestion != null -> QuestionCard(
-                pending = pendingQuestion,
-                onSubmitAnswers = state::answerPendingQuestions,
-            )
-
-            pendingApproval != null -> ApprovalCard(
-                pending = pendingApproval,
-                onResponse = state::answerPendingApproval,
-            )
-        }
-    }
-}
-
-/**
- * 初次组合的卡片先保持隐藏，让 AnimatedVisibility 获得明确的入场状态变化。
- */
-internal fun pendingInteractionCardVisibility(
-    isReadyForEntryAnimation: Boolean,
-    hasPendingQuestion: Boolean,
-    hasPendingApproval: Boolean,
-): Boolean = isReadyForEntryAnimation && (hasPendingQuestion || hasPendingApproval)
 
 /**
  * 原型 composer。
  */
 @Composable
-private fun ComposerPanel(
+internal fun ComposerPanel(
     state: ChatWindowState,
-    compact: Boolean,
     onSendDraft: () -> Unit,
     composerInputMaxHeight: Dp,
     modifier: Modifier = Modifier,
@@ -654,14 +358,14 @@ private fun ComposerPanel(
                             },
                             tooltip = "选择推理强度",
                         ) {
-                        selectedVariants.forEachIndexed { index, variant ->
-                            val effort = variant.reasoningEffort ?: return@forEachIndexed
-                            RingDropdownMenuItem(
-                                text = reasoningControlLabel(effort),
-                                selected = effort == activeConversation?.reasoningEffort,
-                                itemIndex = index,
-                                itemCount = selectedVariants.size,
-                                onClick = {
+                            selectedVariants.forEachIndexed { index, variant ->
+                                val effort = variant.reasoningEffort ?: return@forEachIndexed
+                                RingDropdownMenuItem(
+                                    text = reasoningControlLabel(effort),
+                                    selected = effort == activeConversation?.reasoningEffort,
+                                    itemIndex = index,
+                                    itemCount = selectedVariants.size,
+                                    onClick = {
                                         expandedMenu = null
                                         state.updateReasoningEffort(effort)
                                     },
@@ -731,59 +435,4 @@ private fun ComposerPanel(
             }
         }
     }
-}
-
-/**
- * 仅在 Enter 抬起且未按住 Shift 时发送 composer。
- */
-internal fun shouldSubmitComposerKey(
-    key: Key,
-    eventType: KeyEventType,
-    isShiftPressed: Boolean,
-): Boolean = key == Key.Enter && eventType == KeyEventType.KeyUp && !isShiftPressed
-
-/** 权限模式在选择器及菜单中共用的文案与风险色。 */
-internal data class PermissionPresentation(
-    val label: String,
-    val description: String,
-    val tone: Color,
-)
-
-/** 为每种权限模式提供唯一且一致的展示信息。 */
-internal fun permissionPresentation(permissionPreset: PermissionPreset): PermissionPresentation = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> PermissionPresentation(
-        label = "Ask",
-        description = "首次使用每种工具时请求确认",
-        tone = Color(0xFF5A5C60),
-    )
-
-    PermissionPreset.AUTO -> PermissionPresentation(
-        label = "Auto",
-        description = "自动执行安全的只读操作",
-        tone = Color(0xFF245286),
-    )
-
-    PermissionPreset.EDIT_ALLOW -> PermissionPresentation(
-        label = "Allow Edits",
-        description = "自动接受文件编辑权限",
-        tone = Color(0xFF76561B),
-    )
-
-    PermissionPreset.PLAN -> PermissionPresentation(
-        label = "Plan",
-        description = "修改前先完成计划",
-        tone = Color(0xFF55479A),
-    )
-
-    PermissionPreset.BRAVE -> PermissionPresentation(
-        label = "Full Access",
-        description = "跳过所有权限确认",
-        tone = Color(0xFF8E3541),
-    )
-}
-
-/** Ask 沿用当前蓝色，其他权限模式使用其菜单徽标的语义色描绘 Composer 边框。 */
-internal fun composerBorderTone(permissionPreset: PermissionPreset): Color = when (permissionPreset) {
-    PermissionPreset.DEFAULT -> AppAccent
-    else -> permissionPresentation(permissionPreset).tone
 }

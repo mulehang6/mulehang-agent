@@ -1,5 +1,7 @@
 package com.agent.shared.chat.model
 
+import com.agent.shared.tool.model.FileDiffPreview
+
 /**
  * 时间线中的工具调用或状态事件项。
  *
@@ -8,6 +10,7 @@ package com.agent.shared.chat.model
  * [operationIntent] 为终端调用时由模型提供的简短操作说明。
  * [resultPreview] 保存回灌给后续模型上下文的紧凑工具输出。
  * [resultDisplay] 保存供用户展开查看的完整工具输出。
+ * [fileDiffs] 保存原生补丁工具生成的结构化文件 Diff，供时间线按编辑器式画布展示。
  */
 data class ToolEventItem(
     val toolName: String,
@@ -18,6 +21,7 @@ data class ToolEventItem(
     val toolCallId: String? = null,
     val resultPreview: String? = null,
     val resultDisplay: String? = null,
+    val fileDiffs: List<FileDiffPreview> = emptyList(),
 ) : ConversationItem {
     override val kind: ConversationItem.Kind = ConversationItem.Kind.ToolEvent
 }

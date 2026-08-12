@@ -31,6 +31,7 @@ import com.agent.app.design.*
 import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.shared.tool.model.QuestionAnswer
 import com.agent.shared.tool.model.QuestionPrompt
+import com.agent.shared.tool.model.FileDiffPreview
 
 /**
  * 问题卡片的展示模型。
@@ -50,6 +51,7 @@ data class ApprovalCardModel(
     val payloadPreview: String?,
     val operationIntent: String?,
     val rawCommand: String?,
+    val diffs: List<FileDiffPreview>,
 )
 
 /** 单题回答当前所处的选择模式，空白、预设和自定义输入必须明确区分。 */
@@ -84,7 +86,12 @@ internal fun buildApprovalCardModel(pending: PendingApprovalUiState): ApprovalCa
     payloadPreview = pending.payloadPreview,
     operationIntent = pending.summary.takeIf { pending.toolName == "run_powershell" },
     rawCommand = pending.payloadPreview.takeIf { pending.toolName == "run_powershell" },
+    diffs = pending.diffs,
 )
+
+/** apply_patch 已由编辑器 Diff 覆盖载荷内容，其他工具继续展示可审批的命令或摘要。 */
+internal fun visibleApprovalPayload(model: ApprovalCardModel): String? =
+    if (model.toolName == "apply_patch") null else model.rawCommand ?: model.payloadPreview
 
 /** 判断自由回答去除空白后是否仍可提交。 */
 internal fun canSubmitQuestionFreeText(value: String): Boolean = value.isNotBlank()
@@ -345,7 +352,10 @@ fun ApprovalCard(
                     style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
                 )
             }
-            (model.rawCommand ?: model.payloadPreview)?.takeIf { it.isNotBlank() }?.let { preview ->
+            model.diffs.forEach { diff -> EditorDiffPreview(diff) }
+            visibleApprovalPayload(model)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { preview ->
                 Text(
                     text = preview,
                     modifier = Modifier

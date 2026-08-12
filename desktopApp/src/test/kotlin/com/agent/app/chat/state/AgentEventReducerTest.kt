@@ -11,6 +11,8 @@ import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.tool.model.FileChangeKind
+import com.agent.shared.tool.model.FileDiffPreview
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -170,6 +172,36 @@ class AgentEventReducerTest {
         assertEquals("call-1", items.single().toolCallId)
         assertEquals("src/App.kt:12", items.single().resultPreview)
         assertEquals("src/App.kt:12\nfun main() = Unit", items.single().resultDisplay)
+    }
+
+    /** 原生补丁 Diff 应回填到对应运行中的时间线卡片，供完成态继续渲染。 */
+    @Test
+    fun `file diff preview attaches to the active patch tool`() {
+        val started = reduceAgentEvent(
+            conversation(),
+            AgentStreamEvent.ToolCallStarted(
+                toolCallId = "patch-1",
+                name = "apply_patch",
+                argumentsPreview = "{\"patch_text\":\"*** Begin Patch\"}",
+            ),
+            contextWindow = 100,
+        )
+        val diffs = listOf(
+            FileDiffPreview(
+                path = "src/App.kt",
+                kind = FileChangeKind.MODIFIED,
+                unifiedDiff = "-old\n+new",
+                collapsedUnchangedLineCount = 0,
+            ),
+        )
+
+        val result = reduceAgentEvent(
+            started,
+            AgentStreamEvent.ToolFileDiffPreviewed(name = "apply_patch", diffs = diffs),
+            contextWindow = 100,
+        )
+
+        assertEquals(diffs, (result.items.single() as ToolEventItem).fileDiffs)
     }
 
     /**

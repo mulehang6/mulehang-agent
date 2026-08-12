@@ -64,6 +64,12 @@ internal fun reduceAgentEvent(
         resultPreview = event.resultPreview,
     )
 
+    is AgentStreamEvent.ToolFileDiffPreviewed -> attachFileDiffsToActiveTool(
+        conversation = conversation,
+        toolName = event.name,
+        diffs = event.diffs,
+    )
+
     is AgentStreamEvent.ToolCallFailed -> markToolCallFailed(
         conversation = conversation,
         toolCallId = event.toolCallId,
@@ -94,6 +100,8 @@ internal fun reduceAgentEvent(
             summary = event.request.summary,
             targetPath = event.request.targetPath,
             payloadPreview = event.request.payloadPreview,
+            diff = event.request.diff,
+            diffs = event.request.diffs,
         ),
         pendingQuestion = null,
         executionState = ExecutionState.WaitingForApproval,
@@ -264,6 +272,27 @@ private fun completeToolEvent(
         resultDisplay = resultDisplay,
     )
     return conversation.copy(items = items)
+}
+
+/**
+ * 将文件工具刚生成的 Diff 附加到最近开始的同名调用。
+ *
+ * Koog 按调用开始、工具执行、调用完成的顺序派发事件；找不到对应调用时忽略预览，避免把
+ * 已过期 Diff 误挂到其他工具卡片。
+ */
+private fun attachFileDiffsToActiveTool(
+    conversation: ChatConversationUiState,
+    toolName: String,
+    diffs: List<com.agent.shared.tool.model.FileDiffPreview>,
+): ChatConversationUiState {
+    val matchedIndex = conversation.items.indexOfLast { candidate ->
+        candidate is ToolEventItem && candidate.status == ToolEventStatus.Started && candidate.toolName == toolName
+    }
+    if (matchedIndex < 0) return conversation
+    val updatedItems = conversation.items.toMutableList()
+    val activeTool = updatedItems[matchedIndex] as ToolEventItem
+    updatedItems[matchedIndex] = activeTool.copy(fileDiffs = diffs)
+    return conversation.copy(items = updatedItems)
 }
 
 /**

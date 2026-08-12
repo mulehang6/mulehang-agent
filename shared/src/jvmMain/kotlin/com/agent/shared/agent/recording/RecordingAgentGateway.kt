@@ -160,6 +160,7 @@ private class AgentRunRecordCollector(
             is AgentStreamEvent.QuestionRequested,
             is AgentStreamEvent.ApprovalRequested,
             is AgentStreamEvent.Status,
+            is AgentStreamEvent.ToolFileDiffPreviewed,
             is AgentStreamEvent.ToolOutputDelta,
             -> Unit
 

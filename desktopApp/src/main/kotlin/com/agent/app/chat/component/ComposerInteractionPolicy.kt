@@ -137,7 +137,7 @@ internal fun permissionPresentation(permissionPreset: PermissionPreset): Permiss
 
         PermissionPreset.AUTO -> PermissionPresentation(
             label = "Auto",
-            description = "自动执行安全的只读操作",
+            description = "由独立审批模型决定执行或询问",
             tone = Color(0xFF245286),
         )
 

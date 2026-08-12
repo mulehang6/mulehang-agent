@@ -748,6 +748,7 @@ class ChatWindowState(
                         reasoningEffort = reasoningEffort,
                         workspacePath = sourceConversation.workspacePath,
                         permissionPreset = sourceConversation.permissionPreset,
+                        approvalProfile = snapshot.approvalProfiles[profile.providerId],
                     ),
                 ).collect { event ->
                     applyAgentEvent(targetConversationId, event)

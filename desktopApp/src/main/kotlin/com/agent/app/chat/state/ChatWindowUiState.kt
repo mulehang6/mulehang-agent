@@ -8,6 +8,7 @@ import com.agent.shared.chat.model.ConversationItem
 import com.agent.shared.chat.model.ConversationState
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.FileDiffPreview
 import com.agent.shared.tool.model.QuestionPrompt
 import com.agent.shared.tool.model.normalizeQuestionPrompts
 
@@ -47,6 +48,9 @@ data class PendingApprovalUiState(
     val summary: String,
     val targetPath: String?,
     val payloadPreview: String?,
+    val diff: FileDiffPreview? = null,
+    /** 当前审批中全部文件的预览；单文件历史仍使用 [diff]。 */
+    val diffs: List<FileDiffPreview> = diff?.let(::listOf).orEmpty(),
 )
 
 /**

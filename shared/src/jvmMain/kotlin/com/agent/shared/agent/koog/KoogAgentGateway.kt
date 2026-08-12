@@ -10,6 +10,7 @@ import com.agent.shared.tool.interaction.RejectingDesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.QuestionRequest
 import com.agent.shared.tool.runtime.DesktopToolRegistryFactory
+import com.agent.shared.tool.runtime.ToolApprovalAgent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,9 @@ class KoogAgentGateway(
     private val interactionBridge: DesktopToolInteractionBridge = RejectingDesktopToolInteractionBridge,
     private val streamRunner: (suspend (request: AgentRunRequest) -> Flow<StreamFrame>)? = null,
     private val executionDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val approvalAgentFactory: (AgentRunRequest) -> ToolApprovalAgent? = { request ->
+        request.approvalProfile?.let(::KoogToolApprovalAgent)
+    },
     private val agentRunner: suspend (
         request: AgentRunRequest,
         toolRegistry: ToolRegistry,
@@ -57,12 +61,18 @@ class KoogAgentGateway(
                         runBlocking { eventQueue.send(event) }
                     }
                 },
+                emitFileDiffPreview = { event ->
+                    runCatching {
+                        runBlocking { eventQueue.send(event) }
+                    }
+                },
             )
             val registry = DesktopToolRegistryFactory(
                 workspacePath = request.workspacePath,
                 permissionPreset = request.permissionPreset,
                 interactionBridge = bridge,
                 isCancelled = { !isActive },
+                approvalAgent = approvalAgentFactory(request) ?: com.agent.shared.tool.runtime.ManualFallbackToolApprovalAgent,
             ).create()
             launch(executionDispatcher) {
                 try {
@@ -96,6 +106,7 @@ class KoogAgentGateway(
     private fun eventEmittingBridge(
         emitEvent: suspend (AgentStreamEvent) -> Unit,
         emitToolOutput: (AgentStreamEvent.ToolOutputDelta) -> Unit,
+        emitFileDiffPreview: (AgentStreamEvent.ToolFileDiffPreviewed) -> Unit,
     ): DesktopToolInteractionBridge = object : DesktopToolInteractionBridge {
         override fun isApprovalAutoApproved(request: ApprovalRequest): Boolean =
             interactionBridge.isApprovalAutoApproved(request)
@@ -127,6 +138,16 @@ class KoogAgentGateway(
                     } else {
                         AgentStreamEvent.ToolOutputStream.Stdout
                     },
+                ),
+            )
+        }
+
+        override fun onFileDiffPreview(toolName: String, diffs: List<com.agent.shared.tool.model.FileDiffPreview>) {
+            if (diffs.isEmpty()) return
+            emitFileDiffPreview(
+                AgentStreamEvent.ToolFileDiffPreviewed(
+                    name = toolName,
+                    diffs = diffs,
                 ),
             )
         }

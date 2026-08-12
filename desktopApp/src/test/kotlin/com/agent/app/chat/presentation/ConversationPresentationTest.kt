@@ -8,6 +8,8 @@ import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.tool.model.FileChangeKind
+import com.agent.shared.tool.model.FileDiffPreview
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -343,6 +345,28 @@ class ConversationPresentationTest {
                 ),
             ),
         )
+    }
+
+    /** 已有结构化 Diff 的补丁卡只能交给编辑器画布渲染，不能回退到原始协议文本。 */
+    @Test
+    fun `should hide raw patch input and output when structured diff exists`() {
+        val item = ToolEventItem(
+            toolName = "apply_patch",
+            status = ToolEventStatus.Finished,
+            preview = "{\"patch_text\":\"*** Begin Patch\"}",
+            resultDisplay = "PATCH_APPLIED: 1 个文件",
+            fileDiffs = listOf(
+                FileDiffPreview(
+                    path = "src/App.kt",
+                    kind = FileChangeKind.CREATED,
+                    unifiedDiff = "+fun main() = Unit",
+                    collapsedUnchangedLineCount = 0,
+                ),
+            ),
+        )
+
+        assertNull(buildToolEventInlineInput(item))
+        assertNull(toolEventOutputText(item))
     }
 
     /**

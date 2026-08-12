@@ -2,6 +2,8 @@ package com.agent.app.tool.component
 
 import com.agent.app.chat.state.PendingApprovalUiState
 import com.agent.app.chat.state.PendingQuestionUiState
+import com.agent.shared.tool.model.FileDiffLineKind
+import com.agent.shared.tool.model.FileDiffLinePreview
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -119,5 +121,53 @@ class ToolInteractionCardsTest {
 
         assertEquals("列出当前目录内容", model.operationIntent)
         assertEquals("Get-ChildItem", model.rawCommand)
+    }
+
+    /** 长上下文默认折叠，展开当前区段后应恢复所有编辑器行。 */
+    @Test
+    fun `editor diff folds and expands unchanged context runs`() {
+        val lines = (1..8).map { number ->
+            FileDiffLinePreview(FileDiffLineKind.CONTEXT, number, number, "line-$number")
+        }
+
+        val collapsed = editorDiffRows(lines)
+        val expanded = editorDiffRows(lines, expandedContextRuns = setOf(0))
+
+        assertEquals(7, collapsed.size)
+        assertTrue(collapsed.any { it is EditorDiffRow.CollapsedContext && it.hiddenLineCount == 2 })
+        assertEquals(8, expanded.size)
+        assertTrue(expanded.all { it is EditorDiffRow.Line })
+    }
+
+    /** 新增和删除的文本内容不应带入 patch 协议的正负号前缀。 */
+    @Test
+    fun `editor diff keeps markers outside code content`() {
+        val rows = editorDiffRows(
+            listOf(
+                FileDiffLinePreview(FileDiffLineKind.REMOVED, 3, null, "old value"),
+                FileDiffLinePreview(FileDiffLineKind.ADDED, null, 3, "new value"),
+            ),
+        )
+
+        assertEquals(
+            listOf("old value", "new value"),
+            rows.filterIsInstance<EditorDiffRow.Line>().map { it.line.content },
+        )
+    }
+
+    /** apply_patch 的补丁载荷不能与编辑器 Diff 重复显示。 */
+    @Test
+    fun `apply patch approval hides raw payload`() {
+        val model = buildApprovalCardModel(
+            PendingApprovalUiState(
+                requestId = "patch-1",
+                toolName = "apply_patch",
+                summary = "修改文件",
+                targetPath = "src/App.kt",
+                payloadPreview = "*** Begin Patch",
+            ),
+        )
+
+        assertEquals(null, visibleApprovalPayload(model))
     }
 }

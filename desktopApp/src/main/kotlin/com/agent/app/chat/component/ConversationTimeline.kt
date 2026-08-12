@@ -38,6 +38,7 @@ import androidx.compose.ui.zIndex
 import com.agent.app.chat.presentation.*
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.*
+import com.agent.app.tool.component.EditorDiffPreview
 import com.agent.shared.chat.model.*
 import com.halilibo.richtext.markdown.Markdown
 import com.halilibo.richtext.ui.BasicRichText
@@ -1538,6 +1539,9 @@ private fun TimelineToolTextRow(
                     .padding(DETAIL_ISLANDS_OUTER_PADDING_DP.dp),
                 verticalArrangement = Arrangement.spacedBy(DETAIL_ISLANDS_GAP_DP.dp),
             ) {
+                item.fileDiffs.forEach { diff ->
+                    EditorDiffPreview(diff)
+                }
                 input?.let { inputText ->
                     ToolEventOutputPane(
                         text = inputText,
@@ -1925,6 +1929,9 @@ private fun TimelineToolEvent(
                 exit = shrinkVertically(tween(durationMillis = 120)) + fadeOut(tween(durationMillis = 100)),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item.fileDiffs.forEach { diff ->
+                        EditorDiffPreview(diff)
+                    }
                     toolEventOutputText(item)?.let { output ->
                         ToolEventOutputPane(
                             text = output,

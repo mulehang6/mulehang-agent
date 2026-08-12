@@ -1,6 +1,7 @@
 package com.agent.shared.agent.api
 
 import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.FileDiffPreview
 import com.agent.shared.tool.model.QuestionRequest
 
 /**
@@ -35,6 +36,16 @@ sealed interface AgentStreamEvent {
         val name: String,
         val resultPreview: String? = null,
         val resultDisplay: String? = null,
+    ) : AgentStreamEvent
+
+    /**
+     * 原生文件工具生成了可直接渲染的结构化 Diff。
+     *
+     * 该事件在工具完成前发送，让 AUTO 放行的补丁也能在执行后时间线中显示同一份预览。
+     */
+    data class ToolFileDiffPreviewed(
+        val name: String,
+        val diffs: List<FileDiffPreview>,
     ) : AgentStreamEvent
 
     /**

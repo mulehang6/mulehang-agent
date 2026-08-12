@@ -14,6 +14,10 @@ import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.FileChangeKind
+import com.agent.shared.tool.model.FileDiffLineKind
+import com.agent.shared.tool.model.FileDiffLinePreview
+import com.agent.shared.tool.model.FileDiffPreview
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -22,6 +26,40 @@ import kotlin.test.assertTrue
  * 验证桌面聊天状态与共享持久化快照之间的完整映射。
  */
 class ChatTaskSnapshotMapperTest {
+    /** 结构化 Diff 必须随时间线持久化，重开任务后不能退回原始补丁文本。 */
+    @Test
+    fun `should preserve patch editor diff in persisted timeline`() {
+        val diffs = listOf(
+            FileDiffPreview(
+                path = "src/App.kt",
+                kind = FileChangeKind.MODIFIED,
+                unifiedDiff = "-old\n+new",
+                collapsedUnchangedLineCount = 0,
+                editorLines = listOf(
+                    FileDiffLinePreview(FileDiffLineKind.REMOVED, 1, null, "old"),
+                    FileDiffLinePreview(FileDiffLineKind.ADDED, null, 1, "new"),
+                ),
+            ),
+        )
+        val source = ChatConversationUiState(
+            id = "task-diff",
+            title = "Diff 持久化",
+            workspacePath = "D:\\workspace",
+            items = listOf(
+                ToolEventItem(
+                    toolName = "apply_patch",
+                    status = ToolEventStatus.Finished,
+                    fileDiffs = diffs,
+                ),
+            ),
+            executionState = ExecutionState.Idle,
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
+
+        assertEquals(diffs, (restored.items.single() as ToolEventItem).fileDiffs)
+    }
+
     /**
      * 映射必须保留用户可见和 Agent 可续接的所有原始文本。
      */

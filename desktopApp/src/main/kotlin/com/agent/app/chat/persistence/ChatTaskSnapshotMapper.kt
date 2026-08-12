@@ -19,6 +19,7 @@ import com.agent.shared.chat.persistence.PersistedHistoryItem
 import com.agent.shared.chat.persistence.PersistedTask
 import com.agent.shared.chat.persistence.PersistedTimelineItem
 import com.agent.shared.tool.model.PermissionPreset
+import com.agent.shared.tool.model.FileDiffPreview
 import com.agent.shared.tool.model.QuestionAnswer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -29,6 +30,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -140,6 +143,7 @@ internal object ChatTaskSnapshotMapper {
             putNullable("toolCallId", source.toolCallId)
             putNullable("resultPreview", source.resultPreview)
             putNullable("resultDisplay", source.resultDisplay)
+            put("fileDiffs", json.encodeToJsonElement(source.fileDiffs))
         }.toString())
     }
 
@@ -176,6 +180,9 @@ internal object ChatTaskSnapshotMapper {
                 toolCallId = objectValue.optionalString("toolCallId"),
                 resultPreview = objectValue.optionalString("resultPreview"),
                 resultDisplay = objectValue.optionalString("resultDisplay"),
+                fileDiffs = objectValue["fileDiffs"]?.let { encodedDiffs ->
+                    json.decodeFromJsonElement<List<FileDiffPreview>>(encodedDiffs)
+                }.orEmpty(),
             )
 
             else -> error("Unsupported timeline item type: ${source.type}")

@@ -54,7 +54,7 @@ internal fun toolEventDetailText(item: ToolEventItem): String = item.preview
  * 返回展开工具卡片时应显示的完整输出，兼容旧事件的预览字段。
  */
 internal fun toolEventOutputText(item: ToolEventItem): String? =
-    item.resultDisplay ?: item.resultPreview
+    (item.resultDisplay ?: item.resultPreview).takeUnless { item.fileDiffs.isNotEmpty() }
 
 /**
  * 仅在进行中的终端调用已产生输出时自动展开，避免静默工具占用展开空间。
@@ -105,6 +105,7 @@ internal fun buildToolEventOperationIntent(item: ToolEventItem): String? =
  * 返回应紧跟工具名展示的非空输入；无参数工具保持仅展示名称。
  */
 internal fun buildToolEventInlineInput(item: ToolEventItem): String? {
+    if (item.fileDiffs.isNotEmpty()) return null
     val preview = item.preview?.takeIf(String::isNotBlank) ?: return null
     return if (isTerminalToolEvent(item)) {
         terminalScriptFromPreview(preview) ?: preview

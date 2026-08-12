@@ -14,6 +14,7 @@ data class ProviderProfile(
     val apiKey: String,
     val models: List<ModelProfile> = emptyList(),
     val defaultModel: String? = null,
+    val fasterModel: FasterModelProfile? = null,
     val enabled: Boolean? = null,
 ) {
     /**

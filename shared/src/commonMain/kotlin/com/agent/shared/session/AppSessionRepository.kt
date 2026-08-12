@@ -11,6 +11,9 @@ interface AppSessionRepository {
      */
     suspend fun loadProfiles(): List<ConfigProfile>
 
+    /** 返回按 provider 分组的独立 AUTO 审批模型；缺失时调用方应人工确认。 */
+    suspend fun loadApprovalProfiles(): Map<String, ConfigProfile> = emptyMap()
+
     /**
      * 加载当前项目上次记忆的 profile id。
      */

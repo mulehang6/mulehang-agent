@@ -8,4 +8,5 @@ import com.agent.shared.settings.model.ConfigProfile
 data class AppSessionSnapshot(
     val profiles: List<ConfigProfile>,
     val activeProfile: ConfigProfile?,
+    val approvalProfiles: Map<String, ConfigProfile> = emptyMap(),
 )

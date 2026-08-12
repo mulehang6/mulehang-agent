@@ -21,6 +21,7 @@ class LoadAppSessionUseCase(
         return AppSessionSnapshot(
             profiles = profiles,
             activeProfile = activeProfile,
+            approvalProfiles = repository.loadApprovalProfiles(),
         )
     }
 }

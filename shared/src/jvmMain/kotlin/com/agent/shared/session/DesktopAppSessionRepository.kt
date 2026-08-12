@@ -29,6 +29,9 @@ class DesktopAppSessionRepository(
      */
     override suspend fun loadProfiles(): List<ConfigProfile> = settingsRepository.loadResolvedProfiles()
 
+    /** 从同一份 settings 文档加载 AUTO 审批模型。 */
+    override suspend fun loadApprovalProfiles(): Map<String, ConfigProfile> = settingsRepository.loadResolvedFasterProfiles()
+
     /**
      * 读取当前项目上次选择的 profile id。
      */

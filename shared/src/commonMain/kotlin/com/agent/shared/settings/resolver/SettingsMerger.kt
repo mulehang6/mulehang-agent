@@ -56,6 +56,32 @@ object SettingsMerger {
         }
     }
 
+    /** 解析每个活动 provider 的 AUTO 审批模型，保留 models 的 JSON 原始首项语义。 */
+    fun mergeFasterProfiles(
+        user: SettingsDocument?,
+        project: SettingsDocument?,
+    ): Map<String, ConfigProfile> = mergeFasterProfileResolutions(user, project)
+        .mapNotNull { (providerId, resolution) -> resolution.profile?.let { providerId to it } }
+        .toMap()
+
+    /** 保留每个 Provider 的来源和人工回退原因，供桌面层写脱敏诊断日志。 */
+    fun mergeFasterProfileResolutions(
+        user: SettingsDocument?,
+        project: SettingsDocument?,
+    ): Map<String, FasterModelResolution> {
+        val providers = linkedMapOf<String, LayeredProvider>()
+        user?.providers.orEmpty().forEach { providers[it.id] = LayeredProvider(it, ConfigLayer.USER) }
+        project?.providers.orEmpty().forEach { providers[it.id] = LayeredProvider(it, ConfigLayer.PROJECT) }
+        val global = project?.fasterModel ?: user?.fasterModel
+        return providers.mapValues { (_, layered) ->
+            FasterModelResolver.resolveDetailed(
+                activeProvider = layered.provider,
+                settings = SettingsDocument(fasterModel = global),
+                layer = layered.layer,
+            )
+        }
+    }
+
     /**
      * 从环境变量构造无 JSON 配置时可用的最小 profile。
      */
@@ -192,7 +218,7 @@ object SettingsMerger {
         val layer: ConfigLayer,
     )
 
-    private const val DEFAULT_CONTEXT_WINDOW = 1_000_000
+    private const val DEFAULT_CONTEXT_WINDOW = 256_000
 
     private const val DEFAULT_OUTPUT_TOKEN_LIMIT = 384_000
 }

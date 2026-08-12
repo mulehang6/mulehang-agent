@@ -206,10 +206,10 @@ class SettingsMergerTest {
     }
 
     /**
-     * 上下文窗口和最大输出未显式填写时，应默认按 1M/384K 能力处理。
+     * 上下文窗口和最大输出未显式填写时，应默认按 256K/384K 能力处理。
      */
     @Test
-    fun `should default omitted context and output limits to one million and max output`() {
+    fun `should default omitted context and output limits to 256k and max output`() {
         val projectSettings = SettingsDocument(
             providers = listOf(
                 ProviderProfile(
@@ -228,7 +228,7 @@ class SettingsMergerTest {
             environment = emptyMap(),
         )
 
-        assertEquals(ModelLimit(context = 1_000_000, output = 384_000), merged.single().limit)
+        assertEquals(ModelLimit(context = 256_000, output = 384_000), merged.single().limit)
     }
 
     /**

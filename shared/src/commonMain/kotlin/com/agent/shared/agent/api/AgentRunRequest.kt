@@ -13,6 +13,8 @@ data class AgentRunRequest(
     val history: List<AgentConversationHistoryMessage> = emptyList(),
     val workspacePath: String = "",
     val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
+    /** AUTO 模式独立审批模型；为空时必须回退到人工审批。 */
+    val approvalProfile: ConfigProfile? = null,
 )
 
 /**

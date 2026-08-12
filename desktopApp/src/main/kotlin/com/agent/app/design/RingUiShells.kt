@@ -130,6 +130,7 @@ internal enum class RightRailGlyph {
     HISTORY,
     COPY,
     FILTER,
+    SETTINGS,
 }
 
 internal const val RAIL_ACTION_SIZE_DP = 40
@@ -150,6 +151,9 @@ internal data class RightRailButtonModel(
 internal fun buildRightRailGroups(): List<List<RightRailButtonModel>> = listOf(
     listOf(
         RightRailButtonModel(glyph = RightRailGlyph.TERMINAL),
+    ),
+    listOf(
+        RightRailButtonModel(glyph = RightRailGlyph.SETTINGS),
     ),
 )
 
@@ -325,11 +329,7 @@ internal const val SELECT_POPUP_FOCUSABLE = false
 /** 下拉菜单项的悬浮反馈即时切换，避免高频指针移动出现滞后。 */
 internal const val SELECT_MENU_HOVER_TRANSITION_DURATION_MILLIS = 0
 
-/** 浮动菜单作为唯一的外层岛屿，承载所有普通和右键菜单。 */
-internal val PopupMenuBackground = Color(0xFF252629)
-internal val PopupMenuHoverBackground = Color(0xFF2E2F32)
-internal val PopupMenuSelectedBackground = Color(0xFF194474)
-internal val PopupMenuBorder = Color(0xFF3A3B3E)
+/** 浮动菜单作为唯一的外层岛屿，承载所有普通和右键菜单；颜色由 DesktopPalette 提供。 */
 internal val PopupMenuShape = RoundedCornerShape(12.dp)
 internal val PopupMenuItemShape = RoundedCornerShape(8.dp)
 
@@ -705,6 +705,7 @@ private val RightRailGlyph.tooltip: String
         RightRailGlyph.HISTORY -> "历史记录"
         RightRailGlyph.COPY -> "复制最新回答"
         RightRailGlyph.FILTER -> "筛选工具活动"
+        RightRailGlyph.SETTINGS -> "设置"
     }
 
 /**
@@ -1395,6 +1396,26 @@ internal fun RightRailGlyphIcon(
                         StrokeCap.Round
                     )
                 }
+
+                RightRailGlyph.SETTINGS -> {
+                    drawCircle(
+                        color = tint,
+                        radius = width * 0.19f,
+                        style = stroke,
+                    )
+                    repeat(8) { index ->
+                        val angle = Math.toRadians((index * 45).toDouble())
+                        val start = Offset(
+                            x = width * 0.5f + kotlin.math.cos(angle).toFloat() * width * 0.27f,
+                            y = height * 0.5f + kotlin.math.sin(angle).toFloat() * height * 0.27f,
+                        )
+                        val end = Offset(
+                            x = width * 0.5f + kotlin.math.cos(angle).toFloat() * width * 0.36f,
+                            y = height * 0.5f + kotlin.math.sin(angle).toFloat() * height * 0.36f,
+                        )
+                        drawLine(tint, start, end, stroke.width, StrokeCap.Round)
+                    }
+                }
             }
         }
     }
@@ -1429,29 +1450,6 @@ internal fun RingChevron(
         )
     }
 }
-
-internal val AppBackground = Color(0xFF1E1F22)
-internal val AppHeaderBackground = Color(0xFF1E1F22)
-internal val AppWorkspaceBackground = Color(0xFF18191B)
-internal val AppSidebarBackground = Color(0xFF2B2D30)
-internal val AppPanelBackground = Color(0xFF1E1F22)
-internal val AppSelectedBackground = Color(0xFF2E436E)
-internal val AppHoverBackground = Color(0xFF35383E)
-internal val AppUserCardBackground = Color(0xFF43454A)
-internal val AppChipBackground = Color(0xFF43454A)
-internal val ComposerBackground = Color(0xFF2B2D30)
-internal val AppRailBackground = AppHeaderBackground
-internal val AppLine = Color(0xFF393B40)
-internal val AppText = Color(0xFFFFFFFF)
-internal val AppMuted = Color(0xFF9DA0A8)
-internal val AppAccent = Color(0xFF548AF7)
-internal val AppMarkdownLink = Color(0xFF9CB3D2)
-/** 工具组与工具行共用的低饱和交互色，避免占用全局状态语义色。 */
-internal val AppToolInteraction = Color(0xFF91CFC9)
-internal val AppSuccess = Color(0xFF5FAD65)
-/** 已完成思考的柔和紫色，区别于运行中动作使用的蓝色强调。 */
-internal val AppReasoning = Color(0xFFB7A2F7)
-internal val AppDanger = Color(0xFFE37774)
 
 /** Windows 桌面界面统一使用更柔和的中文无衬线字体；缺失时由 Compose 自动回退。 */
 internal val AppUiFontFamily = FontFamily("Microsoft YaHei UI")

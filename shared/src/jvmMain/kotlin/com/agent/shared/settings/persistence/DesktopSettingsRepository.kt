@@ -1,11 +1,13 @@
 package com.agent.shared.settings.persistence
 
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.SettingsDocument
 import com.agent.shared.settings.resolver.SettingsMerger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -54,6 +56,42 @@ class DesktopSettingsRepository(
     }
 
     /**
+     * 读取指定层级的原始设置文档，供桌面设置界面编辑。
+     *
+     * 此方法不会合并环境变量，避免将高优先级覆盖值误写回 JSON 文件。
+     */
+    fun loadDocument(layer: ConfigLayer): SettingsDocument =
+        readDocument(pathFor(layer)) ?: SettingsDocument()
+
+    /**
+     * 原子写入指定层级的原始设置文档。
+     */
+    fun saveDocument(
+        layer: ConfigLayer,
+        document: SettingsDocument,
+    ) {
+        require(layer != ConfigLayer.ENVIRONMENT) { "环境变量层不可写入 settings.json" }
+        val target = pathFor(layer)
+        target.parent.createDirectories()
+        val temporary = Files.createTempFile(target.parent, "settings-", ".json")
+        try {
+            Files.writeString(temporary, json.encodeToString(SettingsDocument.serializer(), document))
+            runCatching {
+                Files.move(
+                    temporary,
+                    target,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE,
+                )
+            }.getOrElse {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            Files.deleteIfExists(temporary)
+        }
+    }
+
+    /**
      * 写入项目级示例 settings。
      */
     fun writeExampleSettings(exampleContent: String) {
@@ -68,6 +106,13 @@ class DesktopSettingsRepository(
     private fun readDocument(path: Path): SettingsDocument? {
         if (!path.exists()) return null
         return json.decodeFromString(SettingsDocument.serializer(), path.readText())
+    }
+
+    /** 返回层级对应的实际 JSON 文件路径。 */
+    private fun pathFor(layer: ConfigLayer): Path = when (layer) {
+        ConfigLayer.USER -> pathResolver.userSettingsPath()
+        ConfigLayer.PROJECT -> pathResolver.projectSettingsPath()
+        ConfigLayer.ENVIRONMENT -> error("环境变量层没有 settings.json 文件")
     }
 
     private companion object {

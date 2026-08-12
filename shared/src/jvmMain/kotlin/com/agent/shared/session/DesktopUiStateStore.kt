@@ -55,12 +55,36 @@ class DesktopUiStateStore(
         Files.writeString(statePath, json.encodeToString(UiStateDocument.serializer(), updated))
     }
 
+    /** 读取用户选择的界面主题模式；缺省时由桌面端采用深色主题。 */
+    fun loadThemeMode(): String? = readState()?.themeMode
+
+    /** 保存用户选择的界面主题模式。 */
+    fun saveThemeMode(themeMode: String) {
+        val current = readState() ?: UiStateDocument()
+        saveState(current.copy(themeMode = themeMode))
+    }
+
+    /** 读取用户选择的强调色标识。 */
+    fun loadAccentColor(): String? = readState()?.accentColor
+
+    /** 保存用户选择的强调色标识。 */
+    fun saveAccentColor(accentColor: String) {
+        val current = readState() ?: UiStateDocument()
+        saveState(current.copy(accentColor = accentColor))
+    }
+
     /**
      * 读取 UI 状态文档，文件不存在时返回 null。
      */
     private fun readState(): UiStateDocument? {
         if (!statePath.exists()) return null
         return json.decodeFromString(UiStateDocument.serializer(), statePath.readText())
+    }
+
+    /** 写入完整 UI 状态，同时保证父目录已经存在。 */
+    private fun saveState(state: UiStateDocument) {
+        statePath.parent?.let(Files::createDirectories)
+        Files.writeString(statePath, json.encodeToString(UiStateDocument.serializer(), state))
     }
 
     /**
@@ -70,5 +94,7 @@ class DesktopUiStateStore(
     private data class UiStateDocument(
         val projectSelections: Map<String, String> = emptyMap(),
         val recentWorkspace: String? = null,
+        val themeMode: String? = null,
+        val accentColor: String? = null,
     )
 }

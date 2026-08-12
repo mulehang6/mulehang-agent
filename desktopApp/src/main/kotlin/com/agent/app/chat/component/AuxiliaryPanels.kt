@@ -125,19 +125,17 @@ internal fun ToolRail(
             .width(TOOL_RAIL_WIDTH_DP.dp)
             .fillMaxHeight()
             .background(AppRailBackground)
-            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 8.dp, start = 4.dp, end = 4.dp),
-        contentAlignment = Alignment.TopCenter,
+            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 16.dp, start = 4.dp, end = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Column(
+            modifier = Modifier.fillMaxHeight(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            toolGroups.forEachIndexed { groupIndex, group ->
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    group.forEach { item ->
+            toolGroups.firstOrNull()?.let { topGroup ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    topGroup.forEach { item ->
                         RingRailActionButton(
                             glyph = item.glyph,
                             active = item.glyph == activeGlyph,
@@ -145,14 +143,13 @@ internal fun ToolRail(
                         )
                     }
                 }
-                if (groupIndex != toolGroups.lastIndex) {
-                    Spacer(
-                        modifier = Modifier
-                            .width(18.dp)
-                            .height(1.dp)
-                            .background(AppLine),
-                    )
-                }
+            }
+            toolGroups.drop(1).flatten().forEach { item ->
+                RingRailActionButton(
+                    glyph = item.glyph,
+                    active = item.glyph == activeGlyph,
+                    onClick = { onToolClick(item.glyph) },
+                )
             }
         }
     }

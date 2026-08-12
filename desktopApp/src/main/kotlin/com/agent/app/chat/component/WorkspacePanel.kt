@@ -67,6 +67,19 @@ internal fun WorkspacePanel(
     onCloseTerminalTab: (Long) -> Unit,
     onCloseOtherTerminalTabs: (Long) -> Unit,
     onHideTerminalPanel: () -> Unit,
+    sidePanelVisible: Boolean = terminalPanelVisible && terminalTabs.hasActiveTab(),
+    sidePanel: @Composable (Modifier) -> Unit = { terminalModifier ->
+        EmbeddedTerminalPanel(
+            tabs = terminalTabs,
+            sessions = terminalSessions,
+            onSelectTab = onSelectTerminalTab,
+            onAddTab = onAddTerminalTab,
+            onCloseTab = onCloseTerminalTab,
+            onCloseOtherTabs = onCloseOtherTerminalTabs,
+            onHidePanel = onHideTerminalPanel,
+            modifier = terminalModifier,
+        )
+    },
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -132,7 +145,7 @@ internal fun WorkspacePanel(
             ),
     ) {
         ResizableWorkspaceLayout(
-            terminalVisible = terminalPanelVisible && terminalTabs.hasActiveTab() && activeConversation != null,
+            terminalVisible = sidePanelVisible,
             compact = compact,
             modifier = Modifier.fillMaxSize(),
             workspace = { workspaceModifier ->
@@ -265,18 +278,7 @@ internal fun WorkspacePanel(
                     }
                 }
             },
-            terminal = { terminalModifier ->
-                EmbeddedTerminalPanel(
-                    tabs = terminalTabs,
-                    sessions = terminalSessions,
-                    onSelectTab = onSelectTerminalTab,
-                    onAddTab = onAddTerminalTab,
-                    onCloseTab = onCloseTerminalTab,
-                    onCloseOtherTabs = onCloseOtherTerminalTabs,
-                    onHidePanel = onHideTerminalPanel,
-                    modifier = terminalModifier,
-                )
-            },
+            terminal = sidePanel,
         )
     }
 }

@@ -145,9 +145,9 @@ internal fun taskContextMenuLabels(): List<String> = listOf("Fork", "删除", "A
 /** 返回工作区右键菜单的紧凑操作文案。 */
 internal fun workspaceContextMenuLabels(): List<String> = listOf("编辑", "删除")
 
-internal val TaskContextMenuBackground = PopupMenuBackground
-internal val TaskContextMenuHoverBackground = PopupMenuSelectedBackground
-internal val TaskContextMenuBorder = PopupMenuBorder
+internal val TaskContextMenuBackground: Color get() = PopupMenuBackground
+internal val TaskContextMenuHoverBackground: Color get() = PopupMenuSelectedBackground
+internal val TaskContextMenuBorder: Color get() = PopupMenuBorder
 internal val TaskContextMenuDanger = Color(0xFFFF5C78)
 internal val TaskContextMenuWidth = 180.dp
 internal val TaskContextMenuShape = PopupMenuShape

@@ -69,6 +69,7 @@ import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
+import com.agent.app.design.ComposerInputBackground
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.RingContextIndicator
 import com.agent.app.design.RingDropdownMenuItem
@@ -209,7 +210,7 @@ internal fun ComposerPanel(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF0A0B0D), RoundedCornerShape(12.dp))
+                    .background(ComposerInputBackground, RoundedCornerShape(12.dp))
                     .onSizeChanged { size -> inputViewportHeight = size.height }
                     .onPointerEvent(
                         eventType = PointerEventType.Move,

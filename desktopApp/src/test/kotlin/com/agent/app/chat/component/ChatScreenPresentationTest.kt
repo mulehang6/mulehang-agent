@@ -454,15 +454,16 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * 右侧 rail 只保留终端入口，关闭终端时不默认高亮。
+     * 右侧 rail 在顶部保留终端入口，并在底部提供设置入口。
      */
     @Test
-    fun `should expose terminal as the only right rail button`() {
+    fun `should expose terminal and settings rail buttons`() {
         val groups = buildRightRailGroups()
 
-        assertEquals(listOf(1), groups.map { it.size })
-        assertEquals(RightRailGlyph.TERMINAL, groups.single().single().glyph)
-        assertEquals(false, groups.single().single().active)
+        assertEquals(listOf(1, 1), groups.map { it.size })
+        assertEquals(RightRailGlyph.TERMINAL, groups.first().single().glyph)
+        assertEquals(RightRailGlyph.SETTINGS, groups.last().single().glyph)
+        assertEquals(false, groups.flatten().any { it.active })
     }
 
     /**

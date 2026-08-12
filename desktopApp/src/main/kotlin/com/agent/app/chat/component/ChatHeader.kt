@@ -63,10 +63,9 @@ import com.agent.app.design.AppDanger
 import com.agent.app.design.AppHeaderBackground
 import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppText
+import com.agent.app.design.DesktopInteropPalette
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.MenuGrowthOrigin
-import com.agent.app.design.PopupMenuBackground
-import com.agent.app.design.PopupMenuBorder
 import com.agent.app.design.PopupMenuShape
 import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.PopupMenuShadowInset
@@ -94,8 +93,6 @@ import javax.swing.SwingUtilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val NATIVE_TITLE_BAR_MENU_BACKGROUND = java.awt.Color(0x1E, 0x1F, 0x22)
-private const val NATIVE_TITLE_BAR_TASK_HIT_WIDTH_DP = 560
 private const val NATIVE_TITLE_BAR_MENU_SEAM_OVERLAP_PX = 1
 internal const val HEADER_TASK_TITLE_FONT_SIZE_SP = 16
 internal const val HEADER_TASK_CHIP_HEIGHT_DP = 36
@@ -109,6 +106,28 @@ internal const val HEADER_PROJECT_ICON_MENU_WIDTH_DP = 180
 internal const val HEADER_PROJECT_ICON_MENU_HEIGHT_DP = 64
 private val NATIVE_TITLE_BAR_MENU_SEAM_LISTENER_KEY = Any()
 private val NATIVE_TITLE_BAR_MENU_CORRECTED_BOUNDS_KEY = Any()
+
+/** 将 Compose 标题栏色板映射给 Swing 命中层，避免浅色模式露出深色残留。 */
+private fun nativeTitleBarAwtColor(color: Color): java.awt.Color = java.awt.Color(
+    (color.red * 255).toInt(),
+    (color.green * 255).toInt(),
+    (color.blue * 255).toInt(),
+    (color.alpha * 255).toInt(),
+)
+
+/** 返回当前主题的原生标题栏底色。 */
+private fun nativeTitleBarInteropBackground(): java.awt.Color =
+    nativeTitleBarAwtColor(DesktopInteropPalette.headerBackground)
+
+/** 返回原生标题栏命中层的悬浮与按下底色。 */
+private fun nativeTitleBarInteropHoverBackground(pressed: Boolean): java.awt.Color =
+    nativeTitleBarAwtColor(
+        DesktopInteropPalette.hoverBackground.copy(alpha = if (pressed) 0.9f else 1f),
+    )
+
+/** 返回当前主题下原生菜单图标的前景色。 */
+private fun nativeTitleBarInteropTextColor(): java.awt.Color =
+    nativeTitleBarAwtColor(DesktopInteropPalette.text)
 
 /**
  * 标题栏菜单中等待重命名的任务标识与当前名称。
@@ -716,9 +735,9 @@ internal fun createNativeTitleBarTaskHitTarget(
  * 将菜单命中组件及 SwingPanel 互操作宿主同步为标题栏底色，避免边缘露出默认浅色画布。
  */
 internal fun synchronizeNativeTitleBarMenuInteropBackground(component: NativeTitleBarMenuHitTarget) {
-    component.background = NATIVE_TITLE_BAR_MENU_BACKGROUND
+    component.background = nativeTitleBarInteropBackground()
     (component.parent as? JComponent)?.apply {
-        background = NATIVE_TITLE_BAR_MENU_BACKGROUND
+        background = nativeTitleBarInteropBackground()
         isOpaque = true
         border = null
         installNativeTitleBarMenuSeamCover(component)
@@ -729,10 +748,10 @@ internal fun synchronizeNativeTitleBarMenuInteropBackground(component: NativeTit
  * 将任务标题命中层的 Swing 宿主锁定为标题栏深色，避免透明互操作层被默认白色画布清屏。
  */
 internal fun synchronizeNativeTitleBarTaskInteropBackground(component: NativeTitleBarTaskHitTarget) {
-    component.background = NATIVE_TITLE_BAR_MENU_BACKGROUND
+    component.background = nativeTitleBarInteropBackground()
     component.isOpaque = true
     (component.parent as? JComponent)?.apply {
-        background = NATIVE_TITLE_BAR_MENU_BACKGROUND
+        background = nativeTitleBarInteropBackground()
         isOpaque = true
         border = null
     }
@@ -849,7 +868,7 @@ internal class NativeTitleBarTaskHitTarget(
     }
 
     init {
-        background = NATIVE_TITLE_BAR_MENU_BACKGROUND
+        background = nativeTitleBarInteropBackground()
         isOpaque = true
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         getAccessibleContext()?.accessibleName = "任务菜单"
@@ -875,11 +894,7 @@ internal class NativeTitleBarTaskHitTarget(
         val graphics2D = graphics.create() as Graphics2D
         try {
             graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            graphics2D.color = if (pressed) {
-                java.awt.Color(0x30, 0x32, 0x37)
-            } else {
-                java.awt.Color(0x35, 0x38, 0x3E)
-            }
+            graphics2D.color = nativeTitleBarInteropHoverBackground(pressed)
             graphics2D.fillRoundRect(0, 0, width - 1, height - 1, 16, 16)
         } finally {
             graphics2D.dispose()
@@ -977,7 +992,7 @@ internal class NativeTitleBarMenuHitTarget(
     }
 
     init {
-        background = NATIVE_TITLE_BAR_MENU_BACKGROUND
+        background = nativeTitleBarInteropBackground()
         isOpaque = true
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         getAccessibleContext()?.accessibleName = "显示任务侧栏"
@@ -1022,11 +1037,11 @@ internal class NativeTitleBarMenuHitTarget(
             graphics2D.translate(-width / 2.0, -height / 2.0)
 
             if (hovered || pressed) {
-                graphics2D.color = java.awt.Color(0x35, 0x38, 0x3E)
+                graphics2D.color = nativeTitleBarInteropHoverBackground(pressed)
                 graphics2D.fillRoundRect(0, 0, width - 1, height - 1, 20, 20)
             }
 
-            graphics2D.color = java.awt.Color.WHITE
+            graphics2D.color = nativeTitleBarInteropTextColor()
             graphics2D.stroke = java.awt.BasicStroke(
                 1.8f,
                 java.awt.BasicStroke.CAP_ROUND,

@@ -556,7 +556,7 @@ private fun AssistantMessageBlock(
 }
 
 /** 正文行内代码直接沿用应用强调色，不额外绘制背景包裹框。 */
-internal val AssistantMarkdownInlineCodeForeground = AppAccent
+internal val AssistantMarkdownInlineCodeForeground: Color get() = AppAccent
 
 /** 助手 Markdown 正文使用柔和灰白，避免深色背景上的纯白产生眩光。 */
 internal val AssistantMarkdownBodyForeground = Color(0xFFC7CBD3)

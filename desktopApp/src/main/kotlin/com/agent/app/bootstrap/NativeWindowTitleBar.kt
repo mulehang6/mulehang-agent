@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.window.WindowDecoration
 import androidx.compose.ui.window.WindowScope
 import com.jetbrains.JBR
@@ -22,8 +23,6 @@ import java.awt.event.MouseEvent
 import javax.swing.RootPaneContainer
 
 internal const val APP_TITLE_BAR_HEIGHT_DP = 48
-private val NATIVE_WINDOW_BACKGROUND = java.awt.Color(0x1E, 0x1F, 0x22)
-
 /**
  * 桌面窗口可使用的标题栏实现。
  */
@@ -86,21 +85,25 @@ internal class NativeTitleBarHandle(
  * 在窗口存续期间安装 JBR 原生按钮，并返回菜单命中桥接句柄。
  */
 @Composable
-internal fun WindowScope.rememberNativeWindowTitleBar(mode: WindowChromeMode): NativeTitleBarHandle? {
+internal fun WindowScope.rememberNativeWindowTitleBar(
+    mode: WindowChromeMode,
+    controlsDark: Boolean,
+    background: Color,
+): NativeTitleBarHandle? {
     var handle by remember(mode) { mutableStateOf<NativeTitleBarHandle?>(null) }
-    DisposableEffect(window, mode) {
+    DisposableEffect(window, mode, controlsDark, background) {
         if (mode != WindowChromeMode.JBR_NATIVE) {
             return@DisposableEffect onDispose { }
         }
 
         val frame = window as? Frame ?: return@DisposableEffect onDispose { }
-        configureNativeWindowBackground(frame)
+        configureNativeWindowBackground(frame, background)
         val decorations = runCatching { JBR.getWindowDecorations() }.getOrNull()
             ?: return@DisposableEffect onDispose { }
         val titleBar = runCatching {
             val configuredTitleBar = decorations.createCustomTitleBar()
             configuredTitleBar.setHeight(nativeTitleBarHeightPx())
-            configuredTitleBar.putProperty("controls.dark", true)
+            configuredTitleBar.putProperty("controls.dark", controlsDark)
             decorations.setCustomTitleBar(frame, configuredTitleBar)
             configuredTitleBar
         }.getOrNull()
@@ -147,12 +150,18 @@ internal fun WindowScope.rememberNativeWindowTitleBar(mode: WindowChromeMode): N
 /**
  * 同步 AWT 宿主背景，避免最大化后客户区边缘暴露默认浅色底色。
  */
-private fun configureNativeWindowBackground(frame: Frame) {
-    frame.background = NATIVE_WINDOW_BACKGROUND
+private fun configureNativeWindowBackground(frame: Frame, background: Color) {
+    val awtBackground = java.awt.Color(
+        (background.red * 255).toInt(),
+        (background.green * 255).toInt(),
+        (background.blue * 255).toInt(),
+        (background.alpha * 255).toInt(),
+    )
+    frame.background = awtBackground
     (frame as? RootPaneContainer)?.apply {
-        rootPane.background = NATIVE_WINDOW_BACKGROUND
+        rootPane.background = awtBackground
         rootPane.isOpaque = true
-        contentPane.background = NATIVE_WINDOW_BACKGROUND
+        contentPane.background = awtBackground
     }
 }
 

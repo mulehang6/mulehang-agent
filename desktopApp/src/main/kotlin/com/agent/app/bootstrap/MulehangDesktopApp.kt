@@ -1,27 +1,25 @@
 package com.agent.app.bootstrap
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
 import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppBackground
-import com.agent.app.design.AppChipBackground
-import com.agent.app.design.AppDanger
-import com.agent.app.design.AppMuted
-import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppTypography
-import com.agent.app.design.AppSuccess
-import com.agent.app.design.AppText
+import com.agent.app.design.DesktopAccentColor
+import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.DesktopThemePaletteProvider
+import com.agent.app.design.desktopColorScheme
+import com.agent.app.design.desktopPalette
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.agent.koog.KoogConversationTitleGenerator
@@ -36,6 +34,7 @@ import com.agent.shared.chat.persistence.SqliteTaskRepository
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlinx.coroutines.launch
 
 /**
  * 根 composable，负责加载桌面会话快照并装配窗口状态。
@@ -47,9 +46,10 @@ internal fun WindowScope.MulehangDesktopApp(
     windowChromeMode: WindowChromeMode,
     onCloseRequest: () -> Unit,
 ) {
-    val nativeTitleBarHandle = rememberNativeWindowTitleBar(windowChromeMode)
     val userHome = remember { Paths.get(System.getProperty("user.home")) }
     val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
+    var themeMode by remember { mutableStateOf(DesktopThemeMode.fromStorage(uiStateStore.loadThemeMode())) }
+    var accentColor by remember { mutableStateOf(DesktopAccentColor.fromStorage(uiStateStore.loadAccentColor())) }
     val projectRootState = remember {
         mutableStateOf(
             initialProjectRoot ?: uiStateStore.loadRecentWorkspace()
@@ -61,9 +61,10 @@ internal fun WindowScope.MulehangDesktopApp(
         DesktopToolInteractionCoordinator()
     }
     val stateHolder = remember { mutableStateOf<ChatWindowState?>(null) }
+    val appScope = rememberCoroutineScope()
     val taskPersistenceCoordinator = TaskPersistenceCoordinator(
         repository = remember { SqliteTaskRepository(userHome.resolve(".mulehang/tasks.db")) },
-        scope = rememberCoroutineScope(),
+        scope = appScope,
         reportError = { message -> stateHolder.value?.setPersistenceError(message) },
     )
     val windowState = remember {
@@ -104,31 +105,48 @@ internal fun WindowScope.MulehangDesktopApp(
             .onFailure { windowState.setPersistenceError("历史任务未加载") }
     }
 
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            background = AppBackground,
-            surface = AppSidebarBackground,
-            surfaceVariant = AppChipBackground,
-            primary = AppAccent,
-            secondary = AppSuccess,
-            error = AppDanger,
-            onBackground = AppText,
-            onSurface = AppText,
-            onSurfaceVariant = AppMuted,
-            onPrimary = Color.White,
-            onSecondary = Color.White,
-            onError = Color.White,
-        ),
-        typography = AppTypography,
-    ) {
-        ChatScreen(
+    val palette = desktopPalette(
+        mode = themeMode,
+        accent = accentColor,
+        systemIsDark = isSystemInDarkTheme(),
+    )
+    val nativeTitleBarHandle = rememberNativeWindowTitleBar(
+        mode = windowChromeMode,
+        controlsDark = palette.isDark,
+        background = palette.headerBackground,
+    )
+    DesktopThemePaletteProvider(palette) {
+        MaterialTheme(
+            colorScheme = desktopColorScheme(palette),
+            typography = AppTypography,
+        ) {
+            ChatScreen(
             state = windowState,
             desktopWindowState = desktopWindowState,
             windowChromeMode = windowChromeMode,
             onTitleBarClientPointerEvent = nativeTitleBarHandle?.let { handle ->
                 { handle.forceClientArea() }
             },
-            onCloseRequest = { windowState.flushPersistence(onCloseRequest) },
-        )
+            projectRoot = projectRootState.value,
+            userHome = userHome,
+            themeMode = themeMode,
+            accentColor = accentColor,
+            onThemeChanged = { updatedMode, updatedAccent ->
+                themeMode = updatedMode
+                accentColor = updatedAccent
+                uiStateStore.saveThemeMode(updatedMode.storageValue)
+                uiStateStore.saveAccentColor(updatedAccent.storageValue)
+            },
+            onSettingsChanged = {
+                projectRootState.value?.let { root ->
+                    appScope.launch {
+                        val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
+                        windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+                    }
+                }
+            },
+                onCloseRequest = { windowState.flushPersistence(onCloseRequest) },
+            )
+        }
     }
 }

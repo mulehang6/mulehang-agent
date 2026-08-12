@@ -53,7 +53,12 @@ function HeaderContent({ title, breadcrumb }: { title: string; breadcrumb: strin
             <Button icon={shareIcon} inline />
           </Tooltip>
           <Tooltip title="Settings">
-            <Button icon={settingsIcon} inline />
+            <Button
+              icon={settingsIcon}
+              inline
+              aria-label="打开设置原型"
+              onClick={() => window.location.assign('./settings.html')}
+            />
           </Tooltip>
           <Tooltip title="Help">
             <Button icon={helpIcon} inline />

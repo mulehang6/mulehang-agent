@@ -11,6 +11,8 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         // 独立的设计稿页面：Agent 执行时间线（供实现参考，勿并入主页面）
         timeline: resolve(__dirname, 'timeline.html'),
+        // 独立的设计稿页面：右侧设置 Island（供桌面端视觉实现参考）
+        settings: resolve(__dirname, 'settings.html'),
       },
     },
   },

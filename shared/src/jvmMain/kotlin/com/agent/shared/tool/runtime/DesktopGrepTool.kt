@@ -4,6 +4,9 @@ import java.nio.charset.MalformedInputException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 按关键字或正则在项目文件中搜索内容。
@@ -58,6 +61,9 @@ class DesktopGrepTool(
                 }
                 val file = iterator.next()
                 val relative = root.relativize(file)
+                if (DesktopIgnoredPaths.containsIgnoredSegment(relative)) {
+                    continue
+                }
                 if (globMatchers != null && globMatchers.none { it.matches(relative) }) {
                     continue
                 }
@@ -95,12 +101,47 @@ class DesktopGrepTool(
         return output.toString().trimEnd()
     }
 
-    /**
-     * 预留 rg 接入点。当前版本探测不可用时直接回退 JVM。
-     */
+    /** 使用 rg 的 JSON 流搜索；找不到可执行文件时返回 null 进入 JVM 降级。 */
     private fun runRipgrep(args: Args): String? {
-        args.path
-        return null
+        if (args.contextLines > 0 || args.maxResults < 200) return null
+        val command = buildList {
+            add("rg")
+            add("--json")
+            add("--no-messages")
+            if (!args.caseSensitive) add("-i")
+            if (!args.regex) add("-F")
+            args.glob?.trim()?.takeIf(String::isNotEmpty)?.let { glob -> add("--glob"); add(glob) }
+            add(args.pattern)
+            add(args.path)
+        }
+        return runCatching {
+            val result = DesktopProcessRunner().run(
+                DesktopProcessRunner.Args(
+                    command = command,
+                    workingDirectory = java.io.File(args.path),
+                    timeoutMillis = 30_000L,
+                ),
+            )
+            renderRipgrepMatches(result.stdout, args)
+        }.getOrNull()
+    }
+
+    /** 将 rg 的 NDJSON 转换为与 JVM 回退一致的模型可读 `path:line:text` 结果。 */
+    private fun renderRipgrepMatches(output: String, args: Args): String {
+        val maxBlocks = args.headLimit.coerceIn(1, 200)
+        val maxChars = args.maxChars.coerceIn(200, 100_000)
+        val rendered = output.lineSequence().mapNotNull { line ->
+            val element = runCatching { Json.parseToJsonElement(line).jsonObject }.getOrNull() ?: return@mapNotNull null
+            if (element["type"]?.jsonPrimitive?.content != "match") return@mapNotNull null
+            val data = element["data"]?.jsonObject ?: return@mapNotNull null
+            val path = data["path"]?.jsonObject?.get("text")?.jsonPrimitive?.content ?: return@mapNotNull null
+            val lineNumber = data["line_number"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val text = data["lines"]?.jsonObject?.get("text")?.jsonPrimitive?.content?.trimEnd('\n', '\r') ?: ""
+            "$path:$lineNumber:$text"
+        }.take(maxBlocks).joinToString("\n")
+        return rendered.take(maxChars).let { visible ->
+            if (visible.length < rendered.length) "$visible\npartial=true reason=maxChars" else visible
+        }
     }
 
     /**

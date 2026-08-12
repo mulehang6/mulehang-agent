@@ -1,6 +1,7 @@
 package com.agent.shared.tool.interaction
 
 import com.agent.shared.tool.model.ApprovalRequest
+import com.agent.shared.tool.model.FileDiffPreview
 import com.agent.shared.tool.model.QuestionRequest
 
 /**
@@ -23,6 +24,16 @@ interface DesktopToolInteractionBridge {
         toolName: String,
         text: String,
         isErrorStream: Boolean,
+    ) = Unit
+
+    /**
+     * 将原生文件操作的结构化 Diff 转发给执行时间线。
+     *
+     * 回调发生在补丁审批和落盘之前，因此审批卡与执行完成卡可复用同一份安全预览。
+     */
+    fun onFileDiffPreview(
+        toolName: String,
+        diffs: List<FileDiffPreview>,
     ) = Unit
 
     /**

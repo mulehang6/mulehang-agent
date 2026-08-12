@@ -35,6 +35,9 @@ class DesktopGlobTool {
                         return@forEach
                     }
                     val relative = root.relativize(file)
+                    if (DesktopIgnoredPaths.containsIgnoredSegment(relative)) {
+                        return@forEach
+                    }
                     if (matchers.any { it.matches(relative) }) {
                         results += file.toString()
                     }

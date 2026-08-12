@@ -11,6 +11,7 @@ class DesktopToolRegistryFactory(
     private val workspacePath: String,
     private val permissionPreset: PermissionPreset,
     private val interactionBridge: DesktopToolInteractionBridge,
+    private val approvalAgent: ToolApprovalAgent = ManualFallbackToolApprovalAgent,
     private val isCancelled: () -> Boolean = { false },
 ) {
     /**
@@ -23,6 +24,7 @@ class DesktopToolRegistryFactory(
                 permissionPreset = permissionPreset,
                 interactionBridge = interactionBridge,
                 isCancelled = isCancelled,
+                approvalAgent = approvalAgent,
             ),
         )
     }

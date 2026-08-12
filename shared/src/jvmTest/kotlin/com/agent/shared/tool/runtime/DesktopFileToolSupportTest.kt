@@ -2,7 +2,6 @@ package com.agent.shared.tool.runtime
 
 import java.nio.file.Files
 import kotlin.test.Test
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -22,14 +21,14 @@ class DesktopFileToolSupportTest {
     }
 
     /**
-     * 写入工具必须拒绝工作区外路径。
+     * 外部写入需要被精确标识，供上层审批而非在路径层静默拒绝。
      */
     @Test
-    fun `write should reject file outside workspace`() {
+    fun `write should identify file outside workspace`() {
         val workspace = Files.createTempDirectory("mulehang-workspace")
         val external = Files.createTempFile("mulehang-external", ".txt")
         val support = DesktopFileToolSupport(workspace.toString())
 
-        assertFalse(support.canWrite(external.toString()))
+        assertTrue(!support.resolveForWrite(external.toString()).isInsideWorkspace)
     }
 }

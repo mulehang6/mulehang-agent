@@ -66,4 +66,58 @@ data class ApprovalRequest(
     val summary: String,
     val targetPath: String? = null,
     val payloadPreview: String? = null,
+    val risk: ToolRisk = ToolRisk.UNKNOWN,
+    val diff: FileDiffPreview? = null,
+    /** 一次补丁包含的全部文件 Diff；单文件调用继续使用 [diff] 兼容既有界面与历史。 */
+    val diffs: List<FileDiffPreview> = diff?.let(::listOf).orEmpty(),
+)
+
+/** 描述工具调用的安全敏感度，供审批器与界面共同使用。 */
+enum class ToolRisk {
+    READ_ONLY,
+    WORKSPACE_WRITE,
+    EXTERNAL_WRITE,
+    COMMAND,
+    DANGEROUS,
+    UNKNOWN,
+}
+
+/** 文件变更种类。 */
+@Serializable
+enum class FileChangeKind {
+    CREATED,
+    MODIFIED,
+    DELETED,
+}
+
+/** 编辑器式 unified Diff 中一行的语义，供 UI 决定 gutter、颜色和行号。 */
+@Serializable
+enum class FileDiffLineKind {
+    CONTEXT,
+    REMOVED,
+    ADDED,
+}
+
+/** 单栏编辑器 Diff 的一行；不存在的一侧行号以 null 表示。 */
+@Serializable
+data class FileDiffLinePreview(
+    val kind: FileDiffLineKind,
+    val oldLineNumber: Int?,
+    val newLineNumber: Int?,
+    val content: String,
+)
+
+/**
+ * 在写入前生成的统一 diff 预览。
+ *
+ * [collapsedUnchangedLineCount] 表示 UI 默认隐藏的未改动行数，避免大文件占满审批卡。
+ */
+@Serializable
+data class FileDiffPreview(
+    val path: String,
+    val kind: FileChangeKind,
+    val unifiedDiff: String,
+    val collapsedUnchangedLineCount: Int,
+    /** 面向审批 UI 的结构化行，避免把 patch 协议原文当作编辑器内容显示。 */
+    val editorLines: List<FileDiffLinePreview> = emptyList(),
 )

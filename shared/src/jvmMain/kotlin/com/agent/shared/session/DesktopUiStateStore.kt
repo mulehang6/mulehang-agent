@@ -64,13 +64,13 @@ class DesktopUiStateStore(
         saveState(current.copy(themeMode = themeMode))
     }
 
-    /** 读取用户选择的强调色标识。 */
-    fun loadAccentColor(): String? = readState()?.accentColor
+    /** 读取是否启用全应用 Liquid Glass；旧状态文件缺省为关闭。 */
+    fun loadLiquidGlassEnabled(): Boolean = readState()?.liquidGlassEnabled ?: false
 
-    /** 保存用户选择的强调色标识。 */
-    fun saveAccentColor(accentColor: String) {
+    /** 保存全应用 Liquid Glass 材质开关。 */
+    fun saveLiquidGlassEnabled(enabled: Boolean) {
         val current = readState() ?: UiStateDocument()
-        saveState(current.copy(accentColor = accentColor))
+        saveState(current.copy(liquidGlassEnabled = enabled))
     }
 
     /**
@@ -95,6 +95,6 @@ class DesktopUiStateStore(
         val projectSelections: Map<String, String> = emptyMap(),
         val recentWorkspace: String? = null,
         val themeMode: String? = null,
-        val accentColor: String? = null,
+        val liquidGlassEnabled: Boolean = false,
     )
 }

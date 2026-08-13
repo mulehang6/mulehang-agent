@@ -2,10 +2,16 @@ package com.agent.app.chat.component
 
 import com.agent.app.design.PopupMenuHoverBackground
 import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.app.design.DesktopMaterialMode
+import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.liquidglass.LiquidGlassExpansionDirection
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.IntSize
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -45,6 +51,7 @@ class SettingsPanelInteractionTest {
     @Test
     fun `should scope provider interaction colors to summary island`() {
         assertEquals(Color(0xFF252629), providerCardBackground())
+        assertEquals(Color(0xFF252629).copy(alpha = 0.58f), providerCardBackground(DesktopMaterialMode.LIQUID_GLASS))
         assertEquals(Color.Transparent, providerSummaryBackground(expanded = false, hovered = false))
         assertEquals(Color(0xFF38393B), providerSummaryBackground(expanded = false, hovered = true))
         assertEquals(
@@ -95,5 +102,64 @@ class SettingsPanelInteractionTest {
             WorkspaceIslandFocus.SETTINGS,
             workspaceFocusAfterPanelClosed(settingsVisible = true, terminalVisible = false),
         )
+    }
+
+    /** Provider 摘要只展示 Endpoint 主机名，并安全处理空值和不完整地址。 */
+    @Test
+    fun `should derive readable provider endpoint host`() {
+        assertEquals("gateway.example.com", providerEndpointHost("https://gateway.example.com/v1"))
+        assertEquals("localhost:11434", providerEndpointHost("localhost:11434/v1"))
+        assertEquals("未配置地址", providerEndpointHost("  "))
+    }
+
+    /** 方向键、Home、End 与 Escape 共用稳定的主题选择状态。 */
+    @Test
+    fun `should navigate and close liquid glass theme select state`() {
+        val state = LiquidGlassSelectState()
+
+        state.open(DesktopThemeMode.DARK.ordinal)
+        state.move(1)
+        assertEquals(DesktopThemeMode.LIGHT.ordinal, state.focusedIndex)
+        state.moveToEdge(last = false)
+        assertEquals(DesktopThemeMode.SYSTEM.ordinal, state.focusedIndex)
+        state.moveToEdge(last = true)
+        assertEquals(DesktopThemeMode.LIGHT.ordinal, state.focusedIndex)
+        state.close()
+        assertEquals(false, state.expanded)
+    }
+
+    /** 菜单应在设置面板底部空间不足时向上展开。 */
+    @Test
+    fun `should place liquid glass menu above near panel bottom`() {
+        val state = LiquidGlassSelectState().apply {
+            updatePanelGeometry(Offset(20f, 40f), IntSize(900, 500))
+            updateAnchor(Rect(650f, 460f, 820f, 496f))
+        }
+
+        val placement = liquidGlassMenuPlacement(state, menuWidthPx = 210f, menuHeightPx = 112f, gapPx = 6f)
+
+        assertEquals(LiquidGlassExpansionDirection.UP, placement.direction)
+        assertEquals(302, placement.offset.y)
+    }
+
+    /** Liquid Glass 菜单保持参考实现的 210 宽度、24 行高和 6 间距。 */
+    @Test
+    fun `should preserve reference liquid glass menu dimensions`() {
+        assertEquals(210, LIQUID_GLASS_MENU_WIDTH_DP)
+        assertEquals(24, LIQUID_GLASS_MENU_ROW_HEIGHT_DP)
+        assertEquals(6, LIQUID_GLASS_MENU_GAP_DP)
+    }
+
+    /** 减弱动态覆盖必须直接关闭位移与回弹分支。 */
+    @Test
+    fun `should respect reduced motion override`() {
+        val previous = System.getProperty("mulehang.reducedMotion")
+        try {
+            System.setProperty("mulehang.reducedMotion", "true")
+            assertEquals(true, prefersReducedMotion())
+        } finally {
+            if (previous == null) System.clearProperty("mulehang.reducedMotion")
+            else System.setProperty("mulehang.reducedMotion", previous)
+        }
     }
 }

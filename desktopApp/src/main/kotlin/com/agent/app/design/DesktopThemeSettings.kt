@@ -26,25 +26,19 @@ internal enum class DesktopThemeMode(val storageValue: String, val label: String
     }
 }
 
-/** 可选强调色，名称也是持久化标识。 */
-internal enum class DesktopAccentColor(val storageValue: String, val label: String, val color: Color) {
-    BLUE("blue", "蓝色", Color(0xFF548AF7)),
-    TEAL("teal", "青色", Color(0xFF28A9B8)),
-    GREEN("green", "绿色", Color(0xFF3DAA7A)),
-    ORANGE("orange", "橙色", Color(0xFFD97A20)),
-    PURPLE("purple", "紫色", Color(0xFF9A65DB)),
-    ;
-
-    companion object {
-        /** 将持久化值安全转换为强调色。 */
-        fun fromStorage(value: String?): DesktopAccentColor =
-            entries.firstOrNull { it.storageValue == value } ?: BLUE
-    }
+/** 桌面应用可独立于深浅主题切换的表面材质。 */
+internal enum class DesktopMaterialMode {
+    SOLID,
+    LIQUID_GLASS,
 }
+
+/** 产品固定强调色；设置页不再暴露可变强调色能力。 */
+internal val DesktopAccentBlue = Color(0xFF548AF7)
 
 /** 桌面界面所有跨组件使用的语义色板。 */
 internal data class DesktopPalette(
     val isDark: Boolean,
+    val materialMode: DesktopMaterialMode,
     val background: Color,
     val headerBackground: Color,
     val workspaceBackground: Color,
@@ -93,22 +87,23 @@ internal fun resolveDesktopThemeMode(
     else -> mode
 }
 
-/** 根据模式与强调色创建完整、可即时替换的桌面色板。 */
+/** 根据模式创建完整、可即时替换的桌面色板。 */
 internal fun desktopPalette(
     mode: DesktopThemeMode,
-    accent: DesktopAccentColor,
     systemIsDark: Boolean = true,
+    materialMode: DesktopMaterialMode = DesktopMaterialMode.SOLID,
 ): DesktopPalette {
     val resolvedMode = resolveDesktopThemeMode(mode, systemIsDark)
     return if (resolvedMode == DesktopThemeMode.LIGHT) {
         DesktopPalette(
             isDark = false,
+            materialMode = materialMode,
             background = Color(0xFFF6F7F9),
             headerBackground = Color(0xFFFFFFFF),
             workspaceBackground = Color(0xFFFFFFFF),
             sidebarBackground = Color(0xFFEFF1F4),
             panelBackground = Color(0xFFFFFFFF),
-            selectedBackground = accent.color.copy(alpha = 0.18f),
+            selectedBackground = DesktopAccentBlue.copy(alpha = 0.18f),
             hoverBackground = Color(0xFFE6E9EE),
             userCardBackground = Color(0xFFE8EAEE),
             chipBackground = Color(0xFFE8EAEE),
@@ -119,34 +114,35 @@ internal fun desktopPalette(
             line = Color(0xFFD5D9E0),
             text = Color(0xFF202124),
             muted = Color(0xFF656A73),
-            accent = accent.color,
-            markdownLink = accent.color.copy(alpha = 0.82f),
+            accent = DesktopAccentBlue,
+            markdownLink = DesktopAccentBlue.copy(alpha = 0.82f),
             toolInteraction = Color(0xFF317C75),
             success = Color(0xFF378445),
             reasoning = Color(0xFF7558B7),
             danger = Color(0xFFC5423D),
             popupBackground = Color(0xFFFFFFFF),
             popupHoverBackground = Color(0xFFE8EBEF),
-            popupSelectedBackground = accent.color.copy(alpha = 0.2f),
+            popupSelectedBackground = DesktopAccentBlue.copy(alpha = 0.2f),
             popupBorder = Color(0xFFD5D9E0),
             terminal = TerminalPalette(
                 background = Color(0xFFF7F8FA),
                 foreground = Color(0xFF1F2329),
                 scrollbarThumb = Color(0xFFA6ABB4),
-                tabActiveBackground = accent.color.copy(alpha = 0.14f),
+                tabActiveBackground = DesktopAccentBlue.copy(alpha = 0.14f),
                 tabHoverBackground = Color(0xFFE3E7EC),
-                tabSelectedBorder = accent.color,
+                tabSelectedBorder = DesktopAccentBlue,
             ),
         )
     } else {
         DesktopPalette(
             isDark = true,
+            materialMode = materialMode,
             background = Color(0xFF1E1F22),
             headerBackground = Color(0xFF1E1F22),
             workspaceBackground = Color(0xFF18191B),
             sidebarBackground = Color(0xFF2B2D30),
             panelBackground = Color(0xFF1E1F22),
-            selectedBackground = if (accent == DesktopAccentColor.BLUE) Color(0xFF2E436E) else accent.color.copy(alpha = 0.32f),
+            selectedBackground = Color(0xFF2E436E),
             hoverBackground = Color(0xFF35383E),
             userCardBackground = Color(0xFF43454A),
             chipBackground = Color(0xFF43454A),
@@ -157,29 +153,29 @@ internal fun desktopPalette(
             line = Color(0xFF393B40),
             text = Color(0xFFFFFFFF),
             muted = Color(0xFF9DA0A8),
-            accent = accent.color,
-            markdownLink = accent.color.copy(alpha = 0.68f),
+            accent = DesktopAccentBlue,
+            markdownLink = DesktopAccentBlue.copy(alpha = 0.68f),
             toolInteraction = Color(0xFF91CFC9),
             success = Color(0xFF5FAD65),
             reasoning = Color(0xFFB7A2F7),
             danger = Color(0xFFE37774),
             popupBackground = Color(0xFF252629),
             popupHoverBackground = Color(0xFF2E2F32),
-            popupSelectedBackground = if (accent == DesktopAccentColor.BLUE) Color(0xFF194474) else accent.color.copy(alpha = 0.38f),
+            popupSelectedBackground = Color(0xFF194474),
             popupBorder = Color(0xFF3A3B3E),
             terminal = TerminalPalette(
                 background = Color(0xFF17181A),
                 foreground = Color(0xFFE6E8EC),
                 scrollbarThumb = Color(0xFF4B4D52),
-                tabActiveBackground = if (accent == DesktopAccentColor.BLUE) Color(0xFF202A38) else accent.color.copy(alpha = 0.16f),
+                tabActiveBackground = Color(0xFF202A38),
                 tabHoverBackground = Color(0xFF24272D),
-                tabSelectedBorder = if (accent == DesktopAccentColor.BLUE) Color(0xFF2F81D6) else accent.color,
+                tabSelectedBorder = Color(0xFF2F81D6),
             ),
         )
     }
 }
 
-private val defaultDesktopPalette = desktopPalette(DesktopThemeMode.DARK, DesktopAccentColor.BLUE)
+private val defaultDesktopPalette = desktopPalette(DesktopThemeMode.DARK)
 
 /** 当前 Compose 子树的桌面色板，供新组件显式依赖。 */
 internal val LocalDesktopPalette = compositionLocalOf { defaultDesktopPalette }
@@ -208,7 +204,12 @@ internal fun DesktopThemePaletteProvider(
 
 /** 以下访问器保留既有调用点，并通过 Compose state 触发整树重组。 */
 internal val AppBackground: Color get() = applicationDesktopPalette.background
-internal val AppHeaderBackground: Color get() = applicationDesktopPalette.headerBackground
+internal val AppHeaderBackground: Color
+    get() = if (applicationDesktopPalette.materialMode == DesktopMaterialMode.LIQUID_GLASS) {
+        applicationDesktopPalette.headerBackground.copy(alpha = 0.08f)
+    } else {
+        applicationDesktopPalette.headerBackground
+    }
 internal val AppWorkspaceBackground: Color get() = applicationDesktopPalette.workspaceBackground
 internal val AppSidebarBackground: Color get() = applicationDesktopPalette.sidebarBackground
 internal val AppPanelBackground: Color get() = applicationDesktopPalette.panelBackground
@@ -220,7 +221,7 @@ internal val ComposerBackground: Color get() = applicationDesktopPalette.compose
 internal val ComposerInputBackground: Color get() = applicationDesktopPalette.composerInputBackground
 internal val ProviderCardBackground: Color get() = applicationDesktopPalette.providerCardBackground
 internal val ProviderCardHoverBackground: Color get() = applicationDesktopPalette.providerCardHoverBackground
-internal val AppRailBackground: Color get() = applicationDesktopPalette.headerBackground
+internal val AppRailBackground: Color get() = AppHeaderBackground
 internal val AppLine: Color get() = applicationDesktopPalette.line
 internal val AppText: Color get() = applicationDesktopPalette.text
 internal val AppMuted: Color get() = applicationDesktopPalette.muted

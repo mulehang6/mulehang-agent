@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -48,6 +47,8 @@ import com.agent.app.design.AppText
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.RingPrimaryButton
+import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
+import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
 import com.agent.shared.chat.model.ExecutionState
 import kotlinx.coroutines.launch
 
@@ -149,11 +150,12 @@ internal fun WorkspacePanel(
             compact = compact,
             modifier = Modifier.fillMaxSize(),
             workspace = { workspaceModifier ->
-                Surface(
+                AdaptiveLiquidGlassSurface(
+                    role = LiquidGlassSurfaceRole.PANEL,
                     modifier = workspaceModifier,
-                    shape = RoundedCornerShape(14.dp),
-                    color = AppWorkspaceBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.42f)),
+                    radius = 14.dp,
+                    solidColor = AppWorkspaceBackground,
+                    borderColor = AppLine.copy(alpha = 0.42f),
                 ) {
                     BoxWithConstraints {
                         val composerInputMaxHeight = maxComposerInputHeight(maxHeight)

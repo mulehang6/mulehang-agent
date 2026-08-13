@@ -22,6 +22,7 @@ import com.agent.app.design.AppText
 import com.agent.app.design.AppTypography
 import com.agent.app.design.AppUiFontFamily
 import com.agent.app.design.AppWorkspaceBackground
+import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.COMPOSER_PRIMARY_GLYPH_SIZE_DP
 import com.agent.app.design.RAIL_ACTION_SIZE_DP
 import com.agent.app.design.RightRailGlyph
@@ -44,6 +45,7 @@ import com.agent.app.design.selectChipChevronRotation
 import com.agent.app.design.selectChipTriggerBackground
 import com.agent.app.design.shouldShowSelectChipArrow
 import com.agent.app.design.workspaceBackdropOffset
+import com.agent.app.design.desktopPalette
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ExecutionState
@@ -555,7 +557,7 @@ class ChatScreenPresentationTest {
         composeHost.add(interopHost)
         interopHost.add(terminal)
 
-        synchronizeTerminalInteropBackground(terminal)
+        synchronizeTerminalInteropBackground(terminal, desktopPalette(DesktopThemeMode.DARK).terminal)
 
         val terminalBackground = java.awt.Color(23, 24, 26)
         assertEquals(

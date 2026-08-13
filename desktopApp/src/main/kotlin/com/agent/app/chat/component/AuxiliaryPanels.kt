@@ -1,18 +1,13 @@
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,6 +26,8 @@ import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.RingIsland
 import com.agent.app.design.RingRailActionButton
 import com.agent.app.design.buildRightRailGroups
+import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
+import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 
@@ -44,12 +41,12 @@ internal const val TOOL_RAIL_TOP_PADDING_DP = 16
 internal fun ToolRailPlaceholder(
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .width(TOOL_RAIL_WIDTH_DP.dp)
-            .fillMaxHeight()
-            .background(AppRailBackground),
-    )
+    AdaptiveLiquidGlassSurface(
+        role = LiquidGlassSurfaceRole.CHROME,
+        radius = 0.dp,
+        solidColor = AppRailBackground,
+        modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
+    ) { }
 }
 
 /**
@@ -60,10 +57,12 @@ internal fun AppFeedbackToast(
     message: String,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    AdaptiveLiquidGlassSurface(
+        role = LiquidGlassSurfaceRole.FLOATING,
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        color = AppChipBackground,
+        radius = 8.dp,
+        solidColor = AppChipBackground,
+        borderColor = AppLine,
     ) {
         Text(
             text = message,
@@ -120,36 +119,40 @@ internal fun ToolRail(
     modifier: Modifier = Modifier,
 ) {
     val toolGroups = buildRightRailGroups()
-    Box(
-        modifier = modifier
-            .width(TOOL_RAIL_WIDTH_DP.dp)
-            .fillMaxHeight()
-            .background(AppRailBackground)
-            .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 16.dp, start = 4.dp, end = 4.dp),
-        contentAlignment = Alignment.Center,
+    AdaptiveLiquidGlassSurface(
+        role = LiquidGlassSurfaceRole.CHROME,
+        radius = 0.dp,
+        solidColor = AppRailBackground,
+        modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
     ) {
-        Column(
-            modifier = Modifier.fillMaxHeight(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
+        Box(
+            modifier = Modifier.fillMaxHeight()
+                .padding(top = TOOL_RAIL_TOP_PADDING_DP.dp, bottom = 16.dp, start = 4.dp, end = 4.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            toolGroups.firstOrNull()?.let { topGroup ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    topGroup.forEach { item ->
-                        RingRailActionButton(
-                            glyph = item.glyph,
-                            active = item.glyph == activeGlyph,
-                            onClick = { onToolClick(item.glyph) },
-                        )
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                toolGroups.firstOrNull()?.let { topGroup ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        topGroup.forEach { item ->
+                            RingRailActionButton(
+                                glyph = item.glyph,
+                                active = item.glyph == activeGlyph,
+                                onClick = { onToolClick(item.glyph) },
+                            )
+                        }
                     }
                 }
-            }
-            toolGroups.drop(1).flatten().forEach { item ->
-                RingRailActionButton(
-                    glyph = item.glyph,
-                    active = item.glyph == activeGlyph,
-                    onClick = { onToolClick(item.glyph) },
-                )
+                toolGroups.drop(1).flatten().forEach { item ->
+                    RingRailActionButton(
+                        glyph = item.glyph,
+                        active = item.glyph == activeGlyph,
+                        onClick = { onToolClick(item.glyph) },
+                    )
+                }
             }
         }
     }

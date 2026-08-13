@@ -2,10 +2,12 @@ package com.agent.app.chat.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.agent.app.design.TerminalPalette
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -14,13 +16,13 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * 该控制器只保存界面生命周期状态，不改变终端创建或关闭时机。
  */
-internal class TerminalPanelController {
+internal class TerminalPanelController(initialPalette: TerminalPalette) {
     var tabs by mutableStateOf(TerminalTabsState())
         private set
     var visible by mutableStateOf(false)
         private set
     private var pendingTabCloseId by mutableStateOf<Long?>(null)
-    val sessions = TerminalSessionStore()
+    val sessions = TerminalSessionStore(initialPalette)
 
     /** 选择现有终端标签。 */
     fun select(tabId: Long) {
@@ -87,12 +89,18 @@ internal class TerminalPanelController {
     fun closeAll() {
         sessions.closeAll()
     }
+
+    /** 将明确的终端色板同步到现有和后续会话。 */
+    fun updateTheme(palette: TerminalPalette) {
+        sessions.updateTheme(palette)
+    }
 }
 
 /** 创建并绑定组合生命周期的终端面板控制器。 */
 @Composable
-internal fun rememberTerminalPanelController(): TerminalPanelController {
-    val controller = remember { TerminalPanelController() }
+internal fun rememberTerminalPanelController(palette: TerminalPalette): TerminalPanelController {
+    val controller = remember { TerminalPanelController(palette) }
+    SideEffect { controller.updateTheme(palette) }
     DisposableEffect(controller) {
         onDispose(controller::closeAll)
     }

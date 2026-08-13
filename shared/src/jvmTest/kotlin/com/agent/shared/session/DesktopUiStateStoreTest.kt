@@ -3,6 +3,7 @@ package com.agent.shared.session
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 /**
  * 验证按项目记忆的 UI 状态存储。
@@ -38,5 +39,39 @@ class DesktopUiStateStoreTest {
         store.saveRecentWorkspace("D:/workspace/demo")
 
         assertEquals("D:/workspace/demo", store.loadRecentWorkspace())
+    }
+
+    /** 旧强调色字段应可读取，并在下一次状态写入时从文档中自然移除。 */
+    @Test
+    fun `should discard legacy accent color after next write`() {
+        val root = Files.createTempDirectory("mulehang-ui-legacy-accent-test")
+        val statePath = root.resolve(".mulehang/ui-state.json")
+        Files.createDirectories(statePath.parent)
+        Files.writeString(
+            statePath,
+            """{"themeMode":"dark","accentColor":"teal"}""",
+        )
+        val store = DesktopUiStateStore(statePath)
+
+        assertEquals("dark", store.loadThemeMode())
+        store.saveThemeMode("light")
+
+        assertFalse(Files.readString(statePath).contains("accentColor"))
+        assertEquals("light", store.loadThemeMode())
+    }
+
+    /** Liquid Glass 开关应独立于主题持久化，旧状态文件默认保持关闭。 */
+    @Test
+    fun `should persist liquid glass material independently`() {
+        val root = Files.createTempDirectory("mulehang-ui-liquid-glass-test")
+        val statePath = root.resolve(".mulehang/ui-state.json")
+        val store = DesktopUiStateStore(statePath)
+
+        assertFalse(store.loadLiquidGlassEnabled())
+        store.saveThemeMode("light")
+        store.saveLiquidGlassEnabled(true)
+
+        assertEquals("light", store.loadThemeMode())
+        assertEquals(true, store.loadLiquidGlassEnabled())
     }
 }

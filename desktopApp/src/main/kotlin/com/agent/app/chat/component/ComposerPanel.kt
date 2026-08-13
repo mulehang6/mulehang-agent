@@ -75,11 +75,12 @@ import com.agent.app.design.RingContextIndicator
 import com.agent.app.design.RingDropdownMenuItem
 import com.agent.app.design.RingHeaderActionButton
 import com.agent.app.design.RingInputField
-import com.agent.app.design.RingIsland
 import com.agent.app.design.RingPermissionDropdownMenuItem
 import com.agent.app.design.RingPrimaryButton
 import com.agent.app.design.RingSelectChip
 import com.agent.app.design.RingTooltip
+import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
+import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
 import com.agent.app.platform.pickFiles
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
@@ -124,7 +125,11 @@ internal fun ComposerPanel(
         inputScrollState.scrollTo(inputScrollState.maxValue)
     }
 
-    RingIsland(
+    AdaptiveLiquidGlassSurface(
+        role = LiquidGlassSurfaceRole.INPUT,
+        radius = 18.dp,
+        solidColor = ComposerBackground,
+        borderColor = Color.Transparent,
         modifier = modifier.drawWithContent {
             drawContent()
             val stroke = 2.dp.toPx()
@@ -162,9 +167,6 @@ internal fun ComposerPanel(
                 }
             }
         },
-        color = ComposerBackground,
-        shape = RoundedCornerShape(18.dp),
-        borderColor = Color.Transparent,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

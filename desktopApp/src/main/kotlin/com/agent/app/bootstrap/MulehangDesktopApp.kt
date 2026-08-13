@@ -11,11 +11,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
+import androidx.compose.ui.graphics.Color
 import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppTypography
-import com.agent.app.design.DesktopAccentColor
+import com.agent.app.design.DesktopMaterialMode
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.DesktopThemePaletteProvider
 import com.agent.app.design.desktopColorScheme
@@ -49,7 +50,7 @@ internal fun WindowScope.MulehangDesktopApp(
     val userHome = remember { Paths.get(System.getProperty("user.home")) }
     val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
     var themeMode by remember { mutableStateOf(DesktopThemeMode.fromStorage(uiStateStore.loadThemeMode())) }
-    var accentColor by remember { mutableStateOf(DesktopAccentColor.fromStorage(uiStateStore.loadAccentColor())) }
+    var liquidGlassEnabled by remember { mutableStateOf(uiStateStore.loadLiquidGlassEnabled()) }
     val projectRootState = remember {
         mutableStateOf(
             initialProjectRoot ?: uiStateStore.loadRecentWorkspace()
@@ -107,13 +108,17 @@ internal fun WindowScope.MulehangDesktopApp(
 
     val palette = desktopPalette(
         mode = themeMode,
-        accent = accentColor,
         systemIsDark = isSystemInDarkTheme(),
+        materialMode = if (liquidGlassEnabled) DesktopMaterialMode.LIQUID_GLASS else DesktopMaterialMode.SOLID,
     )
     val nativeTitleBarHandle = rememberNativeWindowTitleBar(
         mode = windowChromeMode,
         controlsDark = palette.isDark,
-        background = palette.headerBackground,
+        background = when {
+            palette.materialMode != DesktopMaterialMode.LIQUID_GLASS -> palette.headerBackground
+            palette.isDark -> Color(0xFF192331)
+            else -> Color(0xFFEFF6FF)
+        },
     )
     DesktopThemePaletteProvider(palette) {
         MaterialTheme(
@@ -130,12 +135,14 @@ internal fun WindowScope.MulehangDesktopApp(
             projectRoot = projectRootState.value,
             userHome = userHome,
             themeMode = themeMode,
-            accentColor = accentColor,
-            onThemeChanged = { updatedMode, updatedAccent ->
+            liquidGlassEnabled = liquidGlassEnabled,
+            onThemeChanged = { updatedMode ->
                 themeMode = updatedMode
-                accentColor = updatedAccent
                 uiStateStore.saveThemeMode(updatedMode.storageValue)
-                uiStateStore.saveAccentColor(updatedAccent.storageValue)
+            },
+            onLiquidGlassEnabledChanged = { enabled ->
+                liquidGlassEnabled = enabled
+                uiStateStore.saveLiquidGlassEnabled(enabled)
             },
             onSettingsChanged = {
                 projectRootState.value?.let { root ->

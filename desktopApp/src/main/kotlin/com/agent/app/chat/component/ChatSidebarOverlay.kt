@@ -22,7 +22,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AirSidebarSurface
+import com.agent.app.design.AppLine
+import com.agent.app.design.AppSidebarBackground
+import com.agent.app.design.DesktopMaterialMode
+import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.WorkspaceBackdropState
+import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
+import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
 
 private const val CHAT_SIDEBAR_TOP_OFFSET_DP = 56
 
@@ -64,20 +70,29 @@ internal fun BoxScope.ChatSidebarOverlay(
             .width(airSidebarWidthDp(compact).dp)
             .fillMaxHeight(),
     ) {
-        AirSidebarSurface(
-            backdropState = backdropState,
-            sidebarOrigin = sidebarOrigin,
-            modifier = Modifier
-                .fillMaxSize()
-                .onGloballyPositioned { coordinates ->
-                    onSidebarPositioned(coordinates.positionInRoot(), coordinates.boundsInRoot())
-                },
-        ) {
-            TaskSidebar(
-                state = state,
-                compact = compact,
-                modifier = Modifier.fillMaxSize(),
-            )
+        val positionedModifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                onSidebarPositioned(coordinates.positionInRoot(), coordinates.boundsInRoot())
+            }
+        if (LocalDesktopPalette.current.materialMode == DesktopMaterialMode.LIQUID_GLASS) {
+            AdaptiveLiquidGlassSurface(
+                role = LiquidGlassSurfaceRole.CHROME,
+                radius = 12.dp,
+                solidColor = AppSidebarBackground,
+                borderColor = AppLine.copy(alpha = 0.52f),
+                modifier = positionedModifier,
+            ) {
+                TaskSidebar(state = state, compact = compact, modifier = Modifier.fillMaxSize())
+            }
+        } else {
+            AirSidebarSurface(
+                backdropState = backdropState,
+                sidebarOrigin = sidebarOrigin,
+                modifier = positionedModifier,
+            ) {
+                TaskSidebar(state = state, compact = compact, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }

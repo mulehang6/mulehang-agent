@@ -2,7 +2,6 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,10 +28,14 @@ import androidx.compose.ui.window.WindowState
 import com.agent.app.bootstrap.WindowChromeMode
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppBackground
-import com.agent.app.design.DesktopAccentColor
+import com.agent.app.design.AppHeaderBackground
 import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.captureWorkspaceBackdrop
+import com.agent.app.design.liquidglass.LiquidGlassScene
+import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
+import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
 import com.agent.app.design.rememberWorkspaceBackdropState
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
@@ -72,12 +75,13 @@ internal fun WindowScope.ChatScreen(
     projectRoot: Path?,
     userHome: Path,
     themeMode: DesktopThemeMode,
-    accentColor: DesktopAccentColor,
-    onThemeChanged: (DesktopThemeMode, DesktopAccentColor) -> Unit,
+    liquidGlassEnabled: Boolean,
+    onThemeChanged: (DesktopThemeMode) -> Unit,
+    onLiquidGlassEnabledChanged: (Boolean) -> Unit,
     onSettingsChanged: () -> Unit,
     onCloseRequest: () -> Unit,
 ) {
-    val terminalPanel = rememberTerminalPanelController()
+    val terminalPanel = rememberTerminalPanelController(LocalDesktopPalette.current.terminal)
     var sidebarVisible by remember { mutableStateOf(SIDEBAR_VISIBLE_BY_DEFAULT) }
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
@@ -105,9 +109,13 @@ internal fun WindowScope.ChatScreen(
         terminalPanel.closePendingTabAfterExit()
     }
 
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(AppBackground),
+    LiquidGlassScene(
+        enabled = liquidGlassEnabled,
+        isDark = LocalDesktopPalette.current.isDark,
+        solidBackground = AppBackground,
+        modifier = Modifier.fillMaxSize(),
     ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = isCompactDesktopLayout(maxWidth.value.toInt())
         Box(
             modifier = Modifier
@@ -147,21 +155,28 @@ internal fun WindowScope.ChatScreen(
                     .fillMaxSize()
                     .captureWorkspaceBackdrop(workspaceBackdropState),
             ) {
-                ChatHeader(
-                    state = state,
-                    sidebarVisible = sidebarVisible,
-                    onToggleSidebar = { sidebarVisible = !sidebarVisible },
-                    windowState = desktopWindowState,
-                    windowChromeMode = windowChromeMode,
-                    onTitleBarClientPointerEvent = onTitleBarClientPointerEvent,
-                    onGlobalFeedback = showAppFeedback,
-                    onGlobalPointerPosition = { pointerPosition ->
-                        appFeedback?.takeIf { it.anchor != null }?.let { feedback ->
-                            appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
-                        }
-                    },
-                    onCloseRequest = onCloseRequest,
-                )
+                AdaptiveLiquidGlassSurface(
+                    role = LiquidGlassSurfaceRole.CHROME,
+                    radius = 0.dp,
+                    solidColor = AppHeaderBackground,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    ChatHeader(
+                        state = state,
+                        sidebarVisible = sidebarVisible,
+                        onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                        windowState = desktopWindowState,
+                        windowChromeMode = windowChromeMode,
+                        onTitleBarClientPointerEvent = onTitleBarClientPointerEvent,
+                        onGlobalFeedback = showAppFeedback,
+                        onGlobalPointerPosition = { pointerPosition ->
+                            appFeedback?.takeIf { it.anchor != null }?.let { feedback ->
+                                appFeedback = feedback.copy(anchor = feedbackToastAnchor(pointerPosition))
+                            }
+                        },
+                        onCloseRequest = onCloseRequest,
+                    )
+                }
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -200,9 +215,10 @@ internal fun WindowScope.ChatScreen(
                                     projectRoot = projectRoot,
                                     userHome = userHome,
                                     themeMode = themeMode,
-                                    accentColor = accentColor,
+                                    liquidGlassEnabled = liquidGlassEnabled,
                                     focused = islandFocus == WorkspaceIslandFocus.SETTINGS,
                                     onThemeChanged = onThemeChanged,
+                                    onLiquidGlassEnabledChanged = onLiquidGlassEnabledChanged,
                                     onFocus = { islandFocus = WorkspaceIslandFocus.SETTINGS },
                                     onClose = {
                                         settingsVisible = false
@@ -298,6 +314,7 @@ internal fun WindowScope.ChatScreen(
         }
         appFeedback?.let { feedback ->
             AppFeedbackOverlay(feedback)
+        }
         }
     }
 }

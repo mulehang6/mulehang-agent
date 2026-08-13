@@ -48,7 +48,8 @@ import androidx.compose.ui.unit.dp
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppText
-import com.agent.app.design.DesktopInteropPalette
+import com.agent.app.design.LocalDesktopPalette
+import com.agent.app.design.DesktopMaterialMode
 import com.agent.app.design.MenuGrowthOrigin
 import com.agent.app.design.PopupMenuSelectedBackground
 import com.agent.app.design.PopupMenuShape
@@ -57,46 +58,14 @@ import com.agent.app.design.PopupMenuShadowInset
 import com.agent.app.design.popupMenuSurface
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.RightRailGlyphIcon
-import com.agent.app.design.TerminalPalette
 import com.agent.app.design.TerminalSurfaceBackground
 import com.agent.app.design.TerminalTabActiveBackground
 import com.agent.app.design.TerminalTabHoverBackground
 import com.agent.app.design.TerminalTabSelectedBorder
+import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
+import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
 import com.agent.app.design.menuGrowthTransformOrigin
 import com.agent.app.design.rememberMenuGrowthMotion
-import com.agent.app.platform.buildPowerShellCommand
-import com.jediterm.core.util.TermSize
-import com.jediterm.terminal.ProcessTtyConnector
-import com.jediterm.terminal.TerminalColor
-import com.jediterm.terminal.TextStyle
-import com.jediterm.terminal.emulator.ColorPalette
-import com.jediterm.terminal.ui.JediTermWidget
-import com.jediterm.terminal.ui.settings.DefaultSettingsProvider
-import com.pty4j.PtyProcess
-import com.pty4j.PtyProcessBuilder
-import com.pty4j.WinSize
-import java.awt.Component
-import java.awt.Dimension
-import java.awt.Container
-import java.awt.Font
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.KeyboardFocusManager
-import java.awt.Rectangle
-import java.awt.RenderingHints
-import java.awt.event.ContainerAdapter
-import java.awt.event.ContainerEvent
-import java.awt.Color as AwtColor
-import com.jediterm.core.Color as TerminalRgbColor
-import java.nio.charset.StandardCharsets
-import kotlin.math.roundToInt
-import javax.swing.BoundedRangeModel
-import javax.swing.JButton
-import javax.swing.JScrollBar
-import javax.swing.JComponent
-import javax.swing.SwingUtilities
-import javax.swing.event.ChangeListener
-import javax.swing.plaf.basic.BasicScrollBarUI
 
 internal const val TERMINAL_CLOSE_BUTTON_SIZE_DP = 24
 internal const val TERMINAL_TAB_HEIGHT_DP = 30
@@ -124,122 +93,6 @@ internal fun terminalPanelHideActionLabel(): String = "收起终端"
 internal fun terminalActionGlowAlpha(hovered: Boolean): Float = 0f
 
 /**
- * 表示 Compose 终端面板所需的 Swing 终端边界。
- */
-internal interface TerminalHandle {
-    /**
-     * 返回可交给 SwingPanel 承载的终端组件；创建失败时为 null。
-     */
-    val component: Component?
-
-    /**
-     * 返回终端创建失败时应展示的消息。
-     */
-    val errorMessage: String
-
-    /**
-     * 启动底层终端进程。
-     */
-    fun start()
-
-    /**
-     * 释放底层终端进程。
-     */
-    fun close()
-
-    /**
-     * 仅在焦点不属于终端时恢复终端焦点。
-     */
-    fun focusIfNeeded()
-}
-
-/**
- * 保存各终端标签页的进程句柄，避免切换标签页时销毁后台会话。
- */
-internal class TerminalSessionStore(
-    private val terminalFactory: (String) -> TerminalHandle = ::createPowerShellHandle,
-) {
-    private val sessions = linkedMapOf<Long, TerminalHandle>()
-
-    /**
-     * 为 [tab] 创建并启动一次终端会话。
-     */
-    fun create(tab: TerminalTab) {
-        sessions.getOrPut(tab.id) { terminalFactory(tab.workspacePath) }.start()
-    }
-
-    /**
-     * 返回 [tabId] 对应的持久终端会话。
-     */
-    fun session(tabId: Long): TerminalHandle? = sessions[tabId]
-
-    /**
-     * 释放并移除 [tabId] 对应的终端会话。
-     */
-    fun close(tabId: Long) {
-        sessions.remove(tabId)?.close()
-    }
-
-    /**
-     * 释放窗口关闭时仍存活的所有终端会话。
-     */
-    fun closeAll() {
-        sessions.values.toList().forEach(TerminalHandle::close)
-        sessions.clear()
-    }
-
-    /**
-     * 释放除 [keptTabId] 之外的所有终端会话。
-     */
-    fun closeAllExcept(keptTabId: Long) {
-        sessions.keys.filter { it != keptTabId }.forEach(::close)
-    }
-
-    /**
-     * 将焦点请求委派给当前活动的终端会话。
-     */
-    fun focusActiveIfNeeded(activeTabId: Long?) {
-        activeTabId?.let(sessions::get)?.focusIfNeeded()
-    }
-}
-
-/**
- * 用 JediTerm 组件实现一个可持久化的 PowerShell 终端句柄。
- */
-private class JediTermTerminalHandle(
-    private val terminalResult: Result<JediTermWidget>,
-) : TerminalHandle {
-    private val terminal = terminalResult.getOrNull()
-    private var started = false
-
-    override val component: Component? = terminal
-
-    override val errorMessage: String
-        get() = terminalResult.exceptionOrNull()?.message ?: "无法启动 PowerShell"
-
-    override fun start() {
-        if (!started) {
-            terminal?.start()
-            started = true
-        }
-    }
-
-    override fun close() {
-        terminal?.close()
-    }
-
-    override fun focusIfNeeded() {
-        val terminal = component ?: return
-        val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-        val terminalOwnsFocus = focusOwner != null &&
-                (focusOwner == terminal || SwingUtilities.isDescendingFrom(focusOwner, terminal))
-        if (shouldRequestTerminalFocus(terminalOwnsFocus)) {
-            terminal.requestFocusInWindow()
-        }
-    }
-}
-
-/**
  * 在主工作区右侧承载可切换的交互式 PowerShell 终端标签页。
  */
 @Composable
@@ -255,6 +108,12 @@ internal fun EmbeddedTerminalPanel(
     onFocus: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val terminalPalette = LocalDesktopPalette.current.terminal
+    val terminalChromeBackground = if (LocalDesktopPalette.current.materialMode == DesktopMaterialMode.LIQUID_GLASS) {
+        Color.Transparent
+    } else {
+        TerminalSurfaceBackground
+    }
     val activeTab = tabs.tabs.firstOrNull { it.id == tabs.activeTabId }
     val activeSession = activeTab?.let { sessions.session(it.id) }
     val activeComponent = activeSession?.component
@@ -273,21 +132,23 @@ internal fun EmbeddedTerminalPanel(
     LaunchedEffect(tabs.activeTabId) {
         sessions.focusActiveIfNeeded(tabs.activeTabId)
     }
-    Column(
+    AdaptiveLiquidGlassSurface(
+        role = LiquidGlassSurfaceRole.PANEL,
+        radius = 10.dp,
+        solidColor = TerminalSurfaceBackground,
+        borderColor = AppLine,
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(TerminalSurfaceBackground)
-            .border(1.dp, AppLine, RoundedCornerShape(10.dp))
             .onPointerEvent(PointerEventType.Press) { onFocus() }
             .onGloballyPositioned { terminalOrigin = it.positionInRoot() },
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(TerminalSurfaceBackground)
-                .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(terminalChromeBackground)
+                    .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -349,24 +210,23 @@ internal fun EmbeddedTerminalPanel(
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(TerminalSurfaceBackground),
-        ) {
-            if (activeComponent != null) {
-                SwingPanel(
-                    factory = { activeComponent },
-                    modifier = Modifier.fillMaxSize(),
-                    background = TerminalSurfaceBackground,
-                    update = { synchronizeTerminalInteropBackground(it) },
-                )
-            } else {
-                Text(
-                    text = activeSession?.errorMessage ?: "无法启动 PowerShell",
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
-                )
+            Box(
+                modifier = Modifier.fillMaxSize().background(TerminalSurfaceBackground),
+            ) {
+                if (activeComponent != null) {
+                    SwingPanel(
+                        factory = { activeComponent },
+                        modifier = Modifier.fillMaxSize(),
+                        background = TerminalSurfaceBackground,
+                        update = { synchronizeTerminalInteropBackground(it, terminalPalette) },
+                    )
+                } else {
+                    Text(
+                        text = activeSession?.errorMessage ?: "无法启动 PowerShell",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                    )
+                }
             }
         }
         DropdownMenu(
@@ -554,274 +414,4 @@ private fun TerminalContextMenuItem(
         itemCount = 3,
         hoverBackground = PopupMenuSelectedBackground,
     )
-}
-
-/**
- * 将终端背景同步到 Swing 祖先链，避免互操作区域异步扩张时露出窗口默认亮色。
- */
-internal fun synchronizeTerminalInteropBackground(component: Component) {
-    val background = terminalInteropColors().background
-    generateSequence(component) { current -> current.parent }.forEach { current ->
-        current.background = background
-        current.repaint()
-    }
-}
-
-/** JVM 互操作层使用的终端 AWT 色值，确保 Swing 不读取 Compose state。 */
-internal data class TerminalInteropColors(
-    val background: AwtColor,
-    val foreground: AwtColor,
-    val scrollbarThumb: AwtColor,
-)
-
-/** 将动态终端 palette 映射为 JediTerm 与 Swing 可直接消费的颜色。 */
-internal fun terminalInteropColors(palette: TerminalPalette = DesktopInteropPalette.terminal): TerminalInteropColors =
-    TerminalInteropColors(
-        background = palette.background.toAwtColor(),
-        foreground = palette.foreground.toAwtColor(),
-        scrollbarThumb = palette.scrollbarThumb.toAwtColor(),
-    )
-
-/** 转换 Compose 色值，避免各个 Swing 组件各自维护一份主题色。 */
-private fun Color.toAwtColor(): AwtColor = AwtColor(
-    (red * 255).roundToInt(),
-    (green * 255).roundToInt(),
-    (blue * 255).roundToInt(),
-    (alpha * 255).roundToInt(),
-)
-
-private fun createPowerShellTerminal(workspacePath: String): JediTermWidget {
-    val command = buildPowerShellCommand()
-    val process = PtyProcessBuilder(command.toTypedArray())
-        .setDirectory(workspacePath)
-        .setEnvironment(System.getenv())
-        .setConsole(false)
-        .setUseWinConPty(true)
-        .start()
-    return AppJediTermWidget().apply {
-        installSwingBorderCleanup(this)
-        setTtyConnector(PowerShellTtyConnector(process, command))
-    }
-}
-
-/**
- * 创建可跨标签页保留的 PowerShell 终端句柄。
- */
-private fun createPowerShellHandle(workspacePath: String): TerminalHandle =
-    JediTermTerminalHandle(runCatching { createPowerShellTerminal(workspacePath) })
-
-/**
- * 清除现有 Swing 边框，并拦截 Look & Feel 或迟到子组件重新注入的边框。
- */
-internal fun installSwingBorderCleanup(component: Component) {
-    if (component is JComponent) {
-        component.border = null
-        component.addPropertyChangeListener("border") {
-            if (component.border != null) component.border = null
-        }
-    }
-    if (component is Container) {
-        component.components.forEach(::installSwingBorderCleanup)
-        component.addContainerListener(
-            object : ContainerAdapter() {
-                override fun componentAdded(event: ContainerEvent) {
-                    installSwingBorderCleanup(event.child)
-                }
-            },
-        )
-    }
-}
-
-/**
- * 返回终端默认使用的字体。
- */
-internal fun terminalFont(): Font = Font("Maple Mono NF CN SemiBold", Font.PLAIN, 14)
-
-/**
- * 判断终端缓冲内容是否超过当前可见范围。
- */
-internal fun shouldShowTerminalScrollbar(
-    minimum: Int,
-    maximum: Int,
-    extent: Int,
-): Boolean = maximum - minimum > extent
-
-private object AppTerminalSettingsProvider : DefaultSettingsProvider() {
-    override fun getDefaultForeground(): TerminalColor = terminalInteropColors().foreground.toTerminalColor()
-
-    override fun getDefaultBackground(): TerminalColor = terminalInteropColors().background.toTerminalColor()
-
-    /**
-     * PowerShell 会显式输出 Windows 控制台的黑白 ANSI 色。将其默认前景和背景
-     * 映射回当前主题，避免深色终端被 ANSI 白色背景覆盖。
-     */
-    override fun getTerminalColorPalette(): ColorPalette = AppTerminalColorPalette
-
-    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
-    override fun getDefaultStyle(): TextStyle = TextStyle(defaultForeground, defaultBackground)
-
-    override fun getTerminalFont(): Font = terminalFont()
-
-    override fun audibleBell(): Boolean = false
-}
-
-/**
- * 提供随桌面主题变化的 ANSI 基础色板；常规彩色输出保留 Windows 终端语义。
- */
-private object AppTerminalColorPalette : ColorPalette() {
-    override fun getForegroundByColorIndex(colorIndex: Int): TerminalRgbColor =
-        terminalAnsiPaletteColor(colorIndex = colorIndex, foreground = true)
-
-    override fun getBackgroundByColorIndex(colorIndex: Int): TerminalRgbColor =
-        terminalAnsiPaletteColor(colorIndex = colorIndex, foreground = false)
-}
-
-/**
- * 返回 JediTerm ANSI 色索引的最终颜色，其中 PowerShell 的默认黑白色遵循应用主题。
- */
-internal fun terminalAnsiPaletteColor(
-    colorIndex: Int,
-    foreground: Boolean,
-    palette: TerminalPalette = DesktopInteropPalette.terminal,
-): TerminalRgbColor {
-    val terminalColors = terminalInteropColors(palette)
-    val themeColor = if (foreground) terminalColors.foreground else terminalColors.background
-    if (colorIndex in DEFAULT_TERMINAL_COLOR_INDICES) return themeColor.toTerminalRgbColor()
-    val color = WINDOWS_TERMINAL_ANSI_COLORS.getOrElse(colorIndex) { WINDOWS_TERMINAL_ANSI_COLORS.first() }
-    return TerminalRgbColor(color.red, color.green, color.blue)
-}
-
-/** PowerShell 默认使用的 ANSI 黑、白与亮白色需映射为当前终端的主色。 */
-private val DEFAULT_TERMINAL_COLOR_INDICES = setOf(0, 7, 15)
-
-/** Windows 控制台 ANSI 色，供非默认颜色输出（例如错误和警告）保持可辨识。 */
-private val WINDOWS_TERMINAL_ANSI_COLORS = listOf(
-    AwtColor(0x00, 0x00, 0x00),
-    AwtColor(0x80, 0x00, 0x00),
-    AwtColor(0x00, 0x80, 0x00),
-    AwtColor(0x80, 0x80, 0x00),
-    AwtColor(0x00, 0x00, 0x80),
-    AwtColor(0x80, 0x00, 0x80),
-    AwtColor(0x00, 0x80, 0x80),
-    AwtColor(0xC0, 0xC0, 0xC0),
-    AwtColor(0x80, 0x80, 0x80),
-    AwtColor(0xFF, 0x00, 0x00),
-    AwtColor(0x00, 0xFF, 0x00),
-    AwtColor(0xFF, 0xFF, 0x00),
-    AwtColor(0x46, 0x82, 0xB4),
-    AwtColor(0xFF, 0x00, 0xFF),
-    AwtColor(0x00, 0xFF, 0xFF),
-    AwtColor(0xFF, 0xFF, 0xFF),
-)
-
-/** 将 AWT 颜色映射为 JediTerm core 颜色。 */
-private fun AwtColor.toTerminalRgbColor(): TerminalRgbColor = TerminalRgbColor(red, green, blue)
-
-/** 将 AWT 颜色映射为 JediTerm 使用的 RGB 颜色。 */
-private fun AwtColor.toTerminalColor(): TerminalColor = TerminalColor.rgb(red, green, blue)
-
-private class AppJediTermWidget : JediTermWidget(AppTerminalSettingsProvider) {
-
-    override fun createScrollBar(): JScrollBar {
-        val scrollBar = AppTerminalScrollBar().apply {
-            isOpaque = false
-            unitIncrement = 3
-            setUI(AppTerminalScrollBarUi())
-        }
-        val modelListener = ChangeListener { updateTerminalScrollbarVisibility(scrollBar) }
-        scrollBar.model.addChangeListener(modelListener)
-        scrollBar.addPropertyChangeListener("model") { event ->
-            (event.oldValue as? BoundedRangeModel)?.removeChangeListener(modelListener)
-            (event.newValue as? BoundedRangeModel)?.addChangeListener(modelListener)
-            updateTerminalScrollbarVisibility(scrollBar)
-        }
-        updateTerminalScrollbarVisibility(scrollBar)
-        return scrollBar
-    }
-}
-
-private class AppTerminalScrollBar : JScrollBar(VERTICAL) {
-    override fun getPreferredSize(): Dimension =
-        if (isVisible) Dimension(8, 0) else Dimension(0, 0)
-}
-
-private class AppTerminalScrollBarUi : BasicScrollBarUI() {
-
-    override fun configureScrollBarColors() {
-        trackColor = AwtColor(0, 0, 0, 0)
-        thumbColor = terminalInteropColors().scrollbarThumb
-    }
-
-    override fun createDecreaseButton(orientation: Int): JButton = zeroSizeButton()
-
-    override fun createIncreaseButton(orientation: Int): JButton = zeroSizeButton()
-
-    override fun paintTrack(
-        graphics: Graphics,
-        component: JComponent,
-        trackBounds: Rectangle,
-    ) = Unit
-
-    override fun paintThumb(
-        graphics: Graphics,
-        component: JComponent,
-        thumbBounds: Rectangle,
-    ) {
-        if (!scrollbar.isEnabled || thumbBounds.isEmpty) return
-        val graphics2D = graphics.create() as Graphics2D
-        try {
-            graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            graphics2D.color = terminalInteropColors().scrollbarThumb
-            graphics2D.fillRoundRect(
-                thumbBounds.x + 1,
-                thumbBounds.y + 2,
-                (thumbBounds.width - 2).coerceAtLeast(5),
-                (thumbBounds.height - 4).coerceAtLeast(8),
-                6,
-                6,
-            )
-        } finally {
-            graphics2D.dispose()
-        }
-    }
-
-    override fun getMinimumThumbSize(): Dimension = Dimension(5, 24)
-
-    private fun zeroSizeButton(): JButton = JButton().apply {
-        preferredSize = Dimension(0, 0)
-        minimumSize = Dimension(0, 0)
-        maximumSize = Dimension(0, 0)
-        isOpaque = false
-        isFocusable = false
-        border = null
-    }
-}
-
-private fun updateTerminalScrollbarVisibility(scrollBar: JScrollBar) {
-    val update = Runnable {
-        val model = scrollBar.model
-        val visible = shouldShowTerminalScrollbar(
-            minimum = model.minimum,
-            maximum = model.maximum,
-            extent = model.extent,
-        )
-        if (scrollBar.isVisible != visible) {
-            scrollBar.isVisible = visible
-            scrollBar.parent?.revalidate()
-            scrollBar.parent?.repaint()
-        }
-    }
-    if (SwingUtilities.isEventDispatchThread()) update.run() else SwingUtilities.invokeLater(update)
-}
-
-private class PowerShellTtyConnector(
-    private val process: PtyProcess,
-    command: List<String>,
-) : ProcessTtyConnector(process, StandardCharsets.UTF_8, command) {
-
-    override fun getName(): String = "PowerShell"
-
-    override fun resize(termSize: TermSize) {
-        process.setWinSize(WinSize(termSize.columns, termSize.rows))
-    }
 }

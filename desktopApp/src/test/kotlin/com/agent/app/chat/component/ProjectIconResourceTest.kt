@@ -17,4 +17,23 @@ class ProjectIconResourceTest {
 
         assertTrue(content.contains("<svg"))
     }
+
+    /** Jewel 使用的 IntelliJ expui 图标必须随 standalone 运行时资源一同解析。 */
+    @Test
+    fun `Jewel IntelliJ icons should resolve from the runtime classpath`() {
+        val classLoader = javaClass.classLoader
+        val iconResources = listOf(
+            "expui/general/add.svg",
+            "expui/general/chevronDown.svg",
+            "expui/general/close.svg",
+            "expui/general/menu.svg",
+            "expui/general/search.svg",
+            "expui/general/settings.svg",
+            "expui/run/run.svg",
+            "expui/general/vcs.svg",
+            "debugger/console.svg",
+        )
+
+        iconResources.forEach { path -> assertNotNull(classLoader.getResource(path), path) }
+    }
 }

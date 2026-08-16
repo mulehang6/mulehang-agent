@@ -40,13 +40,16 @@ class DesktopThemeSettingsTest {
         val palette = desktopPalette(DesktopThemeMode.LIGHT)
 
         assertEquals(false, palette.isDark)
-        assertEquals(Color(0xFFF6F7F9), palette.background)
+        assertEquals(Color(0xFF26282C), palette.background)
+        assertEquals(Color(0xFF26282C), palette.headerBackground)
+        assertEquals(Color(0xFF26282C), palette.sidebarBackground)
+        assertEquals(Color(0xFFFFFFFF), palette.workspaceBackground)
         assertEquals(Color(0xFF202124), palette.text)
         assertEquals(DesktopAccentBlue, palette.accent)
         assertEquals(Color(0xFFFFFFFF), palette.composerInputBackground)
         assertEquals(Color(0xFFF1F3F6), palette.providerCardBackground)
         assertEquals(Color(0xFFE3E7EC), palette.providerCardHoverBackground)
-        assertEquals(Color(0xFFF7F8FA), palette.terminal.background)
+        assertEquals(Color(0xFFFFFFFF), palette.terminal.background)
         assertEquals(Color(0xFF1F2329), palette.terminal.foreground)
     }
 
@@ -56,24 +59,14 @@ class DesktopThemeSettingsTest {
         val palette = desktopPalette(DesktopThemeMode.DARK)
 
         assertEquals(true, palette.isDark)
+        assertEquals(Color(0xFF26282C), palette.background)
+        assertEquals(Color(0xFF26282C), palette.headerBackground)
+        assertEquals(Color(0xFF26282C), palette.sidebarBackground)
+        assertEquals(Color(0xFF191A1C), palette.workspaceBackground)
         assertEquals(Color(0xFF0A0B0D), palette.composerInputBackground)
         assertEquals(Color(0xFF252629), palette.providerCardBackground)
         assertEquals(Color(0xFF38393B), palette.providerCardHoverBackground)
-        assertEquals(Color(0xFF17181A), palette.terminal.background)
+        assertEquals(Color(0xFF191A1C), palette.terminal.background)
         assertEquals(Color(0xFFE6E8EC), palette.terminal.foreground)
-    }
-
-    /** Liquid Glass 只改变材质维度，深浅色与终端颜色仍由主题模式决定。 */
-    @Test
-    fun `should resolve liquid glass independently from light and dark palettes`() {
-        val light = desktopPalette(DesktopThemeMode.LIGHT, materialMode = DesktopMaterialMode.LIQUID_GLASS)
-        val dark = desktopPalette(DesktopThemeMode.DARK, materialMode = DesktopMaterialMode.LIQUID_GLASS)
-
-        assertEquals(DesktopMaterialMode.LIQUID_GLASS, light.materialMode)
-        assertEquals(false, light.isDark)
-        assertEquals(Color(0xFFF7F8FA), light.terminal.background)
-        assertEquals(DesktopMaterialMode.LIQUID_GLASS, dark.materialMode)
-        assertEquals(true, dark.isDark)
-        assertEquals(Color(0xFF17181A), dark.terminal.background)
     }
 }

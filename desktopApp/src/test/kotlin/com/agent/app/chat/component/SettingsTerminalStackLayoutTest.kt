@@ -1,48 +1,91 @@
 package com.agent.app.chat.component
 
-import androidx.compose.ui.graphics.Color
-import com.agent.app.design.AppLine
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-/** 设置与终端共存布局的尺寸和失焦样式回归测试。 */
+/** 验证设置与终端四态布局的空间过渡规则。 */
 class SettingsTerminalStackLayoutTest {
 
-    /** 纵向分割条必须同时为设置和终端保留最小可用空间。 */
+    /** 每组设置与终端可见性都必须映射到唯一布局状态。 */
     @Test
-    fun `should clamp settings height between both panel minimums`() {
+    fun `should resolve every settings terminal visibility combination`() {
+        assertEquals(SettingsTerminalLayoutMode.HIDDEN, settingsTerminalLayoutMode(settingsVisible = false, terminalVisible = false))
+        assertEquals(SettingsTerminalLayoutMode.SETTINGS, settingsTerminalLayoutMode(settingsVisible = true, terminalVisible = false))
+        assertEquals(SettingsTerminalLayoutMode.TERMINAL, settingsTerminalLayoutMode(settingsVisible = false, terminalVisible = true))
+        assertEquals(SettingsTerminalLayoutMode.SPLIT, settingsTerminalLayoutMode(settingsVisible = true, terminalVisible = true))
+    }
+
+    /** 单面板、双面板和隐藏状态必须给出连续布局所需的目标比例。 */
+    @Test
+    fun `should expose panel shares and divider only for split mode`() {
+        assertEquals(0f, settingsTerminalSettingsShare(SettingsTerminalLayoutMode.HIDDEN, 0.52f))
+        assertEquals(1f, settingsTerminalSettingsShare(SettingsTerminalLayoutMode.SETTINGS, 0.52f))
+        assertEquals(0f, settingsTerminalSettingsShare(SettingsTerminalLayoutMode.TERMINAL, 0.52f))
+        assertEquals(0.52f, settingsTerminalSettingsShare(SettingsTerminalLayoutMode.SPLIT, 0.52f))
+        assertTrue(SettingsTerminalLayoutMode.SPLIT.showsDivider())
+        assertFalse(SettingsTerminalLayoutMode.SETTINGS.showsDivider())
+    }
+
+    /** 分割比例必须同时满足设置和终端的最小高度。 */
+    @Test
+    fun `should clamp split layout within pane minimum heights`() {
         assertEquals(
-            280f,
-            clampStackPanelHeight(
-                requestedHeightPx = 40f,
-                availableHeightPx = 800f,
-                minimumPanelHeightPx = 280f,
-                otherMinimumPanelHeightPx = 180f,
+            0.28f,
+            clampSettingsTerminalSplitFraction(
+                requestedFraction = 0.10f,
+                availableHeightPx = 1_000f,
+                minimumSettingsHeightPx = 280f,
+                minimumTerminalHeightPx = 180f,
             ),
         )
         assertEquals(
-            620f,
-            clampStackPanelHeight(
-                requestedHeightPx = 760f,
-                availableHeightPx = 800f,
-                minimumPanelHeightPx = 280f,
-                otherMinimumPanelHeightPx = 180f,
+            0.82f,
+            clampSettingsTerminalSplitFraction(
+                requestedFraction = 0.95f,
+                availableHeightPx = 1_000f,
+                minimumSettingsHeightPx = 280f,
+                minimumTerminalHeightPx = 180f,
+            ),
+        )
+        assertEquals(
+            DEFAULT_SETTINGS_TERMINAL_SPLIT_FRACTION,
+            clampSettingsTerminalSplitFraction(
+                requestedFraction = 0.1f,
+                availableHeightPx = 300f,
+                minimumSettingsHeightPx = 280f,
+                minimumTerminalHeightPx = 180f,
             ),
         )
     }
 
-    /** 非焦点终端标签应放弃蓝色边框并回退至通用灰色分割线。 */
+    /** 相邻 Island 切换保持短促的进入和退出节奏。 */
     @Test
-    fun `should use gray terminal tab border when island is unfocused`() {
-        assertEquals(AppLine, terminalTabBorderColor(selected = true, focused = false))
-        assertEquals(Color.Transparent, terminalTabBorderColor(selected = false, focused = false))
+    fun `should use concise settings terminal transition timings`() {
+        assertEquals(220, SETTINGS_TERMINAL_PANEL_ENTER_DURATION_MILLIS)
+        assertEquals(180, SETTINGS_TERMINAL_PANEL_EXIT_DURATION_MILLIS)
+        assertEquals(8, SETTINGS_TERMINAL_DIVIDER_HEIGHT.value.toInt())
     }
 
-    /** 终端关闭时必须先完成纵向收缩，不能在第一帧移除 Island。 */
+    /** 拖拽期间必须绕过布局动画，直接让面板比例追随指针。 */
     @Test
-    fun `should retain terminal until stack exit motion completes`() {
-        assertEquals(true, shouldKeepStackPanelRendered(targetVisible = false, motionProgress = 0.42f))
-        assertEquals(false, shouldKeepStackPanelRendered(targetVisible = false, motionProgress = 0f))
-        assertEquals(true, shouldKeepStackPanelRendered(targetVisible = true, motionProgress = 0f))
+    fun `should use live split share while divider is dragging`() {
+        assertEquals(
+            0.72f,
+            settingsTerminalRenderedShare(
+                desiredShare = 0.72f,
+                animatedShare = 0.52f,
+                dividerDragging = true,
+            ),
+        )
+        assertEquals(
+            0.52f,
+            settingsTerminalRenderedShare(
+                desiredShare = 0.72f,
+                animatedShare = 0.52f,
+                dividerDragging = false,
+            ),
+        )
     }
 }

@@ -1,6 +1,5 @@
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
@@ -14,13 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -31,9 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
@@ -41,16 +33,19 @@ import com.agent.app.chat.presentation.itemContentSize
 import com.agent.app.chat.presentation.shouldForceScrollToLatestAfterSubmit
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppText
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.RingPrimaryButton
-import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
-import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
 import com.agent.shared.chat.model.ExecutionState
 import kotlinx.coroutines.launch
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.IconActionButton
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /**
  * 原型主工作区。
@@ -142,7 +137,7 @@ internal fun WorkspacePanel(
             .fillMaxWidth()
             .padding(
                 horizontal = if (compact) 8.dp else 0.dp,
-                vertical = if (compact) 8.dp else 16.dp,
+                vertical = 8.dp,
             ),
     ) {
         ResizableWorkspaceLayout(
@@ -150,8 +145,8 @@ internal fun WorkspacePanel(
             compact = compact,
             modifier = Modifier.fillMaxSize(),
             workspace = { workspaceModifier ->
-                AdaptiveLiquidGlassSurface(
-                    role = LiquidGlassSurfaceRole.PANEL,
+                JewelSurface(
+                    role = JewelSurfaceRole.PANEL,
                     modifier = workspaceModifier,
                     radius = 14.dp,
                     solidColor = AppWorkspaceBackground,
@@ -230,44 +225,14 @@ internal fun WorkspacePanel(
                                     hasTimelineContent = activeConversation.items.isNotEmpty(),
                                 )
                             ) {
-                                Surface(
+                                IconActionButton(
+                                    key = AllIconsKeys.Actions.Download,
+                                    contentDescription = "滚动到底部",
                                     onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(end = 28.dp, bottom = 20.dp)
-                                        .size(52.dp),
-                                    shape = CircleShape,
-                                    color = AppChipBackground,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, AppLine),
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Canvas(modifier = Modifier.size(22.dp)) {
-                                            val stroke = 2.dp.toPx()
-                                            val tint = AppMuted
-                                            drawLine(
-                                                color = tint,
-                                                start = Offset(size.width * 0.5f, size.height * 0.16f),
-                                                end = Offset(size.width * 0.5f, size.height * 0.75f),
-                                                strokeWidth = stroke,
-                                                cap = StrokeCap.Round,
-                                            )
-                                            drawLine(
-                                                color = tint,
-                                                start = Offset(size.width * 0.25f, size.height * 0.53f),
-                                                end = Offset(size.width * 0.5f, size.height * 0.78f),
-                                                strokeWidth = stroke,
-                                                cap = StrokeCap.Round,
-                                            )
-                                            drawLine(
-                                                color = tint,
-                                                start = Offset(size.width * 0.75f, size.height * 0.53f),
-                                                end = Offset(size.width * 0.5f, size.height * 0.78f),
-                                                strokeWidth = stroke,
-                                                cap = StrokeCap.Round,
-                                            )
-                                        }
-                                    }
-                                }
+                                        .padding(end = 28.dp, bottom = 20.dp),
+                                )
                             }
                         }
                         FooterComposerSection(
@@ -326,14 +291,14 @@ private fun EmptyWorkspaceState(state: ChatWindowState) {
     ) {
         Text(
             text = "从一个任务开始",
-            style = MaterialTheme.typography.headlineSmall.copy(
+            style = JewelTheme.defaultTextStyle.copy(
                 color = AppText,
                 fontWeight = FontWeight.SemiBold,
             ),
         )
         Text(
             text = "选择工作区后，告诉 MH Agent 你想推进什么。",
-            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             EmptyStateAction("审查改动", "审查当前工作区的改动，优先指出高风险问题。", state)
@@ -355,9 +320,5 @@ private fun EmptyStateAction(
     prompt: String,
     state: ChatWindowState,
 ) {
-    RingPrimaryButton(
-        text = label,
-        onClick = { state.updateDraft(prompt) },
-        containerColor = AppChipBackground,
-    )
+    OutlinedButton(onClick = { state.updateDraft(prompt) }) { Text(label) }
 }

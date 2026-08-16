@@ -7,10 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,8 +16,13 @@ import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
-import com.agent.app.design.RingPrimaryButton
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.platform.pickWorkspaceDirectory
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.DefaultButton
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.Text
 
 /**
  * 原型下方 plan + composer 区域。
@@ -112,11 +113,12 @@ private fun WorkspaceRepairCard(
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 12.dp,
+        solidColor = AppDanger.copy(alpha = 0.12f),
+        borderColor = AppDanger.copy(alpha = 0.42f),
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = AppDanger.copy(alpha = 0.12f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppDanger.copy(alpha = 0.42f)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -124,22 +126,15 @@ private fun WorkspaceRepairCard(
         ) {
             Text(
                 text = "工作目录不可用",
-                style = MaterialTheme.typography.titleSmall.copy(color = AppText),
+                style = JewelTheme.defaultTextStyle.copy(color = AppText),
             )
             Text(
                 text = message,
-                style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RingPrimaryButton(
-                    text = "更新工作目录",
-                    onClick = onRelink,
-                )
-                RingPrimaryButton(
-                    text = "移除工作目录",
-                    onClick = onDisconnect,
-                    containerColor = AppDanger.copy(alpha = 0.78f),
-                )
+                DefaultButton(onClick = onRelink) { Text("更新工作目录") }
+                OutlinedButton(onClick = onDisconnect) { Text("移除工作目录") }
             }
         }
     }

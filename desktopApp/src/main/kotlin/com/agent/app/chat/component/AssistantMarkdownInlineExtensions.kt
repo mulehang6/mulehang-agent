@@ -2,8 +2,6 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
@@ -16,7 +14,9 @@ import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.agent.app.design.AppText
+import com.agent.app.design.AppAccent
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Text
 
 /** 深色聊天背景中突出 `==高亮==` 内容的低饱和灰蓝底色。 */
 internal val AssistantMarkdownHighlightBackground = Color(0xFF3A414A)
@@ -24,7 +24,7 @@ internal val AssistantMarkdownHighlightBackground = Color(0xFF3A414A)
 /** 返回正文反引号代码共用的透明背景强调色样式。 */
 internal fun assistantMarkdownInlineCodeStyle(): SpanStyle = SpanStyle(
     fontFamily = FontFamily.Monospace,
-    color = AssistantMarkdownInlineCodeForeground,
+    color = AppAccent,
 )
 
 /** 判断一段 Markdown 是否包含需要由原生文本组件处理的行内扩展。 */
@@ -59,8 +59,7 @@ internal fun AssistantMarkdownInlineExtensionsText(content: String) {
         Text(
             text = renderAssistantMarkdownInlineExtensions(content),
             modifier = Modifier.fillMaxWidth(),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = AssistantMarkdownBodyForeground,
+            style = JewelTheme.defaultTextStyle.copy(
                 lineHeight = 25.sp,
             ),
         )

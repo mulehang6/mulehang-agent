@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -7,8 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,13 +23,15 @@ import com.agent.app.design.AppRailBackground
 import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.RingIsland
-import com.agent.app.design.RingRailActionButton
 import com.agent.app.design.buildRightRailGroups
-import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
-import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
+import com.agent.app.design.iconKey
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.tooltip
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
+import org.jetbrains.jewel.ui.component.SelectableIconActionButton
+import org.jetbrains.jewel.ui.component.Text
 
 internal const val TOOL_RAIL_WIDTH_DP = 48
 internal const val TOOL_RAIL_TOP_PADDING_DP = 16
@@ -41,9 +43,10 @@ internal const val TOOL_RAIL_TOP_PADDING_DP = 16
 internal fun ToolRailPlaceholder(
     modifier: Modifier = Modifier,
 ) {
-    AdaptiveLiquidGlassSurface(
-        role = LiquidGlassSurfaceRole.CHROME,
+    JewelSurface(
+        role = JewelSurfaceRole.CHROME,
         radius = 0.dp,
+        borderWidth = 0.dp,
         solidColor = AppRailBackground,
         modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
     ) { }
@@ -57,8 +60,8 @@ internal fun AppFeedbackToast(
     message: String,
     modifier: Modifier = Modifier,
 ) {
-    AdaptiveLiquidGlassSurface(
-        role = LiquidGlassSurfaceRole.FLOATING,
+    JewelSurface(
+        role = JewelSurfaceRole.FLOATING,
         modifier = modifier,
         radius = 8.dp,
         solidColor = AppChipBackground,
@@ -67,7 +70,7 @@ internal fun AppFeedbackToast(
         Text(
             text = message,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+            color = AppMuted,
         )
     }
 }
@@ -81,9 +84,11 @@ internal fun HistoryPanel(
     filterToolActivityOnly: Boolean,
 ) {
     val entries = buildHistoryEntries(conversation, filterToolActivityOnly)
-    RingIsland(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 12.dp,
         modifier = Modifier.fillMaxWidth(),
-        color = AppSidebarBackground,
+        solidColor = AppSidebarBackground,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -91,18 +96,14 @@ internal fun HistoryPanel(
         ) {
             Text(
                 text = "历史记录",
-                style = MaterialTheme.typography.titleSmall.copy(
-                    color = AppText,
-                    fontWeight = FontWeight.SemiBold,
-                ),
+                color = AppText,
+                fontWeight = FontWeight.SemiBold,
             )
             entries.forEach { entry ->
                 Text(
                     text = entry,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = AppText,
-                        lineHeight = 20.sp,
-                    ),
+                    color = AppText,
+                    lineHeight = 20.sp,
                 )
             }
         }
@@ -119,9 +120,10 @@ internal fun ToolRail(
     modifier: Modifier = Modifier,
 ) {
     val toolGroups = buildRightRailGroups()
-    AdaptiveLiquidGlassSurface(
-        role = LiquidGlassSurfaceRole.CHROME,
+    JewelSurface(
+        role = JewelSurfaceRole.CHROME,
         radius = 0.dp,
+        borderWidth = 0.dp,
         solidColor = AppRailBackground,
         modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
     ) {
@@ -138,20 +140,22 @@ internal fun ToolRail(
                 toolGroups.firstOrNull()?.let { topGroup ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         topGroup.forEach { item ->
-                            RingRailActionButton(
-                                glyph = item.glyph,
-                                active = item.glyph == activeGlyph,
+                            SelectableIconActionButton(
+                                key = item.glyph.iconKey,
+                                contentDescription = item.glyph.tooltip,
+                                selected = item.glyph == activeGlyph,
                                 onClick = { onToolClick(item.glyph) },
-                            )
+                            ) { Text(item.glyph.tooltip) }
                         }
                     }
                 }
                 toolGroups.drop(1).flatten().forEach { item ->
-                    RingRailActionButton(
-                        glyph = item.glyph,
-                        active = item.glyph == activeGlyph,
+                    SelectableIconActionButton(
+                        key = item.glyph.iconKey,
+                        contentDescription = item.glyph.tooltip,
+                        selected = item.glyph == activeGlyph,
                         onClick = { onToolClick(item.glyph) },
-                    )
+                    ) { Text(item.glyph.tooltip) }
                 }
             }
         }

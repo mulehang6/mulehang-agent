@@ -27,8 +27,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -57,6 +55,9 @@ import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppText
 import com.agent.shared.settings.model.ConfigLayer
+import java.awt.Toolkit
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Text
 
 private const val SETTINGS_CONTENT_ENTER_MILLIS = 180
 private const val SETTINGS_CONTENT_EXIT_MILLIS = 140
@@ -93,7 +94,7 @@ internal fun SettingsScopeBar(
                     }
                 }
             }
-            if (!projectEnabled) Text("请选择工作区", style = MaterialTheme.typography.bodySmall.copy(color = AppMuted))
+            if (!projectEnabled) Text("请选择工作区", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
         }
         Spacer(Modifier.fillMaxWidth().padding(top = 12.dp).height(1.dp).background(AppLine))
     }
@@ -116,7 +117,7 @@ private fun SettingsScopeOption(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge.copy(color = if (enabled) AppText else AppMuted))
+        Text(text, style = JewelTheme.defaultTextStyle.copy(color = if (enabled) AppText else AppMuted))
     }
 }
 
@@ -170,7 +171,7 @@ internal fun SettingsNavigation(
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    Text(entry.label, style = MaterialTheme.typography.bodyMedium.copy(color = AppText))
+                    Text(entry.label, style = JewelTheme.defaultTextStyle.copy(color = AppText))
                 }
             }
         }
@@ -227,4 +228,10 @@ private fun settingsContentTransition(
             fadeIn(tween(SETTINGS_CONTENT_ENTER_MILLIS))) togetherWith
             (slideOutHorizontally(tween(SETTINGS_CONTENT_EXIT_MILLIS)) { -direction * motionDistancePx } +
                     fadeOut(tween(SETTINGS_CONTENT_EXIT_MILLIS)))
+}
+
+/** 读取 Windows 动画偏好，并允许测试通过系统属性显式覆盖。 */
+internal fun prefersReducedMotion(): Boolean {
+    System.getProperty("mulehang.reducedMotion")?.toBooleanStrictOrNull()?.let { return it }
+    return Toolkit.getDefaultToolkit().getDesktopProperty("win.animation") == false
 }

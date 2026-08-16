@@ -23,9 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,8 +45,6 @@ import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
-import com.agent.app.design.DesktopMaterialMode
-import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.ProviderCardBackground
 import com.agent.app.design.ProviderCardHoverBackground
 import com.agent.app.design.selectMenuItemBackground
@@ -58,6 +53,9 @@ import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.settings.model.SettingsDocument
 import java.net.URI
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Checkbox
+import org.jetbrains.jewel.ui.component.Text
 
 internal const val PROVIDER_EDITOR_EXPAND_DURATION_MILLIS = 180
 internal const val PROVIDER_EDITOR_COLLAPSE_DURATION_MILLIS = 140
@@ -72,8 +70,7 @@ internal fun ProviderSettingsContent(
     onExpandedProviderChange: (String?) -> Unit,
     onDocumentChange: (SettingsDocument) -> Unit,
 ) {
-    val materialMode = LocalDesktopPalette.current.materialMode
-    Text("AI 服务", style = MaterialTheme.typography.headlineSmall.copy(color = AppText))
+    Text("AI 服务", style = JewelTheme.defaultTextStyle.copy(color = AppText))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SettingsActionButton("新增服务") {
             val id = "provider-${document.providers.size + 1}"
@@ -86,7 +83,7 @@ internal fun ProviderSettingsContent(
     }.forEach { provider ->
         val expanded = provider.id == expandedProviderId
         var hovered by remember(provider.id) { mutableStateOf(false) }
-        SettingsGroup(background = providerCardBackground(materialMode)) {
+        SettingsGroup(background = providerCardBackground()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -101,14 +98,14 @@ internal fun ProviderSettingsContent(
             ) {
                 ProviderGlyph(provider.label ?: provider.id)
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(provider.label ?: provider.id, style = MaterialTheme.typography.titleSmall.copy(color = AppText))
+                    Text(provider.label ?: provider.id, style = JewelTheme.defaultTextStyle.copy(color = AppText))
                     Text(
                         "${provider.providerType.name.lowercase().replace('_', '-')}  ·  " +
                                 "${providerEndpointHost(provider.baseUrl)}  ·  ${provider.models.size} 个模型",
-                        style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                     )
                 }
-                Switch(
+                Checkbox(
                     checked = provider.isEnabled(),
                     onCheckedChange = { enabled ->
                         onDocumentChange(
@@ -151,7 +148,7 @@ internal fun ProviderSettingsContent(
         }
     }
     if (document.providers.isEmpty()) {
-        Text("尚未配置服务。", style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted))
+        Text("尚未配置服务。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
     }
 }
 
@@ -206,7 +203,7 @@ private fun ProviderGlyph(label: String) {
             .background(AppChipBackground),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label.trim().take(1).uppercase(), style = MaterialTheme.typography.labelLarge.copy(color = AppText))
+        Text(label.trim().take(1).uppercase(), style = JewelTheme.defaultTextStyle.copy(color = AppText))
     }
 }
 
@@ -243,7 +240,7 @@ internal fun SettingsActionButton(
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
-        style = MaterialTheme.typography.labelLarge.copy(color = AppText),
+        style = JewelTheme.defaultTextStyle.copy(color = AppText),
     )
 }
 
@@ -251,9 +248,8 @@ internal fun SettingsActionButton(
 internal fun settingsItemBackground(selected: Boolean, hovered: Boolean, enabled: Boolean = true): Color =
     selectMenuItemBackground(selected = selected, hovered = hovered, enabled = enabled)
 
-/** 返回 Provider 外层卡片表面；玻璃模式仅使用清晰染色层，不叠加折射。 */
-internal fun providerCardBackground(materialMode: DesktopMaterialMode = DesktopMaterialMode.SOLID): Color =
-    if (materialMode == DesktopMaterialMode.LIQUID_GLASS) ProviderCardBackground.copy(alpha = 0.58f) else ProviderCardBackground
+/** 返回 Provider 外层卡片的稳定主题表面。 */
+internal fun providerCardBackground(): Color = ProviderCardBackground
 
 /** 返回 Provider 摘要 Island 的展开与悬浮表面。 */
 internal fun providerSummaryBackground(expanded: Boolean, hovered: Boolean): Color = when {

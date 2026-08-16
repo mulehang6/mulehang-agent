@@ -1,8 +1,5 @@
 package com.agent.app.design
 
-import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -26,19 +23,12 @@ internal enum class DesktopThemeMode(val storageValue: String, val label: String
     }
 }
 
-/** 桌面应用可独立于深浅主题切换的表面材质。 */
-internal enum class DesktopMaterialMode {
-    SOLID,
-    LIQUID_GLASS,
-}
-
 /** 产品固定强调色；设置页不再暴露可变强调色能力。 */
 internal val DesktopAccentBlue = Color(0xFF548AF7)
 
 /** 桌面界面所有跨组件使用的语义色板。 */
 internal data class DesktopPalette(
     val isDark: Boolean,
-    val materialMode: DesktopMaterialMode,
     val background: Color,
     val headerBackground: Color,
     val workspaceBackground: Color,
@@ -91,17 +81,15 @@ internal fun resolveDesktopThemeMode(
 internal fun desktopPalette(
     mode: DesktopThemeMode,
     systemIsDark: Boolean = true,
-    materialMode: DesktopMaterialMode = DesktopMaterialMode.SOLID,
 ): DesktopPalette {
     val resolvedMode = resolveDesktopThemeMode(mode, systemIsDark)
     return if (resolvedMode == DesktopThemeMode.LIGHT) {
         DesktopPalette(
             isDark = false,
-            materialMode = materialMode,
-            background = Color(0xFFF6F7F9),
-            headerBackground = Color(0xFFFFFFFF),
+            background = Color(0xFF26282C),
+            headerBackground = Color(0xFF26282C),
             workspaceBackground = Color(0xFFFFFFFF),
-            sidebarBackground = Color(0xFFEFF1F4),
+            sidebarBackground = Color(0xFF26282C),
             panelBackground = Color(0xFFFFFFFF),
             selectedBackground = DesktopAccentBlue.copy(alpha = 0.18f),
             hoverBackground = Color(0xFFE6E9EE),
@@ -125,7 +113,7 @@ internal fun desktopPalette(
             popupSelectedBackground = DesktopAccentBlue.copy(alpha = 0.2f),
             popupBorder = Color(0xFFD5D9E0),
             terminal = TerminalPalette(
-                background = Color(0xFFF7F8FA),
+                background = Color(0xFFFFFFFF),
                 foreground = Color(0xFF1F2329),
                 scrollbarThumb = Color(0xFFA6ABB4),
                 tabActiveBackground = DesktopAccentBlue.copy(alpha = 0.14f),
@@ -136,12 +124,11 @@ internal fun desktopPalette(
     } else {
         DesktopPalette(
             isDark = true,
-            materialMode = materialMode,
-            background = Color(0xFF1E1F22),
-            headerBackground = Color(0xFF1E1F22),
-            workspaceBackground = Color(0xFF18191B),
-            sidebarBackground = Color(0xFF2B2D30),
-            panelBackground = Color(0xFF1E1F22),
+            background = Color(0xFF26282C),
+            headerBackground = Color(0xFF26282C),
+            workspaceBackground = Color(0xFF191A1C),
+            sidebarBackground = Color(0xFF26282C),
+            panelBackground = Color(0xFF191A1C),
             selectedBackground = Color(0xFF2E436E),
             hoverBackground = Color(0xFF35383E),
             userCardBackground = Color(0xFF43454A),
@@ -164,7 +151,7 @@ internal fun desktopPalette(
             popupSelectedBackground = Color(0xFF194474),
             popupBorder = Color(0xFF3A3B3E),
             terminal = TerminalPalette(
-                background = Color(0xFF17181A),
+                background = Color(0xFF191A1C),
                 foreground = Color(0xFFE6E8EC),
                 scrollbarThumb = Color(0xFF4B4D52),
                 tabActiveBackground = Color(0xFF202A38),
@@ -204,12 +191,7 @@ internal fun DesktopThemePaletteProvider(
 
 /** 以下访问器保留既有调用点，并通过 Compose state 触发整树重组。 */
 internal val AppBackground: Color get() = applicationDesktopPalette.background
-internal val AppHeaderBackground: Color
-    get() = if (applicationDesktopPalette.materialMode == DesktopMaterialMode.LIQUID_GLASS) {
-        applicationDesktopPalette.headerBackground.copy(alpha = 0.08f)
-    } else {
-        applicationDesktopPalette.headerBackground
-    }
+internal val AppHeaderBackground: Color get() = applicationDesktopPalette.headerBackground
 internal val AppWorkspaceBackground: Color get() = applicationDesktopPalette.workspaceBackground
 internal val AppSidebarBackground: Color get() = applicationDesktopPalette.sidebarBackground
 internal val AppPanelBackground: Color get() = applicationDesktopPalette.panelBackground
@@ -240,32 +222,3 @@ internal val TerminalSurfaceBackground: Color get() = applicationDesktopPalette.
 internal val TerminalTabActiveBackground: Color get() = applicationDesktopPalette.terminal.tabActiveBackground
 internal val TerminalTabHoverBackground: Color get() = applicationDesktopPalette.terminal.tabHoverBackground
 internal val TerminalTabSelectedBorder: Color get() = applicationDesktopPalette.terminal.tabSelectedBorder
-
-/** 根据 palette 创建 Material 色板，避免 Material 与自定义界面分裂。 */
-internal fun desktopColorScheme(palette: DesktopPalette): ColorScheme = if (palette.background.red > 0.5f) {
-    lightColorScheme(
-        primary = palette.accent,
-        background = palette.background,
-        surface = palette.sidebarBackground,
-        surfaceVariant = palette.chipBackground,
-        onBackground = palette.text,
-        onSurface = palette.text,
-        onSurfaceVariant = palette.muted,
-        error = palette.danger,
-    )
-} else {
-    darkColorScheme(
-        primary = palette.accent,
-        background = palette.background,
-        surface = palette.sidebarBackground,
-        surfaceVariant = palette.chipBackground,
-        secondary = palette.success,
-        error = palette.danger,
-        onBackground = palette.text,
-        onSurface = palette.text,
-        onSurfaceVariant = palette.muted,
-        onPrimary = Color.White,
-        onSecondary = Color.White,
-        onError = Color.White,
-    )
-}

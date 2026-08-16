@@ -64,15 +64,6 @@ class DesktopUiStateStore(
         saveState(current.copy(themeMode = themeMode))
     }
 
-    /** 读取是否启用全应用 Liquid Glass；旧状态文件缺省为关闭。 */
-    fun loadLiquidGlassEnabled(): Boolean = readState()?.liquidGlassEnabled ?: false
-
-    /** 保存全应用 Liquid Glass 材质开关。 */
-    fun saveLiquidGlassEnabled(enabled: Boolean) {
-        val current = readState() ?: UiStateDocument()
-        saveState(current.copy(liquidGlassEnabled = enabled))
-    }
-
     /**
      * 读取 UI 状态文档，文件不存在时返回 null。
      */
@@ -95,6 +86,5 @@ class DesktopUiStateStore(
         val projectSelections: Map<String, String> = emptyMap(),
         val recentWorkspace: String? = null,
         val themeMode: String? = null,
-        val liquidGlassEnabled: Boolean = false,
     )
 }

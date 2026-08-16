@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +34,8 @@ import com.agent.shared.tool.model.FileChangeKind
 import com.agent.shared.tool.model.FileDiffLineKind
 import com.agent.shared.tool.model.FileDiffLinePreview
 import com.agent.shared.tool.model.FileDiffPreview
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Text
 
 /** 编辑器式 unified Diff 预览：保留行号、增删语义和可展开的上下文。 */
 @Composable
@@ -85,11 +85,11 @@ private fun EditorDiffFileHeader(diff: FileDiffPreview) {
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium.copy(color = tint, fontWeight = FontWeight.SemiBold))
+        Text(label, style = JewelTheme.defaultTextStyle.copy(color = tint, fontWeight = FontWeight.SemiBold))
         Spacer(Modifier.width(8.dp))
         Text(
             text = diff.path,
-            style = MaterialTheme.typography.bodySmall.copy(color = AppText, fontFamily = FontFamily.Monospace),
+            style = JewelTheme.defaultTextStyle.copy(color = AppText, fontFamily = FontFamily.Monospace),
         )
     }
 }
@@ -147,7 +147,7 @@ private fun EditorLineNumber(number: Int?) {
 
 /** Diff 的等宽字体与紧凑行高，接近 IDE 编辑器而非普通正文。 */
 @Composable
-private fun editorDiffTextStyle(color: Color) = MaterialTheme.typography.bodySmall.copy(
+private fun editorDiffTextStyle(color: Color) = JewelTheme.defaultTextStyle.copy(
     color = color,
     fontFamily = FontFamily.Monospace,
     fontSize = 12.sp,

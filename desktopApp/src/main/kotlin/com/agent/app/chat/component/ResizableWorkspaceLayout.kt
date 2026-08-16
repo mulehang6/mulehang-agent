@@ -68,6 +68,10 @@ internal fun terminalContainerWidthDuringMotion(
     progress: Float,
 ): Float = terminalContainerWidthPx * progress.coerceIn(0f, 1f)
 
+/** 首次组合先保持右侧区域收起一帧，确保设置和终端都能触发入场动画。 */
+internal fun sidePanelMotionTarget(isReadyForMotion: Boolean, panelVisible: Boolean): Float =
+    if (isReadyForMotion && panelVisible) 1f else 0f
+
 /**
  * 主工作区与终端之间的桌面分割布局。
  */
@@ -81,7 +85,7 @@ internal fun ResizableWorkspaceLayout(
 ) {
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier) {
-        val dividerWidth = 10.dp
+        val dividerWidth = 8.dp
         val dividerWidthPx = with(density) { dividerWidth.toPx() }
         val availableWidthPx = with(density) { maxWidth.toPx() } - dividerWidthPx
         val minimumTerminalWidthPx = with(density) { (if (compact) 260.dp else 320.dp).toPx() }
@@ -92,6 +96,7 @@ internal fun ResizableWorkspaceLayout(
         var dividerDragging by remember { mutableStateOf(false) }
         var dividerPressed by remember { mutableStateOf(false) }
         var dividerPointerY by remember { mutableFloatStateOf(0f) }
+        var readyForSidePanelMotion by remember { mutableStateOf(false) }
         val effectiveTerminalWidthPx = clampTerminalWidth(
             terminalWidthPx,
             availableWidthPx,
@@ -100,7 +105,10 @@ internal fun ResizableWorkspaceLayout(
         )
         val terminalContainerWidthPx = dividerWidthPx + effectiveTerminalWidthPx
         val terminalMotionProgress by animateFloatAsState(
-            targetValue = if (terminalVisible) 1f else 0f,
+            targetValue = sidePanelMotionTarget(
+                isReadyForMotion = readyForSidePanelMotion,
+                panelVisible = terminalVisible,
+            ),
             animationSpec = tween(
                 durationMillis = if (terminalVisible) {
                     TERMINAL_PANEL_ENTER_DURATION_MILLIS
@@ -126,6 +134,9 @@ internal fun ResizableWorkspaceLayout(
                 minimumTerminalWidthPx,
                 minimumWorkspaceWidthPx,
             )
+        }
+        LaunchedEffect(Unit) {
+            readyForSidePanelMotion = true
         }
 
         Box(

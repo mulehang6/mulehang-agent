@@ -1,26 +1,18 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+)
 
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,66 +23,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppLine
-import com.agent.app.design.AppText
 import com.agent.app.design.LocalDesktopPalette
-import com.agent.app.design.DesktopMaterialMode
-import com.agent.app.design.MenuGrowthOrigin
-import com.agent.app.design.PopupMenuSelectedBackground
-import com.agent.app.design.PopupMenuShape
-import com.agent.app.design.RingDropdownMenuItem
-import com.agent.app.design.PopupMenuShadowInset
-import com.agent.app.design.popupMenuSurface
-import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.RightRailGlyphIcon
+import com.agent.app.design.OffsetPopupPositionProvider
 import com.agent.app.design.TerminalSurfaceBackground
-import com.agent.app.design.TerminalTabActiveBackground
-import com.agent.app.design.TerminalTabHoverBackground
-import com.agent.app.design.TerminalTabSelectedBorder
-import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
-import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
-import com.agent.app.design.menuGrowthTransformOrigin
-import com.agent.app.design.rememberMenuGrowthMotion
-
-internal const val TERMINAL_CLOSE_BUTTON_SIZE_DP = 24
-internal const val TERMINAL_TAB_HEIGHT_DP = 30
-internal const val TERMINAL_ADD_BUTTON_SIZE_DP = 36
-internal const val TERMINAL_HIDE_BUTTON_SIZE_DP = 32
-/** 返回终端标签的常态边框色，选中态使用 Air 蓝描边而非悬浮反馈。 */
-internal fun terminalTabBorderColor(selected: Boolean, focused: Boolean = true): Color =
-    if (selected) {
-        if (focused) TerminalTabSelectedBorder else AppLine
-    } else {
-        Color.Transparent
-    }
-
-/** 返回新建终端按钮的悬浮底色；图标本身不使用发光效果。 */
-internal fun terminalAddButtonBackground(hovered: Boolean): Color =
-    if (hovered) TerminalTabHoverBackground else Color.Transparent
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.ActionButton
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.PopupMenu
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /** 返回终端标题栏关闭图标的可访问文案，明确其不会终止终端会话。 */
 internal fun terminalPanelHideActionLabel(): String = "收起终端"
-
-/**
- * 返回终端操作图标的发光强度；新建和关闭操作保持克制的静态呈现。
- */
-@Suppress("UNUSED_PARAMETER")
-internal fun terminalActionGlowAlpha(hovered: Boolean): Float = 0f
 
 /**
  * 在主工作区右侧承载可切换的交互式 PowerShell 终端标签页。
@@ -104,16 +58,11 @@ internal fun EmbeddedTerminalPanel(
     onCloseTab: (Long) -> Unit,
     onCloseOtherTabs: (Long) -> Unit,
     onHidePanel: () -> Unit,
-    focused: Boolean = true,
     onFocus: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val terminalPalette = LocalDesktopPalette.current.terminal
-    val terminalChromeBackground = if (LocalDesktopPalette.current.materialMode == DesktopMaterialMode.LIQUID_GLASS) {
-        Color.Transparent
-    } else {
-        TerminalSurfaceBackground
-    }
+    val terminalChromeBackground = TerminalSurfaceBackground
     val activeTab = tabs.tabs.firstOrNull { it.id == tabs.activeTabId }
     val activeSession = activeTab?.let { sessions.session(it.id) }
     val activeComponent = activeSession?.component
@@ -122,21 +71,21 @@ internal fun EmbeddedTerminalPanel(
     var terminalOrigin by remember { mutableStateOf(Offset.Zero) }
     var contextMenuTabId by remember { mutableStateOf<Long?>(null) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
-    var addHovered by remember { mutableStateOf(false) }
-    var hideHovered by remember { mutableStateOf(false) }
-    val contextMenuMotion = rememberMenuGrowthMotion(
-        expanded = contextMenuTabId != null,
-        label = "terminal-context-menu",
-    )
+    val contextMenuPositionProvider = remember(contextMenuOffset, density) {
+        OffsetPopupPositionProvider(
+            offset = contextMenuOffset,
+            density = density.density,
+        )
+    }
 
     LaunchedEffect(tabs.activeTabId) {
         sessions.focusActiveIfNeeded(tabs.activeTabId)
     }
-    AdaptiveLiquidGlassSurface(
-        role = LiquidGlassSurfaceRole.PANEL,
-        radius = 10.dp,
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 0.dp,
+        borderWidth = 0.dp,
         solidColor = TerminalSurfaceBackground,
-        borderColor = AppLine,
         modifier = modifier
             .onPointerEvent(PointerEventType.Press) { onFocus() }
             .onGloballyPositioned { terminalOrigin = it.positionInRoot() },
@@ -149,65 +98,36 @@ internal fun EmbeddedTerminalPanel(
                     .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                tabs.tabs.forEach { tab ->
-                    TerminalTabChip(
-                        tab = tab,
-                        selected = tab.id == tabs.activeTabId,
-                        focused = focused,
-                        onSelect = { onSelectTab(tab.id) },
-                        onClose = { onCloseTab(tab.id) },
-                        onOpenContextMenu = { position ->
-                            contextMenuTabId = tab.id
-                            contextMenuOffset = with(density) {
-                                DpOffset(
-                                    x = (position.x - terminalOrigin.x).toDp(),
-                                    y = (position.y - terminalOrigin.y).toDp(),
-                                )
-                            }
-                        },
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .padding(start = 4.dp)
-                        .size(TERMINAL_ADD_BUTTON_SIZE_DP.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(terminalAddButtonBackground(addHovered))
-                        .onPointerEvent(PointerEventType.Enter) { addHovered = true }
-                        .onPointerEvent(PointerEventType.Exit) { addHovered = false }
-                        .clickable(onClick = onAddTab)
-                        .semantics { contentDescription = "新建终端" },
-                    contentAlignment = Alignment.Center,
+            TerminalTabStrip(
+                tabs = tabs.tabs,
+                activeTabId = tabs.activeTabId,
+                onSelectTab = onSelectTab,
+                onCloseTab = onCloseTab,
+                onContextMenuRequested = { tabId, pointerInRoot ->
+                    contextMenuTabId = tabId
+                    contextMenuOffset = with(density) {
+                        DpOffset(
+                            x = (pointerInRoot.x - terminalOrigin.x).toDp(),
+                            y = (pointerInRoot.y - terminalOrigin.y).toDp(),
+                        )
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ActionButton(
+                    onClick = onAddTab,
+                    tooltip = { Text("新建终端") },
+                    modifier = Modifier.padding(start = 4.dp),
                 ) {
-                    TerminalActionGlyph(
-                        cross = false,
-                        color = AppText,
-                        glowAlpha = 0f,
-                    )
+                    Icon(AllIconsKeys.General.Add, "新建终端")
                 }
             }
-            Box(
-                modifier = Modifier
-                    .size(TERMINAL_HIDE_BUTTON_SIZE_DP.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(terminalAddButtonBackground(hideHovered))
-                    .onPointerEvent(PointerEventType.Enter) { hideHovered = true }
-                    .onPointerEvent(PointerEventType.Exit) { hideHovered = false }
-                    .clickable(onClick = onHidePanel)
-                    .semantics { contentDescription = terminalPanelHideActionLabel() },
-                contentAlignment = Alignment.Center,
+            ActionButton(
+                onClick = onHidePanel,
+                tooltip = { Text(terminalPanelHideActionLabel()) },
             ) {
-                TerminalActionGlyph(
-                    cross = true,
-                    color = AppMuted,
-                    glowAlpha = 0f,
-                )
+                Icon(AllIconsKeys.Actions.Cancel, terminalPanelHideActionLabel())
             }
         }
             Box(
@@ -224,56 +144,33 @@ internal fun EmbeddedTerminalPanel(
                     Text(
                         text = activeSession?.errorMessage ?: "无法启动 PowerShell",
                         modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                     )
                 }
             }
         }
-        DropdownMenu(
-            expanded = contextMenuTabId != null,
-            onDismissRequest = { contextMenuTabId = null },
-            offset = contextMenuOffset,
-            modifier = Modifier
-                .padding(PopupMenuShadowInset)
-                .width(152.dp)
-                .graphicsLayer {
-                    transformOrigin = menuGrowthTransformOrigin(MenuGrowthOrigin.Context)
-                    scaleX = contextMenuMotion.scale
-                    scaleY = contextMenuMotion.scale
-                    alpha = contextMenuMotion.alpha
-                    translationY = contextMenuMotion.translationYDp * density.density
-                }
-                .popupMenuSurface(),
-            shape = PopupMenuShape,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-            border = null,
-        ) {
-            TerminalContextMenuItem(
-                text = contextMenuLabels[0],
-                itemIndex = 0,
-                onClick = {
+        if (contextMenuTabId != null) {
+            PopupMenu(
+                onDismissRequest = {
+                    contextMenuTabId = null
+                    true
+                },
+                popupPositionProvider = contextMenuPositionProvider,
+                modifier = Modifier.width(152.dp),
+            ) {
+                selectableItem(selected = false, onClick = {
                     contextMenuTabId = null
                     onAddTab()
-                },
-            )
-            TerminalContextMenuItem(
-                text = contextMenuLabels[1],
-                itemIndex = 1,
-                onClick = {
+                }) { Text(contextMenuLabels[0]) }
+                selectableItem(selected = false, onClick = {
                     contextMenuTabId?.let(onCloseTab)
                     contextMenuTabId = null
-                },
-            )
-            TerminalContextMenuItem(
-                text = contextMenuLabels[2],
-                itemIndex = 2,
-                onClick = {
+                }) { Text(contextMenuLabels[1]) }
+                selectableItem(selected = false, onClick = {
                     contextMenuTabId?.let(onCloseOtherTabs)
                     contextMenuTabId = null
-                },
-            )
+                }) { Text(contextMenuLabels[2]) }
+            }
         }
     }
 }
@@ -282,136 +179,3 @@ internal fun EmbeddedTerminalPanel(
  * 返回终端标签右键菜单的固定操作文案。
  */
 internal fun terminalTabContextMenuLabels(): List<String> = listOf("新建终端", "关闭当前终端", "关闭其他终端")
-
-/**
- * 渲染一个可切换、可关闭并支持右键菜单的终端标签。
- */
-@Composable
-private fun TerminalTabChip(
-    tab: TerminalTab,
-    selected: Boolean,
-    focused: Boolean,
-    onSelect: () -> Unit,
-    onClose: () -> Unit,
-    onOpenContextMenu: (Offset) -> Unit,
-) {
-    var tabOrigin by remember { mutableStateOf(Offset.Zero) }
-    var tabHovered by remember { mutableStateOf(false) }
-    var closeHovered by remember { mutableStateOf(false) }
-    var closePressed by remember { mutableStateOf(false) }
-    val closeVisible = selected || tabHovered
-    Row(
-        modifier = Modifier
-            .padding(end = 4.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(
-                when {
-                    selected -> TerminalTabActiveBackground
-                    tabHovered -> TerminalTabHoverBackground
-                    else -> Color.Transparent
-                },
-            )
-            .border(
-                width = 1.dp,
-                color = terminalTabBorderColor(selected, focused),
-                shape = RoundedCornerShape(6.dp),
-            )
-            .onGloballyPositioned { tabOrigin = it.positionInRoot() }
-            .onPointerEvent(PointerEventType.Enter) { tabHovered = true }
-            .onPointerEvent(PointerEventType.Exit) { tabHovered = false }
-            .onPointerEvent(PointerEventType.Press) { event ->
-                if (event.buttons.isSecondaryPressed) {
-                    onOpenContextMenu(tabOrigin + (event.changes.firstOrNull()?.position ?: Offset.Zero))
-                }
-            }
-            .clickable(onClick = onSelect)
-            .height(TERMINAL_TAB_HEIGHT_DP.dp)
-            .padding(start = 10.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RightRailGlyphIcon(
-            glyph = RightRailGlyph.TERMINAL,
-            tint = if (selected) AppText else AppMuted,
-            glyphSize = 22.dp,
-        )
-        Text(
-            text = tab.title,
-            modifier = Modifier.padding(start = 6.dp),
-            style = MaterialTheme.typography.labelLarge.copy(color = AppText),
-        )
-        Box(
-            modifier = Modifier
-                .padding(start = 6.dp)
-                .size(TERMINAL_CLOSE_BUTTON_SIZE_DP.dp)
-                .graphicsLayer {
-                    alpha = if (closeVisible) 1f else 0f
-                    scaleX = if (closePressed) 0.94f else 1f
-                    scaleY = if (closePressed) 0.94f else 1f
-                }
-                .clip(RoundedCornerShape(5.dp))
-                .background(if (closeHovered) TerminalTabHoverBackground else Color.Transparent)
-                .onPointerEvent(PointerEventType.Enter) { closeHovered = true }
-                .onPointerEvent(PointerEventType.Exit) {
-                    closeHovered = false
-                    closePressed = false
-                }
-                .onPointerEvent(PointerEventType.Press) { closePressed = true }
-                .onPointerEvent(PointerEventType.Release) { closePressed = false }
-                .clickable(enabled = closeVisible, onClick = onClose)
-                .semantics { contentDescription = "关闭${tab.title}" },
-            contentAlignment = Alignment.Center,
-        ) {
-            TerminalActionGlyph(
-                cross = true,
-                color = if (closeHovered) AppText else AppMuted,
-                glowAlpha = 0f,
-            )
-        }
-    }
-}
-
-/**
- * 在操作按钮的几何中心绘制加号或关闭图标，避免文字基线造成视觉偏移。
- */
-@Composable
-private fun TerminalActionGlyph(
-    cross: Boolean,
-    color: Color,
-    glowAlpha: Float,
-) {
-    Canvas(modifier = Modifier.size(14.dp)) {
-        val inset = size.minDimension * 0.1f
-        val center = size.minDimension / 2f
-        val strokeWidth = 2.dp.toPx()
-        fun drawGlyph(lineColor: Color, lineWidth: Float) {
-            if (cross) {
-                drawLine(lineColor, Offset(inset, inset), Offset(size.width - inset, size.height - inset), lineWidth, StrokeCap.Round)
-                drawLine(lineColor, Offset(size.width - inset, inset), Offset(inset, size.height - inset), lineWidth, StrokeCap.Round)
-            } else {
-                drawLine(lineColor, Offset(inset, center), Offset(size.width - inset, center), lineWidth, StrokeCap.Round)
-                drawLine(lineColor, Offset(center, inset), Offset(center, size.height - inset), lineWidth, StrokeCap.Round)
-            }
-        }
-        if (glowAlpha > 0f) drawGlyph(color.copy(alpha = glowAlpha), strokeWidth + 3.dp.toPx())
-        drawGlyph(color, strokeWidth)
-    }
-}
-
-/**
- * 渲染终端标签右键菜单中的一个操作。
- */
-@Composable
-private fun TerminalContextMenuItem(
-    text: String,
-    itemIndex: Int,
-    onClick: () -> Unit,
-) {
-    RingDropdownMenuItem(
-        text = text,
-        selected = false,
-        onClick = onClick,
-        itemIndex = itemIndex,
-        itemCount = 3,
-        hoverBackground = PopupMenuSelectedBackground,
-    )
-}

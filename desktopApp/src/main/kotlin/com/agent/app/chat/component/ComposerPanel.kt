@@ -1,4 +1,8 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
+)
 
 package com.agent.app.chat.component
 
@@ -21,11 +25,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +52,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
@@ -62,29 +64,31 @@ import com.agent.app.chat.presentation.reasoningControlLabel
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.state.resolveContextWindow
-import com.agent.app.design.AppAccent
 import com.agent.app.design.AppChipBackground
-import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.ComposerInputBackground
 import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.RingContextIndicator
-import com.agent.app.design.RingDropdownMenuItem
-import com.agent.app.design.RingHeaderActionButton
-import com.agent.app.design.RingInputField
-import com.agent.app.design.RingPermissionDropdownMenuItem
-import com.agent.app.design.RingPrimaryButton
-import com.agent.app.design.RingSelectChip
-import com.agent.app.design.RingTooltip
-import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
-import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.iconKey
 import com.agent.app.platform.pickFiles
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.launch
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.ActionButton
+import org.jetbrains.jewel.ui.component.DefaultButton
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.MenuScope
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.PopupMenu
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.TextArea
+import org.jetbrains.jewel.ui.component.Tooltip
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /**
  * 原型 composer。
@@ -117,16 +121,20 @@ internal fun ComposerPanel(
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
     val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
     var expandedMenu by remember { mutableStateOf<ComposerMenu?>(null) }
+    var draftFieldValue by remember { mutableStateOf(TextFieldValue(state.ui.draft)) }
     val inputScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     var inputViewportHeight by remember { mutableStateOf(0) }
 
     LaunchedEffect(state.ui.draft) {
+        if (draftFieldValue.text != state.ui.draft) {
+            draftFieldValue = TextFieldValue(state.ui.draft)
+        }
         inputScrollState.scrollTo(inputScrollState.maxValue)
     }
 
-    AdaptiveLiquidGlassSurface(
-        role = LiquidGlassSurfaceRole.INPUT,
+    JewelSurface(
+        role = JewelSurfaceRole.INPUT,
         radius = 18.dp,
         solidColor = ComposerBackground,
         borderColor = Color.Transparent,
@@ -178,10 +186,12 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     activeConversation.attachments.forEach { attachment ->
-                        RingTooltip(attachment.path) {
-                            Surface(
-                                shape = RoundedCornerShape(999.dp),
-                                color = AppChipBackground,
+                        Tooltip(tooltip = { Text(attachment.path) }) {
+                            JewelSurface(
+                                role = JewelSurfaceRole.CHROME,
+                                radius = 999.dp,
+                                solidColor = AppChipBackground,
+                                borderColor = AppLine,
                             ) {
                                 Row(
                                     modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
@@ -190,18 +200,12 @@ internal fun ComposerPanel(
                                 ) {
                                     Text(
                                         text = attachment.name,
-                                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall.copy(
-                                            color = AppText
-                                        ),
+                                        style = JewelTheme.defaultTextStyle.copy(color = AppText),
                                     )
-                                    RingPrimaryButton(
-                                        text = "×",
+                                    ActionButton(
                                         onClick = { state.removeAttachment(attachment.path) },
-                                        modifier = Modifier.size(26.dp),
-                                        containerColor = AppLine,
-                                        compact = true,
-                                        tooltip = "移除 ${attachment.name}",
-                                    )
+                                        tooltip = { Text("移除 ${attachment.name}") },
+                                    ) { Icon(AllIconsKeys.Actions.Cancel, "移除 ${attachment.name}") }
                                 }
                             }
                         }
@@ -233,9 +237,15 @@ internal fun ComposerPanel(
                         .fillMaxWidth()
                         .verticalScroll(inputScrollState),
                 ) {
-                    RingInputField(
+                    TextArea(
+                        value = draftFieldValue,
+                        onValueChange = { updated ->
+                            draftFieldValue = updated
+                            state.updateDraft(updated.text)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 72.dp)
                             .onPreviewKeyEvent { event ->
                                 val selectionScrollDelta = composerKeyboardSelectionScrollDelta(
                                     key = event.key,
@@ -259,11 +269,8 @@ internal fun ComposerPanel(
                                     false
                                 }
                             },
-                        value = state.ui.draft,
-                        onValueChange = state::updateDraft,
-                        minLines = 3,
-                        placeholder = "描述你想完成的任务…",
-                        borderless = true,
+                        placeholder = { Text("描述你想完成的任务…") },
+                        undecorated = true,
                     )
                 }
                 if (shouldShowComposerInputScrollbar(inputScrollState.maxValue)) {
@@ -294,13 +301,11 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RingHeaderActionButton(
-                        glyph = HeaderGlyph.ADD,
+                    ActionButton(
                         onClick = { state.attachFiles(pickFiles()) },
-                        inline = true,
-                        tooltip = "添加附件",
-                    )
-                    RingSelectChip(
+                        tooltip = { Text("添加附件") },
+                    ) { Icon(HeaderGlyph.ADD.iconKey, "添加附件") }
+                    ComposerMenuButton(
                         label = selectedProfile?.providerLabel ?: currentProvider ?: "服务商",
                         expanded = expandedMenu == ComposerMenu.PROVIDER,
                         onExpandedChange = { shouldExpand ->
@@ -309,23 +314,19 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
                         },
-                        tooltip = "选择服务商",
                     ) {
-                        providerProfiles.entries.forEachIndexed { index, (_, providerModels) ->
-                            val first = providerModels.firstOrNull() ?: return@forEachIndexed
-                            RingDropdownMenuItem(
-                                text = first.providerLabel,
+                        providerProfiles.entries.forEach { (_, providerModels) ->
+                            val first = providerModels.firstOrNull() ?: return@forEach
+                            selectableItem(
                                 selected = first.providerId == currentProvider,
-                                itemIndex = index,
-                                itemCount = providerProfiles.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.selectProfile(first.id)
                                 },
-                            )
+                            ) { Text(first.providerLabel) }
                         }
                     }
-                    RingSelectChip(
+                    ComposerMenuButton(
                         label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "模型",
                         expanded = expandedMenu == ComposerMenu.MODEL,
                         onExpandedChange = { shouldExpand ->
@@ -334,23 +335,19 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
                         },
-                        tooltip = "选择模型",
                     ) {
-                        currentProviderProfiles.forEachIndexed { index, profile ->
-                            RingDropdownMenuItem(
-                                text = profile.modelLabel ?: profile.model,
+                        currentProviderProfiles.forEach { profile ->
+                            selectableItem(
                                 selected = profile.id == selectedProfile?.id,
-                                itemIndex = index,
-                                itemCount = currentProviderProfiles.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.selectProfile(profile.id)
                                 },
-                            )
+                            ) { Text(profile.modelLabel ?: profile.model) }
                         }
                     }
                     if (selectedVariants.isNotEmpty()) {
-                        RingSelectChip(
+                        ComposerMenuButton(
                             label = reasoningControlLabel(activeConversation?.reasoningEffort),
                             expanded = expandedMenu == ComposerMenu.REASONING,
                             onExpandedChange = { shouldExpand ->
@@ -359,24 +356,20 @@ internal fun ComposerPanel(
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
                             },
-                            tooltip = "选择推理强度",
                         ) {
-                            selectedVariants.forEachIndexed { index, variant ->
-                                val effort = variant.reasoningEffort ?: return@forEachIndexed
-                                RingDropdownMenuItem(
-                                    text = reasoningControlLabel(effort),
+                            selectedVariants.forEach { variant ->
+                                val effort = variant.reasoningEffort ?: return@forEach
+                                selectableItem(
                                     selected = effort == activeConversation?.reasoningEffort,
-                                    itemIndex = index,
-                                    itemCount = selectedVariants.size,
                                     onClick = {
                                         expandedMenu = null
                                         state.updateReasoningEffort(effort)
                                     },
-                                )
+                                ) { Text(reasoningControlLabel(effort)) }
                             }
                         }
                     }
-                    RingContextIndicator(
+                    ComposerContextIndicator(
                         sweepAngle = contextRingSweepAngle(activeConversation?.contextUsageFraction ?: 0f),
                         tooltip = buildContextTooltip(
                             usageFraction = activeConversation?.contextUsageFraction ?: 0f,
@@ -388,7 +381,7 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RingSelectChip(
+                    ComposerMenuButton(
                         label = permissionPresentation(permissionPreset).label,
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
                         onExpandedChange = { shouldExpand ->
@@ -397,30 +390,27 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
                         },
-                        tooltip = "选择执行权限",
                     ) {
-                        Text(
-                            text = "Permission mode",
-                            modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 6.dp),
-                            style = androidx.compose.material3.MaterialTheme.typography.titleSmall.copy(color = AppMuted),
-                        )
-                        PermissionPreset.entries.forEachIndexed { index, preset ->
-                            RingPermissionDropdownMenuItem(
-                                description = permissionPresentation(preset).description,
-                                badge = permissionPresentation(preset).label,
-                                badgeColor = permissionPresentation(preset).tone,
+                        passiveItem { Text("Permission mode") }
+                        PermissionPreset.entries.forEach { preset ->
+                            selectableItem(
                                 selected = preset == permissionPreset,
-                                itemIndex = index,
-                                itemCount = PermissionPreset.entries.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.updatePermission(preset)
                                 },
-                            )
+                            ) {
+                                Column {
+                                    Text(permissionPresentation(preset).label)
+                                    Text(
+                                        permissionPresentation(preset).description,
+                                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+                                    )
+                                }
+                            }
                         }
                     }
-                    RingPrimaryButton(
-                        text = primaryActionVisual.symbol,
+                    DefaultButton(
                         onClick = {
                             if (executionState.isStoppable()) {
                                 state.cancelActiveRun()
@@ -428,14 +418,38 @@ internal fun ComposerPanel(
                                 onSendDraft()
                             }
                         },
-                        containerColor = if (primaryActionVisual.danger) AppDanger else AppAccent,
-                        modifier = Modifier.size(40.dp),
-                        compact = true,
-                        iconGlyph = composerPrimaryActionGlyph(primaryActionVisual.danger),
-                        tooltip = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
-                    )
+                    ) {
+                        Icon(
+                            composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
+                            if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+/** 使用 Jewel 按钮和原生菜单承载 Composer 的业务选择器。 */
+@Composable
+private fun ComposerMenuButton(
+    label: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onDismissRequest: () -> Unit,
+    content: MenuScope.() -> Unit,
+) {
+    Box {
+        OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
+        if (expanded) {
+            PopupMenu(
+                onDismissRequest = {
+                    onDismissRequest()
+                    true
+                },
+                horizontalAlignment = Alignment.Start,
+                content = content,
+            )
         }
     }
 }

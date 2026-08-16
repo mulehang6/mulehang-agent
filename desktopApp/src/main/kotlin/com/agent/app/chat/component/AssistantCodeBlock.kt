@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -6,11 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -25,9 +22,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
+import com.agent.app.design.AppPanelBackground
 import com.agent.app.design.AppText
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.ActionButton
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /** 围栏代码的关键字颜色。 */
 internal val CodeKeywordColor = Color(0xFFC9A7FF)
@@ -66,11 +71,12 @@ internal fun AssistantCodeBlock(
     language: String?,
     source: String,
 ) {
-    Surface(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 8.dp,
+        solidColor = AppPanelBackground,
+        borderColor = AppLine.copy(alpha = 0.75f),
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF24272E),
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.75f)),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -83,7 +89,7 @@ internal fun AssistantCodeBlock(
                 language?.let {
                     Text(
                         text = it,
-                        style = MaterialTheme.typography.labelSmall.copy(color = AppMuted),
+                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                     )
                 }
                 CopyCodeButton(source = source)
@@ -91,7 +97,7 @@ internal fun AssistantCodeBlock(
             SelectionContainer {
                 Text(
                     text = highlightCode(source, language),
-                    style = MaterialTheme.typography.bodyMedium.copy(
+                    style = JewelTheme.defaultTextStyle.copy(
                         color = AppText,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
@@ -109,14 +115,15 @@ internal fun AssistantCodeBlock(
 internal fun CopyCodeButton(source: String) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    TextButton(
+    ActionButton(
         onClick = {
             scope.launch {
                 clipboard.setClipEntry(ClipEntry(StringSelection(source)))
             }
         },
+        tooltip = { Text("复制代码") },
     ) {
-        Text("复制")
+        Icon(AllIconsKeys.Actions.Copy, "复制代码")
     }
 }
 

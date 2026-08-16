@@ -1,7 +1,6 @@
 package com.agent.app.bootstrap
 
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -9,17 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.window.WindowScope
 import androidx.compose.ui.window.WindowState
-import androidx.compose.ui.graphics.Color
 import com.agent.app.chat.component.ChatScreen
+import com.agent.app.chat.component.ChatTitleBar
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.design.AppTypography
-import com.agent.app.design.DesktopMaterialMode
 import com.agent.app.design.DesktopThemeMode
-import com.agent.app.design.DesktopThemePaletteProvider
-import com.agent.app.design.desktopColorScheme
+import com.agent.app.design.MulehangTheme
 import com.agent.app.design.desktopPalette
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
@@ -41,16 +36,14 @@ import kotlinx.coroutines.launch
  * 根 composable，负责加载桌面会话快照并装配窗口状态。
  */
 @Composable
-internal fun WindowScope.MulehangDesktopApp(
+internal fun MulehangDesktopApp(
     initialProjectRoot: Path?,
     desktopWindowState: WindowState,
-    windowChromeMode: WindowChromeMode,
     onCloseRequest: () -> Unit,
 ) {
     val userHome = remember { Paths.get(System.getProperty("user.home")) }
     val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
     var themeMode by remember { mutableStateOf(DesktopThemeMode.fromStorage(uiStateStore.loadThemeMode())) }
-    var liquidGlassEnabled by remember { mutableStateOf(uiStateStore.loadLiquidGlassEnabled()) }
     val projectRootState = remember {
         mutableStateOf(
             initialProjectRoot ?: uiStateStore.loadRecentWorkspace()
@@ -58,6 +51,7 @@ internal fun WindowScope.MulehangDesktopApp(
                 ?.let(DesktopProjectRootResolver::resolve),
         )
     }
+    var sidebarVisible by remember { mutableStateOf(false) }
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
     }
@@ -106,53 +100,39 @@ internal fun WindowScope.MulehangDesktopApp(
             .onFailure { windowState.setPersistenceError("历史任务未加载") }
     }
 
-    val palette = desktopPalette(
-        mode = themeMode,
-        systemIsDark = isSystemInDarkTheme(),
-        materialMode = if (liquidGlassEnabled) DesktopMaterialMode.LIQUID_GLASS else DesktopMaterialMode.SOLID,
-    )
-    val nativeTitleBarHandle = rememberNativeWindowTitleBar(
-        mode = windowChromeMode,
-        controlsDark = palette.isDark,
-        background = when {
-            palette.materialMode != DesktopMaterialMode.LIQUID_GLASS -> palette.headerBackground
-            palette.isDark -> Color(0xFF192331)
-            else -> Color(0xFFEFF6FF)
-        },
-    )
-    DesktopThemePaletteProvider(palette) {
-        MaterialTheme(
-            colorScheme = desktopColorScheme(palette),
-            typography = AppTypography,
+    val palette = desktopPalette(mode = themeMode, systemIsDark = isSystemInDarkTheme())
+    MulehangTheme(isDark = palette.isDark, palette = palette) {
+        org.jetbrains.jewel.window.DecoratedWindow(
+            onCloseRequest = { windowState.flushPersistence(onCloseRequest) },
+            state = desktopWindowState,
+            title = "mulehang-agent",
         ) {
+            ChatTitleBar(
+                state = windowState,
+                projectRoot = projectRootState.value,
+                sidebarVisible = sidebarVisible,
+                onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                onGlobalFeedback = {},
+            )
             ChatScreen(
-            state = windowState,
-            desktopWindowState = desktopWindowState,
-            windowChromeMode = windowChromeMode,
-            onTitleBarClientPointerEvent = nativeTitleBarHandle?.let { handle ->
-                { handle.forceClientArea() }
-            },
-            projectRoot = projectRootState.value,
-            userHome = userHome,
-            themeMode = themeMode,
-            liquidGlassEnabled = liquidGlassEnabled,
-            onThemeChanged = { updatedMode ->
-                themeMode = updatedMode
-                uiStateStore.saveThemeMode(updatedMode.storageValue)
-            },
-            onLiquidGlassEnabledChanged = { enabled ->
-                liquidGlassEnabled = enabled
-                uiStateStore.saveLiquidGlassEnabled(enabled)
-            },
-            onSettingsChanged = {
-                projectRootState.value?.let { root ->
-                    appScope.launch {
-                        val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
-                        windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+                state = windowState,
+                sidebarVisible = sidebarVisible,
+                onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                projectRoot = projectRootState.value,
+                userHome = userHome,
+                themeMode = themeMode,
+                onThemeChanged = { updatedMode ->
+                    themeMode = updatedMode
+                    uiStateStore.saveThemeMode(updatedMode.storageValue)
+                },
+                onSettingsChanged = {
+                    projectRootState.value?.let { root ->
+                        appScope.launch {
+                            val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
+                            windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+                        }
                     }
-                }
-            },
-                onCloseRequest = { windowState.flushPersistence(onCloseRequest) },
+                },
             )
         }
     }

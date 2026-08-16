@@ -8,7 +8,7 @@
 
 ## 构建、测试与检查
 
-使用 JDK 21 和仓库 Gradle Wrapper，在根目录执行：
+使用 JetBrains Runtime 25（JDK 25）和仓库 Gradle Wrapper，在根目录执行：
 
 ```powershell
 .\\gradlew.bat :shared:jvmTest :desktopApp:test

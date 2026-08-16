@@ -30,13 +30,13 @@
 
 ## 环境要求
 
-使用 JDK 21、Gradle Wrapper、Kotlin Multiplatform 与 Compose Multiplatform Desktop。当前只聚焦 Windows Desktop，不启动开发服务器。
+使用 JetBrains Runtime 25（JDK 25）、Gradle Wrapper、Kotlin 2.3.20、Compose Multiplatform 1.11.0 与 Jewel `0.39.1-262.9437.29`。Gradle JVM 与运行时都必须指向 JBR 25；当前只聚焦 Windows Desktop，不启动开发服务器。
 
 ## 构建与测试
 
 ```powershell
-.\gradlew.bat build
-.\gradlew.bat test
-.\gradlew.bat clean
+.\gradlew.bat :shared:jvmTest :desktopApp:test
+.\gradlew.bat :desktopApp:compileKotlin
+.\gradlew.bat :desktopApp:packageDistributionForCurrentOS
 ```
 

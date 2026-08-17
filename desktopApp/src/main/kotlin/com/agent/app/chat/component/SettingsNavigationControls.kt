@@ -126,9 +126,45 @@ private fun SettingsScopeOption(
 internal fun SettingsNavigation(
     section: SettingsSection,
     onSectionChange: (SettingsSection, Boolean) -> Unit,
+    compact: Boolean = false,
 ) {
     val itemHeight = 38.dp
     val itemGap = 5.dp
+    if (compact) {
+        Row(
+            modifier = Modifier.fillMaxWidth().height(itemHeight),
+            horizontalArrangement = Arrangement.spacedBy(itemGap),
+        ) {
+            SettingsSection.entries.forEach { entry ->
+                var hovered by remember(entry) { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(
+                            when {
+                                entry == section -> AppSelectedBackground
+                                hovered -> settingsItemBackground(selected = false, hovered = true)
+                                else -> androidx.compose.ui.graphics.Color.Transparent
+                            },
+                        )
+                        .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                        .onPointerEvent(PointerEventType.Exit) { hovered = false }
+                        .focusable()
+                        .clickable { onSectionChange(entry, true) }
+                        .semantics {
+                            role = Role.Tab
+                            selected = entry == section
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(entry.label, style = JewelTheme.defaultTextStyle.copy(color = AppText))
+                }
+            }
+        }
+        return
+    }
     val indicatorOffset by animateDpAsState(
         targetValue = (itemHeight + itemGap) * section.ordinal,
         animationSpec = spring(dampingRatio = 0.86f, stiffness = 680f),

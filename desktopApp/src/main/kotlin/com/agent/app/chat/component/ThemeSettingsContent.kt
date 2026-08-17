@@ -25,6 +25,7 @@ import org.jetbrains.jewel.ui.component.Text
 @Composable
 internal fun ThemeSettingsContent(
     themeMode: DesktopThemeMode,
+    compact: Boolean = false,
     onThemeChanged: (DesktopThemeMode) -> Unit,
 ) {
     Text("主题")
@@ -33,31 +34,61 @@ internal fun ThemeSettingsContent(
         radius = 12.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val contentModifier = Modifier.fillMaxWidth().padding(16.dp)
+        if (compact) {
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = contentModifier,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text("界面主题")
                 Text("跟随系统，或固定使用深色与浅色外观。")
+                ThemeModeSelector(
+                    themeMode = themeMode,
+                    onThemeChanged = onThemeChanged,
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                )
             }
-            ListComboBox(
-                items = DesktopThemeMode.entries,
-                selectedIndex = DesktopThemeMode.entries.indexOf(themeMode),
-                onSelectedItemChange = { index -> onThemeChanged(DesktopThemeMode.entries[index]) },
-                itemKeys = { _, mode -> mode.storageValue },
-                modifier = Modifier.width(170.dp),
-            ) { mode, selected, active ->
-                SimpleListItem(
-                    text = mode.label,
-                    selected = selected,
-                    active = active,
+        } else {
+            Row(
+                modifier = contentModifier,
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("界面主题")
+                    Text("跟随系统，或固定使用深色与浅色外观。")
+                }
+                ThemeModeSelector(
+                    themeMode = themeMode,
+                    onThemeChanged = onThemeChanged,
+                    modifier = Modifier.width(170.dp),
                 )
             }
         }
+    }
+}
+
+/** 在宽窄布局中复用相同的主题模式下拉与持久化回调。 */
+@Composable
+private fun ThemeModeSelector(
+    themeMode: DesktopThemeMode,
+    onThemeChanged: (DesktopThemeMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ListComboBox(
+        items = DesktopThemeMode.entries,
+        selectedIndex = DesktopThemeMode.entries.indexOf(themeMode),
+        onSelectedItemChange = { index -> onThemeChanged(DesktopThemeMode.entries[index]) },
+        itemKeys = { _, mode -> mode.storageValue },
+        modifier = modifier,
+    ) { mode, selected, active ->
+        SimpleListItem(
+            text = mode.label,
+            selected = selected,
+            active = active,
+        )
     }
 }

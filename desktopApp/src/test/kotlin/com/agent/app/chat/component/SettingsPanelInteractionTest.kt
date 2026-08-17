@@ -67,6 +67,21 @@ class SettingsPanelInteractionTest {
         assertEquals("provider-2", state.expandedProviderId)
     }
 
+    /** 窄侧栏改用单列信息流，使主题说明和下拉不再相互挤压。 */
+    @Test
+    fun `should switch settings content to compact layout below threshold`() {
+        assertEquals(600, SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP)
+        assertEquals(SettingsPanelLayout.COMPACT, settingsPanelLayout(599))
+        assertEquals(SettingsPanelLayout.WIDE, settingsPanelLayout(600))
+    }
+
+    /** 设置与终端 Dock 标签必须共享同一高度和圆角节奏。 */
+    @Test
+    fun `should use shared dock tab metrics`() {
+        assertEquals(32, DOCK_TAB_HEIGHT.value.toInt())
+        assertEquals(7, DOCK_TAB_CORNER_RADIUS.value.toInt())
+    }
+
     /** Provider 摘要不显示操作文字，但图标必须保留完整的无障碍状态描述。 */
     @Test
     fun `should expose provider disclosure state through semantics`() {

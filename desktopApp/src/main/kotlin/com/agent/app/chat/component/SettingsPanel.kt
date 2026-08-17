@@ -7,6 +7,7 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -62,6 +63,18 @@ internal enum class SettingsSection(val label: String) {
     PROVIDERS("AI 服务"),
 }
 
+internal const val SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP = 600
+
+/** 设置 Island 在窄侧栏中采用单列信息流，避免导航和说明相互挤占。 */
+internal enum class SettingsPanelLayout {
+    WIDE,
+    COMPACT,
+}
+
+/** 根据可用宽度选择设置 Island 的导航方向。 */
+internal fun settingsPanelLayout(widthDp: Int): SettingsPanelLayout =
+    if (widthDp < SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP) SettingsPanelLayout.COMPACT else SettingsPanelLayout.WIDE
+
 /** 跨抽屉布局重组保留的设置页交互状态。 */
 @Stable
 internal class SettingsPanelUiState {
@@ -101,82 +114,132 @@ internal fun SettingsPanel(
     }
     JewelSurface(
         role = JewelSurfaceRole.PANEL,
-        radius = 12.dp,
+        radius = 14.dp,
         solidColor = AppWorkspaceBackground,
-        borderColor = AppLine,
+        borderColor = androidx.compose.ui.graphics.Color.Transparent,
+        borderWidth = 0.dp,
         modifier = modifier
             .onPointerEvent(PointerEventType.Press) { onFocus() },
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-            SettingsTitleTab(focused = focused, onClose = onClose)
-            SettingsSearchField(value = uiState.search, onValueChange = { uiState.search = it })
-            SettingsScopeBar(
-                layer = uiState.layer,
-                projectEnabled = projectRoot != null,
-                onLayerChange = { uiState.layer = it },
-            )
-            Row(modifier = Modifier.fillMaxSize().padding(top = 18.dp)) {
-                SettingsNavigation(
-                    section = uiState.section,
-                    onSectionChange = { section, spatialMotion ->
-                        uiState.sectionSpatialMotion = spatialMotion
-                        uiState.section = section
-                    },
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val layout = settingsPanelLayout(maxWidth.value.toInt())
+            Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
+                SettingsTitleTab(focused = focused, onClose = onClose)
+                SettingsSearchField(value = uiState.search, onValueChange = { uiState.search = it })
+                SettingsScopeBar(
+                    layer = uiState.layer,
+                    projectEnabled = projectRoot != null,
+                    onLayerChange = { uiState.layer = it },
                 )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(start = 28.dp, end = 18.dp, bottom = 18.dp)
-                        .widthIn(max = 760.dp),
-                ) {
-                    SettingsAnimatedContent(
-                        target = SettingsContentTarget(uiState.layer, uiState.section, uiState.sectionSpatialMotion),
-                        modifier = Modifier.weight(1f),
-                    ) { section ->
-                        Column(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
-                        ) {
-                            when (section) {
-                                SettingsSection.THEME -> ThemeSettingsContent(
-                                    themeMode = themeMode,
-                                    onThemeChanged = onThemeChanged,
-                                )
-
-                                SettingsSection.PROVIDERS -> ProviderSettingsContent(
-                                    document = uiState.document,
-                                    search = uiState.search,
-                                    expandedProviderId = uiState.expandedProviderId,
-                                    onExpandedProviderChange = { uiState.expandedProviderId = it },
-                                    onDocumentChange = { uiState.document = it },
-                                )
-                            }
-                        }
+                if (layout == SettingsPanelLayout.COMPACT) {
+                    Column(modifier = Modifier.fillMaxSize().padding(top = 14.dp)) {
+                        SettingsNavigation(
+                            section = uiState.section,
+                            compact = true,
+                            onSectionChange = { section, spatialMotion ->
+                                uiState.sectionSpatialMotion = spatialMotion
+                                uiState.section = section
+                            },
+                        )
+                        SettingsPanelContent(
+                            uiState = uiState,
+                            repository = repository,
+                            themeMode = themeMode,
+                            onThemeChanged = onThemeChanged,
+                            onSettingsSaved = onSettingsSaved,
+                            compact = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(top = 16.dp, bottom = 8.dp),
+                        )
                     }
-                    if (uiState.section == SettingsSection.PROVIDERS) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            SettingsActionButton("保存配置", emphasized = true) {
-                                val validation = validateSettingsDocument(uiState.document)
-                                if (validation == null) {
-                                    runCatching { repository.saveDocument(uiState.layer, uiState.document) }
-                                        .onSuccess {
-                                            uiState.feedback = "已保存，后续任务将使用最新配置。"
-                                            onSettingsSaved()
-                                        }
-                                        .onFailure { uiState.feedback = "保存失败：${it.message ?: "未知错误"}" }
-                                } else {
-                                    uiState.feedback = validation
-                                }
-                            }
-                            uiState.feedback?.let { Text(it, style = JewelTheme.defaultTextStyle.copy(color = AppMuted)) }
-                        }
+                } else {
+                    Row(modifier = Modifier.fillMaxSize().padding(top = 18.dp)) {
+                        SettingsNavigation(
+                            section = uiState.section,
+                            onSectionChange = { section, spatialMotion ->
+                                uiState.sectionSpatialMotion = spatialMotion
+                                uiState.section = section
+                            },
+                        )
+                        SettingsPanelContent(
+                            uiState = uiState,
+                            repository = repository,
+                            themeMode = themeMode,
+                            onThemeChanged = onThemeChanged,
+                            onSettingsSaved = onSettingsSaved,
+                            compact = false,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .padding(start = 28.dp, end = 18.dp, bottom = 18.dp)
+                                .widthIn(max = 760.dp),
+                        )
                     }
                 }
+            }
+        }
+    }
+}
+
+/** 复用宽窄布局共用的设置内容、滚动区和保存动作。 */
+@Composable
+private fun SettingsPanelContent(
+    uiState: SettingsPanelUiState,
+    repository: DesktopSettingsRepository,
+    themeMode: DesktopThemeMode,
+    onThemeChanged: (DesktopThemeMode) -> Unit,
+    onSettingsSaved: () -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        SettingsAnimatedContent(
+            target = SettingsContentTarget(uiState.layer, uiState.section, uiState.sectionSpatialMotion),
+            modifier = Modifier.weight(1f),
+        ) { section ->
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                when (section) {
+                    SettingsSection.THEME -> ThemeSettingsContent(
+                        themeMode = themeMode,
+                        compact = compact,
+                        onThemeChanged = onThemeChanged,
+                    )
+
+                    SettingsSection.PROVIDERS -> ProviderSettingsContent(
+                        document = uiState.document,
+                        search = uiState.search,
+                        expandedProviderId = uiState.expandedProviderId,
+                        onExpandedProviderChange = { uiState.expandedProviderId = it },
+                        onDocumentChange = { uiState.document = it },
+                    )
+                }
+            }
+        }
+        if (uiState.section == SettingsSection.PROVIDERS) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsActionButton("保存配置", emphasized = true) {
+                    val validation = validateSettingsDocument(uiState.document)
+                    if (validation == null) {
+                        runCatching { repository.saveDocument(uiState.layer, uiState.document) }
+                            .onSuccess {
+                                uiState.feedback = "已保存，后续任务将使用最新配置。"
+                                onSettingsSaved()
+                            }
+                            .onFailure { uiState.feedback = "保存失败：${it.message ?: "未知错误"}" }
+                    } else {
+                        uiState.feedback = validation
+                    }
+                }
+                uiState.feedback?.let { Text(it, style = JewelTheme.defaultTextStyle.copy(color = AppMuted)) }
             }
         }
     }
@@ -187,32 +250,13 @@ private fun SettingsTitleTab(
     focused: Boolean,
     onClose: () -> Unit,
 ) {
-    Row(modifier = Modifier.height(30.dp), verticalAlignment = Alignment.CenterVertically) {
-        JewelSurface(
-            role = JewelSurfaceRole.CHROME,
-            radius = 7.dp,
-            solidColor = if (focused) AppSelectedBackground else AppPanelBackground,
-            borderColor = if (focused) AppAccent else AppLine,
-            modifier = Modifier.height(30.dp),
-        ) {
-            Row(
-                modifier = Modifier.padding(start = 9.dp, end = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    key = RightRailGlyph.SETTINGS.iconKey,
-                    contentDescription = "设置",
-                    modifier = Modifier.size(PANEL_TAB_ICON_SIZE),
-                )
-                Text("设置", modifier = Modifier.padding(start = 6.dp), style = JewelTheme.defaultTextStyle.copy(color = AppText))
-                Text(
-                    "×",
-                    modifier = Modifier.padding(start = 7.dp, top = 2.dp, bottom = 2.dp).clickable(onClick = onClose),
-                    style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
-                )
-            }
-        }
-    }
+    DockTab(
+        label = "设置",
+        iconKey = RightRailGlyph.SETTINGS.iconKey,
+        selected = focused,
+        onClick = {},
+        onClose = onClose,
+    )
 }
 
 /** 带焦点边框的紧凑设置搜索框。 */

@@ -10,8 +10,6 @@ import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.AppHeaderBackground
-import com.agent.app.design.AppRailBackground
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppReasoning
@@ -25,6 +23,8 @@ import com.agent.app.design.PopupMenuSelectedBackground
 import com.agent.app.design.buildRightRailGroups
 import com.agent.app.design.selectMenuItemBackground
 import com.agent.app.design.desktopPalette
+import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
+import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ExecutionState
@@ -456,15 +456,32 @@ class ChatScreenPresentationTest {
     @Test
     fun `should expose idea style right rail metrics`() {
         assertEquals(48, TOOL_RAIL_WIDTH_DP)
+        assertEquals(40, TOOL_RAIL_ACTION_SIZE_DP)
+        assertEquals(22, TOOL_RAIL_ICON_SIZE_DP)
     }
 
     /**
-     * 右侧栏应从标题栏下方开始，并与标题栏使用同一底色、与主工作区保持顶部节奏。
+     * Rail 透明承接根画布，并通过自身的 40dp 命中目标与标题栏建立一致密度。
      */
     @Test
     fun `should align the right rail with the workspace below the title bar`() {
         assertEquals(16, TOOL_RAIL_TOP_PADDING_DP)
-        assertEquals(AppHeaderBackground, AppRailBackground)
+        assertEquals(Color.Transparent, TOOL_RAIL_BACKGROUND)
+        assertEquals(54, IDEA_TITLE_BAR_HEIGHT.value.toInt())
+        assertEquals(1, IDEA_TITLE_BAR_SEPARATOR_HEIGHT.value.toInt())
+        assertEquals(40, TITLE_BAR_ACTION_HEIGHT_DP)
+        assertEquals(20, HEADER_PROJECT_ICON_SIZE_DP)
+        assertEquals("sidebar-toggle", TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY)
+        assertEquals("project-selector", TITLE_BAR_PROJECT_CLIENT_REGION_KEY)
+        assertEquals("branch-menu", TITLE_BAR_BRANCH_CLIENT_REGION_KEY)
+    }
+
+    /** 标题栏项目与分支下拉必须暴露当前实施要求的关键动作。 */
+    @Test
+    fun `should expose workspace and branch actions in the title bar`() {
+        assertEquals("选择工作区…", TITLE_BAR_PROJECT_SELECT_ACTION_LABEL)
+        assertEquals("刷新分支", TITLE_BAR_BRANCH_REFRESH_ACTION_LABEL)
+        assertEquals("复制分支名", TITLE_BAR_BRANCH_COPY_ACTION_LABEL)
     }
 
     /**

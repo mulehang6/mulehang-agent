@@ -29,8 +29,10 @@ internal val DesktopAccentBlue = Color(0xFF548AF7)
 /** 桌面界面所有跨组件使用的语义色板。 */
 internal data class DesktopPalette(
     val isDark: Boolean,
+    val frameBackground: Color,
     val background: Color,
     val headerBackground: Color,
+    val titleBarGradientStart: Color,
     val workspaceBackground: Color,
     val sidebarBackground: Color,
     val panelBackground: Color,
@@ -86,10 +88,12 @@ internal fun desktopPalette(
     return if (resolvedMode == DesktopThemeMode.LIGHT) {
         DesktopPalette(
             isDark = false,
-            background = Color(0xFF26282C),
-            headerBackground = Color(0xFF26282C),
+            frameBackground = Color(0xFFF3F5F7),
+            background = Color(0xFFF3F5F7),
+            headerBackground = Color(0xFFF3F5F7),
+            titleBarGradientStart = Color(0xFFD8EDF0),
             workspaceBackground = Color(0xFFFFFFFF),
-            sidebarBackground = Color(0xFF26282C),
+            sidebarBackground = Color(0xFFF3F5F7),
             panelBackground = Color(0xFFFFFFFF),
             selectedBackground = DesktopAccentBlue.copy(alpha = 0.18f),
             hoverBackground = Color(0xFFE6E9EE),
@@ -124,8 +128,10 @@ internal fun desktopPalette(
     } else {
         DesktopPalette(
             isDark = true,
-            background = Color(0xFF26282C),
-            headerBackground = Color(0xFF26282C),
+            frameBackground = Color(0xFF202226),
+            background = Color(0xFF202226),
+            headerBackground = Color(0xFF202226),
+            titleBarGradientStart = Color(0xFF28434A),
             workspaceBackground = Color(0xFF191A1C),
             sidebarBackground = Color(0xFF26282C),
             panelBackground = Color(0xFF191A1C),
@@ -191,6 +197,8 @@ internal fun DesktopThemePaletteProvider(
 
 /** 以下访问器保留既有调用点，并通过 Compose state 触发整树重组。 */
 internal val AppBackground: Color get() = applicationDesktopPalette.background
+/** 窗口底板在标题栏、Rail 与 Islands 间保持连续，避免边框切割视觉层级。 */
+internal val AppFrameBackground: Color get() = applicationDesktopPalette.frameBackground
 internal val AppHeaderBackground: Color get() = applicationDesktopPalette.headerBackground
 internal val AppWorkspaceBackground: Color get() = applicationDesktopPalette.workspaceBackground
 internal val AppSidebarBackground: Color get() = applicationDesktopPalette.sidebarBackground
@@ -203,7 +211,6 @@ internal val ComposerBackground: Color get() = applicationDesktopPalette.compose
 internal val ComposerInputBackground: Color get() = applicationDesktopPalette.composerInputBackground
 internal val ProviderCardBackground: Color get() = applicationDesktopPalette.providerCardBackground
 internal val ProviderCardHoverBackground: Color get() = applicationDesktopPalette.providerCardHoverBackground
-internal val AppRailBackground: Color get() = AppHeaderBackground
 internal val AppLine: Color get() = applicationDesktopPalette.line
 internal val AppText: Color get() = applicationDesktopPalette.text
 internal val AppMuted: Color get() = applicationDesktopPalette.muted

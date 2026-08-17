@@ -52,6 +52,7 @@ internal fun MulehangDesktopApp(
         )
     }
     var sidebarVisible by remember { mutableStateOf(false) }
+    var frameGradientAnchorPx by remember { mutableStateOf<Float?>(null) }
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
     }
@@ -113,6 +114,8 @@ internal fun MulehangDesktopApp(
                 sidebarVisible = sidebarVisible,
                 onToggleSidebar = { sidebarVisible = !sidebarVisible },
                 onGlobalFeedback = {},
+                frameGradientAnchorPx = frameGradientAnchorPx,
+                onFrameGradientAnchorChanged = { anchorPx -> frameGradientAnchorPx = anchorPx },
             )
             ChatScreen(
                 state = windowState,
@@ -133,6 +136,7 @@ internal fun MulehangDesktopApp(
                         }
                     }
                 },
+                frameGradientAnchorPx = frameGradientAnchorPx,
             )
         }
     }

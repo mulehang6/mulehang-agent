@@ -40,9 +40,10 @@ class DesktopThemeSettingsTest {
         val palette = desktopPalette(DesktopThemeMode.LIGHT)
 
         assertEquals(false, palette.isDark)
-        assertEquals(Color(0xFF26282C), palette.background)
-        assertEquals(Color(0xFF26282C), palette.headerBackground)
-        assertEquals(Color(0xFF26282C), palette.sidebarBackground)
+        assertEquals(Color(0xFFF3F5F7), palette.frameBackground)
+        assertEquals(Color(0xFFF3F5F7), palette.background)
+        assertEquals(Color(0xFFF3F5F7), palette.headerBackground)
+        assertEquals(Color(0xFFF3F5F7), palette.sidebarBackground)
         assertEquals(Color(0xFFFFFFFF), palette.workspaceBackground)
         assertEquals(Color(0xFF202124), palette.text)
         assertEquals(DesktopAccentBlue, palette.accent)
@@ -59,8 +60,9 @@ class DesktopThemeSettingsTest {
         val palette = desktopPalette(DesktopThemeMode.DARK)
 
         assertEquals(true, palette.isDark)
-        assertEquals(Color(0xFF26282C), palette.background)
-        assertEquals(Color(0xFF26282C), palette.headerBackground)
+        assertEquals(Color(0xFF202226), palette.frameBackground)
+        assertEquals(Color(0xFF202226), palette.background)
+        assertEquals(Color(0xFF202226), palette.headerBackground)
         assertEquals(Color(0xFF26282C), palette.sidebarBackground)
         assertEquals(Color(0xFF191A1C), palette.workspaceBackground)
         assertEquals(Color(0xFF0A0B0D), palette.composerInputBackground)
@@ -68,5 +70,14 @@ class DesktopThemeSettingsTest {
         assertEquals(Color(0xFF38393B), palette.providerCardHoverBackground)
         assertEquals(Color(0xFF191A1C), palette.terminal.background)
         assertEquals(Color(0xFFE6E8EC), palette.terminal.foreground)
+    }
+
+    /** 标题栏维持 IDEA 的 54dp 原生窗口命中高度；项目环境光由根画布负责。 */
+    @Test
+    fun `should retain the IDEA title bar height for the root ambient canvas`() {
+        val metrics = ideaTitleBarMetrics()
+
+        assertEquals(Color(0xFF28434A), desktopPalette(DesktopThemeMode.DARK).titleBarGradientStart)
+        assertEquals(54f, metrics.height.value)
     }
 }

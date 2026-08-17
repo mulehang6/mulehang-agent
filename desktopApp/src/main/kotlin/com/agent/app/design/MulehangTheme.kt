@@ -40,7 +40,9 @@ import org.jetbrains.jewel.window.styling.TitleBarStyle
 internal val IDEA_TITLE_BAR_HEIGHT = 54.dp
 
 /** 创建固定高度的标题栏度量，保持系统控制按钮在标题栏内垂直居中。 */
-internal fun ideaTitleBarMetrics(): TitleBarMetrics = TitleBarMetrics.defaults(height = IDEA_TITLE_BAR_HEIGHT)
+internal fun ideaTitleBarMetrics(): TitleBarMetrics = TitleBarMetrics.defaults(
+    height = IDEA_TITLE_BAR_HEIGHT,
+)
 
 /**
  * 应用唯一的 Jewel 主题入口，同时提供 IDEA 标题栏所需的窗口样式。
@@ -62,14 +64,15 @@ internal fun MulehangTheme(
     }
     val titleBarStyle = TitleBarStyle.dark(
         colors = TitleBarColors.dark(
-            backgroundColor = palette.headerBackground,
-            inactiveBackground = palette.headerBackground,
+            // 深色 Islands 的环境光由窗口根画布统一绘制，避免 Jewel 自带标题栏渐变在内容区边缘截断。
+            backgroundColor = if (palette.isDark) Color.Transparent else palette.headerBackground,
+            inactiveBackground = if (palette.isDark) Color.Transparent else palette.headerBackground,
             contentColor = Color.White,
-            borderColor = Color.Transparent,
-            iconButtonHoveredBackground = Color.White.copy(alpha = 0.10f),
-            iconButtonPressedBackground = Color.White.copy(alpha = 0.16f),
-            dropdownHoveredBackground = Color.White.copy(alpha = 0.10f),
-            dropdownPressedBackground = Color.White.copy(alpha = 0.16f),
+            borderColor = palette.frameBackground,
+            iconButtonHoveredBackground = Color.White.copy(alpha = 0.12f),
+            iconButtonPressedBackground = Color.White.copy(alpha = 0.18f),
+            dropdownHoveredBackground = Color.White.copy(alpha = 0.12f),
+            dropdownPressedBackground = Color.White.copy(alpha = 0.18f),
         ),
         metrics = ideaTitleBarMetrics(),
     )

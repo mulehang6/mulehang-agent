@@ -11,7 +11,6 @@ import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.AppHeaderBackground
-import com.agent.app.design.AppRailBackground
 import com.agent.app.design.AppAccent
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppReasoning

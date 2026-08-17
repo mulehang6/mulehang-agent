@@ -9,27 +9,35 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.design.DesktopAccentBlue
+import com.agent.app.design.AppMuted
+import com.agent.app.design.LocalDesktopPalette
+import com.agent.app.design.ideaFrameAmbientBackground
+import com.agent.app.platform.pickWorkspaceDirectory
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Files
@@ -48,8 +56,15 @@ import org.jetbrains.jewel.window.DecoratedWindowScope
 import org.jetbrains.jewel.window.TitleBar
 import org.jetbrains.jewel.window.utils.clientRegion
 
-internal const val HEADER_PROJECT_ICON_SIZE_DP = 16
+internal const val HEADER_PROJECT_ICON_SIZE_DP = 20
 internal const val HEADER_PROJECT_ICON_MENU_WIDTH_DP = 180
+internal const val TITLE_BAR_ACTION_HEIGHT_DP = 40
+internal const val TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY = "sidebar-toggle"
+internal const val TITLE_BAR_PROJECT_CLIENT_REGION_KEY = "project-selector"
+internal const val TITLE_BAR_BRANCH_CLIENT_REGION_KEY = "branch-menu"
+internal const val TITLE_BAR_PROJECT_SELECT_ACTION_LABEL = "选择工作区…"
+internal const val TITLE_BAR_BRANCH_REFRESH_ACTION_LABEL = "刷新分支"
+internal const val TITLE_BAR_BRANCH_COPY_ACTION_LABEL = "复制分支名"
 
 /** Jewel 装饰窗口中的 IDEA 风格标题栏内容。 */
 @Composable
@@ -59,6 +74,8 @@ internal fun DecoratedWindowScope.ChatTitleBar(
     sidebarVisible: Boolean,
     onToggleSidebar: () -> Unit,
     onGlobalFeedback: (AppFeedbackState) -> Unit,
+    frameGradientAnchorPx: Float?,
+    onFrameGradientAnchorChanged: (Float) -> Unit,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
     val workspacePath = activeConversation?.workspacePath
@@ -66,13 +83,26 @@ internal fun DecoratedWindowScope.ChatTitleBar(
         ?: projectRoot?.toString()
     val projectLabel = titleBarProjectLabel(activeConversation?.workspacePath, activeConversation?.workspaceName, projectRoot)
     var branchName by remember(workspacePath) { mutableStateOf("") }
+    var branchRefreshToken by remember(workspacePath) { mutableStateOf(0) }
     val projectIconPainter = painterResource(Res.drawable.mulehang_agent)
+    val palette = LocalDesktopPalette.current
 
-    LaunchedEffect(workspacePath) {
+    LaunchedEffect(workspacePath, branchRefreshToken) {
         branchName = if (workspacePath == null) "" else readWorkspaceBranch(workspacePath)
     }
 
-    TitleBar {
+    TitleBar(
+        modifier = if (palette.isDark) {
+            Modifier.ideaFrameAmbientBackground(
+                frameColor = palette.frameBackground,
+                projectColor = palette.titleBarGradientStart,
+                anchorXPx = frameGradientAnchorPx,
+            )
+        } else {
+            Modifier
+        },
+        gradientStartColor = Color.Unspecified,
+    ) {
         Row(
             modifier = Modifier
                 .align(Alignment.Start)
@@ -90,25 +120,51 @@ internal fun DecoratedWindowScope.ChatTitleBar(
                 key = AllIconsKeys.General.Menu,
                 contentDescription = if (sidebarVisible) "隐藏任务侧栏" else "显示任务侧栏",
                 onClick = onToggleSidebar,
-                modifier = Modifier.clientRegion("sidebar-toggle"),
+                modifier = Modifier
+                    .size(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                    .clientRegion(TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY),
+                iconModifier = Modifier.size(20.dp),
             )
             Dropdown(
-                modifier = Modifier.clientRegion("project-selector"),
+                modifier = Modifier
+                    .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                    .clientRegion(TITLE_BAR_PROJECT_CLIENT_REGION_KEY),
                 menuModifier = Modifier.widthIn(min = HEADER_PROJECT_ICON_MENU_WIDTH_DP.dp),
                 menuContent = {
                     passiveItem {
-                        Text(
-                            text = projectLabel,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        )
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(text = projectLabel, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = workspacePath ?: "尚未选择工作区",
+                                color = AppMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    selectableItem(
+                        selected = false,
+                        onClick = {
+                            pickWorkspaceDirectory()?.let { selectedPath ->
+                                state.createConversationForWorkspace(selectedPath)
+                                onGlobalFeedback(AppFeedbackState(message = "已切换工作区", anchor = null))
+                            }
+                        },
+                    ) {
+                        Text(TITLE_BAR_PROJECT_SELECT_ACTION_LABEL)
                     }
                 },
             ) {
-                ProjectTitleBarChip(projectLabel)
+                ProjectTitleBarChip(
+                    projectLabel = projectLabel,
+                    onProjectIconPositioned = onFrameGradientAnchorChanged,
+                )
             }
             if (shouldShowHeaderBranchChip(branchName)) {
                 Dropdown(
-                    modifier = Modifier.clientRegion("branch-menu"),
+                    modifier = Modifier
+                        .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                        .clientRegion(TITLE_BAR_BRANCH_CLIENT_REGION_KEY),
                     menuContent = {
                         passiveItem {
                             Text(
@@ -118,17 +174,27 @@ internal fun DecoratedWindowScope.ChatTitleBar(
                         }
                         selectableItem(
                             selected = false,
+                            onClick = { branchRefreshToken++ },
+                        ) {
+                            Text(TITLE_BAR_BRANCH_REFRESH_ACTION_LABEL)
+                        }
+                        selectableItem(
+                            selected = false,
                             onClick = {
                                 copyHeaderBranchToClipboard(branchName)
                                 onGlobalFeedback(AppFeedbackState(message = headerBranchCopiedFeedbackMessage(), anchor = null))
                             },
                         ) {
-                            Text("复制分支名")
+                            Text(TITLE_BAR_BRANCH_COPY_ACTION_LABEL)
                         }
                     },
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(AllIconsKeys.Vcs.Branch, "当前分支")
+                        Icon(
+                            key = AllIconsKeys.Vcs.Branch,
+                            contentDescription = "当前分支",
+                            modifier = Modifier.size(18.dp),
+                        )
                         Text(
                             text = branchName,
                             modifier = Modifier.padding(start = 4.dp),
@@ -144,12 +210,21 @@ internal fun DecoratedWindowScope.ChatTitleBar(
 
 /** 渲染标题栏中由 Jewel 下拉组件包裹的项目徽章和名称。 */
 @Composable
-private fun ProjectTitleBarChip(projectLabel: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun ProjectTitleBarChip(
+    projectLabel: String,
+    onProjectIconPositioned: (Float) -> Unit,
+) {
+    Row(
+        modifier = Modifier.height(TITLE_BAR_ACTION_HEIGHT_DP.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(
             modifier = Modifier
-                .size(22.dp)
-                .background(DesktopAccentBlue.copy(alpha = 0.72f), RoundedCornerShape(4.dp)),
+                .size(26.dp)
+                .background(DesktopAccentBlue.copy(alpha = 0.78f), RoundedCornerShape(6.dp))
+                .onGloballyPositioned { coordinates ->
+                    onProjectIconPositioned(coordinates.positionInWindow().x + coordinates.size.width / 2f)
+                },
             contentAlignment = Alignment.Center,
         ) {
             Text(

@@ -2,39 +2,53 @@
 
 package com.agent.app.chat.component
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.AppChipBackground
+import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppRailBackground
+import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.buildRightRailGroups
 import com.agent.app.design.iconKey
+import com.agent.app.design.tooltip
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
-import com.agent.app.design.tooltip
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
-import org.jetbrains.jewel.ui.component.SelectableIconActionButton
+import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.Tooltip
 
 internal const val TOOL_RAIL_WIDTH_DP = 48
 internal const val TOOL_RAIL_TOP_PADDING_DP = 16
+internal const val TOOL_RAIL_ACTION_SIZE_DP = 40
+internal const val TOOL_RAIL_ICON_SIZE_DP = 22
+/** Rail 必须透明，以承接窗口根画布的 Islands 项目环境光。 */
+internal val TOOL_RAIL_BACKGROUND = Color.Transparent
 
 /**
  * 桌面布局左侧的预留工具区，与右侧工具区保持相同宽度。
@@ -47,7 +61,7 @@ internal fun ToolRailPlaceholder(
         role = JewelSurfaceRole.CHROME,
         radius = 0.dp,
         borderWidth = 0.dp,
-        solidColor = AppRailBackground,
+        solidColor = TOOL_RAIL_BACKGROUND,
         modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
     ) { }
 }
@@ -124,7 +138,7 @@ internal fun ToolRail(
         role = JewelSurfaceRole.CHROME,
         radius = 0.dp,
         borderWidth = 0.dp,
-        solidColor = AppRailBackground,
+        solidColor = TOOL_RAIL_BACKGROUND,
         modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
     ) {
         Box(
@@ -140,23 +154,70 @@ internal fun ToolRail(
                 toolGroups.firstOrNull()?.let { topGroup ->
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         topGroup.forEach { item ->
-                            SelectableIconActionButton(
-                                key = item.glyph.iconKey,
-                                contentDescription = item.glyph.tooltip,
+                            ToolRailAction(
+                                glyph = item.glyph,
                                 selected = item.glyph == activeGlyph,
                                 onClick = { onToolClick(item.glyph) },
-                            ) { Text(item.glyph.tooltip) }
+                            )
                         }
                     }
                 }
                 toolGroups.drop(1).flatten().forEach { item ->
-                    SelectableIconActionButton(
-                        key = item.glyph.iconKey,
-                        contentDescription = item.glyph.tooltip,
+                    ToolRailAction(
+                        glyph = item.glyph,
                         selected = item.glyph == activeGlyph,
                         onClick = { onToolClick(item.glyph) },
-                    ) { Text(item.glyph.tooltip) }
+                    )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 使用与 IDEA 工具窗口栏一致的 40dp 命中目标渲染一个 Rail 动作。
+ *
+ * Rail 保持在窗口底板上，仅在 hover 或选中时出现低对比背景，避免形成独立的边框面板。
+ */
+@Composable
+private fun ToolRailAction(
+    glyph: RightRailGlyph,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val background = when {
+        selected -> AppSelectedBackground
+        hovered -> AppHoverBackground
+        else -> Color.Transparent
+    }
+
+    Tooltip(tooltip = { Text(glyph.tooltip) }) {
+        JewelSurface(
+            role = JewelSurfaceRole.CHROME,
+            radius = 8.dp,
+            borderWidth = 0.dp,
+            solidColor = background,
+            borderColor = Color.Transparent,
+            modifier = Modifier
+                .size(TOOL_RAIL_ACTION_SIZE_DP.dp)
+                .hoverable(interactionSource)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    key = glyph.iconKey,
+                    contentDescription = glyph.tooltip,
+                    modifier = Modifier.size(TOOL_RAIL_ICON_SIZE_DP.dp),
+                )
             }
         }
     }

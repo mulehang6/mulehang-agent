@@ -26,9 +26,11 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
-import com.agent.app.design.AppBackground
+import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
+import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
+import com.agent.app.design.ideaFrameAmbientBackground
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 import java.nio.file.Path
@@ -68,8 +70,10 @@ internal fun ChatScreen(
     themeMode: DesktopThemeMode,
     onThemeChanged: (DesktopThemeMode) -> Unit,
     onSettingsChanged: () -> Unit,
+    frameGradientAnchorPx: Float?,
 ) {
-    val terminalPanel = rememberTerminalPanelController(LocalDesktopPalette.current.terminal)
+    val palette = LocalDesktopPalette.current
+    val terminalPanel = rememberTerminalPanelController(palette.terminal)
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var appFeedbackToken by remember { mutableStateOf(0L) }
@@ -99,7 +103,18 @@ internal fun ChatScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(AppBackground)
+                .then(
+                    if (palette.isDark) {
+                        Modifier.ideaFrameAmbientBackground(
+                            frameColor = palette.frameBackground,
+                            projectColor = palette.titleBarGradientStart,
+                            anchorXPx = frameGradientAnchorPx,
+                            verticalOffset = IDEA_TITLE_BAR_HEIGHT + IDEA_TITLE_BAR_SEPARATOR_HEIGHT,
+                        )
+                    } else {
+                        Modifier.background(palette.frameBackground)
+                    },
+                )
                 .onPointerEvent(
                     eventType = PointerEventType.Press,
                     pass = PointerEventPass.Initial,

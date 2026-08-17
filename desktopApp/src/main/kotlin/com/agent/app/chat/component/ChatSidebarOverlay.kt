@@ -19,7 +19,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.design.AppLine
 import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
@@ -71,7 +70,7 @@ internal fun BoxScope.ChatSidebarOverlay(
             role = JewelSurfaceRole.CHROME,
             radius = 12.dp,
             solidColor = AppSidebarBackground,
-            borderColor = AppLine,
+            borderWidth = 0.dp,
             modifier = positionedModifier,
         ) {
             TaskSidebar(state = state, compact = compact, modifier = Modifier.fillMaxSize())

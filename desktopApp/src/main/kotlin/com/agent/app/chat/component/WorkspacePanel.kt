@@ -150,7 +150,8 @@ internal fun WorkspacePanel(
                     modifier = workspaceModifier,
                     radius = 14.dp,
                     solidColor = AppWorkspaceBackground,
-                    borderColor = AppLine.copy(alpha = 0.42f),
+                    borderColor = Color.Transparent,
+                    borderWidth = 0.dp,
                 ) {
                     BoxWithConstraints {
                         val composerInputMaxHeight = maxComposerInputHeight(maxHeight)

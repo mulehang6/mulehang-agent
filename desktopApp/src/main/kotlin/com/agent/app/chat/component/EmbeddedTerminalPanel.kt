@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -83,10 +85,11 @@ internal fun EmbeddedTerminalPanel(
     }
     JewelSurface(
         role = JewelSurfaceRole.PANEL,
-        radius = 0.dp,
+        radius = 14.dp,
         borderWidth = 0.dp,
         solidColor = TerminalSurfaceBackground,
         modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
             .onPointerEvent(PointerEventType.Press) { onFocus() }
             .onGloballyPositioned { terminalOrigin = it.positionInRoot() },
     ) {
@@ -95,7 +98,7 @@ internal fun EmbeddedTerminalPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(terminalChromeBackground)
-                    .padding(start = 4.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
+                    .padding(start = 8.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
             TerminalTabStrip(

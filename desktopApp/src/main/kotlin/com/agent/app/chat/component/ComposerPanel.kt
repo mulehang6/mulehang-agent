@@ -14,7 +14,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -37,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -52,9 +58,14 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
 import com.agent.app.chat.presentation.buildContextTooltip
 import com.agent.app.chat.presentation.contextRingSweepAngle
@@ -67,6 +78,7 @@ import com.agent.app.chat.state.resolveContextWindow
 import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
+import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.ComposerInputBackground
@@ -89,6 +101,17 @@ import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextArea
 import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
+
+internal const val COMPOSER_INPUT_HORIZONTAL_PADDING_DP = 12
+internal const val COMPOSER_INPUT_VERTICAL_PADDING_DP = 8
+internal const val PERMISSION_MENU_WIDTH_DP = 360
+internal const val PERMISSION_MENU_TITLE_START_PADDING_DP = 16
+
+/** 返回可编辑内容和只读占位符共同使用的左上角坐标。 */
+internal fun composerInputContentOffset(): DpOffset = DpOffset(
+    x = COMPOSER_INPUT_HORIZONTAL_PADDING_DP.dp,
+    y = COMPOSER_INPUT_VERTICAL_PADDING_DP.dp,
+)
 
 /**
  * 原型 composer。
@@ -125,6 +148,7 @@ internal fun ComposerPanel(
     val inputScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     var inputViewportHeight by remember { mutableStateOf(0) }
+    val inputContentOffset = composerInputContentOffset()
 
     LaunchedEffect(state.ui.draft) {
         if (draftFieldValue.text != state.ui.draft) {
@@ -216,6 +240,7 @@ internal fun ComposerPanel(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .background(ComposerInputBackground, RoundedCornerShape(12.dp))
                     .onSizeChanged { size -> inputViewportHeight = size.height }
                     .onPointerEvent(
@@ -235,7 +260,13 @@ internal fun ComposerPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(inputScrollState),
+                        .verticalScroll(inputScrollState)
+                        .padding(
+                            start = inputContentOffset.x,
+                            top = inputContentOffset.y,
+                            end = COMPOSER_INPUT_HORIZONTAL_PADDING_DP.dp + 6.dp,
+                            bottom = inputContentOffset.y,
+                        ),
                 ) {
                     TextArea(
                         value = draftFieldValue,
@@ -269,8 +300,20 @@ internal fun ComposerPanel(
                                     false
                                 }
                             },
-                        placeholder = { Text("描述你想完成的任务…") },
+                        placeholder = null,
                         undecorated = true,
+                    )
+                }
+                if (draftFieldValue.text.isEmpty()) {
+                    Text(
+                        text = "描述你想完成的任务…",
+                        color = AppMuted,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                start = inputContentOffset.x,
+                                top = inputContentOffset.y,
+                            ),
                     )
                 }
                 if (shouldShowComposerInputScrollbar(inputScrollState.maxValue)) {
@@ -381,7 +424,7 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ComposerMenuButton(
+                    PermissionMenuButton(
                         label = permissionPresentation(permissionPreset).label,
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
                         onExpandedChange = { shouldExpand ->
@@ -390,26 +433,12 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
                         },
-                    ) {
-                        passiveItem { Text("Permission mode") }
-                        PermissionPreset.entries.forEach { preset ->
-                            selectableItem(
-                                selected = preset == permissionPreset,
-                                onClick = {
-                                    expandedMenu = null
-                                    state.updatePermission(preset)
-                                },
-                            ) {
-                                Column {
-                                    Text(permissionPresentation(preset).label)
-                                    Text(
-                                        permissionPresentation(preset).description,
-                                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                        selectedPreset = permissionPreset,
+                        onPresetSelected = { preset ->
+                            expandedMenu = null
+                            state.updatePermission(preset)
+                        },
+                    )
                     DefaultButton(
                         onClick = {
                             if (executionState.isStoppable()) {
@@ -437,6 +466,7 @@ private fun ComposerMenuButton(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onDismissRequest: () -> Unit,
+    menuModifier: Modifier = Modifier,
     content: MenuScope.() -> Unit,
 ) {
     Box {
@@ -448,7 +478,112 @@ private fun ComposerMenuButton(
                     true
                 },
                 horizontalAlignment = Alignment.Start,
+                modifier = menuModifier,
                 content = content,
+            )
+        }
+    }
+}
+
+/** 渲染锚定在权限按钮上的专用弹层，避免通用菜单将 hover 覆盖成灰色。 */
+@Composable
+private fun PermissionMenuButton(
+    label: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onDismissRequest: () -> Unit,
+    selectedPreset: PermissionPreset,
+    onPresetSelected: (PermissionPreset) -> Unit,
+) {
+    val density = LocalDensity.current
+
+    Box {
+        OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
+        if (expanded) {
+            Popup(
+                alignment = Alignment.BottomEnd,
+                offset = IntOffset(0, with(density) { 4.dp.roundToPx() }),
+                onDismissRequest = onDismissRequest,
+                properties = PopupProperties(focusable = true),
+            ) {
+                JewelSurface(
+                    role = JewelSurfaceRole.CHROME,
+                    radius = 8.dp,
+                    solidColor = AppChipBackground,
+                    borderColor = AppLine,
+                    modifier = Modifier.width(PERMISSION_MENU_WIDTH_DP.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "Permission Mode",
+                            modifier = Modifier.padding(
+                                start = PERMISSION_MENU_TITLE_START_PADDING_DP.dp,
+                                end = 12.dp,
+                                top = 2.dp,
+                                bottom = 4.dp,
+                            ),
+                        )
+                        PermissionPreset.entries.forEach { preset ->
+                            PermissionPresetMenuCard(
+                                presentation = permissionPresentation(preset),
+                                selected = preset == selectedPreset,
+                                onClick = { onPresetSelected(preset) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 返回权限卡所需的背景色；选中态优先且其 hover 不产生额外变化。 */
+internal fun permissionPresetCardBackground(selected: Boolean, hovered: Boolean): Color =
+    if (selected || hovered) AppSelectedBackground else Color.Transparent
+
+/** 渲染带风险色标签的权限审批卡，并自行管理 hover 与点击状态。 */
+@Composable
+private fun PermissionPresetMenuCard(
+    presentation: PermissionPresentation,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val highlighted = selected || hovered
+
+    JewelSurface(
+        role = JewelSurfaceRole.CHROME,
+        radius = 7.dp,
+        solidColor = permissionPresetCardBackground(selected = selected, hovered = hovered),
+        borderColor = Color.Transparent,
+        borderWidth = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .hoverable(interactionSource)
+            .clickable(onClick = onClick),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(presentation.tone, RoundedCornerShape(5.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = presentation.label,
+                    style = JewelTheme.defaultTextStyle.copy(color = Color.White),
+                )
+            }
+            Text(
+                text = presentation.description,
+                style = JewelTheme.defaultTextStyle.copy(color = if (highlighted) AppText else AppMuted),
             )
         }
     }

@@ -115,7 +115,8 @@ class TerminalTabsStateTest {
     /** 标签 hover 和选中状态必须使用圆角背景，并保持静止态透明。 */
     @Test
     fun `should use rounded terminal tab hover states`() {
-        assertEquals(8, TERMINAL_TAB_CORNER_RADIUS.value.toInt())
+        assertEquals(7, TERMINAL_TAB_CORNER_RADIUS.value.toInt())
+        assertEquals(32, TERMINAL_TAB_HEIGHT.value.toInt())
         assertEquals(TerminalTabActiveBackground, terminalTabBackground(selected = true, hovered = true))
         assertEquals(TerminalTabHoverBackground, terminalTabBackground(selected = false, hovered = true))
         assertEquals(Color.Transparent, terminalTabBackground(selected = false, hovered = false))

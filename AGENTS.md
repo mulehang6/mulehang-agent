@@ -6,6 +6,8 @@
 
 `agent-ui-prototype1/` 是独立的 React/Vite/Ring UI 原型；`docs/` 存放设计、计划、总结和参考资料。参考项目位于此项目的同级目录，例如：[kilo](../kilocode)。都可以正常使用 IDEA MCP 分析；禁止修改它们。
 
+IDEA开源版的源码位于[idea](../../intellij-community)
+
 ## 构建、测试与检查
 
 使用 JetBrains Runtime 25（JDK 25）和仓库 Gradle Wrapper，在根目录执行：

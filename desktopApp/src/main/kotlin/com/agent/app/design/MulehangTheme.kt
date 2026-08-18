@@ -18,7 +18,6 @@ import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
-import org.jetbrains.jewel.markdown.extensions.MarkdownRendererExtension
 import org.jetbrains.jewel.markdown.extensions.autolink.AutolinkProcessorExtension
 import org.jetbrains.jewel.markdown.extensions.github.strikethrough.GitHubStrikethroughProcessorExtension
 import org.jetbrains.jewel.markdown.extensions.github.strikethrough.GitHubStrikethroughRendererExtension
@@ -64,11 +63,12 @@ internal fun MulehangTheme(
     }
     val titleBarStyle = TitleBarStyle.dark(
         colors = TitleBarColors.dark(
-            // 深色 Islands 的环境光由窗口根画布统一绘制，避免 Jewel 自带标题栏渐变在内容区边缘截断。
+            // 深色 Islands 的环境光按同一虚拟根画布坐标连续采样，避免 Jewel 自带标题栏渐变在内容区边缘截断。
             backgroundColor = if (palette.isDark) Color.Transparent else palette.headerBackground,
             inactiveBackground = if (palette.isDark) Color.Transparent else palette.headerBackground,
             contentColor = Color.White,
-            borderColor = palette.frameBackground,
+            // Jewel 固定绘制的 1dp 标题栏分隔区由标题栏环境光向下覆盖，不能再涂成固定框架底色。
+            borderColor = if (palette.isDark) Color.Transparent else palette.headerBackground,
             iconButtonHoveredBackground = Color.White.copy(alpha = 0.12f),
             iconButtonPressedBackground = Color.White.copy(alpha = 0.18f),
             dropdownHoveredBackground = Color.White.copy(alpha = 0.12f),
@@ -102,7 +102,7 @@ internal fun MulehangTheme(
             Coil3ImageRendererExtension.withDefaultLoader(platformContext)
         }
         val rendererExtensions = remember(markdownStyling, tableStyling, imageRenderer) {
-            listOf<MarkdownRendererExtension>(
+            listOf(
                 GitHubStrikethroughRendererExtension,
                 GitHubTableRendererExtension(tableStyling, markdownStyling),
                 imageRenderer,

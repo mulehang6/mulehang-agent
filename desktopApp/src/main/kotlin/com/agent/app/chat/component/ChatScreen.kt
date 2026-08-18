@@ -3,7 +3,6 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -26,11 +25,8 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
-import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
-import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.ideaFrameAmbientBackground
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 import java.nio.file.Path
@@ -70,14 +66,14 @@ internal fun ChatScreen(
     themeMode: DesktopThemeMode,
     onThemeChanged: (DesktopThemeMode) -> Unit,
     onSettingsChanged: () -> Unit,
-    frameGradientAnchorPx: Float?,
+    settingsVisible: Boolean = false,
+    onSettingsVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val palette = LocalDesktopPalette.current
     val terminalPanel = rememberTerminalPanelController(palette.terminal)
     var sidebarVisibleAtPointerPress by remember { mutableStateOf(false) }
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var appFeedbackToken by remember { mutableStateOf(0L) }
-    var settingsVisible by remember { mutableStateOf(false) }
     var islandFocus by remember { mutableStateOf(WorkspaceIslandFocus.NONE) }
     val settingsUiState = remember { SettingsPanelUiState() }
     val showAppFeedback: (AppFeedbackState) -> Unit = { feedback ->
@@ -98,23 +94,15 @@ internal fun ChatScreen(
         terminalPanel.closePendingTabAfterExit()
     }
 
+    LaunchedEffect(settingsVisible) {
+        if (settingsVisible) islandFocus = WorkspaceIslandFocus.SETTINGS
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = isCompactDesktopLayout(maxWidth.value.toInt())
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(
-                    if (palette.isDark) {
-                        Modifier.ideaFrameAmbientBackground(
-                            frameColor = palette.frameBackground,
-                            projectColor = palette.titleBarGradientStart,
-                            anchorXPx = frameGradientAnchorPx,
-                            verticalOffset = IDEA_TITLE_BAR_HEIGHT + IDEA_TITLE_BAR_SEPARATOR_HEIGHT,
-                        )
-                    } else {
-                        Modifier.background(palette.frameBackground)
-                    },
-                )
                 .onPointerEvent(
                     eventType = PointerEventType.Press,
                     pass = PointerEventPass.Initial,
@@ -190,7 +178,7 @@ internal fun ChatScreen(
                                     onThemeChanged = onThemeChanged,
                                     onFocus = { islandFocus = WorkspaceIslandFocus.SETTINGS },
                                     onClose = {
-                                        settingsVisible = false
+                                        onSettingsVisibilityChange(false)
                                         islandFocus = workspaceFocusAfterPanelClosed(
                                             settingsVisible = false,
                                             terminalVisible = terminalVisible,
@@ -242,8 +230,13 @@ internal fun ChatScreen(
                             },
                             onToolClick = { glyph ->
                                 if (glyph == RightRailGlyph.SETTINGS) {
-                                    settingsVisible = !settingsVisible
-                                    islandFocus = if (settingsVisible) WorkspaceIslandFocus.SETTINGS else WorkspaceIslandFocus.CHAT
+                                    val willShowSettings = !settingsVisible
+                                    onSettingsVisibilityChange(willShowSettings)
+                                    islandFocus = if (willShowSettings) {
+                                        WorkspaceIslandFocus.SETTINGS
+                                    } else {
+                                        WorkspaceIslandFocus.CHAT
+                                    }
                                 } else if (glyph == RightRailGlyph.TERMINAL) {
                                     if (activeConversation == null) {
                                         showAppFeedback(

@@ -19,11 +19,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.design.AppSidebarBackground
+import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
-
-private const val CHAT_SIDEBAR_TOP_OFFSET_DP = 56
 
 /** 在主工作区上方显示并定位可关闭的 Air 任务侧栏。 */
 @Composable
@@ -55,7 +53,7 @@ internal fun BoxScope.ChatSidebarOverlay(
             .align(Alignment.TopStart)
             .padding(
                 start = edgeGapDp,
-                top = CHAT_SIDEBAR_TOP_OFFSET_DP.dp,
+                top = edgeGapDp,
                 bottom = edgeGapDp,
             )
             .width(airSidebarWidthDp(compact).dp)
@@ -69,7 +67,7 @@ internal fun BoxScope.ChatSidebarOverlay(
         JewelSurface(
             role = JewelSurfaceRole.CHROME,
             radius = 12.dp,
-            solidColor = AppSidebarBackground,
+            solidColor = AppWorkspaceBackground,
             borderWidth = 0.dp,
             modifier = positionedModifier,
         ) {

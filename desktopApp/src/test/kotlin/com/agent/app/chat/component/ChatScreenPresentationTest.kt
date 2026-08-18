@@ -8,13 +8,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
-import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppDanger
-import com.agent.app.design.AppReasoning
-import com.agent.app.design.AppMuted
-import com.agent.app.design.AppText
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.PopupMenuBackground
@@ -26,15 +20,12 @@ import com.agent.app.design.desktopPalette
 import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
 import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.shared.chat.model.AppError
-import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
-import com.agent.shared.tool.model.PermissionPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import javax.swing.BorderFactory
 import javax.swing.JPanel
 import java.nio.file.Path
@@ -56,7 +47,11 @@ class ChatScreenPresentationTest {
     fun `should fall back to the parent project in the title bar`() {
         assertEquals(
             "Agent-dev",
-            titleBarProjectLabel(workspacePath = null, workspaceName = null, projectRoot = Path.of("D:/projects/Agent-dev")),
+            titleBarProjectLabel(
+                workspacePath = null,
+                workspaceName = null,
+                projectRoot = Path.of("D:/projects/Agent-dev")
+            ),
         )
         assertEquals("AG", titleBarProjectMonogram("Agent-dev"))
     }
@@ -435,9 +430,18 @@ class ChatScreenPresentationTest {
     @Test
     fun `should use shared popup menu item colors`() {
         assertEquals(Color.Transparent, selectMenuItemBackground(selected = false, hovered = false, enabled = true))
-        assertEquals(PopupMenuHoverBackground, selectMenuItemBackground(selected = false, hovered = true, enabled = true))
-        assertEquals(PopupMenuSelectedBackground, selectMenuItemBackground(selected = true, hovered = false, enabled = true))
-        assertEquals(PopupMenuSelectedBackground, selectMenuItemBackground(selected = true, hovered = true, enabled = true))
+        assertEquals(
+            PopupMenuHoverBackground,
+            selectMenuItemBackground(selected = false, hovered = true, enabled = true)
+        )
+        assertEquals(
+            PopupMenuSelectedBackground,
+            selectMenuItemBackground(selected = true, hovered = false, enabled = true)
+        )
+        assertEquals(
+            PopupMenuSelectedBackground,
+            selectMenuItemBackground(selected = true, hovered = true, enabled = true)
+        )
         assertEquals(Color(0xFF252629), PopupMenuBackground)
     }
 
@@ -461,7 +465,7 @@ class ChatScreenPresentationTest {
     }
 
     /**
-     * Rail 透明承接根画布，并通过自身的 40dp 命中目标与标题栏建立一致密度。
+     * Rail 透明承接根画布，标题栏按钮尺寸仍与 JBR 标题栏适配层一致。
      */
     @Test
     fun `should align the right rail with the workspace below the title bar`() {
@@ -470,15 +474,14 @@ class ChatScreenPresentationTest {
         assertEquals(54, IDEA_TITLE_BAR_HEIGHT.value.toInt())
         assertEquals(1, IDEA_TITLE_BAR_SEPARATOR_HEIGHT.value.toInt())
         assertEquals(40, TITLE_BAR_ACTION_HEIGHT_DP)
-        assertEquals(20, HEADER_PROJECT_ICON_SIZE_DP)
-        assertEquals("sidebar-toggle", TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY)
-        assertEquals("project-selector", TITLE_BAR_PROJECT_CLIENT_REGION_KEY)
-        assertEquals("branch-menu", TITLE_BAR_BRANCH_CLIENT_REGION_KEY)
+        assertEquals(24, HEADER_PROJECT_ICON_SIZE_DP)
     }
 
     /** 标题栏项目与分支下拉必须暴露当前实施要求的关键动作。 */
     @Test
     fun `should expose workspace and branch actions in the title bar`() {
+        assertEquals("设置", TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL)
+        assertEquals("退出", TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL)
         assertEquals("选择工作区…", TITLE_BAR_PROJECT_SELECT_ACTION_LABEL)
         assertEquals("刷新分支", TITLE_BAR_BRANCH_REFRESH_ACTION_LABEL)
         assertEquals("复制分支名", TITLE_BAR_BRANCH_COPY_ACTION_LABEL)

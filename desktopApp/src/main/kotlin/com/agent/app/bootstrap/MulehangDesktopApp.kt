@@ -8,14 +8,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.WindowState
 import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.component.ChatTitleBar
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
+import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.app.design.MulehangTheme
 import com.agent.app.design.desktopPalette
+import com.agent.app.design.ideaFrameAmbientBackground
+import com.agent.app.platform.BridgeWindowsTitleBarInputToCompose
+import com.agent.app.platform.SuppressWindowsWindowBorder
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.agent.koog.KoogConversationTitleGenerator
@@ -31,6 +40,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlinx.coroutines.launch
+import org.jetbrains.jewel.window.DecoratedWindow
 
 /**
  * 根 composable，负责加载桌面会话快照并装配窗口状态。
@@ -52,6 +62,7 @@ internal fun MulehangDesktopApp(
         )
     }
     var sidebarVisible by remember { mutableStateOf(false) }
+    var settingsVisible by remember { mutableStateOf(false) }
     var frameGradientAnchorPx by remember { mutableStateOf<Float?>(null) }
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
@@ -85,6 +96,9 @@ internal fun MulehangDesktopApp(
         )
     }
     stateHolder.value = windowState
+    val requestClose = remember(windowState, onCloseRequest) {
+        { windowState.flushPersistence(onCloseRequest) }
+    }
 
     LaunchedEffect(projectRootState.value) {
         val projectRoot = projectRootState.value ?: return@LaunchedEffect
@@ -103,41 +117,66 @@ internal fun MulehangDesktopApp(
 
     val palette = desktopPalette(mode = themeMode, systemIsDark = isSystemInDarkTheme())
     MulehangTheme(isDark = palette.isDark, palette = palette) {
-        org.jetbrains.jewel.window.DecoratedWindow(
-            onCloseRequest = { windowState.flushPersistence(onCloseRequest) },
+        DecoratedWindow(
+            onCloseRequest = requestClose,
             state = desktopWindowState,
             title = "mulehang-agent",
         ) {
+            SuppressWindowsWindowBorder(window = window, frameColor = palette.frameBackground)
+            BridgeWindowsTitleBarInputToCompose(window = window)
             ChatTitleBar(
                 state = windowState,
                 projectRoot = projectRootState.value,
                 sidebarVisible = sidebarVisible,
                 onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                onOpenSettings = { settingsVisible = true },
+                onRequestClose = requestClose,
                 onGlobalFeedback = {},
                 frameGradientAnchorPx = frameGradientAnchorPx,
                 onFrameGradientAnchorChanged = { anchorPx -> frameGradientAnchorPx = anchorPx },
             )
-            ChatScreen(
-                state = windowState,
-                sidebarVisible = sidebarVisible,
-                onToggleSidebar = { sidebarVisible = !sidebarVisible },
-                projectRoot = projectRootState.value,
-                userHome = userHome,
-                themeMode = themeMode,
-                onThemeChanged = { updatedMode ->
-                    themeMode = updatedMode
-                    uiStateStore.saveThemeMode(updatedMode.storageValue)
-                },
-                onSettingsChanged = {
-                    projectRootState.value?.let { root ->
-                        appScope.launch {
-                            val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
-                            windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+            val contentModifier = if (palette.isDark) {
+                val contentOriginYPx = with(LocalDensity.current) {
+                    (
+                        IDEA_TITLE_BAR_HEIGHT.roundToPx() +
+                            IDEA_TITLE_BAR_SEPARATOR_HEIGHT.roundToPx()
+                    ).toFloat()
+                }
+                Modifier
+                    .fillMaxSize()
+                    .ideaFrameAmbientBackground(
+                        frameColor = palette.frameBackground,
+                        projectColor = palette.titleBarGradientStart,
+                        anchorXPx = frameGradientAnchorPx,
+                        originYPx = contentOriginYPx,
+                    )
+            } else {
+                Modifier.fillMaxSize()
+            }
+            Box(modifier = contentModifier) {
+                ChatScreen(
+                    state = windowState,
+                    sidebarVisible = sidebarVisible,
+                    onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                    projectRoot = projectRootState.value,
+                    userHome = userHome,
+                    themeMode = themeMode,
+                    onThemeChanged = { updatedMode ->
+                        themeMode = updatedMode
+                        uiStateStore.saveThemeMode(updatedMode.storageValue)
+                    },
+                    onSettingsChanged = {
+                        projectRootState.value?.let { root ->
+                            appScope.launch {
+                                val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
+                                windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+                            }
                         }
-                    }
-                },
-                frameGradientAnchorPx = frameGradientAnchorPx,
-            )
+                    },
+                    settingsVisible = settingsVisible,
+                    onSettingsVisibilityChange = { visible -> settingsVisible = visible },
+                )
+            }
         }
     }
 }

@@ -6,7 +6,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** IDEA `IslandsGradientPainter` 使用的项目色混合强度。 */
@@ -100,19 +99,24 @@ internal fun FrameAmbientSpec.colorAt(
 }
 
 /**
- * 在窗口根画布上绘制连续的 IDEA 项目环境光。
+ * 按窗口根画布坐标绘制连续的 IDEA 项目环境光。
  *
- * [verticalOffset] 是此组件在窗口根坐标中的纵向偏移，使标题栏与内容区分别绘制同一张 200dp 画布的相邻区域。
+ * 标题栏和内容区可分别调用该修饰符，但必须通过 [originYPx] 采样同一张虚拟根画布。
+ * [bottomPaintOverflowPx] 仅用于覆盖紧随标题栏的 Jewel 固定分隔区域，必须传入实际布局取整后的像素高度，
+ * 不改变该区域的采样坐标。
  */
 internal fun Modifier.ideaFrameAmbientBackground(
     frameColor: Color,
     projectColor: Color,
     anchorXPx: Float?,
-    verticalOffset: Dp = 0.dp,
+    originYPx: Float = 0f,
+    bottomPaintOverflowPx: Float = 0f,
 ): Modifier = drawWithCache {
     val spec = ideaFrameAmbientSpec(anchorXPx = anchorXPx, densityScale = density)
-    val verticalOffsetPx = verticalOffset.toPx()
-    val visibleGradientHeight = (spec.heightPx - verticalOffsetPx).coerceAtLeast(0f)
+    val safeOriginYPx = originYPx.takeIf(Float::isFinite)?.coerceAtLeast(0f) ?: 0f
+    val paintHeight = size.height + bottomPaintOverflowPx.coerceAtLeast(0f)
+    val gradientStartY = (-safeOriginYPx).coerceAtLeast(0f)
+    val gradientEndY = (spec.heightPx - safeOriginYPx).coerceAtMost(paintHeight)
     val horizontalExtent = (spec.anchorXPx + spec.rightFadeWidthPx).coerceAtLeast(1f)
     val projectMix = blendFrameAmbientColors(
         from = frameColor,
@@ -128,27 +132,27 @@ internal fun Modifier.ideaFrameAmbientBackground(
         startX = 0f,
         endX = horizontalExtent,
     )
-    val topFrameAlpha = (verticalOffsetPx / spec.heightPx).coerceIn(0f, 1f)
     val verticalFadeBrush = Brush.verticalGradient(
-        colors = listOf(frameColor.copy(alpha = topFrameAlpha), frameColor),
-        startY = 0f,
-        endY = visibleGradientHeight.coerceAtLeast(1f),
+        colors = listOf(frameColor.copy(alpha = 0f), frameColor),
+        startY = -safeOriginYPx,
+        endY = (spec.heightPx - safeOriginYPx).coerceAtLeast(1f),
     )
 
     onDrawBehind {
-        drawRect(color = frameColor)
-        if (visibleGradientHeight <= 0f) return@onDrawBehind
-
-        val gradientSize = Size(width = size.width, height = visibleGradientHeight.coerceAtMost(size.height))
-        drawRect(
-            brush = horizontalBrush,
-            topLeft = Offset.Zero,
-            size = gradientSize,
-        )
-        drawRect(
-            brush = verticalFadeBrush,
-            topLeft = Offset.Zero,
-            size = gradientSize,
-        )
+        drawRect(color = frameColor, size = Size(width = size.width, height = paintHeight))
+        if (gradientEndY > gradientStartY) {
+            val gradientSize = Size(width = size.width, height = gradientEndY - gradientStartY)
+            val gradientTopLeft = Offset(x = 0f, y = gradientStartY)
+            drawRect(
+                brush = horizontalBrush,
+                topLeft = gradientTopLeft,
+                size = gradientSize,
+            )
+            drawRect(
+                brush = verticalFadeBrush,
+                topLeft = gradientTopLeft,
+                size = gradientSize,
+            )
+        }
     }
 }

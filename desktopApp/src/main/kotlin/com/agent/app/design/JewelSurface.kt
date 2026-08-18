@@ -24,6 +24,9 @@ internal enum class JewelSurfaceRole {
     FLOATING,
 }
 
+/** `0.dp` 在 Compose 边框 API 中会变成 hairline，因此显式无边框必须跳过绘制修饰符。 */
+internal fun shouldDrawJewelSurfaceBorder(borderWidth: Dp): Boolean = borderWidth.value > 0f
+
 /**
  * 使用 Jewel 全局颜色绘制静态容器，不模拟玻璃、折射或动态背景采样。
  */
@@ -52,11 +55,15 @@ internal fun JewelSurface(
     val border = borderColor.takeOrElse { colors.borders.normal }
     val elevation = if (role == JewelSurfaceRole.FLOATING) 8.dp else 0.dp
 
+    val surfaceModifier = modifier
+        .shadow(elevation = elevation, shape = shape, clip = false)
+        .background(background, shape)
     Box(
-        modifier = modifier
-            .shadow(elevation = elevation, shape = shape, clip = false)
-            .background(background, shape)
-            .border(width = borderWidth, color = border, shape = shape),
+        modifier = if (shouldDrawJewelSurfaceBorder(borderWidth)) {
+            surfaceModifier.border(width = borderWidth, color = border, shape = shape)
+        } else {
+            surfaceModifier
+        },
         content = content,
     )
 }

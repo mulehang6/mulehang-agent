@@ -14,7 +14,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -29,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -58,14 +56,10 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
 import com.agent.app.chat.presentation.buildContextTooltip
 import com.agent.app.chat.presentation.contextRingSweepAngle
@@ -78,7 +72,6 @@ import com.agent.app.chat.state.resolveContextWindow
 import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.ComposerInputBackground
@@ -100,12 +93,17 @@ import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextArea
 import org.jetbrains.jewel.ui.component.Tooltip
+import org.jetbrains.jewel.ui.component.styling.MenuColors
+import org.jetbrains.jewel.ui.component.styling.MenuItemColors
+import org.jetbrains.jewel.ui.component.styling.MenuStyle
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import org.jetbrains.jewel.ui.theme.menuStyle
 
 internal const val COMPOSER_INPUT_HORIZONTAL_PADDING_DP = 12
 internal const val COMPOSER_INPUT_VERTICAL_PADDING_DP = 8
-internal const val PERMISSION_MENU_WIDTH_DP = 360
-internal const val PERMISSION_MENU_TITLE_START_PADDING_DP = 16
+internal const val PERMISSION_MENU_HOVERED_ALPHA = 0.56f
+internal const val PERMISSION_MENU_SELECTED_ALPHA = 0.76f
+internal const val PERMISSION_MENU_PRESSED_ALPHA = 0.86f
 
 /** 返回可编辑内容和只读占位符共同使用的左上角坐标。 */
 internal fun composerInputContentOffset(): DpOffset = DpOffset(
@@ -485,7 +483,7 @@ private fun ComposerMenuButton(
     }
 }
 
-/** 渲染锚定在权限按钮上的专用弹层，避免通用菜单将 hover 覆盖成灰色。 */
+/** 渲染权限选择器，使用 Jewel 标准菜单容器并在菜单项内保留权限语义色。 */
 @Composable
 private fun PermissionMenuButton(
     label: String,
@@ -495,42 +493,32 @@ private fun PermissionMenuButton(
     selectedPreset: PermissionPreset,
     onPresetSelected: (PermissionPreset) -> Unit,
 ) {
-    val density = LocalDensity.current
+    val baseMenuStyle = JewelTheme.menuStyle
+    val menuStyle = remember(baseMenuStyle) {
+        permissionMenuStyle(baseMenuStyle)
+    }
 
     Box {
         OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
         if (expanded) {
-            Popup(
-                alignment = Alignment.BottomEnd,
-                offset = IntOffset(0, with(density) { 4.dp.roundToPx() }),
-                onDismissRequest = onDismissRequest,
-                properties = PopupProperties(focusable = true),
+            PopupMenu(
+                onDismissRequest = {
+                    onDismissRequest()
+                    true
+                },
+                horizontalAlignment = Alignment.End,
+                style = menuStyle,
             ) {
-                JewelSurface(
-                    role = JewelSurfaceRole.CHROME,
-                    radius = 8.dp,
-                    solidColor = AppChipBackground,
-                    borderColor = AppLine,
-                    modifier = Modifier.width(PERMISSION_MENU_WIDTH_DP.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                PermissionPreset.entries.forEach { preset ->
+                    val presentation = permissionPresentation(preset)
+                    selectableItem(
+                        selected = preset == selectedPreset,
+                        onClick = { onPresetSelected(preset) },
                     ) {
-                        Text(
-                            text = "Permission Mode",
-                            modifier = Modifier.padding(
-                                start = PERMISSION_MENU_TITLE_START_PADDING_DP.dp,
-                                end = 12.dp,
-                                top = 2.dp,
-                                bottom = 4.dp,
-                            ),
-                        )
-                        PermissionPreset.entries.forEach { preset ->
-                            PermissionPresetMenuCard(
-                                presentation = permissionPresentation(preset),
+                        Tooltip(tooltip = { Text(presentation.description) }) {
+                            PermissionPresetMenuRow(
+                                presentation = presentation,
                                 selected = preset == selectedPreset,
-                                onClick = { onPresetSelected(preset) },
                             )
                         }
                     }
@@ -540,51 +528,87 @@ private fun PermissionMenuButton(
     }
 }
 
-/** 返回权限卡所需的背景色；选中态优先且其 hover 不产生额外变化。 */
-internal fun permissionPresetCardBackground(selected: Boolean, hovered: Boolean): Color =
-    if (selected || hovered) AppSelectedBackground else Color.Transparent
+/** 返回权限菜单项在悬停、选中和按下状态下的语义色背景；静止行保持透明。 */
+internal fun permissionPresetMenuRowBackground(
+    tone: Color,
+    selected: Boolean,
+    hovered: Boolean,
+    pressed: Boolean,
+): Color = when {
+    selected -> tone.copy(alpha = PERMISSION_MENU_SELECTED_ALPHA)
+    pressed -> tone.copy(alpha = PERMISSION_MENU_PRESSED_ALPHA)
+    hovered -> tone.copy(alpha = PERMISSION_MENU_HOVERED_ALPHA)
+    else -> Color.Transparent
+}
 
-/** 渲染带风险色标签的权限审批卡，并自行管理 hover 与点击状态。 */
+/** 生成保留 Jewel 容器、阴影、焦点和键盘导航的紧凑权限菜单样式。 */
+private fun permissionMenuStyle(base: MenuStyle): MenuStyle = MenuStyle(
+    isDark = base.isDark,
+    colors = MenuColors(
+        background = base.colors.background,
+        border = base.colors.border,
+        shadow = base.colors.shadow,
+        itemColors = transparentMenuItemBackgrounds(base.colors.itemColors),
+    ),
+    metrics = base.metrics,
+    icons = base.icons,
+)
+
+/** 保持 Jewel 文本、图标、焦点和快捷键颜色，仅交由权限行绘制唯一的状态背景。 */
+private fun transparentMenuItemBackgrounds(base: MenuItemColors): MenuItemColors = MenuItemColors(
+    background = Color.Transparent,
+    backgroundDisabled = Color.Transparent,
+    backgroundFocused = Color.Transparent,
+    backgroundPressed = Color.Transparent,
+    backgroundHovered = Color.Transparent,
+    content = base.content,
+    contentDisabled = base.contentDisabled,
+    contentFocused = base.contentFocused,
+    contentPressed = base.contentPressed,
+    contentHovered = base.contentHovered,
+    iconTint = base.iconTint,
+    iconTintDisabled = base.iconTintDisabled,
+    iconTintFocused = base.iconTintFocused,
+    iconTintPressed = base.iconTintPressed,
+    iconTintHovered = base.iconTintHovered,
+    keybindingTint = base.keybindingTint,
+    keybindingTintDisabled = base.keybindingTintDisabled,
+    keybindingTintFocused = base.keybindingTintFocused,
+    keybindingTintPressed = base.keybindingTintPressed,
+    keybindingTintHovered = base.keybindingTintHovered,
+    separator = base.separator,
+)
+
+/** 渲染一行紧凑权限项；点击和键盘选择仍由外层 Jewel selectableItem 承担。 */
 @Composable
-private fun PermissionPresetMenuCard(
+private fun PermissionPresetMenuRow(
     presentation: PermissionPresentation,
     selected: Boolean,
-    onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val highlighted = selected || hovered
+    var pressed by remember { mutableStateOf(false) }
 
-    JewelSurface(
-        role = JewelSurfaceRole.CHROME,
-        radius = 7.dp,
-        solidColor = permissionPresetCardBackground(selected = selected, hovered = hovered),
-        borderColor = Color.Transparent,
-        borderWidth = 0.dp,
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .background(presentation.tone, RoundedCornerShape(5.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = presentation.label,
-                    style = JewelTheme.defaultTextStyle.copy(color = Color.White),
-                )
-            }
-            Text(
-                text = presentation.description,
-                style = JewelTheme.defaultTextStyle.copy(color = if (highlighted) AppText else AppMuted),
+            .clip(RoundedCornerShape(5.dp))
+            .background(
+                color = permissionPresetMenuRowBackground(
+                    tone = presentation.tone,
+                    selected = selected,
+                    hovered = hovered,
+                    pressed = pressed,
+                ),
             )
-        }
+            .hoverable(interactionSource)
+            .onPointerEvent(PointerEventType.Press) { pressed = true }
+            .onPointerEvent(PointerEventType.Release) { pressed = false },
+    ) {
+        Text(
+            text = presentation.label,
+            style = JewelTheme.defaultTextStyle.copy(color = Color.White),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }

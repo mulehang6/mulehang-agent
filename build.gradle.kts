@@ -12,7 +12,6 @@ version = "0.1.0"
 allprojects {
     repositories {
         google()
-        maven("https://repo.maven.apache.org:443/maven2")
         mavenCentral()
     }
 }

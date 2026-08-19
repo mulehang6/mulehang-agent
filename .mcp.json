@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "klibs": {
+      "type": "http",
+      "url": "https://api.klibs.io/mcp"
+    }
+  }
+}

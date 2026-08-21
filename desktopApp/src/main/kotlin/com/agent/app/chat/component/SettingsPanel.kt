@@ -5,8 +5,8 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.VerticalScrollbar
+import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -31,18 +34,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppPanelBackground
-import com.agent.app.design.AppSelectedBackground
-import com.agent.app.design.AppText
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.PANEL_TAB_ICON_SIZE
 import com.agent.app.design.iconKey
 import com.agent.app.design.rememberExternalTextFieldValue
 import com.agent.shared.settings.model.ConfigLayer
@@ -84,7 +81,7 @@ internal class SettingsPanelUiState {
     var search by mutableStateOf("")
     var expandedProviderId by mutableStateOf<String?>(null)
     var feedback by mutableStateOf<String?>(null)
-    var sectionSpatialMotion by mutableStateOf(true)
+    val contentScrollState = ScrollState(initial = 0)
 }
 
 /** 参考 IDE 设置页层级的右侧设置 Island。 */
@@ -93,7 +90,6 @@ internal fun SettingsPanel(
     projectRoot: Path?,
     userHome: Path,
     themeMode: DesktopThemeMode,
-    focused: Boolean,
     onThemeChanged: (DesktopThemeMode) -> Unit,
     onFocus: () -> Unit,
     onClose: () -> Unit,
@@ -124,7 +120,7 @@ internal fun SettingsPanel(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val layout = settingsPanelLayout(maxWidth.value.toInt())
             Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-                SettingsTitleTab(focused = focused, onClose = onClose)
+                SettingsTitleTab(onClose = onClose)
                 SettingsSearchField(value = uiState.search, onValueChange = { uiState.search = it })
                 SettingsScopeBar(
                     layer = uiState.layer,
@@ -136,8 +132,7 @@ internal fun SettingsPanel(
                         SettingsNavigation(
                             section = uiState.section,
                             compact = true,
-                            onSectionChange = { section, spatialMotion ->
-                                uiState.sectionSpatialMotion = spatialMotion
+                            onSectionChange = { section, _ ->
                                 uiState.section = section
                             },
                         )
@@ -148,6 +143,7 @@ internal fun SettingsPanel(
                             onThemeChanged = onThemeChanged,
                             onSettingsSaved = onSettingsSaved,
                             compact = true,
+                            scrollState = uiState.contentScrollState,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -158,8 +154,7 @@ internal fun SettingsPanel(
                     Row(modifier = Modifier.fillMaxSize().padding(top = 18.dp)) {
                         SettingsNavigation(
                             section = uiState.section,
-                            onSectionChange = { section, spatialMotion ->
-                                uiState.sectionSpatialMotion = spatialMotion
+                            onSectionChange = { section, _ ->
                                 uiState.section = section
                             },
                         )
@@ -170,6 +165,7 @@ internal fun SettingsPanel(
                             onThemeChanged = onThemeChanged,
                             onSettingsSaved = onSettingsSaved,
                             compact = false,
+                            scrollState = uiState.contentScrollState,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
@@ -192,18 +188,19 @@ private fun SettingsPanelContent(
     onThemeChanged: (DesktopThemeMode) -> Unit,
     onSettingsSaved: () -> Unit,
     compact: Boolean,
+    scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
-        SettingsAnimatedContent(
-            target = SettingsContentTarget(uiState.layer, uiState.section, uiState.sectionSpatialMotion),
-            modifier = Modifier.weight(1f),
-        ) { section ->
+        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
             Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(end = if (shouldShowSettingsContentScrollbar(scrollState.maxValue)) 10.dp else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                when (section) {
+                when (uiState.section) {
                     SettingsSection.THEME -> ThemeSettingsContent(
                         themeMode = themeMode,
                         compact = compact,
@@ -216,6 +213,19 @@ private fun SettingsPanelContent(
                         expandedProviderId = uiState.expandedProviderId,
                         onExpandedProviderChange = { uiState.expandedProviderId = it },
                         onDocumentChange = { uiState.document = it },
+                    )
+                }
+            }
+            if (shouldShowSettingsContentScrollbar(scrollState.maxValue)) {
+                CompositionLocalProvider(
+                    LocalScrollbarStyle provides LocalScrollbarStyle.current,
+                ) {
+                    VerticalScrollbar(
+                        adapter = rememberScrollbarAdapter(scrollState),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .padding(vertical = 4.dp, horizontal = 2.dp),
                     )
                 }
             }
@@ -244,20 +254,28 @@ private fun SettingsPanelContent(
         }
     }
 }
-/** 设置页左上角的紧凑标签和关闭按钮。 */
+/** 设置页左上角使用与终端一致的 IDEA Islands 页签。 */
 @Composable
 private fun SettingsTitleTab(
-    focused: Boolean,
     onClose: () -> Unit,
 ) {
-    DockTab(
-        label = "设置",
-        iconKey = RightRailGlyph.SETTINGS.iconKey,
-        selected = focused,
-        onClick = {},
-        onClose = onClose,
+    IslandsTabStrip(
+        tabs = listOf(
+            IslandsTab(
+                label = "设置",
+                selected = true,
+                iconKey = RightRailGlyph.SETTINGS.iconKey,
+                closable = true,
+                onClick = {},
+                onClose = onClose,
+            ),
+        ),
+        modifier = Modifier.fillMaxWidth(),
     )
 }
+
+/** 仅在设置内容真实溢出时绘制右侧滚动条。 */
+internal fun shouldShowSettingsContentScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
 
 /** 带焦点边框的紧凑设置搜索框。 */
 @Composable

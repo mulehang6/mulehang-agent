@@ -35,7 +35,8 @@ import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Checkbox
-import org.jetbrains.jewel.ui.component.RadioButtonRow
+import org.jetbrains.jewel.ui.component.ListComboBox
+import org.jetbrains.jewel.ui.component.SimpleListItem
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
 
@@ -47,12 +48,20 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
         SettingsField("服务 ID", provider.id) { onChange(provider.copy(id = it)) }
         SettingsField("显示名称", provider.label.orEmpty()) { onChange(provider.copy(label = it.ifBlank { null })) }
         SettingsRow("协议") {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                ProviderType.entries.forEach { type ->
-                    SettingsChoiceChip(type.name.lowercase().replace('_', '-'), provider.providerType == type) {
-                        onChange(provider.copy(providerType = type))
-                    }
-                }
+            ListComboBox(
+                items = ProviderType.entries,
+                selectedIndex = ProviderType.entries.indexOf(provider.providerType),
+                onSelectedItemChange = { index ->
+                    onChange(provider.copy(providerType = ProviderType.entries[index]))
+                },
+                itemKeys = { _, type -> type.name },
+                modifier = Modifier.fillMaxWidth(),
+            ) { type, selected, active ->
+                SimpleListItem(
+                    text = providerTypeLabel(type),
+                    selected = selected,
+                    active = active,
+                )
             }
         }
         SettingsRow("启用服务") {
@@ -147,13 +156,5 @@ private fun SettingsField(
     }
 }
 
-/** 绘制扁平选择标签，供 Provider 协议复用。 */
-@Composable
-internal fun SettingsChoiceChip(text: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    RadioButtonRow(
-        text = text,
-        selected = selected,
-        enabled = enabled,
-        onClick = onClick,
-    )
-}
+/** 返回 Provider 类型在下拉框中使用的稳定、单行文本。 */
+internal fun providerTypeLabel(type: ProviderType): String = type.name.lowercase().replace('_', '-')

@@ -15,20 +15,20 @@ import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.DesktopThemeMode
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.ui.component.ListComboBox
+import org.jetbrains.jewel.ui.component.GroupHeader
 import org.jetbrains.jewel.ui.component.SimpleListItem
 import org.jetbrains.jewel.ui.component.Text
 
 /**
  * 渲染只包含系统、深色与浅色三种模式的 Jewel 主题设置。
  */
-@OptIn(ExperimentalJewelApi::class)
 @Composable
 internal fun ThemeSettingsContent(
     themeMode: DesktopThemeMode,
     compact: Boolean = false,
     onThemeChanged: (DesktopThemeMode) -> Unit,
 ) {
-    Text("主题")
+    GroupHeader("主题")
     JewelSurface(
         role = JewelSurfaceRole.PANEL,
         radius = 12.dp,
@@ -72,6 +72,7 @@ internal fun ThemeSettingsContent(
 }
 
 /** 在宽窄布局中复用相同的主题模式下拉与持久化回调。 */
+@OptIn(ExperimentalJewelApi::class)
 @Composable
 private fun ThemeModeSelector(
     themeMode: DesktopThemeMode,

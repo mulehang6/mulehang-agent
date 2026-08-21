@@ -71,15 +71,27 @@ class SettingsPanelInteractionTest {
     @Test
     fun `should switch settings content to compact layout below threshold`() {
         assertEquals(600, SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP)
+        assertEquals(96, SETTINGS_NAVIGATION_WIDE_WIDTH_DP)
         assertEquals(SettingsPanelLayout.COMPACT, settingsPanelLayout(599))
         assertEquals(SettingsPanelLayout.WIDE, settingsPanelLayout(600))
     }
 
-    /** 设置与终端 Dock 标签必须共享同一高度和圆角节奏。 */
+    /** 设置内容只在真实溢出时占用滚动条轨道，协议下拉保留所有 Provider 类型。 */
     @Test
-    fun `should use shared dock tab metrics`() {
-        assertEquals(32, DOCK_TAB_HEIGHT.value.toInt())
-        assertEquals(7, DOCK_TAB_CORNER_RADIUS.value.toInt())
+    fun `should use overflow scrollbar and full provider protocol list`() {
+        assertEquals(false, shouldShowSettingsContentScrollbar(0))
+        assertEquals(true, shouldShowSettingsContentScrollbar(1))
+        assertEquals("openai-chat-completions", providerTypeLabel(ProviderType.OPENAI_CHAT_COMPLETIONS))
+        assertEquals(ProviderType.entries.size, ProviderType.entries.map(::providerTypeLabel).distinct().size)
+    }
+
+    /** Settings、终端与范围页签共享 IDEA Islands 的浅深色选中填充和描边。 */
+    @Test
+    fun `should use islands selection colors for all settings tabs`() {
+        assertEquals(Color(0xFFE3EBFE), islandsTabSelectedFill(isDark = false))
+        assertEquals(Color(0xFFA7C5FF), islandsTabSelectedBorder(isDark = false))
+        assertEquals(Color(0xFF233558), islandsTabSelectedFill(isDark = true))
+        assertEquals(Color(0xFF2E4D89), islandsTabSelectedBorder(isDark = true))
     }
 
     /** Provider 摘要不显示操作文字，但图标必须保留完整的无障碍状态描述。 */

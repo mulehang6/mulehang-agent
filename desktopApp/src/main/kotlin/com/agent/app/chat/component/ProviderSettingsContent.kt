@@ -55,6 +55,7 @@ import com.agent.shared.settings.model.SettingsDocument
 import java.net.URI
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Checkbox
+import org.jetbrains.jewel.ui.component.GroupHeader
 import org.jetbrains.jewel.ui.component.Text
 
 internal const val PROVIDER_EDITOR_EXPAND_DURATION_MILLIS = 180
@@ -70,7 +71,7 @@ internal fun ProviderSettingsContent(
     onExpandedProviderChange: (String?) -> Unit,
     onDocumentChange: (SettingsDocument) -> Unit,
 ) {
-    Text("AI 服务", style = JewelTheme.defaultTextStyle.copy(color = AppText))
+    GroupHeader("AI 服务")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SettingsActionButton("新增服务") {
             val id = "provider-${document.providers.size + 1}"

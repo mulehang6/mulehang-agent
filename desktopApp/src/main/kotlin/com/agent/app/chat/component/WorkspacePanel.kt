@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.LocalScrollbarStyle
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,13 +42,13 @@ import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.shared.chat.model.ExecutionState
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
-
 /**
  * 原型主工作区。
  */
@@ -88,9 +90,25 @@ internal fun WorkspacePanel(
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
+    val onDiagramWheel: (Float) -> Unit = { scrollDelta ->
+        if (scrollDelta != 0f) {
+            scope.launch {
+                scrollState.scroll(MutatePriority.UserInput) {
+                    scrollBy(scrollDelta)
+                }
+            }
+        }
+    }
 
-    LaunchedEffect(scrollState.value) {
-        isFollowingLatest.value = scrollState.value >= scrollState.maxValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
+    LaunchedEffect(scrollState) {
+        snapshotFlow {
+            isTimelineFollowingLatest(
+                scrollValue = scrollState.value,
+                maxScrollValue = scrollState.maxValue,
+            )
+        }.collect { followingLatest ->
+            isFollowingLatest.value = followingLatest
+        }
     }
 
     LaunchedEffect(totalContentSize) {
@@ -137,7 +155,7 @@ internal fun WorkspacePanel(
             .fillMaxWidth()
             .padding(
                 horizontal = if (compact) 8.dp else 0.dp,
-                vertical = 8.dp,
+                vertical = ISLANDS_LAYOUT_GAP,
             ),
     ) {
         ResizableWorkspaceLayout(
@@ -188,6 +206,7 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                                 pendingMessageEntry = messageEntry,
                                                 onMessageEntryFinished = onMessageEntryFinished,
+                                                onDiagramWheel = onDiagramWheel,
                                             )
                                             RightRailGlyph.HISTORY -> HistoryPanel(
                                                 activeConversation,
@@ -198,6 +217,7 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                                 pendingMessageEntry = messageEntry,
                                                 onMessageEntryFinished = onMessageEntryFinished,
+                                                onDiagramWheel = onDiagramWheel,
                                             )
                                         }
                                     }
@@ -264,6 +284,12 @@ internal fun shouldShowScrollToBottomButton(
  */
 internal fun shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest: Boolean): Boolean =
     isFollowingLatest
+
+/** 判断当前时间线位置是否仍跟随最新输出。 */
+internal fun isTimelineFollowingLatest(
+    scrollValue: Int,
+    maxScrollValue: Int,
+): Boolean = scrollValue >= maxScrollValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 
 /**
  * 提问或审批挂起时都应在 composer 上方展示独立交互卡片。

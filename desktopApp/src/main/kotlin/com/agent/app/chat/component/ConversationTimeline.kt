@@ -61,6 +61,7 @@ internal fun ConversationTimeline(
     conversation: ChatConversationUiState,
     pendingMessageEntry: PendingMessageEntry? = null,
     onMessageEntryFinished: (Long) -> Unit = {},
+    onDiagramWheel: (Float) -> Unit = {},
 ) {
     if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
         Text(
@@ -99,6 +100,7 @@ internal fun ConversationTimeline(
                         AssistantMessageBlock(
                             content = item.message.content,
                             isStreaming = item === conversation.items.getOrNull(conversation.streamingAssistantItemIndex ?: -1),
+                            onDiagramWheel = onDiagramWheel,
                         )
                     }
                 }

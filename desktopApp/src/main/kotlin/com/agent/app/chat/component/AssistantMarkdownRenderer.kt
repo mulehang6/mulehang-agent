@@ -1,57 +1,14 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-
 package com.agent.app.chat.component
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import com.agent.app.chat.presentation.*
-import com.agent.app.chat.state.ChatConversationUiState
-import com.agent.app.design.*
-import com.agent.app.tool.component.EditorDiffPreview
-import com.agent.shared.chat.model.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.svg.SVGDOM
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.math.roundToInt
-import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.markdown.Markdown
-import org.jetbrains.jewel.ui.component.Icon
-import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
 /**
  * 单条助手回答块。
  */
@@ -59,6 +16,7 @@ import org.jetbrains.jewel.ui.icons.AllIconsKeys
 internal fun AssistantMessageBlock(
     content: String,
     isStreaming: Boolean,
+    onDiagramWheel: (Float) -> Unit = {},
 ) {
     val document = remember(content, isStreaming) {
         if (isStreaming) {
@@ -74,7 +32,11 @@ internal fun AssistantMessageBlock(
         document.blocks.forEach { block ->
             when (block) {
                 is AssistantMarkdownBlock.Text -> AssistantMarkdownText(block.content)
-                is AssistantMarkdownBlock.PlantUml -> PlantUmlDiagram(block.source)
+                is AssistantMarkdownBlock.Diagram -> AssistantDiagramPreview(
+                    kind = block.kind,
+                    source = block.source,
+                    onDiagramWheel = onDiagramWheel,
+                )
                 is AssistantMarkdownBlock.Code -> AssistantCodeBlock(block.language, block.source)
                 is AssistantMarkdownBlock.Image -> AssistantMarkdownImage(block.alt, block.url)
                 is AssistantMarkdownBlock.DefinitionList -> AssistantDefinitionListItem(block.term, block.definition)
@@ -94,6 +56,7 @@ internal fun AssistantMessageBlock(
  */
 @Composable
 @OptIn(ExperimentalJewelApi::class)
+@Suppress("UnstableApiUsage")
 internal fun AssistantMarkdownText(content: String) {
     val normalizedContent = remember(content) { normalizeAssistantMarkdown(content).trim() }
     if (normalizedContent.isBlank()) return

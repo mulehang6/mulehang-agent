@@ -9,8 +9,9 @@ internal sealed interface AssistantMarkdownBlock {
         val content: String,
     ) : AssistantMarkdownBlock
 
-    /** 已闭合、可交给本地图表 renderer 的 PlantUML 源码。 */
-    data class PlantUml(
+    /** 已闭合、可交给本地图表预览器的图表源码。 */
+    data class Diagram(
+        val kind: AssistantDiagramKind,
         val source: String,
     ) : AssistantMarkdownBlock
 
@@ -59,6 +60,14 @@ internal sealed interface AssistantMarkdownBlock {
         val summary: String,
         val content: String,
     ) : AssistantMarkdownBlock
+}
+
+/** 已支持离线预览的围栏图表语言。 */
+internal enum class AssistantDiagramKind(
+    val fenceLanguage: String,
+) {
+    PLANT_UML("plantuml"),
+    MERMAID("mermaid"),
 }
 
 /**
@@ -114,15 +123,15 @@ internal fun parseAssistantMarkdownDocument(content: String): AssistantMarkdownD
 
 /**
  * 流式阶段也提取围栏代码，避免围栏闭合前后在正文与代码卡之间跳变。
- * PlantUML 在流式阶段保留源码，防止不完整图表触发渲染。
+ * 图表在流式阶段保留源码，防止不完整围栏触发预览。
  */
 internal fun parseAssistantMarkdownStreamingDocument(content: String): AssistantMarkdownDocument {
     val partialFence = UNTERMINATED_FENCED_CODE.find(content)
     val completedContent = partialFence?.let { content.substring(0, it.range.first) } ?: content
     val completedDocument = parseAssistantMarkdownDocument(completedContent)
     val completedBlocks = completedDocument.blocks.map { block ->
-        if (block is AssistantMarkdownBlock.PlantUml) {
-            AssistantMarkdownBlock.Code(language = "plantuml", source = block.source)
+        if (block is AssistantMarkdownBlock.Diagram) {
+            AssistantMarkdownBlock.Code(language = block.kind.fenceLanguage, source = block.source)
         } else {
             block
         }
@@ -188,11 +197,9 @@ private fun toCodeBlockMatch(match: MatchResult): AssistantMarkdownBlockMatch {
         .lowercase()
         .ifBlank { null }
     val source = requireNotNull(match.groups[2]?.value).trim()
-    val block = if (language in PLANT_UML_LANGUAGES) {
-        AssistantMarkdownBlock.PlantUml(source = source)
-    } else {
-        AssistantMarkdownBlock.Code(language = language, source = source)
-    }
+    val block = diagramKindFor(language)
+        ?.let { kind -> AssistantMarkdownBlock.Diagram(kind = kind, source = source) }
+        ?: AssistantMarkdownBlock.Code(language = language, source = source)
     return AssistantMarkdownBlockMatch(match, block)
 }
 
@@ -295,22 +302,22 @@ private val DISPLAY_MATH = Regex(
 )
 private val INLINE_MATH = Regex("(?<!\\$)\\$([^$\\r\\n]+)\\$(?!\\$)")
 
-private val FOOTNOTE_DEFINITION = Regex("(?m)^\\[\\^([^]\\r\\n]+)]\\:\\s*(.+)\\s*$")
+private val FOOTNOTE_DEFINITION = Regex("(?m)^\\[\\^([^]\\r\\n]+)]:\\s*(.+)\\s*$")
 private val FOOTNOTE_REFERENCE = Regex("\\[\\^([^]\\r\\n]+)]")
 private val UNSAFE_HTML_CONTENT = Regex(
     pattern = "<\\s*(?:script|style)\\b[^>]*>.*?<\\s*/\\s*(?:script|style)\\s*>",
     options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
 private val STANDALONE_IMAGE = Regex(
-    pattern = "(?m)^\\h*(?:\\[)?!\\[([^]]*)]\\(([^\\s)]+)(?:\\s+\\\"[^\\\"]*\\\")?\\)(?:]\\([^\\r\\n)]*\\))?\\h*$",
+    pattern = """(?m)^\h*\[?!\[([^]]*)]\(([^\s)]+)(?:\s+"[^"]*")?\)(?:]\([^\r\n)]*\))?\h*$""",
 )
 private val DEFINITION_LIST = Regex("(?m)^(?!\\[\\^)([^\\r\\n:][^\\r\\n]*?)\\r?\\n:\\s+([^\\r\\n]+)")
 private val SAFE_HTML_DIV = Regex(
-    pattern = "<\\s*div\\b[^>]*\\balign\\s*=\\s*[\\\"']?(center|left|right)[\\\"']?[^>]*>(.*?)<\\s*/\\s*div\\s*>",
+    pattern = """<\s*div\b[^>]*\balign\s*=\s*["']?(center|left|right)["']?[^>]*>(.*?)<\s*/\s*div\s*>""",
     options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
 private val SAFE_HTML_SPAN = Regex(
-    pattern = "<\\s*span\\b[^>]*\\bstyle\\s*=\\s*[\\\"'][^\\\"']*\\bcolor\\s*:\\s*([#a-zA-Z0-9]+)[^\\\"']*[\\\"'][^>]*>(.*?)<\\s*/\\s*span\\s*>",
+    pattern = """<\s*span\b[^>]*\bstyle\s*=\s*["'][^"']*\bcolor\s*:\s*([#a-zA-Z0-9]+)[^"']*["'][^>]*>(.*?)<\s*/\s*span\s*>""",
     options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
 private val QUOTED_HTML_DETAILS = Regex(
@@ -322,7 +329,13 @@ private val HTML_DETAILS = Regex(
     options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
 )
 
-private val PLANT_UML_LANGUAGES = setOf("plantuml", "puml")
+/** 将受支持的围栏语言映射为离线图表预览类型。 */
+private fun diagramKindFor(language: String?): AssistantDiagramKind? = when (language) {
+    "plantuml", "puml" -> AssistantDiagramKind.PLANT_UML
+    "mermaid" -> AssistantDiagramKind.MERMAID
+    else -> null
+}
+
 private val SAFE_HTML_COLORS = setOf("red", "green", "blue", "orange", "yellow", "purple", "gray", "grey")
 private val SUPERSCRIPT_DIGITS = mapOf(
     '0' to '⁰',

@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
+import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.AppHeaderBackground
 import com.agent.app.design.AppAccent
@@ -165,6 +166,27 @@ class ChatTimelinePresentationTest {
     fun `should keep timeline at bottom when viewport height changes`() {
         assertEquals(true, shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest = true))
         assertEquals(false, shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest = false))
+    }
+
+    /** 接近时间线底部时仍应视为跟随最新输出，避免微小滚动切换状态。 */
+    @Test
+    fun `should follow latest output within the scroll threshold`() {
+        val maxScrollValue = 1_000
+
+        assertEquals(
+            true,
+            isTimelineFollowingLatest(
+                scrollValue = maxScrollValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX,
+                maxScrollValue = maxScrollValue,
+            ),
+        )
+        assertEquals(
+            false,
+            isTimelineFollowingLatest(
+                scrollValue = maxScrollValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX - 1,
+                maxScrollValue = maxScrollValue,
+            ),
+        )
     }
 
     /**

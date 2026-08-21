@@ -1,77 +1,66 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.agent.app.chat.component
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.agent.app.design.AppMuted
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
+import org.jetbrains.jewel.ui.component.ActionButton
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
-/** 在主工作区上方显示并定位可关闭的 Air 任务侧栏。 */
+/**
+ * 渲染左侧任务 Island 的白色表面和明确的收起入口。
+ *
+ * 分栏占位、滑入和拖动由 [TaskSidebarSplitLayout] 管理；此组件不再拥有覆盖层行为，
+ * 因此点击主工作区或右侧 Island 不会令它收起。
+ */
 @Composable
-internal fun BoxScope.ChatSidebarOverlay(
+internal fun TaskSidebarIsland(
     state: ChatWindowState,
     compact: Boolean,
-    visible: Boolean,
-    onSidebarPositioned: (bounds: Rect) -> Unit,
+    onCollapse: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val edgeGapDp = if (compact) 8.dp else 12.dp
-    val edgeGapPx = with(LocalDensity.current) { edgeGapDp.roundToPx() }
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInHorizontally(
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMediumLow,
-            ),
-            initialOffsetX = { width -> sidebarHiddenOffsetPx(width, edgeGapPx) },
-        ),
-        exit = slideOutHorizontally(
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMedium,
-            ),
-            targetOffsetX = { width -> sidebarHiddenOffsetPx(width, edgeGapPx) },
-        ),
-        modifier = Modifier
-            .align(Alignment.TopStart)
+    JewelSurface(
+        role = JewelSurfaceRole.CHROME,
+        radius = 12.dp,
+        solidColor = AppWorkspaceBackground,
+        borderWidth = 0.dp,
+        modifier = modifier
             .padding(
-                start = edgeGapDp,
-                top = edgeGapDp,
-                bottom = edgeGapDp,
+                top = ISLANDS_LAYOUT_GAP,
+                bottom = ISLANDS_LAYOUT_GAP,
             )
-            .width(airSidebarWidthDp(compact).dp)
-            .fillMaxHeight(),
+            .fillMaxSize(),
     ) {
-        val positionedModifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned { coordinates ->
-                onSidebarPositioned(coordinates.boundsInRoot())
+        Box(modifier = Modifier.fillMaxSize()) {
+            TaskSidebar(
+                state = state,
+                compact = compact,
+                modifier = Modifier.fillMaxSize().padding(bottom = 44.dp),
+            )
+            ActionButton(
+                onClick = onCollapse,
+                tooltip = { Text("收起任务侧栏") },
+                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+            ) {
+                Icon(
+                    key = AllIconsKeys.General.HideToolWindow,
+                    contentDescription = "收起任务侧栏",
+                    tint = AppMuted,
+                )
             }
-        JewelSurface(
-            role = JewelSurfaceRole.CHROME,
-            radius = 12.dp,
-            solidColor = AppWorkspaceBackground,
-            borderWidth = 0.dp,
-            modifier = positionedModifier,
-        ) {
-            TaskSidebar(state = state, compact = compact, modifier = Modifier.fillMaxSize())
         }
     }
 }

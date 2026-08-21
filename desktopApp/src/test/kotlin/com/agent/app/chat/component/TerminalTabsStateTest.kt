@@ -4,9 +4,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import androidx.compose.ui.graphics.Color
-import com.agent.app.design.TerminalTabActiveBackground
-import com.agent.app.design.TerminalTabHoverBackground
 import com.agent.app.design.PANEL_TAB_ICON_SIZE
 import com.agent.app.design.TERMINAL_ICON_KEY
 
@@ -112,30 +109,11 @@ class TerminalTabsStateTest {
         assertEquals("终端", reopened.tabs.single().title)
     }
 
-    /** 标签 hover 和选中状态必须使用圆角背景，并保持静止态透明。 */
+    /** 终端标签应采用随应用打包的 IntelliJ 终端工具窗口图标。 */
     @Test
-    fun `should use rounded terminal tab hover states`() {
-        assertEquals(7, TERMINAL_TAB_CORNER_RADIUS.value.toInt())
-        assertEquals(32, TERMINAL_TAB_HEIGHT.value.toInt())
-        assertEquals(TerminalTabActiveBackground, terminalTabBackground(selected = true, hovered = true))
-        assertEquals(TerminalTabHoverBackground, terminalTabBackground(selected = false, hovered = true))
-        assertEquals(Color.Transparent, terminalTabBackground(selected = false, hovered = false))
-    }
-
-    /** 终端标签应采用 16dp 的 IntelliJ 控制台图标，而不是运行/播放图标。 */
-    @Test
-    fun `should use console terminal icon at panel title size`() {
+    fun `should use bundled IntelliJ terminal icon at panel title size`() {
         assertEquals(16, PANEL_TAB_ICON_SIZE.value.toInt())
-        assertEquals("debugger/console.svg", TERMINAL_ICON_KEY.path(isNewUi = true))
-    }
-
-    /** 左右方向键应在终端标签之间循环选择。 */
-    @Test
-    fun `should cycle terminal tabs with direction keys`() {
-        val tabs = TerminalTabsState().addTab("C:/one").addTab("C:/two").tabs
-
-        assertEquals(2L, adjacentTerminalTabId(tabs, activeTabId = 1L, direction = 1))
-        assertEquals(2L, adjacentTerminalTabId(tabs, activeTabId = 1L, direction = -1))
+        assertEquals("icons/terminal.svg", TERMINAL_ICON_KEY.path(isNewUi = true))
     }
 
 }

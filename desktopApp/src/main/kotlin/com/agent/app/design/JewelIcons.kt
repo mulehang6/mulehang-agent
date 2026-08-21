@@ -2,17 +2,19 @@ package com.agent.app.design
 
 import androidx.compose.ui.unit.dp
 import org.jetbrains.jewel.ui.icon.IconKey
-import org.jetbrains.jewel.ui.icon.IntelliJIconKey
+import org.jetbrains.jewel.ui.icon.PathIconKey
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
+
+/** 应用自带图标的类加载器锚点。 */
+internal object ApplicationIconResources
 
 /** 设置和终端面板标签使用的统一图标尺寸。 */
 internal val PANEL_TAB_ICON_SIZE = 16.dp
 
-/** IntelliJ 图标包中的控制台图标，语义和外观都比执行/播放图标更贴近终端。 */
-internal val TERMINAL_ICON_KEY: IconKey = IntelliJIconKey(
-    oldUiPath = "debugger/console.svg",
-    newUiPath = "debugger/console.svg",
-    iconClass = AllIconsKeys::class.java,
+/** 使用随应用打包的 IntelliJ 终端工具窗口图标。 */
+internal val TERMINAL_ICON_KEY: IconKey = PathIconKey(
+    path = "icons/terminal.svg",
+    iconClass = ApplicationIconResources::class.java,
 )
 
 /** 将业务级标题栏动作映射到 IntelliJ 图标包。 */

@@ -83,6 +83,7 @@ import com.agent.app.design.PopupMenuBorder
 import com.agent.app.design.PopupMenuSelectedBackground
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.JewelDialog
+import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.OffsetPopupPositionProvider
 import com.agent.app.design.iconKey
 import com.agent.app.platform.pickWorkspaceDirectory
@@ -118,6 +119,7 @@ internal fun TaskSidebar(
     var sectionCollapsedOverrides by remember { mutableStateOf(emptyMap<String, Boolean>()) }
     var collapsedWorkspaceKeys by remember { mutableStateOf(emptySet<String>()) }
     val density = LocalDensity.current
+    val palette = LocalDesktopPalette.current
     val startTaskInCurrentWorkspace: () -> Unit = {
         val workspacePath = resolveWorkspaceForTaskCreation(
             activeWorkspacePath = state.ui.activeConversationOrNull?.workspacePath,
@@ -210,7 +212,7 @@ internal fun TaskSidebar(
                                 .height(TASK_SECTION_ROW_HEIGHT_DP.dp)
                                  .onSizeChanged { size -> workspaceHeaderHeightPixels = size.height }
                                  .background(
-                                     color = if (workspaceHovered) TaskSectionHoverBackground else Color.Transparent,
+                                     color = if (workspaceHovered) palette.hoverBackground else Color.Transparent,
                                      shape = RoundedCornerShape(10.dp),
                                  )
                                  .onPointerEvent(PointerEventType.Press) { event ->
@@ -302,7 +304,7 @@ internal fun TaskSidebar(
                                             .fillMaxWidth()
                                             .height(TASK_SECTION_ROW_HEIGHT_DP.dp)
                                             .background(
-                                                color = if (sectionHovered) TaskSectionHoverBackground else Color.Transparent,
+                                                color = if (sectionHovered) palette.hoverBackground else Color.Transparent,
                                                 shape = RoundedCornerShape(10.dp),
                                             )
                                             .onPointerEvent(PointerEventType.Enter) { sectionHovered = true }

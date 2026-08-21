@@ -3,7 +3,6 @@ package com.agent.app.chat.component
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.buildWorkspaceLabel
@@ -334,6 +333,11 @@ class ChatScreenPresentationTest {
         assertEquals(32L, TERMINAL_PANEL_CLOSE_DELAY_MILLIS)
         assertEquals(800f, workspaceWidthDuringTerminalMotion(800f, 280f, 0f))
         assertEquals(520f, workspaceWidthDuringTerminalMotion(800f, 280f, 1f))
+        assertEquals(280f, terminalContainerWidthDuringMotion(280f, 1f))
+        assertEquals(140f, terminalContainerWidthDuringMotion(280f, 0.5f))
+        assertEquals(0f, terminalPanelTranslationXDuringMotion(280f, 1f))
+        assertEquals(140f, terminalPanelTranslationXDuringMotion(280f, 0.5f))
+        assertEquals(280f, terminalPanelTranslationXDuringMotion(280f, 0f))
     }
 
     /** 分隔高亮必须围绕指针定位，并在轨道两端裁剪。 */
@@ -345,58 +349,34 @@ class ChatScreenPresentationTest {
         assertEquals(0f, com.agent.app.design.dividerHighlightStartPx(40f, 20f, 72f))
     }
 
-    /**
-     * 浮动侧栏宽度随紧凑布局收敛，但不参与主工作区宽度计算。
-     */
+    /** 左侧任务 Island 使用固定默认值，并在展开时以真实分栏宽度挤压主工作区。 */
     @Test
-    fun `should resolve air sidebar width independently from workspace`() {
+    fun `should reserve workspace width for the task sidebar split`() {
         assertEquals(224, airSidebarWidthDp(compact = true))
         assertEquals(292, airSidebarWidthDp(compact = false))
+        assertEquals(TASK_SIDEBAR_DESKTOP_WIDTH_DP, taskSidebarDefaultWidthDp(compact = false))
+        assertEquals(TASK_SIDEBAR_COMPACT_WIDTH_DP, taskSidebarDefaultWidthDp(compact = true))
+        assertEquals(160f, clampTaskSidebarWidth(-20f, 800f, 160f, 360f))
+        assertEquals(440f, clampTaskSidebarWidth(700f, 800f, 160f, 360f))
+        assertEquals(100f, clampTaskSidebarWidth(200f, 200f, 160f, 360f))
+        assertEquals(800f, workspaceWidthDuringTaskSidebarMotion(800f, 300f, 0f))
+        assertEquals(500f, workspaceWidthDuringTaskSidebarMotion(800f, 300f, 1f))
+        assertEquals(300f, taskSidebarContainerWidthDuringMotion(300f, 1f))
+        assertEquals(150f, taskSidebarContainerWidthDuringMotion(300f, 0.5f))
+        assertEquals(0f, taskSidebarContainerWidthDuringMotion(300f, 0f))
+        assertEquals(0f, taskSidebarTranslationXDuringMotion(300f, 1f))
+        assertEquals(-150f, taskSidebarTranslationXDuringMotion(300f, 0.5f))
+        assertEquals(-300f, taskSidebarTranslationXDuringMotion(300f, 0f))
+        assertEquals(8f, TASK_SIDEBAR_DIVIDER_WIDTH.value)
+        assertEquals(8f, ISLANDS_LAYOUT_GAP.value)
+        assertEquals(355f, taskSidebarWidthAfterDrag(dragStartWidthPx = 292f, accumulatedDragXPx = 63f))
+        assertEquals(274f, taskSidebarWidthAfterDrag(dragStartWidthPx = 292f, accumulatedDragXPx = -18f))
     }
 
-    /**
-     * 侧栏应从左侧完整移出窗口，而不是在原位置渐显。
-     */
+    /** 侧栏默认关闭，打开后的收起行为只由显式菜单或收起按钮触发。 */
     @Test
-    fun `should place hidden sidebar beyond left edge`() {
-        assertEquals(-304, sidebarHiddenOffsetPx(sidebarWidthPx = 292, edgeGapPx = 12))
-    }
-
-    /**
-     * 侧栏默认关闭；打开后只响应面板外部的点击。
-     */
-    @Test
-    fun `should dismiss visible sidebar only for outside pointer`() {
-        val bounds = Rect(left = 12f, top = 56f, right = 304f, bottom = 800f)
-
+    fun `should start sidebar closed without pointer dismissal policy`() {
         assertEquals(false, SIDEBAR_VISIBLE_BY_DEFAULT)
-        assertEquals(
-            false,
-            shouldDismissSidebar(
-                sidebarVisibleAtPointerPress = true,
-                sidebarVisibleOnRelease = true,
-                sidebarBounds = bounds,
-                pointerPosition = Offset(120f, 120f),
-            ),
-        )
-        assertEquals(
-            true,
-            shouldDismissSidebar(
-                sidebarVisibleAtPointerPress = true,
-                sidebarVisibleOnRelease = true,
-                sidebarBounds = bounds,
-                pointerPosition = Offset(600f, 120f),
-            ),
-        )
-        assertEquals(
-            false,
-            shouldDismissSidebar(
-                sidebarVisibleAtPointerPress = false,
-                sidebarVisibleOnRelease = true,
-                sidebarBounds = bounds,
-                pointerPosition = Offset(600f, 120f),
-            ),
-        )
     }
 
     /**
@@ -462,6 +442,37 @@ class ChatScreenPresentationTest {
         assertEquals(48, TOOL_RAIL_WIDTH_DP)
         assertEquals(40, TOOL_RAIL_ACTION_SIZE_DP)
         assertEquals(22, TOOL_RAIL_ICON_SIZE_DP)
+    }
+
+    /** 浅色 Rail 悬浮使用中性高对比背景，并使终端与设置图标共用前景规则。 */
+    @Test
+    fun `should keep light rail hover readable for terminal and settings icons`() {
+        val lightPalette = desktopPalette(DesktopThemeMode.LIGHT)
+
+        assertEquals(
+            Color.Transparent,
+            toolRailActionBackground(selected = false, hovered = false, palette = lightPalette),
+        )
+        assertEquals(
+            Color(0xFFD5D9E0),
+            toolRailActionBackground(selected = false, hovered = true, palette = lightPalette),
+        )
+        assertEquals(
+            lightPalette.selectedBackground,
+            toolRailActionBackground(selected = true, hovered = true, palette = lightPalette),
+        )
+        assertEquals(
+            lightPalette.muted,
+            toolRailIconTint(selected = false, hovered = false, palette = lightPalette),
+        )
+        assertEquals(
+            lightPalette.text,
+            toolRailIconTint(selected = false, hovered = true, palette = lightPalette),
+        )
+        assertEquals(
+            lightPalette.text,
+            toolRailIconTint(selected = true, hovered = true, palette = lightPalette),
+        )
     }
 
     /**

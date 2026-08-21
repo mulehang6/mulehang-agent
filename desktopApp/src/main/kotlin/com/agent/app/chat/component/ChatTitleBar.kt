@@ -8,6 +8,7 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,8 +52,10 @@ import mulehang_agent.desktopapp.generated.resources.Res
 import mulehang_agent.desktopapp.generated.resources.mulehang_agent
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.jewel.ui.component.Dropdown
+import org.jetbrains.jewel.ui.component.ActionButton
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconActionButton
+import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.window.DecoratedWindowScope
@@ -78,7 +81,7 @@ internal fun DecoratedWindowScope.ChatTitleBar(
     state: ChatWindowState,
     projectRoot: Path?,
     sidebarVisible: Boolean,
-    onToggleSidebar: () -> Unit,
+    onSidebarVisibilityChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onRequestClose: () -> Unit,
     onGlobalFeedback: (AppFeedbackState) -> Unit,
@@ -93,6 +96,7 @@ internal fun DecoratedWindowScope.ChatTitleBar(
         titleBarProjectLabel(activeConversation?.workspacePath, activeConversation?.workspaceName, projectRoot)
     var branchName by remember(workspacePath) { mutableStateOf("") }
     var branchRefreshToken by remember(workspacePath) { mutableStateOf(0) }
+    var applicationMenuVisible by remember { mutableStateOf(false) }
     val projectIconPainter = painterResource(Res.drawable.mulehang_agent)
     val palette = LocalDesktopPalette.current
     val titleBarSeparatorHeightPx = with(LocalDensity.current) {
@@ -124,29 +128,53 @@ internal fun DecoratedWindowScope.ChatTitleBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Dropdown(
-                modifier = Modifier
-                    .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
-                    .clientRegion(TITLE_BAR_APPLICATION_CLIENT_REGION_KEY),
-                menuContent = {
-                    selectableItem(selected = false, onClick = onOpenSettings) {
-                        Text(TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL)
+            Box {
+                ActionButton(
+                    onClick = { applicationMenuVisible = true },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier
+                        .size(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                        .clientRegion(TITLE_BAR_APPLICATION_CLIENT_REGION_KEY),
+                ) {
+                    Image(
+                        painter = projectIconPainter,
+                        contentDescription = "mulehang-agent 菜单",
+                        modifier = Modifier.size(HEADER_PROJECT_ICON_SIZE_DP.dp),
+                    )
+                }
+                if (applicationMenuVisible) {
+                    PopupMenu(
+                        onDismissRequest = {
+                            applicationMenuVisible = false
+                            true
+                        },
+                        horizontalAlignment = Alignment.Start,
+                    ) {
+                        selectableItem(
+                            selected = false,
+                            onClick = {
+                                applicationMenuVisible = false
+                                onOpenSettings()
+                            },
+                        ) {
+                            Text(TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL)
+                        }
+                        selectableItem(
+                            selected = false,
+                            onClick = {
+                                applicationMenuVisible = false
+                                onRequestClose()
+                            },
+                        ) {
+                            Text(TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL)
+                        }
                     }
-                    selectableItem(selected = false, onClick = onRequestClose) {
-                        Text(TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL)
-                    }
-                },
-            ) {
-                Image(
-                    painter = projectIconPainter,
-                    contentDescription = "mulehang-agent 菜单",
-                    modifier = Modifier.size(HEADER_PROJECT_ICON_SIZE_DP.dp),
-                )
+                }
             }
             IconActionButton(
                 key = AllIconsKeys.General.Menu,
                 contentDescription = if (sidebarVisible) "隐藏任务侧栏" else "显示任务侧栏",
-                onClick = onToggleSidebar,
+                onClick = { onSidebarVisibilityChange(!sidebarVisible) },
                 modifier = Modifier
                     .size(TITLE_BAR_ACTION_HEIGHT_DP.dp)
                     .clientRegion(TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY),
@@ -223,12 +251,14 @@ internal fun DecoratedWindowScope.ChatTitleBar(
                             key = AllIconsKeys.Vcs.Branch,
                             contentDescription = "当前分支",
                             modifier = Modifier.size(18.dp),
+                            tint = palette.muted,
                         )
                         Text(
                             text = branchName,
                             modifier = Modifier.padding(start = 4.dp),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            color = palette.text,
                         )
                     }
                 }
@@ -243,6 +273,7 @@ private fun ProjectTitleBarChip(
     projectLabel: String,
     onProjectIconPositioned: (Float) -> Unit,
 ) {
+    val palette = LocalDesktopPalette.current
     Row(
         modifier = Modifier.height(TITLE_BAR_ACTION_HEIGHT_DP.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -264,7 +295,7 @@ private fun ProjectTitleBarChip(
         }
         Text(
             text = projectLabel,
-            color = Color.White,
+            color = palette.text,
             modifier = Modifier.padding(start = 6.dp).widthIn(max = 180.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

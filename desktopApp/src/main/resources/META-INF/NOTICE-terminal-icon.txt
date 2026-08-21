@@ -1,0 +1,5 @@
+The terminal icon at icons/terminal.svg is copied from the IntelliJ Platform
+Terminal plugin (plugins/terminal/resources/icons/expui/toolwindow/terminal.svg).
+
+Copyright 2000-2025 JetBrains s.r.o. and contributors.
+Licensed under the Apache License, Version 2.0.

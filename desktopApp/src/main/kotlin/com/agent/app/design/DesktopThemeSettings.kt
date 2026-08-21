@@ -65,9 +65,6 @@ internal data class TerminalPalette(
     val background: Color,
     val foreground: Color,
     val scrollbarThumb: Color,
-    val tabActiveBackground: Color,
-    val tabHoverBackground: Color,
-    val tabSelectedBorder: Color,
 )
 
 /** 将“跟随系统”解析为可渲染的深色或浅色模式，便于测试系统分支。 */
@@ -88,12 +85,12 @@ internal fun desktopPalette(
     return if (resolvedMode == DesktopThemeMode.LIGHT) {
         DesktopPalette(
             isDark = false,
-            frameBackground = Color(0xFFF3F5F7),
-            background = Color(0xFFF3F5F7),
-            headerBackground = Color(0xFFF3F5F7),
+            frameBackground = Color(0xFFE9EAEE),
+            background = Color(0xFFE9EAEE),
+            headerBackground = Color(0xFFE9EAEE),
             titleBarGradientStart = Color(0xFFD8EDF0),
             workspaceBackground = Color(0xFFFFFFFF),
-            sidebarBackground = Color(0xFFF3F5F7),
+            sidebarBackground = Color(0xFFE9EAEE),
             panelBackground = Color(0xFFFFFFFF),
             selectedBackground = DesktopAccentBlue.copy(alpha = 0.18f),
             hoverBackground = Color(0xFFE6E9EE),
@@ -120,9 +117,6 @@ internal fun desktopPalette(
                 background = Color(0xFFFFFFFF),
                 foreground = Color(0xFF1F2329),
                 scrollbarThumb = Color(0xFFA6ABB4),
-                tabActiveBackground = DesktopAccentBlue.copy(alpha = 0.14f),
-                tabHoverBackground = Color(0xFFE3E7EC),
-                tabSelectedBorder = DesktopAccentBlue,
             ),
         )
     } else {
@@ -160,9 +154,6 @@ internal fun desktopPalette(
                 background = Color(0xFF191A1C),
                 foreground = Color(0xFFE6E8EC),
                 scrollbarThumb = Color(0xFF4B4D52),
-                tabActiveBackground = Color(0xFF202A38),
-                tabHoverBackground = Color(0xFF24272D),
-                tabSelectedBorder = Color(0xFF2F81D6),
             ),
         )
     }
@@ -175,13 +166,6 @@ internal val LocalDesktopPalette = compositionLocalOf { defaultDesktopPalette }
 
 private var applicationDesktopPalette by mutableStateOf(defaultDesktopPalette)
 
-@Volatile
-private var desktopInteropPalette: DesktopPalette = defaultDesktopPalette
-
-/** 供 Swing/JediTerm 等非 Compose 绘制路径安全读取的当前桌面色板。 */
-internal val DesktopInteropPalette: DesktopPalette
-    get() = desktopInteropPalette
-
 /** 在应用根部同时提供局部 palette，并更新旧组件使用的兼容访问器。 */
 @Composable
 internal fun DesktopThemePaletteProvider(
@@ -190,15 +174,12 @@ internal fun DesktopThemePaletteProvider(
 ) {
     SideEffect {
         applicationDesktopPalette = palette
-        desktopInteropPalette = palette
     }
     CompositionLocalProvider(LocalDesktopPalette provides palette, content = content)
 }
 
-/** 以下访问器保留既有调用点，并通过 Compose state 触发整树重组。 */
-internal val AppBackground: Color get() = applicationDesktopPalette.background
-/** 窗口底板在标题栏、Rail 与 Islands 间保持连续，避免边框切割视觉层级。 */
-internal val AppFrameBackground: Color get() = applicationDesktopPalette.frameBackground
+/** 保留标题栏背景 token，供尚未迁移的调用点继续链接。 */
+@Suppress("unused")
 internal val AppHeaderBackground: Color get() = applicationDesktopPalette.headerBackground
 internal val AppWorkspaceBackground: Color get() = applicationDesktopPalette.workspaceBackground
 internal val AppSidebarBackground: Color get() = applicationDesktopPalette.sidebarBackground
@@ -224,8 +205,7 @@ internal val AppDanger: Color get() = applicationDesktopPalette.danger
 internal val PopupMenuBackground: Color get() = applicationDesktopPalette.popupBackground
 internal val PopupMenuHoverBackground: Color get() = applicationDesktopPalette.popupHoverBackground
 internal val PopupMenuSelectedBackground: Color get() = applicationDesktopPalette.popupSelectedBackground
+/** 保留菜单边框 token，避免分拆的侧栏组件发生二进制链接回归。 */
+@Suppress("unused")
 internal val PopupMenuBorder: Color get() = applicationDesktopPalette.popupBorder
 internal val TerminalSurfaceBackground: Color get() = applicationDesktopPalette.terminal.background
-internal val TerminalTabActiveBackground: Color get() = applicationDesktopPalette.terminal.tabActiveBackground
-internal val TerminalTabHoverBackground: Color get() = applicationDesktopPalette.terminal.tabHoverBackground
-internal val TerminalTabSelectedBorder: Color get() = applicationDesktopPalette.terminal.tabSelectedBorder

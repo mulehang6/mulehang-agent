@@ -1,81 +1,24 @@
-@file:OptIn(
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
-    androidx.compose.ui.ExperimentalComposeUiApi::class,
-)
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.PANEL_TAB_ICON_SIZE
-import com.agent.app.design.TerminalTabActiveBackground
-import com.agent.app.design.TerminalTabHoverBackground
-import com.agent.app.design.TerminalTabSelectedBorder
 import com.agent.app.design.iconKey
-import org.jetbrains.jewel.ui.component.Icon
-import org.jetbrains.jewel.ui.component.IconActionButton
-import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
-/** 终端标签沿用设置标签的统一圆角半径。 */
-internal val TERMINAL_TAB_CORNER_RADIUS = DOCK_TAB_CORNER_RADIUS
-
-/** 终端标签条中单个标签沿用共享 Dock 高度。 */
-internal val TERMINAL_TAB_HEIGHT = DOCK_TAB_HEIGHT
-
-/** 根据标签状态返回圆角标签的静态背景色；hover 不使用额外动画。 */
-internal fun terminalTabBackground(selected: Boolean, hovered: Boolean): Color = when {
-    selected -> TerminalTabActiveBackground
-    hovered -> TerminalTabHoverBackground
-    else -> Color.Transparent
-}
-
-/** 返回按方向循环后的终端标签 ID，供键盘左右方向键选择。 */
-internal fun adjacentTerminalTabId(
-    tabs: List<TerminalTab>,
-    activeTabId: Long?,
-    direction: Int,
-): Long? {
-    if (tabs.isEmpty() || direction == 0) return activeTabId
-    val activeIndex = tabs.indexOfFirst { it.id == activeTabId }.takeIf { it >= 0 } ?: 0
-    val nextIndex = Math.floorMod(activeIndex + direction, tabs.size)
-    return tabs[nextIndex].id
-}
-
-/** 渲染带圆角 hover 的紧凑终端标签栏，并保留鼠标和键盘交互。 */
+/** 渲染 IDEA Islands 风格终端标签，并保留 Jewel 的选择、关闭与右键菜单。 */
 @Composable
 internal fun TerminalTabStrip(
     tabs: List<TerminalTab>,
@@ -85,67 +28,27 @@ internal fun TerminalTabStrip(
     onContextMenuRequested: (Long, Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        tabs.forEach { tab ->
-            TerminalTabItem(
-                tab = tab,
-                selected = tab.id == activeTabId,
-                tabs = tabs,
-                activeTabId = activeTabId,
-                onSelectTab = onSelectTab,
-                onCloseTab = onCloseTab,
-                onContextMenuRequested = onContextMenuRequested,
-            )
-        }
+    val tabData = tabs.map { tab ->
+        var tabOrigin by remember(tab.id) { mutableStateOf(Offset.Zero) }
+        IslandsTab(
+            label = tab.title,
+            selected = tab.id == activeTabId,
+            iconKey = RightRailGlyph.TERMINAL.iconKey,
+            closable = true,
+            onClose = { onCloseTab(tab.id) },
+            onClick = { onSelectTab(tab.id) },
+            modifier = Modifier
+                .onGloballyPositioned { tabOrigin = it.positionInRoot() }
+                .onPointerEvent(PointerEventType.Press) { event ->
+                    if (event.buttons.isSecondaryPressed) {
+                        val pointer = event.changes.firstOrNull()?.position ?: Offset.Zero
+                        onContextMenuRequested(tab.id, tabOrigin + pointer)
+                    }
+                },
+        )
     }
-}
-
-/** 渲染一个终端标签并处理选择、关闭、右键菜单及方向键切换。 */
-@Composable
-private fun TerminalTabItem(
-    tab: TerminalTab,
-    selected: Boolean,
-    tabs: List<TerminalTab>,
-    activeTabId: Long?,
-    onSelectTab: (Long) -> Unit,
-    onCloseTab: (Long) -> Unit,
-    onContextMenuRequested: (Long, Offset) -> Unit,
-) {
-    var tabOrigin by remember(tab.id) { mutableStateOf(Offset.Zero) }
-    DockTab(
-        label = tab.title,
-        iconKey = RightRailGlyph.TERMINAL.iconKey,
-        selected = selected,
-        onClick = { onSelectTab(tab.id) },
-        onClose = { onCloseTab(tab.id) },
-        modifier = Modifier
-            .onGloballyPositioned { tabOrigin = it.positionInRoot() }
-            .onPointerEvent(PointerEventType.Press) { event ->
-                if (event.buttons.isSecondaryPressed) {
-                    val pointer = event.changes.firstOrNull()?.position ?: Offset.Zero
-                    onContextMenuRequested(tab.id, tabOrigin + pointer)
-                }
-            }
-            .onPreviewKeyEvent { event ->
-                val direction = when (event.key) {
-                    Key.DirectionLeft -> -1
-                    Key.DirectionRight -> 1
-                    else -> 0
-                }
-                if (event.type != KeyEventType.KeyDown || direction == 0) {
-                    false
-                } else {
-                    adjacentTerminalTabId(tabs, activeTabId, direction)?.let(onSelectTab)
-                    true
-                }
-            }
-            .focusable(),
-        selectedBackground = TerminalTabActiveBackground,
-        hoverBackground = TerminalTabHoverBackground,
-        selectedBorder = TerminalTabSelectedBorder,
+    IslandsTabStrip(
+        tabs = tabData,
+        modifier = modifier.fillMaxWidth(),
     )
 }

@@ -25,15 +25,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.AppChipBackground
-import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppSelectedBackground
 import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppText
+import com.agent.app.design.DesktopPalette
+import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.buildRightRailGroups
 import com.agent.app.design.iconKey
+import com.agent.app.design.titleBarHoverBackground
 import com.agent.app.design.tooltip
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
@@ -50,21 +51,23 @@ internal const val TOOL_RAIL_ICON_SIZE_DP = 22
 /** Rail 必须透明，以承接窗口根画布的 Islands 项目环境光。 */
 internal val TOOL_RAIL_BACKGROUND = Color.Transparent
 
-/**
- * 桌面布局左侧的预留工具区，与右侧工具区保持相同宽度。
- */
-@Composable
-internal fun ToolRailPlaceholder(
-    modifier: Modifier = Modifier,
-) {
-    JewelSurface(
-        role = JewelSurfaceRole.CHROME,
-        radius = 0.dp,
-        borderWidth = 0.dp,
-        solidColor = TOOL_RAIL_BACKGROUND,
-        modifier = modifier.width(TOOL_RAIL_WIDTH_DP.dp).fillMaxHeight(),
-    ) { }
+/** 返回工具栏动作的主题背景，普通悬浮使用与标题栏一致的中性高对比色。 */
+internal fun toolRailActionBackground(
+    selected: Boolean,
+    hovered: Boolean,
+    palette: DesktopPalette,
+): Color = when {
+    selected -> palette.selectedBackground
+    hovered -> titleBarHoverBackground(palette.isDark)
+    else -> Color.Transparent
 }
+
+/** 返回终端和设置等工具栏图标共享的主题语义 tint。 */
+internal fun toolRailIconTint(
+    selected: Boolean,
+    hovered: Boolean,
+    palette: DesktopPalette,
+): Color = if (selected || hovered) palette.text else palette.muted
 
 /**
  * 应用级操作后的轻量 toast 反馈。
@@ -185,13 +188,14 @@ private fun ToolRailAction(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val palette = LocalDesktopPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
-    val background = when {
-        selected -> AppSelectedBackground
-        hovered -> AppHoverBackground
-        else -> Color.Transparent
-    }
+    val background = toolRailActionBackground(
+        selected = selected,
+        hovered = hovered,
+        palette = palette,
+    )
 
     Tooltip(tooltip = { Text(glyph.tooltip) }) {
         JewelSurface(
@@ -217,6 +221,11 @@ private fun ToolRailAction(
                     key = glyph.iconKey,
                     contentDescription = glyph.tooltip,
                     modifier = Modifier.size(TOOL_RAIL_ICON_SIZE_DP.dp),
+                    tint = toolRailIconTint(
+                        selected = selected,
+                        hovered = hovered,
+                        palette = palette,
+                    ),
                 )
             }
         }

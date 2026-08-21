@@ -75,9 +75,11 @@ import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.ComposerInputBackground
+import com.agent.app.design.DesktopPalette
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.iconKey
 import com.agent.app.platform.pickFiles
 import com.agent.shared.chat.model.ExecutionState
@@ -104,6 +106,9 @@ internal const val COMPOSER_INPUT_VERTICAL_PADDING_DP = 8
 internal const val PERMISSION_MENU_HOVERED_ALPHA = 0.56f
 internal const val PERMISSION_MENU_SELECTED_ALPHA = 0.76f
 internal const val PERMISSION_MENU_PRESSED_ALPHA = 0.86f
+
+/** 返回权限菜单在当前主题下可读的文字颜色。 */
+internal fun permissionPresetMenuTextColor(palette: DesktopPalette): Color = palette.text
 
 /** 返回可编辑内容和只读占位符共同使用的左上角坐标。 */
 internal fun composerInputContentOffset(): DpOffset = DpOffset(
@@ -585,6 +590,7 @@ private fun PermissionPresetMenuRow(
     presentation: PermissionPresentation,
     selected: Boolean,
 ) {
+    val palette = LocalDesktopPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     var pressed by remember { mutableStateOf(false) }
@@ -607,7 +613,7 @@ private fun PermissionPresetMenuRow(
     ) {
         Text(
             text = presentation.label,
-            style = JewelTheme.defaultTextStyle.copy(color = Color.White),
+            style = JewelTheme.defaultTextStyle.copy(color = permissionPresetMenuTextColor(palette)),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
     }

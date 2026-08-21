@@ -3,6 +3,8 @@ package com.agent.app.chat.component
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.desktopPalette
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
 import kotlin.test.Test
@@ -85,5 +87,14 @@ class ComposerPanelTest {
             tone.copy(alpha = PERMISSION_MENU_SELECTED_ALPHA),
             permissionPresetMenuRowBackground(tone, selected = true, hovered = true, pressed = true),
         )
+    }
+
+    /** 浅色菜单的未选权限项使用语义前景色，不能保留固定白字。 */
+    @Test
+    fun `should use readable theme text for permission menu`() {
+        val lightPalette = desktopPalette(DesktopThemeMode.LIGHT)
+
+        assertEquals(lightPalette.text, permissionPresetMenuTextColor(lightPalette))
+        assertFalse(permissionPresetMenuTextColor(lightPalette) == Color.White)
     }
 }

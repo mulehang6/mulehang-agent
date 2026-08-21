@@ -34,16 +34,16 @@ class DesktopThemeSettingsTest {
         assertEquals(DesktopAccentBlue, palette.accent)
     }
 
-    /** 浅色 palette 必须同时切换表面、文字和菜单，以避免只改变 Material 控件。 */
+    /** 浅色 palette 的非 Island 基底必须统一为 #E9EAEE，并保持文字可读。 */
     @Test
     fun `should provide readable light palette`() {
         val palette = desktopPalette(DesktopThemeMode.LIGHT)
 
         assertEquals(false, palette.isDark)
-        assertEquals(Color(0xFFF3F5F7), palette.frameBackground)
-        assertEquals(Color(0xFFF3F5F7), palette.background)
-        assertEquals(Color(0xFFF3F5F7), palette.headerBackground)
-        assertEquals(Color(0xFFF3F5F7), palette.sidebarBackground)
+        assertEquals(Color(0xFFE9EAEE), palette.frameBackground)
+        assertEquals(Color(0xFFE9EAEE), palette.background)
+        assertEquals(Color(0xFFE9EAEE), palette.headerBackground)
+        assertEquals(Color(0xFFE9EAEE), palette.sidebarBackground)
         assertEquals(Color(0xFFFFFFFF), palette.workspaceBackground)
         assertEquals(Color(0xFF202124), palette.text)
         assertEquals(DesktopAccentBlue, palette.accent)
@@ -79,5 +79,13 @@ class DesktopThemeSettingsTest {
 
         assertEquals(Color(0xFF28434A), desktopPalette(DesktopThemeMode.DARK).titleBarGradientStart)
         assertEquals(54f, metrics.height.value)
+    }
+
+    /** 浅色标题栏的常规悬浮必须使用中性灰，不能误用蓝色选中态。 */
+    @Test
+    fun `should use neutral title bar hover colors for both themes`() {
+        assertEquals(Color(0xFFD5D9E0), titleBarHoverBackground(isDark = false))
+        assertEquals(Color(0xFFC7CCD4), titleBarPressedBackground(isDark = false))
+        assertEquals(Color.White.copy(alpha = 0.12f), titleBarHoverBackground(isDark = true))
     }
 }

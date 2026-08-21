@@ -139,7 +139,6 @@ internal fun taskContextMenuLabels(): List<String> = listOf("Fork", "删除", "A
 internal fun workspaceContextMenuLabels(): List<String> = listOf("编辑", "删除")
 
 internal val TaskContextMenuWidth = 180.dp
-internal val TaskSectionHoverBackground = Color(0xFF303744)
 
 /**
  * 将条目内部的鼠标像素坐标换算为菜单相对锚点的 Dp 偏移，使右键菜单紧贴光标打开。

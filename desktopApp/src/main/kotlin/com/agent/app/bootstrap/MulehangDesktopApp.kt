@@ -1,6 +1,7 @@
 package com.agent.app.bootstrap
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -128,7 +129,7 @@ internal fun MulehangDesktopApp(
                 state = windowState,
                 projectRoot = projectRootState.value,
                 sidebarVisible = sidebarVisible,
-                onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
                 onOpenSettings = { settingsVisible = true },
                 onRequestClose = requestClose,
                 onGlobalFeedback = {},
@@ -151,13 +152,15 @@ internal fun MulehangDesktopApp(
                         originYPx = contentOriginYPx,
                     )
             } else {
-                Modifier.fillMaxSize()
+                Modifier
+                    .fillMaxSize()
+                    .background(palette.background)
             }
             Box(modifier = contentModifier) {
                 ChatScreen(
                     state = windowState,
                     sidebarVisible = sidebarVisible,
-                    onToggleSidebar = { sidebarVisible = !sidebarVisible },
+                    onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
                     projectRoot = projectRootState.value,
                     userHome = userHome,
                     themeMode = themeMode,

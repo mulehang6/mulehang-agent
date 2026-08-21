@@ -1,26 +1,31 @@
 package com.agent.app.chat.component
 
-import kotlin.test.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import com.agent.app.design.AppMarkdownLink
-import java.io.ByteArrayInputStream
-import javax.imageio.ImageIO
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.svg.SVGDOM
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.Comparator
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.jewel.foundation.ExperimentalJewelApi
+import org.jetbrains.jewel.intui.standalone.code.highlighting.SimpleCodeHighlighter
+import org.jetbrains.jewel.intui.standalone.code.highlighting.SyntaxHighlightColors
 
-/** 验证流式 Markdown 与图表的轻量渲染边界。 */
+/** 验证流式 Markdown、Jewel 高亮和离线图表预览之间的渲染边界。 */
+@OptIn(ExperimentalJewelApi::class)
 class AssistantMarkdownRenderPolicyTest {
 
-    /** 链接应使用克制的应用强调色，而不是富文本库的默认纯蓝。 */
+    /** 链接应使用应用强调色，而不是 Markdown 库的默认纯蓝。 */
     @Test
-    fun `should use muted app accent for markdown links`() {
+    fun usesMutedAppAccentForMarkdownLinks() {
         val style = assistantMarkdownLinkStyle()
 
         assertEquals(AppMarkdownLink, style.color)
@@ -28,16 +33,9 @@ class AssistantMarkdownRenderPolicyTest {
         assertEquals(TextDecoration.Underline, style.textDecoration)
     }
 
-    /** 未完成的流式回复不能把不完整图表交给图表引擎。 */
+    /** 安全 HTML 语义应先归一化，再交由 Markdown parser 处理。 */
     @Test
-    fun `should defer diagram rendering until assistant response is complete`() {
-        assertFalse(shouldRenderMarkdownDiagram(isStreaming = true))
-        assertTrue(shouldRenderMarkdownDiagram(isStreaming = false))
-    }
-
-    /** 安全的 HTML 语义应转成 Markdown，而不是在 Compose Desktop 中原样打印标签。 */
-    @Test
-    fun `should normalize safe html markup before markdown parsing`() {
+    fun normalizesSafeHtmlMarkupBeforeMarkdownParsing() {
         val content = normalizeAssistantMarkdown("<div><b>重点</b><br>下一行</div>")
 
         assertFalse(content.contains("<div"))
@@ -46,23 +44,50 @@ class AssistantMarkdownRenderPolicyTest {
         assertTrue(content.contains("下一行"))
     }
 
-    /** 完整的 PlantUML 围栏应从普通 Markdown 中抽出，供原生图表组件单独绘制。 */
+    /** 已闭合的 PlantUML 围栏必须作为离线图表块提取。 */
     @Test
-    fun `should extract complete plantuml fences as diagram blocks`() {
+    fun extractsCompletedPlantUmlFenceAsDiagramBlock() {
         val blocks = splitAssistantMarkdownBlocks(
             "说明\n```plantuml\n@startuml\nAlice -> Bob: Hi\n@enduml\n```\n结尾",
         )
 
         assertEquals(3, blocks.size)
         assertIs<AssistantMarkdownBlock.Text>(blocks[0])
-        assertIs<AssistantMarkdownBlock.PlantUml>(blocks[1])
-        assertEquals("@startuml\nAlice -> Bob: Hi\n@enduml", (blocks[1] as AssistantMarkdownBlock.PlantUml).source)
+        val diagram = assertIs<AssistantMarkdownBlock.Diagram>(blocks[1])
+        assertEquals(AssistantDiagramKind.PLANT_UML, diagram.kind)
+        assertEquals("@startuml\nAlice -> Bob: Hi\n@enduml", diagram.source)
         assertIs<AssistantMarkdownBlock.Text>(blocks[2])
     }
 
-    /** 普通 fenced code 应保留语言标记，交由原生高亮组件渲染。 */
+    /** PlantUML 别名与 Mermaid 都应映射到各自的图表类型。 */
     @Test
-    fun `should extract fenced code language and source`() {
+    fun recognizesSupportedDiagramFenceLanguages() {
+        val blocks = splitAssistantMarkdownBlocks(
+            "```puml\n@startuml\n@enduml\n```\n```mermaid\ngraph TD\nA --> B\n```",
+        )
+
+        val diagrams = blocks.filterIsInstance<AssistantMarkdownBlock.Diagram>()
+        assertEquals(
+            listOf(AssistantDiagramKind.PLANT_UML, AssistantDiagramKind.MERMAID),
+            diagrams.map(AssistantMarkdownBlock.Diagram::kind),
+        )
+    }
+
+    /** 未闭合的流式 Mermaid 围栏只能作为代码显示，防止触发半成品预览。 */
+    @Test
+    fun keepsUnclosedStreamingDiagramFenceAsCodeBlock() {
+        val streaming = parseAssistantMarkdownStreamingDocument("```mermaid\ngraph TD\nA --> B")
+        val completed = parseAssistantMarkdownDocument("```mermaid\ngraph TD\nA --> B\n```")
+
+        val streamingCode = assertIs<AssistantMarkdownBlock.Code>(streaming.blocks.single())
+        assertEquals("mermaid", streamingCode.language)
+        assertEquals("graph TD\nA --> B", streamingCode.source)
+        assertIs<AssistantMarkdownBlock.Diagram>(completed.blocks.single())
+    }
+
+    /** 普通 fenced code 应保留语言标记，交给 Jewel 代码块显示。 */
+    @Test
+    fun preservesRegularFencedCodeLanguageAndSource() {
         val blocks = splitAssistantMarkdownBlocks("```python\ndef greet():\n    return \"hi\"\n```")
 
         val code = assertIs<AssistantMarkdownBlock.Code>(blocks.single())
@@ -70,30 +95,152 @@ class AssistantMarkdownRenderPolicyTest {
         assertEquals("def greet():\n    return \"hi\"", code.source)
     }
 
-    /** Mermaid 在流式阶段仅作为代码显示，围栏闭合后仍保持相同的代码块模型。 */
+    /** Jewel 的内置 Python grammar 应为关键字和字符串给出不同颜色。 */
     @Test
-    fun `should keep streaming mermaid fences as code blocks`() {
-        val streaming = parseAssistantMarkdownStreamingDocument("```mermaid\ngraph TD\nA --> B")
-        val completed = parseAssistantMarkdownDocument("```mermaid\ngraph TD\nA --> B\n```")
+    fun highlightsKnownLanguageWithJewelHighlighter() = runBlocking {
+        val colors = SyntaxHighlightColors.light()
+        val highlighter = SimpleCodeHighlighter(
+            colors = colors,
+            additionalGrammars = emptyList(),
+            highlightDispatcher = Dispatchers.Unconfined,
+        )
 
-        assertEquals(
-            assertIs<AssistantMarkdownBlock.Code>(completed.blocks.single()).copy(source = "graph TD\nA --> B"),
-            assertIs<AssistantMarkdownBlock.Code>(streaming.blocks.single()),
+        val highlighted = highlighter.highlight("def greet(): return \"hi\"", language = "python").first()
+
+        assertTrue(highlighted.spanStyles.any { it.item.color == colors.keyword })
+        assertTrue(highlighted.spanStyles.any { it.item.color == colors.string })
+    }
+
+    /** 未知语言应稳定回退成可复制、未着色的纯文本。 */
+    @Test
+    fun fallsBackToPlainTextForUnknownLanguage() = runBlocking {
+        val source = "custom syntax"
+        val highlighter = SimpleCodeHighlighter(
+            colors = SyntaxHighlightColors.light(),
+            additionalGrammars = emptyList(),
+            highlightDispatcher = Dispatchers.Unconfined,
+        )
+
+        val highlighted = highlighter.highlight(source, language = "unknown-language").first()
+
+        assertEquals(source, highlighted.text)
+        assertTrue(highlighted.spanStyles.isEmpty())
+    }
+
+    /** 图表页面可携带 query 和 fragment，但不得加载资源根目录以外或联网地址。 */
+    @Test
+    fun permitsOnlyPackagedDiagramResourceUrls() {
+        val resourceDirectory = Path.of("D:/mulehang/diagram").toAbsolutePath().normalize()
+        val pageUrl = resourceDirectory.resolve("diagram.html").toUri().toString() +
+            "?kind=mermaid&theme=dark#encoded-source"
+
+        assertTrue(isAllowedDiagramResourceUrl(pageUrl, resourceDirectory))
+        assertTrue(
+            isAllowedDiagramResourceUrl(
+                resourceDirectory.resolve("mermaid/mermaid.min.js").toUri().toString(),
+                resourceDirectory,
+            ),
+        )
+        assertFalse(isAllowedDiagramResourceUrl("https://cdn.example.com/mermaid.js", resourceDirectory))
+        assertFalse(
+            isAllowedDiagramResourceUrl(
+                resourceDirectory.resolve("../outside.html").toUri().toString(),
+                resourceDirectory,
+            ),
         )
     }
 
-    /** Python 关键字与字符串必须取得不同于普通文本的高亮颜色。 */
+    /** JCEF 页面状态必须前进到 ready，且页面结束加载不能覆盖已经收到的完成握手。 */
     @Test
-    fun `should highlight python keywords and strings`() {
-        val highlighted = highlightCode("def greet(): return \"hi\"", language = "python")
+    fun tracksOfflineDiagramBrowserStatesWithoutRegression() {
+        val pageLoaded = diagramPreviewStateAfterBrowserStatus(
+            DiagramPreviewState.BrowserLoading,
+            DiagramBrowserStatus.PageLoaded,
+        )
+        val ready = diagramPreviewStateAfterBrowserStatus(pageLoaded, DiagramBrowserStatus.Ready(1.5f))
 
-        assertTrue(highlighted.spanStyles.any { it.item.color == CodeKeywordColor })
-        assertTrue(highlighted.spanStyles.any { it.item.color == CodeStringColor })
+        assertEquals(DiagramPreviewState.PageLoaded, pageLoaded)
+        assertEquals(DiagramPreviewState.Ready(1.5f), ready)
+        assertEquals(
+            DiagramPreviewState.Ready(1.5f),
+            diagramPreviewStateAfterBrowserStatus(ready, DiagramBrowserStatus.PageLoaded),
+        )
     }
 
-    /** 图片、脚注与定义列表应脱离富文本库的缺失语法，交给原生组件分别呈现。 */
+    /** 页面错误和八秒未完成均必须转为有类别的可复制代码回退。 */
     @Test
-    fun `should extract image footnotes and definition list extensions`() {
+    fun fallsBackFromOfflineDiagramFailuresAndTimeouts() {
+        val syntaxFailure = DiagramPreviewFailure(
+            kind = DiagramFailureKind.MERMAID_SYNTAX,
+            detail = "unexpected token",
+        )
+        val failed = diagramPreviewStateAfterBrowserStatus(
+            DiagramPreviewState.PageLoaded,
+            DiagramBrowserStatus.Failed(syntaxFailure),
+        )
+        val timeout = requireNotNull(diagramPreviewTimeout(DiagramPreviewState.BrowserLoading))
+
+        assertEquals(DiagramPreviewState.Failed(syntaxFailure), failed)
+        assertEquals(DiagramFailureKind.TIMEOUT, timeout.failure.kind)
+        assertEquals(null, diagramPreviewTimeout(DiagramPreviewState.Ready()))
+    }
+
+    /** 安装包资源优先，开发运行则从 classpath 的本地 `diagram/` 目录读取 Mermaid。 */
+    @Test
+    fun locatesOfflineDiagramResourcesForPackageAndDevelopment() {
+        val packageRoot = Files.createTempDirectory("mulehang-package-diagram")
+        val developmentRoot = Files.createTempDirectory("mulehang-development-diagram")
+        val missingPackageRoot = Files.createTempDirectory("mulehang-missing-diagram")
+        try {
+            val packageDiagram = createCompleteDiagramResources(packageRoot)
+            val developmentDiagram = createCompleteDiagramResources(developmentRoot)
+
+            assertEquals(
+                packageDiagram,
+                DiagramBrowserRuntime.locateDiagramResourceDirectory(
+                    packageResourcesDirectory = packageRoot,
+                    classpathDiagramPage = developmentDiagram.resolve("diagram.html").toUri().toURL(),
+                ),
+            )
+            assertEquals(
+                developmentDiagram,
+                DiagramBrowserRuntime.locateDiagramResourceDirectory(
+                    packageResourcesDirectory = missingPackageRoot,
+                    classpathDiagramPage = developmentDiagram.resolve("diagram.html").toUri().toURL(),
+                ),
+            )
+            assertEquals(Path.of("mermaid", "mermaid.min.js"), DiagramBrowserRuntime.diagramMermaidEntryRelativePath())
+        } finally {
+            deleteDirectory(packageRoot)
+            deleteDirectory(developmentRoot)
+            deleteDirectory(missingPackageRoot)
+        }
+    }
+
+    /** JCEF 必须使用当前 JBR 随附的 helper，而不是回退为主 Java 进程。 */
+    @Test
+    fun locatesJcefHelperFromJbrRuntimeLayout() {
+        val runtimeRoot = Files.createTempDirectory("mulehang-jbr")
+        val missingRuntimeRoot = Files.createTempDirectory("mulehang-missing-jbr")
+        try {
+            val helper = Files.createDirectories(runtimeRoot.resolve("bin"))
+                .resolve("jcef_helper.exe")
+            Files.writeString(helper, "helper")
+
+            assertEquals(
+                helper.toAbsolutePath().normalize(),
+                DiagramBrowserRuntime.locateJcefHelperPath(runtimeRoot),
+            )
+            assertEquals(null, DiagramBrowserRuntime.locateJcefHelperPath(missingRuntimeRoot))
+        } finally {
+            deleteDirectory(runtimeRoot)
+            deleteDirectory(missingRuntimeRoot)
+        }
+    }
+
+    /** 图片、脚注与定义列表应提取为原生 Markdown 扩展块。 */
+    @Test
+    fun extractsImageFootnotesAndDefinitionListExtensions() {
         val document = parseAssistantMarkdownDocument(
             """
             这里引用了脚注[^first]和另一个脚注[^note]。
@@ -108,7 +255,7 @@ class AssistantMarkdownRenderPolicyTest {
             """.trimIndent(),
         )
 
-        val image = assertIs<AssistantMarkdownBlock.Image>(document.blocks.filterIsInstance<AssistantMarkdownBlock.Image>().single())
+        val image = document.blocks.filterIsInstance<AssistantMarkdownBlock.Image>().single()
         assertEquals("示例图片", image.alt)
         assertEquals("https://example.com/image.png", image.url)
         assertEquals(listOf("first", "note"), document.footnotes.map(AssistantFootnote::id))
@@ -116,9 +263,9 @@ class AssistantMarkdownRenderPolicyTest {
         assertFalse(document.blocks.filterIsInstance<AssistantMarkdownBlock.Text>().joinToString("\n") { it.content }.contains("[^note]"))
     }
 
-    /** 受限 HTML 的颜色语义应保留；脚本与任意 CSS 不属于原生安全子集。 */
+    /** HTML 颜色白名单保留文字；脚本不得进入渲染模型。 */
     @Test
-    fun `should extract safe html color span without allowing scripts`() {
+    fun extractsSafeHtmlColorSpanWithoutScripts() {
         val document = parseAssistantMarkdownDocument("<span style=\"color: red\">红色文字</span><script>alert(1)</script>")
 
         val span = assertIs<AssistantMarkdownBlock.HtmlSpan>(document.blocks.single())
@@ -126,25 +273,9 @@ class AssistantMarkdownRenderPolicyTest {
         assertEquals("red", span.colorName)
     }
 
-    /** 单个 `$...$` 公式应离开 CommonMark 文本流，交由原生 LaTeX 组件绘制。 */
+    /** 引用中的 details/summary 应提取为原生折叠块。 */
     @Test
-    fun `should extract inline latex formula`() {
-        val document = parseAssistantMarkdownDocument("质能方程 ${'$'}E = mc^2${'$'}")
-
-        assertEquals("InlineMath", document.blocks[1]::class.simpleName)
-    }
-
-    /** `$$...$$` 块级公式应成为单独的原生公式块。 */
-    @Test
-    fun `should extract display latex formula`() {
-        val document = parseAssistantMarkdownDocument("${'$'}${'$'}\\n\\int_0^\\infty e^{-x^2} \\, dx\\n${'$'}${'$'}")
-
-        assertEquals("DisplayMath", document.blocks.single()::class.simpleName)
-    }
-
-    /** 引用中的 `details/summary` 也必须被提取为可点击的原生折叠块。 */
-    @Test
-    fun `should extract quoted html details as collapsible block`() {
+    fun extractsQuotedHtmlDetailsAsCollapsibleBlock() {
         val document = parseAssistantMarkdownDocument(
             """
             > <details>
@@ -158,185 +289,50 @@ class AssistantMarkdownRenderPolicyTest {
         assertEquals("Details", document.blocks.single()::class.simpleName)
     }
 
-    /** PlantUML 源码应在本地转换为 SVG，缩放时保持矢量清晰。 */
+    /** PlantUML 必须在本地生成 SVG，不能依赖浏览器端或网络引擎。 */
     @Test
-    fun `should render plantuml to local svg`() {
-        val svg = renderPlantUmlToSvg("@startuml\nAlice -> Bob: Hi\n@enduml")
+    fun rendersPlantUmlToLocalSvg() {
+        val svg = renderPlantUmlToSvg("@startuml\nAlice -> Bob: Hi\n@enduml", isDark = true)
 
-        assertTrue(svg.startsWith("<svg"))
-    }
-
-    /** PlantUML 默认输出应注入深色应用主题，而不是产生纯白画布。 */
-    @Test
-    fun `should apply dark theme to plantuml source`() {
-        val themed = applyPlantUmlDarkTheme("@startuml\nAlice -> Bob: Hi\n@enduml")
-
-        assertTrue(themed.contains("backgroundColor transparent"))
-        assertTrue(themed.contains("defaultFontName Microsoft YaHei"))
-        assertTrue(themed.contains("defaultFontColor #E7EAF0"))
-        assertTrue(themed.contains("ActorBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("ActorFontColor #E7EAF0"))
-        assertTrue(themed.contains("ClassBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("ClassFontColor #E7EAF0"))
-        assertTrue(themed.contains("ComponentBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("ComponentFontColor #E7EAF0"))
-        assertTrue(themed.contains("DatabaseBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("DatabaseFontColor #E7EAF0"))
-        assertTrue(themed.contains("PackageBackgroundColor transparent"))
-        assertTrue(themed.contains("PackageFontColor #E7EAF0"))
-        assertTrue(themed.contains("StateBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("StateFontColor #E7EAF0"))
-        assertTrue(themed.contains("ActivityBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("ActivityFontColor #E7EAF0"))
-        assertTrue(themed.contains("ActivityDiamondBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("ActivityDiamondFontColor #E7EAF0"))
-        assertTrue(themed.contains("SequenceGroupBackgroundColor #2B2D30"))
-        assertTrue(themed.contains("SequenceGroupFontColor #E7EAF0"))
-        assertTrue(themed.contains("SequenceGroupHeaderFontColor #E7EAF0"))
-        assertTrue(themed.contains("skinparam usecase"))
-        assertTrue(themed.contains("BackgroundColor #2B2D30"))
-        assertTrue(themed.contains("FontColor #E7EAF0"))
-    }
-
-    /** Chen 与思维导图的起始指令也必须注入统一主题。 */
-    @Test
-    fun `should apply dark theme to every plantuml start directive`() {
-        val chen = applyPlantUmlDarkTheme("@startchen\nentity CUSTOMER\n@endchen")
-        val mindMap = applyPlantUmlDarkTheme("@startmindmap\n* 在线商店\n@endmindmap")
-
-        assertTrue(chen.contains("defaultFontColor #E7EAF0"))
-        assertTrue(mindMap.contains("defaultFontColor #E7EAF0"))
-    }
-
-    /** 未被 skinparam 覆盖的默认浅色图元与黑色连线应在 SVG 阶段归一化。 */
-    @Test
-    fun `should normalize unthemed svg shape colors`() {
-        val svg = normalizePlantUmlSvgColors("<rect fill=\"#FEFECE\" stroke=\"#181818\"/>")
-
-        assertTrue(svg.contains("fill=\"#2B2D30\""))
-        assertTrue(svg.contains("stroke=\"#9BA9C2\""))
-    }
-
-    /** 内置 C4 标准库应能解析部署图宏，不能退化为 PlantUML 错误图。 */
-    @Test
-    fun `should render C4 deployment standard library`() {
-        val svg = renderPlantUmlToSvg(
-            """
-            @startuml
-            !include <C4/C4_Deployment>
-            Deployment_Node(device, "用户设备", "Laptop") {
-                Container(browser, "浏览器", "Chrome")
-            }
-            @enduml
-            """.trimIndent(),
-        )
-
-        assertFalse(svg.contains("[From string"))
+        assertTrue(svg.contains("<svg"))
         assertFalse(svg.contains("Syntax Error"))
     }
 
-    /** C4 部署图的嵌套节点、数据库与关系声明必须能完整渲染。 */
+    /** 自动主题只注入最小颜色配置，不再改写字体或 SVG 输出。 */
     @Test
-    fun `should render nested C4 deployment diagram`() {
-        val svg = renderPlantUmlToSvg(
-            """
-            @startuml
-            !include <C4/C4_Deployment>
-            title C4：Deployment Diagram
-            LAYOUT_WITH_LEGEND()
+    fun appliesMinimalPlantUmlThemeForBothAppearances() {
+        val source = "@startuml\nAlice -> Bob: Hi\n@enduml"
 
-            Deployment_Node(userDevice, "用户设备", "Laptop / Mobile") {
-                Container(browser, "Web Browser", "Chrome / Safari", "访问在线商店")
-            }
+        val dark = applyPlantUmlTheme(source, isDark = true)
+        val light = applyPlantUmlTheme(source, isDark = false)
 
-            Deployment_Node(cloud, "云环境", "Public Cloud") {
-                Deployment_Node(cluster, "Kubernetes Cluster", "Kubernetes") {
-                    Deployment_Node(ingress, "Ingress", "Nginx") {
-                        Container(web, "Web Frontend", "React", "前端应用")
-                    }
-
-                    Deployment_Node(appPod, "Application Pod", "Docker") {
-                        Container(api, "Order API", "Spring Boot", "订单服务")
-                    }
-
-                    Deployment_Node(dataPod, "Data Pod", "Managed Database") {
-                        ContainerDb(db, "Order Database", "PostgreSQL", "订单数据")
-                    }
-                }
-            }
-
-            Rel(browser, web, "访问", "HTTPS")
-            Rel(web, api, "调用", "HTTPS")
-            Rel(api, db, "读写", "JDBC")
-            @enduml
-            """.trimIndent(),
-        )
-
-        assertFalse(svg.contains("[From string"))
-        assertFalse(svg.contains("Syntax Error"))
+        assertTrue(dark.contains("backgroundColor transparent"))
+        assertTrue(dark.contains("defaultFontColor #E7EAF0"))
+        assertTrue(light.contains("defaultFontColor #1F2329"))
+        assertFalse(dark.contains("defaultFontName"))
     }
 
-    /** 中文图表必须将标签转换为 SVG 路径，避免绘制器遗漏文本节点。 */
+    /** 用户显式选择 PlantUML 主题时，应用不能再覆盖其配色。 */
     @Test
-    fun `should outline CJK uml labels into svg paths`() {
-        val svg = renderPlantUmlToSvg("@startuml\nAlice -> Bob: 审批请求\n@enduml")
+    fun preservesExplicitPlantUmlTheme() {
+        val source = "@startuml\n!theme plain\nAlice -> Bob: Hi\n@enduml"
 
-        assertTrue(svg.contains("<path"))
-        assertFalse(svg.contains("<text"))
+        assertEquals(source, applyPlantUmlTheme(source, isDark = true))
     }
 
-    /** 活动图节点必须使用深色表面，避免默认白底与应用浅色文字失去对比。 */
-    @Test
-    fun `should render activity diagram with visible dark theme labels`() {
-        val svg = renderPlantUmlToSvg("@startuml\nstart\n:打开购物网站;\nif (已登录?) then (是)\n:填写收货地址;\nendif\nstop\n@enduml")
-
-        assertTrue(svg.contains("#2B2D30"))
-        assertTrue(svg.contains("#E7EAF0"))
-        assertTrue(svg.contains("<path"))
-        assertTrue(svg.contains("<path fill=\"#E7EAF0\""))
-        assertFalse(svg.contains("<text"))
+    /** 为资源定位测试创建包含本地页面和 Mermaid 入口的最小目录。 */
+    private fun createCompleteDiagramResources(root: Path): Path {
+        val directory = Files.createDirectories(root.resolve("diagram"))
+        Files.writeString(directory.resolve("diagram.html"), "<!doctype html>")
+        Files.createDirectories(directory.resolve("mermaid"))
+        Files.writeString(directory.resolve("mermaid/mermaid.min.js"), "window.mermaid = {};")
+        return directory.toAbsolutePath().normalize()
     }
 
-    /** 转为轮廓后的中文标签必须可由 Skia SVGDOM 实际绘制。 */
-    @Test
-    fun `should draw outlined CJK svg labels through skia`() {
-        val outlinedSvg = outlineSvgTextAsPaths("""
-            <svg xmlns="http://www.w3.org/2000/svg" width="160" height="64">
-              <text x="8" y="40" fill="#181818" font-family="Microsoft YaHei UI" font-size="28">打开购物网站</text>
-            </svg>
-        """.trimIndent())
-        assertFalse(outlinedSvg.contains("<text"))
-        assertTrue(outlinedSvg.contains("fill=\"#E7EAF0\""))
-        Surface.makeRasterN32Premul(160, 64).use { surface ->
-            SVGDOM(Data.makeFromBytes(outlinedSvg.encodeToByteArray())).use { document ->
-            document.setContainerSize(160f, 64f)
-            document.render(surface.canvas)
-                surface.makeImageSnapshot().use { snapshot ->
-                val png = snapshot.encodeToData()!!.bytes
-                val image = ImageIO.read(ByteArrayInputStream(png))
-                assertTrue(
-                    (0 until image.height).any { y ->
-                        (0 until image.width).any { x -> (image.getRGB(x, y) ushr 24) != 0 }
-                    },
-                )
-            }
-            }
+    /** 删除测试创建的临时目录，避免将本地资源定位验证残留在系统临时文件夹。 */
+    private fun deleteDirectory(root: Path) {
+        Files.walk(root).use { paths ->
+            paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
         }
-    }
-
-    /** 图像尺寸应从 SVG 的 viewBox 按真实比例参与适配，确保大图完整显示。 */
-    @Test
-    fun `should fit plantuml dimensions proportionally`() {
-        val intrinsicSize = svgIntrinsicSize("<svg width=\"2400px\" height=\"1600px\" viewBox=\"0 0 2400 1600\">")
-
-        assertEquals(PlantUmlIntrinsicSize(width = 2400f, height = 1600f), intrinsicSize)
-        assertEquals(0.2f, plantUmlFitScale(intrinsicSize, viewportWidth = 480f, viewportHeight = 460f))
-    }
-
-    /** 适配模式允许缩小大型图，而原始比例与缩放上限仍保持受控。 */
-    @Test
-    fun `should constrain plantuml viewer zoom around its fit scale`() {
-        assertEquals(0.1f, plantUmlZoomedScale(scale = 0.2f, multiplier = 0.1f, minimumScale = 0.1f))
-        assertEquals(3f, plantUmlZoomedScale(scale = 2.9f, multiplier = 2f, minimumScale = 0.1f))
     }
 }

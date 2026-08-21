@@ -1,4 +1,8 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
+)
+@file:Suppress("UnstableApiUsage")
 
 package com.agent.app.chat.component
 
@@ -9,14 +13,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,39 +34,11 @@ import com.agent.app.design.JewelSurfaceRole
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.foundation.code.highlighting.LocalCodeHighlighter
 import org.jetbrains.jewel.ui.component.ActionButton
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
-
-/** 围栏代码的关键字颜色。 */
-internal val CodeKeywordColor = Color(0xFFC9A7FF)
-
-/** 围栏代码的字符串颜色。 */
-internal val CodeStringColor = Color(0xFFA8D38E)
-
-private val CodeCommentColor = Color(0xFF79818F)
-
-/**
- * 对常见 Agent 输出语言应用轻量词法高亮；未知语言保持可读的等宽纯文本。
- */
-internal fun highlightCode(source: String, language: String?): AnnotatedString {
-    val keywords = language?.lowercase()?.let(::keywordsFor).orEmpty()
-    if (keywords.isEmpty()) return AnnotatedString(source)
-
-    val builder = AnnotatedString.Builder(source)
-    CODE_TOKEN.findAll(source).forEach { match ->
-        val token = match.value
-        val style = when {
-            token.startsWith('"') || token.startsWith('\'') || token.startsWith('`') -> SpanStyle(color = CodeStringColor)
-            token.startsWith("//") || token.startsWith('#') -> SpanStyle(color = CodeCommentColor)
-            token in keywords -> SpanStyle(color = CodeKeywordColor)
-            else -> null
-        }
-        style?.let { builder.addStyle(it, match.range.first, match.range.last + 1) }
-    }
-    return builder.toAnnotatedString()
-}
 
 /**
  * 原生显示带语言标记的代码块，并允许用户选择或一键复制其中的源码。
@@ -71,6 +48,11 @@ internal fun AssistantCodeBlock(
     language: String?,
     source: String,
 ) {
+    val codeHighlighter = LocalCodeHighlighter.current
+    val highlightedSource by remember(codeHighlighter, language, source) {
+        codeHighlighter.highlight(source, language.orEmpty())
+    }.collectAsState(initial = AnnotatedString(source))
+
     JewelSurface(
         role = JewelSurfaceRole.PANEL,
         radius = 8.dp,
@@ -96,7 +78,7 @@ internal fun AssistantCodeBlock(
             }
             SelectionContainer {
                 Text(
-                    text = highlightCode(source, language),
+                    text = highlightedSource,
                     style = JewelTheme.defaultTextStyle.copy(
                         color = AppText,
                         fontFamily = FontFamily.Monospace,
@@ -125,16 +107,4 @@ internal fun CopyCodeButton(source: String) {
     ) {
         Icon(AllIconsKeys.Actions.Copy, "复制代码")
     }
-}
-
-private val CODE_TOKEN = Regex(
-    pattern = "\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'|`(?:\\\\.|[^`])*`|//[^\\r\\n]*|#[^\\r\\n]*|\\b[A-Za-z_][A-Za-z0-9_]*\\b",
-)
-
-private fun keywordsFor(language: String): Set<String> = when (language) {
-    "python", "py" -> setOf("and", "as", "async", "await", "class", "def", "elif", "else", "except", "False", "finally", "for", "from", "if", "import", "in", "is", "lambda", "None", "not", "or", "pass", "raise", "return", "True", "try", "while", "with", "yield")
-    "kotlin", "kt", "java", "javascript", "js", "typescript", "ts" -> setOf("abstract", "as", "async", "await", "break", "case", "catch", "class", "const", "continue", "data", "do", "else", "enum", "extends", "false", "final", "finally", "for", "fun", "function", "if", "implements", "import", "in", "interface", "is", "new", "null", "object", "open", "override", "package", "private", "protected", "public", "return", "sealed", "static", "suspend", "this", "throw", "true", "try", "val", "var", "void", "when", "while")
-    "json" -> setOf("true", "false", "null")
-    "bash", "sh", "shell", "zsh", "sql", "xml", "html" -> setOf("case", "do", "done", "else", "esac", "fi", "for", "function", "if", "in", "select", "then", "while", "SELECT", "FROM", "WHERE", "JOIN", "INSERT", "UPDATE", "DELETE", "CREATE", "TABLE")
-    else -> emptySet()
 }

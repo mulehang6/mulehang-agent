@@ -115,7 +115,7 @@ class ChatTaskSnapshotMapperTest {
         val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
 
         assertTrue(restored.executionState is ExecutionState.Failed)
-        assertEquals("执行已中断", (restored.executionState as ExecutionState.Failed).error.title)
+        assertEquals("执行已中断", restored.executionState.error.title)
     }
 
     /**

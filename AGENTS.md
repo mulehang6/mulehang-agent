@@ -10,7 +10,7 @@ IDEA开源版的源码位于[idea](../../intellij-community)
 
 ## 构建、测试与检查
 
-使用 JetBrains Runtime 25（JDK 25）和仓库 Gradle Wrapper，在根目录执行：
+使用 [JetBrains Runtime 25（JDK 25）](D:\jdk\jbrsdk-JCEF)和仓库 Gradle Wrapper，在根目录执行：
 
 ```powershell
 .\\gradlew.bat :shared:jvmTest :desktopApp:test

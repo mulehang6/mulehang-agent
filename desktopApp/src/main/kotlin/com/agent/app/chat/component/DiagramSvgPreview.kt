@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,21 +18,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.skiaCanvas
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.LocalDesktopPalette
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.svg.SVGDOM
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 
@@ -128,25 +130,37 @@ internal fun DiagramSvgSurface(
     zoomInput: androidx.compose.ui.text.input.TextFieldValue,
     onZoomInputChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit,
     onZoomChange: (Int) -> Unit,
-    onDiagramWheel: (Float) -> Unit,
     onDisplayModeChange: (DiagramPreviewDisplayMode) -> Unit,
 ) {
     val palette = LocalDesktopPalette.current
     val intrinsicSize = remember(svg) { diagramSvgIntrinsicSize(svg) }
-    val documentResult = remember(svg) {
-        runCatching { SVGDOM(Data.makeFromBytes(svg.encodeToByteArray())) }
-    }
-    val document = documentResult.getOrNull()
-    if (document != null) {
-        DisposableEffect(document) {
-            onDispose(document::close)
-        }
-    }
+    var raster by remember(svg) { mutableStateOf<DiagramSvgRasterImage?>(null) }
+    var rasterFailed by remember(svg) { mutableStateOf(false) }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val density = LocalDensity.current
         val viewportHeight = diagramViewportHeightDp(maxWidth.value, diagramSvgAspectRatio(svg))
         val viewportWidthPx = with(density) { maxWidth.toPx() }
         val viewportHeightPx = with(density) { viewportHeight.dp.toPx() }
+        val rasterTargetWidth = diagramSvgRasterTargetWidthPx(viewportWidthPx, zoomPercent)
+        LaunchedEffect(svg, rasterTargetWidth) {
+            if (rasterTargetWidth <= 0f || !rasterTargetWidth.isFinite()) return@LaunchedEffect
+            // 首次渲染立即执行，缩放变化防抖，避免滑块逐档触发 Batik 栅格化。
+            if (raster != null) delay(DIAGRAM_RASTER_DEBOUNCE_MILLIS)
+            rasterFailed = false
+            // 取消（快速缩放导致的重启）必须向上传播，以免把失败状态误写入旧图表。
+            val nextRaster = try {
+                withContext(Dispatchers.Default) { rasterizeDiagramSvg(svg, rasterTargetWidth) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                null
+            }
+            if (nextRaster == null) {
+                rasterFailed = true
+            } else {
+                raster = nextRaster
+            }
+        }
         JewelSurface(
             role = JewelSurfaceRole.PANEL,
             radius = 12.dp,
@@ -159,26 +173,28 @@ internal fun DiagramSvgSurface(
             Column(modifier = Modifier.fillMaxSize()) {
                 DiagramPreviewToolbar(
                     displayMode = DiagramPreviewDisplayMode.RENDERED,
-                    enabled = document != null,
+                    enabled = raster != null,
                     zoomPercent = zoomPercent,
                     zoomInput = zoomInput,
                     onZoomInputChange = onZoomInputChange,
                     onZoomChange = onZoomChange,
                     onDisplayModeChange = onDisplayModeChange,
                 )
-                if (document == null) {
+                val currentRaster = raster
+                if (rasterFailed) {
                     DiagramSvgFallback(
                         kind = kind,
                         source = source,
                     )
+                } else if (currentRaster == null) {
+                    DiagramSvgLoading()
                 } else {
                     DiagramSvgCanvas(
-                        document = document,
+                        raster = currentRaster,
                         intrinsicSize = intrinsicSize,
                         zoomPercent = zoomPercent,
                         viewportWidthPx = viewportWidthPx,
                         viewportHeightPx = viewportHeightPx,
-                        onDiagramWheel = onDiagramWheel,
                         onDiagramZoom = onZoomChange,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -190,19 +206,18 @@ internal fun DiagramSvgSurface(
     }
 }
 
-/** 负责矢量图的裁剪、拖拽、滚轮缩放和锚点保持。 */
+/** 负责栅格位图的裁剪、拖拽、滚轮缩放和锚点保持。 */
 @Composable
 private fun DiagramSvgCanvas(
-    document: SVGDOM,
+    raster: DiagramSvgRasterImage,
     intrinsicSize: DiagramSvgIntrinsicSize,
     zoomPercent: Int,
     viewportWidthPx: Float,
     viewportHeightPx: Float,
-    onDiagramWheel: (Float) -> Unit,
     onDiagramZoom: (Int) -> Unit,
     modifier: Modifier,
 ) {
-    var panOffset by remember(document) { mutableStateOf(Offset.Zero) }
+    var panOffset by remember(raster) { mutableStateOf(Offset.Zero) }
     val normalizedZoom = normalizeDiagramZoomPercent(zoomPercent)
     val fitScale = diagramSvgFitScale(intrinsicSize, viewportWidthPx, viewportHeightPx)
     LaunchedEffect(normalizedZoom, viewportWidthPx, viewportHeightPx, fitScale) {
@@ -222,29 +237,27 @@ private fun DiagramSvgCanvas(
         modifier = modifier
             .clipToBounds()
             .onPointerEvent(PointerEventType.Scroll, pass = PointerEventPass.Initial) { event ->
+                // 普通滚轮不消费，交由外层时间线按自身速度滚动；仅 Ctrl+滚轮消费并缩放。
+                if (!event.keyboardModifiers.isCtrlPressed) return@onPointerEvent
                 val change = event.changes.firstOrNull() ?: return@onPointerEvent
                 val scrollDelta = change.scrollDelta.y
                 if (scrollDelta == 0f) return@onPointerEvent
                 change.consume()
-                if (event.keyboardModifiers.isCtrlPressed) {
-                    val nextZoom = diagramZoomPercentAfterWheel(normalizedZoom, scrollDelta)
-                    if (nextZoom != normalizedZoom) {
-                        val anchor = change.position
-                        panOffset = diagramSvgPanAfterZoom(
-                            currentPan = panOffset,
-                            currentZoomPercent = normalizedZoom,
-                            nextZoomPercent = nextZoom,
-                            anchor = anchor,
-                            viewportWidth = viewportWidthPx,
-                            viewportHeight = viewportHeightPx,
-                        )
-                        onDiagramZoom(nextZoom)
-                    }
-                } else {
-                    onDiagramWheel(scrollDelta)
+                val nextZoom = diagramZoomPercentAfterWheel(normalizedZoom, scrollDelta)
+                if (nextZoom != normalizedZoom) {
+                    val anchor = change.position
+                    panOffset = diagramSvgPanAfterZoom(
+                        currentPan = panOffset,
+                        currentZoomPercent = normalizedZoom,
+                        nextZoomPercent = nextZoom,
+                        anchor = anchor,
+                        viewportWidth = viewportWidthPx,
+                        viewportHeight = viewportHeightPx,
+                    )
+                    onDiagramZoom(nextZoom)
                 }
             }
-            .pointerInput(document, normalizedZoom, viewportWidthPx, viewportHeightPx) {
+            .pointerInput(raster, normalizedZoom, viewportWidthPx, viewportHeightPx) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     if (zoom != 1f) {
                         onDiagramZoom(
@@ -269,19 +282,20 @@ private fun DiagramSvgCanvas(
     ) {
         val zoomScale = normalizedZoom / DIAGRAM_DEFAULT_ZOOM_PERCENT.toFloat()
         val renderScale = fitScale * zoomScale
-        val renderedWidth = intrinsicSize.width * renderScale
-        val renderedHeight = intrinsicSize.height * renderScale
+        val renderedWidth = raster.widthPx * renderScale
+        val renderedHeight = raster.heightPx * renderScale
         val centeredOffset = Offset(
             x = (size.width - renderedWidth) / 2f + panOffset.x,
             y = (size.height - renderedHeight) / 2f + panOffset.y,
         )
-        document.setContainerSize(intrinsicSize.width, intrinsicSize.height)
-        withTransform({
-            translate(left = centeredOffset.x, top = centeredOffset.y)
-            scale(scaleX = renderScale, scaleY = renderScale, pivot = Offset.Zero)
-        }) {
-            drawIntoCanvas { canvas -> document.render(canvas.skiaCanvas) }
-        }
+        drawImage(
+            image = raster.bitmap,
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(raster.widthPx, raster.heightPx),
+            dstOffset = IntOffset(centeredOffset.x.roundToInt(), centeredOffset.y.roundToInt()),
+            dstSize = IntSize(renderedWidth.roundToInt(), renderedHeight.roundToInt()),
+            filterQuality = FilterQuality.High,
+        )
     }
 }
 
@@ -299,6 +313,18 @@ private val SVG_HEIGHT = Regex(
     """\bheight\s*=\s*["']\s*([-+]?\d+(?:\.\d+)?)(?:px)?\s*["']""",
     RegexOption.IGNORE_CASE,
 )
+
+/** 缩放或尺寸变化触发的 Batik 重栅格化防抖时长。 */
+private const val DIAGRAM_RASTER_DEBOUNCE_MILLIS = 120L
+
+/** 栅格化进行中的轻量占位，避免图表卡片先显示为空框。 */
+@Composable
+private fun DiagramSvgLoading() {
+    Text(
+        text = "正在绘制图表…",
+        style = JewelTheme.defaultTextStyle.copy(color = LocalDesktopPalette.current.muted),
+    )
+}
 
 /** 当矢量文档无法解析时保留源码，避免图表错误阻塞整条回答。 */
 @Composable

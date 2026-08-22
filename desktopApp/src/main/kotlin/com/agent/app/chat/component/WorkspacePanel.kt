@@ -1,7 +1,6 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.LocalScrollbarStyle
-import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
@@ -90,15 +89,6 @@ internal fun WorkspacePanel(
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
-    val onDiagramWheel: (Float) -> Unit = { scrollDelta ->
-        if (scrollDelta != 0f) {
-            scope.launch {
-                scrollState.scroll(MutatePriority.UserInput) {
-                    scrollBy(scrollDelta)
-                }
-            }
-        }
-    }
 
     LaunchedEffect(scrollState) {
         snapshotFlow {
@@ -206,7 +196,6 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                                 pendingMessageEntry = messageEntry,
                                                 onMessageEntryFinished = onMessageEntryFinished,
-                                                onDiagramWheel = onDiagramWheel,
                                             )
                                             RightRailGlyph.HISTORY -> HistoryPanel(
                                                 activeConversation,
@@ -217,7 +206,6 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                                 pendingMessageEntry = messageEntry,
                                                 onMessageEntryFinished = onMessageEntryFinished,
-                                                onDiagramWheel = onDiagramWheel,
                                             )
                                         }
                                     }

@@ -99,7 +99,6 @@ private fun initialDiagramPreviewState(kind: AssistantDiagramKind): DiagramPrevi
 internal fun AssistantDiagramPreview(
     kind: AssistantDiagramKind,
     source: String,
-    onDiagramWheel: (Float) -> Unit = {},
 ) {
     val palette = LocalDesktopPalette.current
     var displayMode by remember(kind, source, palette.isDark) {
@@ -278,7 +277,6 @@ internal fun AssistantDiagramPreview(
                     zoomInput = zoomInput,
                     onZoomInputChange = { zoomInput = it },
                     onZoomChange = updateZoom,
-                    onDiagramWheel = onDiagramWheel,
                     onDisplayModeChange = { displayMode = it },
                 )
             } else {

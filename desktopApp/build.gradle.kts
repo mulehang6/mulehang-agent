@@ -8,15 +8,22 @@ import org.gradle.jvm.tasks.Jar
 val jewelVersion = "0.39.1-262.9437.29"
 val intellijPlatformVersion = "262.9437.29"
 val mermaidVersion = "11.15.0"
-val jcefHome = file("D:/jdk/jbrsdk-JCEF")
+
+val jcefHome = file(
+    providers.gradleProperty("jcefHome").orNull
+        ?: System.getenv("JCEF_HOME")
+        ?: "D:/jdk/jbrsdk-JCEF",
+)
 val jcefJmod = jcefHome.resolve("jmods/jcef.jmod")
 val jcefHelper = jcefHome.resolve("bin/jcef_helper.exe")
 
+val jcefRuntimeHint =
+    "Point -PjcefHome=... or the JCEF_HOME env var at a JetBrains Runtime with JCEF."
 check(jcefJmod.isFile) {
-    "The configured JCEF runtime does not contain ${jcefJmod.path}."
+    "The configured JCEF runtime does not contain ${jcefJmod.path}. $jcefRuntimeHint"
 }
 check(jcefHelper.isFile) {
-    "The configured JCEF runtime does not contain ${jcefHelper.path}."
+    "The configured JCEF runtime does not contain ${jcefHelper.path}. $jcefRuntimeHint"
 }
 
 val mermaidWebJar = configurations.create("mermaidWebJar") {

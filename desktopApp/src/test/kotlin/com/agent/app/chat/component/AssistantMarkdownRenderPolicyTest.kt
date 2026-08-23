@@ -150,6 +150,18 @@ class AssistantMarkdownRenderPolicyTest {
         )
     }
 
+    /** 无法定位离线资源时，拦截器必须拒绝全部请求，不能退化为当前工作目录。 */
+    @Test
+    fun rejectsAllUrlsWhenDiagramResourceDirectoryIsUnavailable() {
+        assertFalse(isAllowedDiagramResourceUrl("about:blank", resourceDirectory = null))
+        assertFalse(
+            isAllowedDiagramResourceUrl(
+                Path.of("blocked-resource.html").toAbsolutePath().toUri().toString(),
+                resourceDirectory = null,
+            ),
+        )
+    }
+
     /** Mermaid 工作器结果必须保留 SVG 或带类别的回退原因。 */
     @Test
     fun keepsSvgAndRecoverableFailureSeparate() {

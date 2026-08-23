@@ -96,16 +96,17 @@ internal object DiagramBrowserResourcePolicy {
     private fun isAllowedResourceUrl(url: String): Boolean =
         isAllowedDiagramResourceUrl(url, resolveDiagramResourceDirectoryForRequest())
 
-    /** 请求拦截期间只读取已解析目录，解析失败时拒绝请求。 */
-    private fun resolveDiagramResourceDirectoryForRequest(): Path =
-        resolveDiagramResourceDirectory()?.toAbsolutePath()?.normalize() ?: Path.of("").toAbsolutePath()
+    /** 请求拦截期间只使用已解析目录，解析失败时返回 null 以拒绝一切请求。 */
+    private fun resolveDiagramResourceDirectoryForRequest(): Path? =
+        resolveDiagramResourceDirectory()?.toAbsolutePath()?.normalize()
 }
 
-/** 判断 [url] 是否只会访问 [resourceDirectory] 内的离线图表文件。 */
+/** 判断 [url] 是否只会访问 [resourceDirectory] 内的离线图表文件，目录缺失时拒绝访问。 */
 internal fun isAllowedDiagramResourceUrl(
     url: String,
-    resourceDirectory: Path,
+    resourceDirectory: Path?,
 ): Boolean {
+    val normalizedResourceDirectory = resourceDirectory?.toAbsolutePath()?.normalize() ?: return false
     if (url == "about:blank") return true
     val uri = runCatching { URI(url) }.getOrNull() ?: return false
     if (!uri.scheme.equals("file", ignoreCase = true)) return false
@@ -113,5 +114,5 @@ internal fun isAllowedDiagramResourceUrl(
         URI(uri.scheme, uri.authority, uri.path, null, null)
     }.getOrNull() ?: return false
     val requestedPath = runCatching { Path.of(resourceUri).toAbsolutePath().normalize() }.getOrNull() ?: return false
-    return requestedPath.startsWith(resourceDirectory.toAbsolutePath().normalize())
+    return requestedPath.startsWith(normalizedResourceDirectory)
 }

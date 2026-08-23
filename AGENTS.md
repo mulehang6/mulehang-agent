@@ -6,11 +6,11 @@
 
 `agent-ui-prototype1/` 是独立的 React/Vite/Ring UI 原型；`docs/` 存放设计、计划、总结和参考资料。参考项目位于此项目的同级目录，例如：[kilo](../kilocode)。都可以正常使用 IDEA MCP 分析；禁止修改它们。
 
-IDEA开源版的源码位于 `D:\JetBrains\projects\idea_projects\intellij-community`
+IDEA 开源版源码通过本地 IDE 项目配置定位，不得将机器相关路径写入仓库。
 
 ## 构建、测试与检查
 
-使用 [JetBrains Runtime 25（JDK 25）](D:\jdk\jbrsdk-JCEF)和仓库 Gradle Wrapper，在根目录执行：
+使用 JetBrains Runtime 25（JDK 25）和仓库 Gradle Wrapper，在根目录执行：
 
 ```powershell
 .\\gradlew.bat :shared:jvmTest :desktopApp:test
@@ -19,6 +19,8 @@ IDEA开源版的源码位于 `D:\JetBrains\projects\idea_projects\intellij-commu
 ```
 
 优先运行与改动范围匹配的最小任务。原型在 `agent-ui-prototype1/` 下使用 `pnpm build` 和 `pnpm lint`。先查看适用的 IDEA 运行配置；不要启动 Desktop、Vite 或其他长期运行服务。完成后检查受影响文件的问题与 diff。
+
+Gradle JVM 与运行时都必须指向包含 JCEF 的 JBR 25。本地通过 `JCEF_HOME` 或 `-PjcefHome=<jbr 路径>` 配置；项目根目录的 `.env` 不会被 Gradle 自动读取，也不得提交本机路径。
 
 ## 编码与测试规范
 

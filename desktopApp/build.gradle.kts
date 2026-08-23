@@ -5,6 +5,31 @@ import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Sync
 import org.gradle.jvm.tasks.Jar
 
+/** 从根目录未提交的 `.env` 读取单个配置值，支持普通及 `export` 形式的键值对。 */
+fun readRootDotEnvValue(key: String): String? {
+    val dotEnvFile = rootProject.layout.projectDirectory.file(".env").asFile
+    if (!dotEnvFile.isFile) return null
+
+    return dotEnvFile.useLines { lines ->
+        lines.firstNotNullOfOrNull { rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith("#")) return@firstNotNullOfOrNull null
+
+            val separatorIndex = line.indexOf('=')
+            if (separatorIndex < 1) return@firstNotNullOfOrNull null
+
+            val lineKey = line.substring(0, separatorIndex).removePrefix("export ").trim()
+            if (lineKey != key) return@firstNotNullOfOrNull null
+
+            line.substring(separatorIndex + 1)
+                .trim()
+                .removeSurrounding("\"")
+                .removeSurrounding("'")
+                .takeIf(String::isNotEmpty)
+        }
+    }
+}
+
 val jewelVersion = "0.39.1-262.9437.29"
 val intellijPlatformVersion = "262.9437.29"
 val mermaidVersion = "11.15.0"
@@ -12,7 +37,8 @@ val mermaidVersion = "11.15.0"
 val jcefHome = file(
     providers.gradleProperty("jcefHome").orNull
         ?: providers.environmentVariable("JCEF_HOME").orNull
-        ?: "D:/jdk/jbrsdk-JCEF",
+        ?: readRootDotEnvValue("JCEF_HOME")
+        ?: providers.systemProperty("java.home").get(),
 )
 val jcefJmod = jcefHome.resolve("jmods/jcef.jmod")
 val jcefHelper = jcefHome.resolve("bin/jcef_helper.exe")

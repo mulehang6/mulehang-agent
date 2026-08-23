@@ -20,7 +20,7 @@ IDEA 开源版源码通过本地 IDE 项目配置定位，不得将机器相关�
 
 优先运行与改动范围匹配的最小任务。原型在 `agent-ui-prototype1/` 下使用 `pnpm build` 和 `pnpm lint`。先查看适用的 IDEA 运行配置；不要启动 Desktop、Vite 或其他长期运行服务。完成后检查受影响文件的问题与 diff。
 
-Gradle JVM 与运行时都必须指向包含 JCEF 的 JBR 25。本地通过 `JCEF_HOME` 或 `-PjcefHome=<jbr 路径>` 配置；项目根目录的 `.env` 不会被 Gradle 自动读取，也不得提交本机路径。
+Gradle JVM 与运行时都必须指向包含 JCEF 的 JBR 25。本地在项目根目录未提交的 `.env` 中配置 `JCEF_HOME`；`-PjcefHome` 与系统 `JCEF_HOME` 可覆盖该值，不得提交本机路径。
 
 ## 编码与测试规范
 

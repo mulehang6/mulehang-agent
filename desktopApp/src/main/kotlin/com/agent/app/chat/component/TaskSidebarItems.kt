@@ -1,7 +1,5 @@
 @file:OptIn(
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
     androidx.compose.ui.ExperimentalComposeUiApi::class,
-    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
 )
 
 package com.agent.app.chat.component
@@ -12,21 +10,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,10 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,9 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -58,44 +42,19 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.agent.app.chat.presentation.resolveWorkspaceForTaskCreation
-import com.agent.app.chat.state.ChatTaskGroup
 import com.agent.app.chat.state.ChatTaskListItemUiState
-import com.agent.app.chat.state.ChatTaskStatus
-import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.ConversationTitleState
-import com.agent.app.chat.state.WorkspaceTaskSectionUiState
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppDanger
 import com.agent.app.design.AppHoverBackground
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSelectedBackground
-import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
-import com.agent.app.design.PopupMenuBackground
-import com.agent.app.design.PopupMenuBorder
-import com.agent.app.design.PopupMenuSelectedBackground
-import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.JewelDialog
 import com.agent.app.design.OffsetPopupPositionProvider
-import com.agent.app.design.iconKey
-import com.agent.app.platform.pickWorkspaceDirectory
 import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.ui.component.ActionButton
-import org.jetbrains.jewel.ui.component.DefaultButton
-import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.MenuScope
-import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.component.TextField
-import org.jetbrains.jewel.ui.component.Tooltip
 /** 保留箭头槽位并在悬浮时淡入，避免标题文字随图标出现而发生横向跳动。 */
 @Composable
 internal fun TaskSectionChevronSlot(expanded: Boolean, visible: Boolean) {
@@ -219,6 +178,15 @@ internal fun TaskListItem(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    AnimatedVisibility(
+                        visible = task.titleState == ConversationTitleState.GENERATING,
+                        enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
+                                scaleIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS), initialScale = 0.95f),
+                        exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
+                                scaleOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS), targetScale = 0.95f),
+                    ) {
+                        TitleGeneratingIndicator()
+                    }
                     if (shouldShowConversationTitleText(task.titleState)) {
                         Text(
                             text = task.title,
@@ -232,15 +200,6 @@ internal fun TaskListItem(
                         )
                     } else {
                         Spacer(modifier = Modifier.weight(1f))
-                    }
-                    AnimatedVisibility(
-                        visible = task.titleState == ConversationTitleState.GENERATING,
-                        enter = fadeIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS)) +
-                                scaleIn(tween(PENDING_CARD_ENTER_DURATION_MILLIS), initialScale = 0.95f),
-                        exit = fadeOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS)) +
-                                scaleOut(tween(PENDING_CARD_EXIT_DURATION_MILLIS), targetScale = 0.95f),
-                    ) {
-                        TitleGeneratingIndicator()
                     }
                     TaskStatusIndicator(task.status)
                 }

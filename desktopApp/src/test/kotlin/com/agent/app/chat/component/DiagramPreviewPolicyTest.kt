@@ -40,74 +40,22 @@ class DiagramPreviewPolicyTest {
         assertFalse(isDiagramZoomInputCandidate("20%"))
     }
 
-    /** 页面未握手时控件不可用，重渲染后的默认缩放始终为 100%。 */
+    /** SVG 尚在生成时控件不可用，重渲染后的默认缩放始终为 100%。 */
     @Test
-    fun enablesZoomOnlyAfterPageReadyAndUsesDefaultForNewRender() {
-        assertFalse(isDiagramPreviewReady(DiagramPreviewState.PageLoaded))
+    fun enablesZoomOnlyAfterSvgReadyAndUsesDefaultForNewRender() {
+        assertFalse(isDiagramPreviewReady(DiagramPreviewState.GeneratingMermaid))
         assertTrue(isDiagramPreviewReady(DiagramPreviewState.Ready(1.6f)))
         assertEquals(100, DIAGRAM_DEFAULT_ZOOM_PERCENT)
     }
 
-    /** 普通 DOM 滚轮的正负像素增量必须原样保留给聊天时间线。 */
+    /** Ctrl+滚轮仍按固定步长缩放；普通滚轮已不再走图表输入路径。 */
     @Test
-    fun preservesDomWheelDirectionWhenForwardingToTimeline() {
-        assertEquals(
-            DiagramWheelIntent.TimelineScroll(48f),
-            diagramWheelIntent(
-                controlDown = false,
-                currentZoomPercent = 100,
-                scrollDelta = 48f,
-            ),
-        )
-        assertEquals(
-            DiagramWheelIntent.TimelineScroll(-48f),
-            diagramWheelIntent(
-                controlDown = false,
-                currentZoomPercent = 100,
-                scrollDelta = -48f,
-            ),
-        )
-        assertEquals(
-            DiagramWheelIntent.Ignored,
-            diagramWheelIntent(
-                controlDown = false,
-                currentZoomPercent = 100,
-                scrollDelta = Float.NaN,
-            ),
-        )
-    }
-
-    /** Ctrl+滚轮只改变当前图表缩放，普通滚轮只产生时间线滚动意图。 */
-    @Test
-    fun routesWheelInputBetweenTimelineAndDiagramZoom() {
-        val timelineIntent = diagramWheelIntent(
-            controlDown = false,
-            currentZoomPercent = 100,
-            scrollDelta = 48f,
-        )
-        val zoomInIntent = diagramWheelIntent(
-            controlDown = true,
-            currentZoomPercent = 100,
-            scrollDelta = -48f,
-        )
-        val zoomOutIntent = diagramWheelIntent(
-            controlDown = true,
-            currentZoomPercent = 100,
-            scrollDelta = 48f,
-        )
-
-        assertEquals(DiagramWheelIntent.TimelineScroll(48f), timelineIntent)
-        assertEquals(DiagramWheelIntent.Zoom(110), zoomInIntent)
-        assertEquals(DiagramWheelIntent.Zoom(90), zoomOutIntent)
+    fun zoomsOnlyForCtrlWheel() {
+        assertFalse(shouldDiagramHandleScroll(isCtrlPressed = false, scrollDelta = 48f))
+        assertTrue(shouldDiagramHandleScroll(isCtrlPressed = true, scrollDelta = -48f))
+        assertFalse(shouldDiagramHandleScroll(isCtrlPressed = true, scrollDelta = Float.NaN))
         assertEquals(110, diagramZoomPercentAfterWheel(100, -480f))
-        assertEquals(
-            DiagramWheelIntent.Zoom(500),
-            diagramWheelIntent(
-                controlDown = true,
-                currentZoomPercent = 500,
-                scrollDelta = -48f,
-            ),
-        )
+        assertEquals(500, diagramZoomPercentAfterWheel(500, -48f))
     }
 
     /** 源码与渲染按钮只在当前图表卡片内切换，不引入侧栏状态。 */

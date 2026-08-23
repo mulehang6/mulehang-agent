@@ -131,8 +131,8 @@ class AssistantMarkdownRenderPolicyTest {
     @Test
     fun permitsOnlyPackagedDiagramResourceUrls() {
         val resourceDirectory = Path.of("D:/mulehang/diagram").toAbsolutePath().normalize()
-        val pageUrl = resourceDirectory.resolve("diagram.html").toUri().toString() +
-            "?kind=mermaid&theme=dark#encoded-source"
+        val pageUrl = resourceDirectory.resolve("mermaid-worker.html").toUri().toString() +
+            "?requestId=1&theme=dark&themePolicy=auto#encoded-source"
 
         assertTrue(isAllowedDiagramResourceUrl(pageUrl, resourceDirectory))
         assertTrue(
@@ -150,39 +150,20 @@ class AssistantMarkdownRenderPolicyTest {
         )
     }
 
-    /** JCEF 页面状态必须前进到 ready，且页面结束加载不能覆盖已经收到的完成握手。 */
+    /** Mermaid 工作器结果必须保留 SVG 或带类别的回退原因。 */
     @Test
-    fun tracksOfflineDiagramBrowserStatesWithoutRegression() {
-        val pageLoaded = diagramPreviewStateAfterBrowserStatus(
-            DiagramPreviewState.BrowserLoading,
-            DiagramBrowserStatus.PageLoaded,
-        )
-        val ready = diagramPreviewStateAfterBrowserStatus(pageLoaded, DiagramBrowserStatus.Ready(1.5f))
-
-        assertEquals(DiagramPreviewState.PageLoaded, pageLoaded)
-        assertEquals(DiagramPreviewState.Ready(1.5f), ready)
-        assertEquals(
-            DiagramPreviewState.Ready(1.5f),
-            diagramPreviewStateAfterBrowserStatus(ready, DiagramBrowserStatus.PageLoaded),
-        )
-    }
-
-    /** 页面错误和八秒未完成均必须转为有类别的可复制代码回退。 */
-    @Test
-    fun fallsBackFromOfflineDiagramFailuresAndTimeouts() {
+    fun keepsSvgAndRecoverableFailureSeparate() {
+        val svg = "<svg viewBox=\"0 0 20 10\"/>"
         val syntaxFailure = DiagramPreviewFailure(
             kind = DiagramFailureKind.MERMAID_SYNTAX,
             detail = "unexpected token",
         )
-        val failed = diagramPreviewStateAfterBrowserStatus(
-            DiagramPreviewState.PageLoaded,
-            DiagramBrowserStatus.Failed(syntaxFailure),
-        )
-        val timeout = requireNotNull(diagramPreviewTimeout(DiagramPreviewState.BrowserLoading))
+        val rendered = DiagramRenderResult.Success(svg)
+        val failed = DiagramRenderResult.Failure(syntaxFailure)
 
-        assertEquals(DiagramPreviewState.Failed(syntaxFailure), failed)
-        assertEquals(DiagramFailureKind.TIMEOUT, timeout.failure.kind)
-        assertEquals(null, diagramPreviewTimeout(DiagramPreviewState.Ready()))
+        assertEquals(svg, assertIs<DiagramRenderResult.Success>(rendered).svg)
+        assertEquals(syntaxFailure, assertIs<DiagramRenderResult.Failure>(failed).failure)
+        assertTrue(syntaxFailure.fallbackMessage().contains("Mermaid 语法"))
     }
 
     /** 安装包资源优先，开发运行则从 classpath 的本地 `diagram/` 目录读取 Mermaid。 */
@@ -197,19 +178,19 @@ class AssistantMarkdownRenderPolicyTest {
 
             assertEquals(
                 packageDiagram,
-                DiagramBrowserRuntime.locateDiagramResourceDirectory(
+                DiagramBrowserResourcePolicy.locateDiagramResourceDirectory(
                     packageResourcesDirectory = packageRoot,
-                    classpathDiagramPage = developmentDiagram.resolve("diagram.html").toUri().toURL(),
+                    classpathDiagramPage = developmentDiagram.resolve("mermaid-worker.html").toUri().toURL(),
                 ),
             )
             assertEquals(
                 developmentDiagram,
-                DiagramBrowserRuntime.locateDiagramResourceDirectory(
+                DiagramBrowserResourcePolicy.locateDiagramResourceDirectory(
                     packageResourcesDirectory = missingPackageRoot,
-                    classpathDiagramPage = developmentDiagram.resolve("diagram.html").toUri().toURL(),
+                    classpathDiagramPage = developmentDiagram.resolve("mermaid-worker.html").toUri().toURL(),
                 ),
             )
-            assertEquals(Path.of("mermaid", "mermaid.min.js"), DiagramBrowserRuntime.diagramMermaidEntryRelativePath())
+            assertEquals(Path.of("mermaid", "mermaid.min.js"), DiagramBrowserResourcePolicy.diagramMermaidEntryRelativePath())
         } finally {
             deleteDirectory(packageRoot)
             deleteDirectory(developmentRoot)
@@ -229,9 +210,9 @@ class AssistantMarkdownRenderPolicyTest {
 
             assertEquals(
                 helper.toAbsolutePath().normalize(),
-                DiagramBrowserRuntime.locateJcefHelperPath(runtimeRoot),
+                locateMermaidJcefHelperPath(runtimeRoot),
             )
-            assertEquals(null, DiagramBrowserRuntime.locateJcefHelperPath(missingRuntimeRoot))
+            assertEquals(null, locateMermaidJcefHelperPath(missingRuntimeRoot))
         } finally {
             deleteDirectory(runtimeRoot)
             deleteDirectory(missingRuntimeRoot)
@@ -309,6 +290,8 @@ class AssistantMarkdownRenderPolicyTest {
         assertTrue(dark.contains("backgroundColor transparent"))
         assertTrue(dark.contains("defaultFontColor #E7EAF0"))
         assertTrue(light.contains("defaultFontColor #1F2329"))
+        assertFalse(dark.contains("activityDiagram {\n  BackgroundColor"))
+        assertFalse(light.contains("activityDiagram {\n  BackgroundColor"))
         assertFalse(dark.contains("defaultFontName"))
     }
 
@@ -323,7 +306,7 @@ class AssistantMarkdownRenderPolicyTest {
     /** 为资源定位测试创建包含本地页面和 Mermaid 入口的最小目录。 */
     private fun createCompleteDiagramResources(root: Path): Path {
         val directory = Files.createDirectories(root.resolve("diagram"))
-        Files.writeString(directory.resolve("diagram.html"), "<!doctype html>")
+        Files.writeString(directory.resolve("mermaid-worker.html"), "<!doctype html>")
         Files.createDirectories(directory.resolve("mermaid"))
         Files.writeString(directory.resolve("mermaid/mermaid.min.js"), "window.mermaid = {};")
         return directory.toAbsolutePath().normalize()

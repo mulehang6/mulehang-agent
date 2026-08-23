@@ -79,7 +79,7 @@ val prepareDiagramDevelopmentResources = tasks.register<Sync>("prepareDiagramDev
     description = "Places the packaged offline diagram resources on the development classpath."
     dependsOn(prepareDiagramAppResources)
     from(diagramAppResourcesRoot.map { resourcesRoot -> resourcesRoot.dir("windows/diagram") }) {
-        exclude("diagram.html")
+        exclude("mermaid-worker.html")
         into("diagram")
     }
     into(diagramDevelopmentResourcesRoot)

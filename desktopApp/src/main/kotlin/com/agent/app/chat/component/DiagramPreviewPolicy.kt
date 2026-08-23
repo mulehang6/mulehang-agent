@@ -2,7 +2,7 @@ package com.agent.app.chat.component
 
 import kotlin.math.max
 
-/** 图表预览在一张卡片内可使用的缩放范围。 */
+/** 图表预览在一张卡片内可使用的缩放范围，其中 100% 表示适应画布。 */
 internal const val DIAGRAM_MIN_ZOOM_PERCENT = 50
 internal const val DIAGRAM_DEFAULT_ZOOM_PERCENT = 100
 internal const val DIAGRAM_MAX_ZOOM_PERCENT = 500
@@ -22,6 +22,9 @@ internal const val DIAGRAM_LOADING_VIEWPORT_HEIGHT_DP = 360f
 /** 过宽图表仍保留的最小可读视口高度。 */
 internal const val DIAGRAM_MIN_VIEWPORT_HEIGHT_DP = 200f
 
+/** 自动适配时为图形与卡片边框保留的稳定内边距。 */
+internal const val DIAGRAM_VIEWPORT_CONTENT_INSET_DP = 16f
+
 /** 图表卡片在渲染视图与原始源码视图之间的用户选择。 */
 internal enum class DiagramPreviewDisplayMode {
     RENDERED,
@@ -32,22 +35,6 @@ internal enum class DiagramPreviewDisplayMode {
 internal fun DiagramPreviewDisplayMode.toggled(): DiagramPreviewDisplayMode = when (this) {
     DiagramPreviewDisplayMode.RENDERED -> DiagramPreviewDisplayMode.SOURCE
     DiagramPreviewDisplayMode.SOURCE -> DiagramPreviewDisplayMode.RENDERED
-}
-
-/** 图表浏览器接收滚轮事件后需要执行的单一宿主操作。 */
-internal sealed interface DiagramWheelIntent {
-    /** 无有效旋转量时不消费事件。 */
-    data object Ignored : DiagramWheelIntent
-
-    /** 普通滚轮把保留方向的像素增量交给外层聊天时间线。 */
-    data class TimelineScroll(
-        val delta: Float,
-    ) : DiagramWheelIntent
-
-    /** Ctrl+滚轮把缩放目标交给当前图表，不影响聊天时间线。 */
-    data class Zoom(
-        val percent: Int,
-    ) : DiagramWheelIntent
 }
 
 /** 图表在缩放后可沿两个方向移动的最大半程。 */
@@ -76,7 +63,7 @@ internal fun diagramViewportHeightDp(
 internal fun normalizeDiagramZoomPercent(percent: Int): Int =
     percent.coerceIn(DIAGRAM_MIN_ZOOM_PERCENT, DIAGRAM_MAX_ZOOM_PERCENT)
 
-/** 根据带方向的 DOM 滚轮像素增量计算下一个 10% 对齐的缩放值。 */
+/** 根据带方向的指针滚轮增量计算下一个 10% 对齐的缩放值。 */
 internal fun diagramZoomPercentAfterWheel(
     currentPercent: Int,
     scrollDelta: Float,
@@ -137,23 +124,4 @@ internal fun clampDiagramPanOffset(
     if (safeBound == 0f) return 0f
     val safeOffset = offset.takeIf { it.isFinite() } ?: 0f
     return safeOffset.coerceIn(-safeBound, safeBound)
-}
-
-/** 根据 Ctrl 修饰键把 DOM 滚轮像素增量拆分为聊天滚动或图表缩放。 */
-internal fun diagramWheelIntent(
-    controlDown: Boolean,
-    currentZoomPercent: Int,
-    scrollDelta: Float,
-): DiagramWheelIntent {
-    val normalizedDelta = scrollDelta.takeIf(Float::isFinite) ?: 0f
-    if (normalizedDelta == 0f) return DiagramWheelIntent.Ignored
-    if (controlDown) {
-        return DiagramWheelIntent.Zoom(
-            diagramZoomPercentAfterWheel(
-                currentPercent = currentZoomPercent,
-                scrollDelta = normalizedDelta,
-            ),
-        )
-    }
-    return DiagramWheelIntent.TimelineScroll(normalizedDelta)
 }

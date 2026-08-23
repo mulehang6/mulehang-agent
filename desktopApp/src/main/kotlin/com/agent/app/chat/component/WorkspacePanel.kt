@@ -1,7 +1,6 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.LocalScrollbarStyle
-import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.rememberScrollbarAdapter
@@ -35,14 +34,12 @@ import com.agent.app.chat.presentation.itemContentSize
 import com.agent.app.chat.presentation.shouldForceScrollToLatestAfterSubmit
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppMuted
-import com.agent.app.design.AppLine
 import com.agent.app.design.AppText
 import com.agent.app.design.AppWorkspaceBackground
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.shared.chat.model.ExecutionState
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.IconActionButton
@@ -90,16 +87,6 @@ internal fun WorkspacePanel(
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
-    val onDiagramWheel: (Float) -> Unit = { scrollDelta ->
-        if (scrollDelta != 0f) {
-            scope.launch {
-                scrollState.scroll(MutatePriority.UserInput) {
-                    scrollBy(scrollDelta)
-                }
-            }
-        }
-    }
-
     LaunchedEffect(scrollState) {
         snapshotFlow {
             isTimelineFollowingLatest(
@@ -206,7 +193,6 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                                 pendingMessageEntry = messageEntry,
                                                 onMessageEntryFinished = onMessageEntryFinished,
-                                                onDiagramWheel = onDiagramWheel,
                                             )
                                             RightRailGlyph.HISTORY -> HistoryPanel(
                                                 activeConversation,
@@ -217,7 +203,6 @@ internal fun WorkspacePanel(
                                                 conversation = activeConversation,
                                                 pendingMessageEntry = messageEntry,
                                                 onMessageEntryFinished = onMessageEntryFinished,
-                                                onDiagramWheel = onDiagramWheel,
                                             )
                                         }
                                     }

@@ -16,7 +16,6 @@ import org.jetbrains.jewel.markdown.Markdown
 internal fun AssistantMessageBlock(
     content: String,
     isStreaming: Boolean,
-    onDiagramWheel: (Float) -> Unit = {},
 ) {
     val document = remember(content, isStreaming) {
         if (isStreaming) {
@@ -35,7 +34,6 @@ internal fun AssistantMessageBlock(
                 is AssistantMarkdownBlock.Diagram -> AssistantDiagramPreview(
                     kind = block.kind,
                     source = block.source,
-                    onDiagramWheel = onDiagramWheel,
                 )
                 is AssistantMarkdownBlock.Code -> AssistantCodeBlock(block.language, block.source)
                 is AssistantMarkdownBlock.Image -> AssistantMarkdownImage(block.alt, block.url)

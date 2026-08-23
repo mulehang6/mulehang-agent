@@ -6,7 +6,7 @@ import net.sourceforge.plantuml.FileFormatOption
 import net.sourceforge.plantuml.SourceStringReader
 
 /**
- * 在当前 JVM 内生成 PlantUML SVG。渲染器不访问网络，也不修改 PlantUML 输出的 SVG。
+ * 在当前 JVM 内生成 PlantUML SVG，并将文字转为 Skia 可绘制的矢量轮廓。
  */
 internal fun renderPlantUmlToSvg(
     source: String,
@@ -17,7 +17,7 @@ internal fun renderPlantUmlToSvg(
         output,
         FileFormatOption(FileFormat.SVG),
     )
-    return output.toString(Charsets.UTF_8)
+    return outlineDiagramSvgText(output.toString(Charsets.UTF_8))
 }
 
 /**
@@ -64,7 +64,6 @@ document {
   BackgroundColor transparent
 }
 activityDiagram {
-  BackgroundColor #31343C
   LineColor #B6C2DA
   FontColor #F4F7FC
   diamond {
@@ -118,7 +117,6 @@ document {
   BackgroundColor transparent
 }
 activityDiagram {
-  BackgroundColor #FFFFFF
   LineColor #596273
   FontColor #1F2329
   diamond {

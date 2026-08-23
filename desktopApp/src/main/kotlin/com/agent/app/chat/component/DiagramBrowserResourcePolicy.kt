@@ -16,7 +16,7 @@ import org.cef.network.CefRequest
 internal object DiagramBrowserResourcePolicy {
     internal const val COMPOSE_APP_RESOURCES_DIRECTORY_PROPERTY = "compose.application.resources.dir"
     internal const val DIAGRAM_RESOURCE_DIRECTORY = "diagram"
-    internal const val DIAGRAM_HTML_FILE = "diagram.html"
+    internal const val MERMAID_WORKER_FILE = "mermaid-worker.html"
 
     /** 本地图表页面可以使用的请求拦截器。 */
     val localOnlyRequestHandler = object : CefRequestHandlerAdapter() {
@@ -60,7 +60,7 @@ internal object DiagramBrowserResourcePolicy {
         val packageResourcesDirectory = System.getProperty(COMPOSE_APP_RESOURCES_DIRECTORY_PROPERTY)
             ?.let { value -> runCatching { Path.of(value) }.getOrNull() }
         val classpathDiagramPage = DiagramBrowserResourcePolicy::class.java.classLoader
-            .getResource("$DIAGRAM_RESOURCE_DIRECTORY/$DIAGRAM_HTML_FILE")
+            .getResource("$DIAGRAM_RESOURCE_DIRECTORY/$MERMAID_WORKER_FILE")
         return locateDiagramResourceDirectory(packageResourcesDirectory, classpathDiagramPage)
     }
 
@@ -89,7 +89,7 @@ internal object DiagramBrowserResourcePolicy {
 
     /** 判断一个目录是否能在无网络环境中承载图表页面。 */
     private fun hasCompleteDiagramResources(directory: Path): Boolean =
-        Files.isRegularFile(directory.resolve(DIAGRAM_HTML_FILE)) &&
+        Files.isRegularFile(directory.resolve(MERMAID_WORKER_FILE)) &&
             Files.isRegularFile(directory.resolve(diagramMermaidEntryRelativePath()))
 
     /** 判断请求是否只指向给定的本地图表资源目录。 */

@@ -66,19 +66,23 @@ internal fun diagramSvgAspectRatio(svg: String): Float? = diagramSvgIntrinsicSiz
     (size.width / size.height).takeIf { it.isFinite() && it > 0f }
 }
 
-/** 计算 SVG 在当前视口内不放大的初始适配倍率。 */
+/** 计算 SVG 在当前视口可用区域内的初始适配倍率，并允许小图放大至填充画布。 */
 internal fun diagramSvgFitScale(
     intrinsicSize: DiagramSvgIntrinsicSize,
     viewportWidth: Float,
     viewportHeight: Float,
+    contentInset: Float = 0f,
 ): Float {
     if (!viewportWidth.isFinite() || !viewportHeight.isFinite() || viewportWidth <= 0f || viewportHeight <= 0f) {
         return 1f
     }
+    val safeInset = contentInset.takeIf { it.isFinite() && it >= 0f } ?: 0f
+    val availableWidth = (viewportWidth - safeInset * 2f).coerceAtLeast(1f)
+    val availableHeight = (viewportHeight - safeInset * 2f).coerceAtLeast(1f)
     return minOf(
-        viewportWidth / intrinsicSize.width,
-        viewportHeight / intrinsicSize.height,
-    ).coerceAtMost(1f)
+        availableWidth / intrinsicSize.width,
+        availableHeight / intrinsicSize.height,
+    )
 }
 
 /** 计算矢量图在当前缩放值下允许的平移边界。 */
@@ -128,7 +132,6 @@ internal fun DiagramSvgSurface(
     zoomInput: androidx.compose.ui.text.input.TextFieldValue,
     onZoomInputChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit,
     onZoomChange: (Int) -> Unit,
-    onDiagramWheel: (Float) -> Unit,
     onDisplayModeChange: (DiagramPreviewDisplayMode) -> Unit,
 ) {
     val palette = LocalDesktopPalette.current
@@ -178,7 +181,6 @@ internal fun DiagramSvgSurface(
                         zoomPercent = zoomPercent,
                         viewportWidthPx = viewportWidthPx,
                         viewportHeightPx = viewportHeightPx,
-                        onDiagramWheel = onDiagramWheel,
                         onDiagramZoom = onZoomChange,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -198,13 +200,44 @@ private fun DiagramSvgCanvas(
     zoomPercent: Int,
     viewportWidthPx: Float,
     viewportHeightPx: Float,
-    onDiagramWheel: (Float) -> Unit,
     onDiagramZoom: (Int) -> Unit,
     modifier: Modifier,
 ) {
     var panOffset by remember(document) { mutableStateOf(Offset.Zero) }
     val normalizedZoom = normalizeDiagramZoomPercent(zoomPercent)
-    val fitScale = diagramSvgFitScale(intrinsicSize, viewportWidthPx, viewportHeightPx)
+    val contentInsetPx = with(LocalDensity.current) { DIAGRAM_VIEWPORT_CONTENT_INSET_DP.dp.toPx() }
+    val fitScale = diagramSvgFitScale(
+        intrinsicSize = intrinsicSize,
+        viewportWidth = viewportWidthPx,
+        viewportHeight = viewportHeightPx,
+        contentInset = contentInsetPx,
+    )
+    val dragModifier = if (normalizedZoom > DIAGRAM_DEFAULT_ZOOM_PERCENT) {
+        Modifier.pointerInput(document, normalizedZoom, viewportWidthPx, viewportHeightPx, fitScale) {
+            detectTransformGestures { _, pan, zoom, _ ->
+                if (zoom != 1f) {
+                    onDiagramZoom(
+                        normalizeDiagramZoomPercent((normalizedZoom * zoom).toInt()),
+                    )
+                }
+                if (pan != Offset.Zero) {
+                    val bounds = diagramSvgPanBounds(
+                        intrinsicSize = intrinsicSize,
+                        fitScale = fitScale,
+                        viewportWidth = viewportWidthPx,
+                        viewportHeight = viewportHeightPx,
+                        zoomPercent = normalizedZoom,
+                    )
+                    panOffset = Offset(
+                        x = clampDiagramPanOffset(panOffset.x + pan.x, bounds.horizontal),
+                        y = clampDiagramPanOffset(panOffset.y + pan.y, bounds.vertical),
+                    )
+                }
+            }
+        }
+    } else {
+        Modifier
+    }
     LaunchedEffect(normalizedZoom, viewportWidthPx, viewportHeightPx, fitScale) {
         val bounds = diagramSvgPanBounds(
             intrinsicSize = intrinsicSize,
@@ -224,48 +257,25 @@ private fun DiagramSvgCanvas(
             .onPointerEvent(PointerEventType.Scroll, pass = PointerEventPass.Initial) { event ->
                 val change = event.changes.firstOrNull() ?: return@onPointerEvent
                 val scrollDelta = change.scrollDelta.y
-                if (scrollDelta == 0f) return@onPointerEvent
+                if (!shouldDiagramHandleScroll(event.keyboardModifiers.isCtrlPressed, scrollDelta)) {
+                    return@onPointerEvent
+                }
                 change.consume()
-                if (event.keyboardModifiers.isCtrlPressed) {
-                    val nextZoom = diagramZoomPercentAfterWheel(normalizedZoom, scrollDelta)
-                    if (nextZoom != normalizedZoom) {
-                        val anchor = change.position
-                        panOffset = diagramSvgPanAfterZoom(
-                            currentPan = panOffset,
-                            currentZoomPercent = normalizedZoom,
-                            nextZoomPercent = nextZoom,
-                            anchor = anchor,
-                            viewportWidth = viewportWidthPx,
-                            viewportHeight = viewportHeightPx,
-                        )
-                        onDiagramZoom(nextZoom)
-                    }
-                } else {
-                    onDiagramWheel(scrollDelta)
+                val nextZoom = diagramZoomPercentAfterWheel(normalizedZoom, scrollDelta)
+                if (nextZoom != normalizedZoom) {
+                    val anchor = change.position
+                    panOffset = diagramSvgPanAfterZoom(
+                        currentPan = panOffset,
+                        currentZoomPercent = normalizedZoom,
+                        nextZoomPercent = nextZoom,
+                        anchor = anchor,
+                        viewportWidth = viewportWidthPx,
+                        viewportHeight = viewportHeightPx,
+                    )
+                    onDiagramZoom(nextZoom)
                 }
             }
-            .pointerInput(document, normalizedZoom, viewportWidthPx, viewportHeightPx) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    if (zoom != 1f) {
-                        onDiagramZoom(
-                            normalizeDiagramZoomPercent((normalizedZoom * zoom).toInt()),
-                        )
-                    }
-                    if (pan != Offset.Zero) {
-                        val bounds = diagramSvgPanBounds(
-                            intrinsicSize = intrinsicSize,
-                            fitScale = fitScale,
-                            viewportWidth = viewportWidthPx,
-                            viewportHeight = viewportHeightPx,
-                            zoomPercent = normalizedZoom,
-                        )
-                        panOffset = Offset(
-                            x = clampDiagramPanOffset(panOffset.x + pan.x, bounds.horizontal),
-                            y = clampDiagramPanOffset(panOffset.y + pan.y, bounds.vertical),
-                        )
-                    }
-                }
-            },
+            .then(dragModifier),
     ) {
         val zoomScale = normalizedZoom / DIAGRAM_DEFAULT_ZOOM_PERCENT.toFloat()
         val renderScale = fitScale * zoomScale
@@ -284,6 +294,12 @@ private fun DiagramSvgCanvas(
         }
     }
 }
+
+/** 仅 Ctrl 加滚轮属于图表缩放；普通滚轮必须保留给外层会话时间线。 */
+internal fun shouldDiagramHandleScroll(
+    isCtrlPressed: Boolean,
+    scrollDelta: Float,
+): Boolean = isCtrlPressed && scrollDelta.isFinite() && scrollDelta != 0f
 
 private val SVG_VIEW_BOX = Regex(
     """\bviewBox\s*=\s*["']\s*[-+]?\d+(?:\.\d+)?[\s,]+[-+]?\d+(?:\.\d+)?[\s,]+([-+]?\d+(?:\.\d+)?)[\s,]+([-+]?\d+(?:\.\d+)?)\s*["']""",

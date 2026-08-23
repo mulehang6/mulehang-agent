@@ -11,7 +11,7 @@ val mermaidVersion = "11.15.0"
 
 val jcefHome = file(
     providers.gradleProperty("jcefHome").orNull
-        ?: System.getenv("JCEF_HOME")
+        ?: providers.environmentVariable("JCEF_HOME").orNull
         ?: "D:/jdk/jbrsdk-JCEF",
 )
 val jcefJmod = jcefHome.resolve("jmods/jcef.jmod")

@@ -22,11 +22,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
+      - name: Set up JBR 25 with JCEF
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $jbrArchiveUrl = "https://cache-redirector.jetbrains.com/intellij-jbr/jbrsdk_jcef-25.0.4-windows-x64-b508.27.zip"
+          $jbrArchivePath = Join-Path $env:RUNNER_TEMP "jbrsdk-jcef.zip"
+          $jbrExtractPath = Join-Path $env:RUNNER_TEMP "jbrsdk-jcef"
+          $jbrChecksum = "30ccf003e6b0815cc8d3abab7dc2cd6642cd5add225745c0ae56986d67ad79fecae191d6220781c66686add7bb5c5772616128e748c9798e05d2869aa161d4be"
+
+          Invoke-WebRequest -Uri $jbrArchiveUrl -OutFile $jbrArchivePath
+          if ((Get-FileHash -Path $jbrArchivePath -Algorithm SHA512).Hash -ne $jbrChecksum) {
+            throw "Downloaded JBR archive checksum does not match the pinned SHA-512."
+          }
+          Expand-Archive -Path $jbrArchivePath -DestinationPath $jbrExtractPath
+
+          $jcefJmod = Get-ChildItem -Path $jbrExtractPath -Recurse -File -Filter "jcef.jmod" | Select-Object -First 1
+          if ($null -eq $jcefJmod) {
+            throw "Downloaded JBR does not contain jmods\\jcef.jmod."
+          }
+          $jcefHome = $jcefJmod.Directory.Parent.FullName
+          if (-not (Test-Path -LiteralPath (Join-Path $jcefHome "bin\\jcef_helper.exe") -PathType Leaf)) {
+            throw "Downloaded JBR does not contain bin\\jcef_helper.exe."
+          }
+
+          "JAVA_HOME=$jcefHome" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "JCEF_HOME=$jcefHome" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $jcefHome "bin") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5

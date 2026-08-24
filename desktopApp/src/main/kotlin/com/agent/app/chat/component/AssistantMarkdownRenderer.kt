@@ -101,4 +101,4 @@ private val HTML_INLINE_CODE = Regex(
 )
 private val HTML_BLOCK_OPEN = Regex("<\\s*(?:div|p|details|summary|dl|dt|dd)\\b[^>]*>", RegexOption.IGNORE_CASE)
 private val HTML_BLOCK_CLOSE = Regex("<\\s*/\\s*(?:div|p|details|summary|dl|dt|dd)\\s*>", RegexOption.IGNORE_CASE)
-private val HTML_TAG = Regex("<[^>]+>")
+private val HTML_TAG = Regex("<\\s*/?\\s*[A-Za-z][A-Za-z0-9-]*(?=\\s|/?>)[^>]*>")

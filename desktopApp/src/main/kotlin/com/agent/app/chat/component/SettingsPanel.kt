@@ -108,6 +108,9 @@ internal fun SettingsPanel(
         uiState.expandedProviderId = null
         uiState.feedback = null
     }
+    LaunchedEffect(uiState.section, uiState.layer) {
+        uiState.contentScrollState.scrollTo(0)
+    }
     JewelSurface(
         role = JewelSurfaceRole.PANEL,
         radius = 14.dp,

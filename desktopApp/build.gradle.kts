@@ -18,14 +18,17 @@ val jcefHome = file(
 )
 val jcefJmod = jcefHome.resolve("jmods/jcef.jmod")
 val jcefHelper = jcefHome.resolve("bin/jcef_helper.exe")
+val isWindowsHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
 
 val jcefRuntimeHint =
     "Point -PjcefHome=... or the JCEF_HOME env var at a JetBrains Runtime with JCEF."
 check(jcefJmod.isFile) {
     "The configured JCEF runtime does not contain ${jcefJmod.path}. $jcefRuntimeHint"
 }
-check(jcefHelper.isFile) {
-    "The configured JCEF runtime does not contain ${jcefHelper.path}. $jcefRuntimeHint"
+if (isWindowsHost) {
+    check(jcefHelper.isFile) {
+        "The configured JCEF runtime does not contain ${jcefHelper.path}. $jcefRuntimeHint"
+    }
 }
 
 val mermaidWebJar = configurations.create("mermaidWebJar") {
@@ -207,17 +210,23 @@ tasks.named("processResources") {
  * the main Java launcher, so copy it only after Compose has created the runtime image and
  * before it is assembled into a distributable.
  */
-val copyJcefHelperToRuntime = tasks.register<Copy>("copyJcefHelperToRuntime") {
-    description = "Copies the JBR JCEF helper into the Compose runtime image."
-    dependsOn("createRuntimeImage")
-    from(jcefHelper)
-    into(layout.buildDirectory.dir("compose/tmp/main/runtime/bin"))
+val copyJcefHelperToRuntime = if (isWindowsHost) {
+    tasks.register<Copy>("copyJcefHelperToRuntime") {
+        description = "Copies the JBR JCEF helper into the Compose runtime image."
+        dependsOn("createRuntimeImage")
+        from(jcefHelper)
+        into(layout.buildDirectory.dir("compose/tmp/main/runtime/bin"))
+    }
+} else {
+    null
 }
 
-tasks.matching {
-    it.name == "createDistributable" ||
-        it.name == "packageDistributionForCurrentOS" ||
-        it.name.startsWith("package")
-}.configureEach {
-    dependsOn(copyJcefHelperToRuntime)
+copyJcefHelperToRuntime?.let { helperCopyTask ->
+    tasks.matching {
+        it.name == "createDistributable" ||
+            it.name == "packageDistributionForCurrentOS" ||
+            it.name.startsWith("package")
+    }.configureEach {
+        dependsOn(helperCopyTask)
+    }
 }

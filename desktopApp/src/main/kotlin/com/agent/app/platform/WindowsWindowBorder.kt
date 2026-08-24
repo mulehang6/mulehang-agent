@@ -18,9 +18,13 @@ import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 
 private const val DWMWA_BORDER_COLOR = 34
-private const val DWMWA_COLOR_NONE = -2
-private const val DWMWA_COLOR_DEFAULT = -1
+private const val DWMWA_COLOR_NONE = -1
+private const val DWMWA_COLOR_DEFAULT = -2
 private const val S_OK = 0
+
+/** 根据是否抑制边框返回 Windows SDK 定义的 DWM 颜色哨兵值。 */
+internal fun windowsDwmBorderColor(suppressed: Boolean): Int =
+    if (suppressed) DWMWA_COLOR_NONE else DWMWA_COLOR_DEFAULT
 
 /**
  * 为 Windows 11 的 JBR 窗口隐藏 DWM 绘制的外框，避免自定义标题栏在右侧和底部露出系统亮边。
@@ -71,10 +75,10 @@ internal object WindowsWindowBorder {
     }
 
     /** 隐藏可见窗口的 DWM 边框；系统不支持时不影响应用继续运行。 */
-    fun suppress(window: ComposeWindow): Boolean = setBorderColor(window, DWMWA_COLOR_NONE)
+    fun suppress(window: ComposeWindow): Boolean = setBorderColor(window, windowsDwmBorderColor(suppressed = true))
 
     /** 恢复窗口的默认 DWM 边框策略。 */
-    fun restore(window: ComposeWindow): Boolean = setBorderColor(window, DWMWA_COLOR_DEFAULT)
+    fun restore(window: ComposeWindow): Boolean = setBorderColor(window, windowsDwmBorderColor(suppressed = false))
 
     private fun setBorderColor(window: ComposeWindow, color: Int): Boolean =
         Platform.isWindows() && window.isDisplayable && runCatching {

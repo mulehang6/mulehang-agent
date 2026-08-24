@@ -183,6 +183,8 @@ private object MermaidSvgRenderer {
             ready.await()
         } catch (error: MermaidRendererException) {
             throw error
+        } catch (error: TimeoutCancellationException) {
+            throw error
         } catch (error: Throwable) {
             throw MermaidRendererException(
                 DiagramPreviewFailure(
@@ -226,6 +228,8 @@ private object MermaidSvgRenderer {
                 beginRequest(session, requestId, source, isDark, response)
             }
             prepareReturnedSvg(response.await())
+        } catch (error: TimeoutCancellationException) {
+            throw error
         } catch (error: MermaidRendererException) {
             DiagramRenderResult.Failure(error.failure)
         } catch (error: Throwable) {
@@ -317,9 +321,11 @@ private object MermaidSvgRenderer {
         check(CefApp.startup(MERMAID_JCEF_ARGUMENTS)) { "JCEF 原生运行时启动失败。" }
     }
 
-    /** 为 Windows JBR 的 Chromium 子进程设置随运行时一起发布的 helper。 */
+    /** Windows 使用发布到运行时目录的 helper；其他平台沿用 JCEF 自身的默认路径解析。 */
     private fun jcefSettings(): CefSettings = CefSettings().apply {
-        browser_subprocess_path = resolveJcefHelperPath().toString()
+        if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+            browser_subprocess_path = resolveJcefHelperPath().toString()
+        }
     }
 
     /** 在当前 JBR 的标准位置查找 JCEF helper，缺失时保持可恢复失败。 */

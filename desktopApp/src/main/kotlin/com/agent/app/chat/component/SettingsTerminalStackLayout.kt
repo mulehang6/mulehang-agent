@@ -51,6 +51,14 @@ internal const val SETTINGS_TERMINAL_PANEL_EXIT_DURATION_MILLIS = 180
 /** 设置与终端之间分隔条的可拖拽命中高度。 */
 internal val SETTINGS_TERMINAL_DIVIDER_HEIGHT = 8.dp
 
+/** 保存可中断分隔条交互在重组期间的局部状态。 */
+private class SettingsTerminalDividerInteractionState {
+    var hovered by mutableStateOf(false)
+    var dragging by mutableStateOf(false)
+    var pressed by mutableStateOf(false)
+    var pointerX by mutableFloatStateOf(0f)
+}
+
 /** 设置与终端四种可达布局状态。 */
 internal enum class SettingsTerminalLayoutMode {
     HIDDEN,
@@ -70,6 +78,14 @@ internal fun settingsTerminalLayoutMode(
     terminalVisible -> SettingsTerminalLayoutMode.TERMINAL
     else -> SettingsTerminalLayoutMode.HIDDEN
 }
+
+/** 返回目标布局进入或完全退出右侧区域时的空间过渡时长。 */
+internal fun settingsTerminalPanelTransitionDuration(targetMode: SettingsTerminalLayoutMode): Int =
+    if (targetMode == SettingsTerminalLayoutMode.HIDDEN) {
+        SETTINGS_TERMINAL_PANEL_EXIT_DURATION_MILLIS
+    } else {
+        SETTINGS_TERMINAL_PANEL_ENTER_DURATION_MILLIS
+    }
 
 /** 判断布局状态是否需要设置 Island。 */
 internal fun SettingsTerminalLayoutMode.showsSettings(): Boolean =
@@ -133,7 +149,7 @@ internal fun SettingsTerminalStackLayout(
 
     LaunchedEffect(targetMode) {
         if (targetMode == SettingsTerminalLayoutMode.HIDDEN) {
-            delay(TERMINAL_PANEL_EXIT_DURATION_MILLIS.milliseconds)
+            delay(SETTINGS_TERMINAL_PANEL_EXIT_DURATION_MILLIS.milliseconds)
             retainedMode = SettingsTerminalLayoutMode.HIDDEN
         } else {
             retainedMode = targetMode
@@ -141,11 +157,7 @@ internal fun SettingsTerminalStackLayout(
     }
 
     val visualMode = if (targetMode == SettingsTerminalLayoutMode.HIDDEN) retainedMode else targetMode
-    val panelTransitionDuration = if (targetMode == SettingsTerminalLayoutMode.HIDDEN) {
-        TERMINAL_PANEL_EXIT_DURATION_MILLIS
-    } else {
-        SETTINGS_TERMINAL_PANEL_ENTER_DURATION_MILLIS
-    }
+    val panelTransitionDuration = settingsTerminalPanelTransitionDuration(targetMode)
     val panelEnter = fadeIn(
         animationSpec = tween(
             durationMillis = SETTINGS_TERMINAL_PANEL_ENTER_DURATION_MILLIS,
@@ -167,15 +179,12 @@ internal fun SettingsTerminalStackLayout(
         val totalHeightPx = with(density) { maxHeight.toPx() }
         val splitAvailableHeightPx = (totalHeightPx - dividerHeightPx).coerceAtLeast(0f)
         var splitFraction by remember { mutableFloatStateOf(DEFAULT_SETTINGS_TERMINAL_SPLIT_FRACTION) }
-        var dividerHovered by remember { mutableStateOf(false) }
-        var dividerDragging by remember { mutableStateOf(false) }
-        var dividerPressed by remember { mutableStateOf(false) }
-        var dividerPointerX by remember { mutableFloatStateOf(0f) }
+        val dividerInteraction = remember { SettingsTerminalDividerInteractionState() }
         val desiredSettingsShare = settingsTerminalSettingsShare(visualMode, splitFraction)
         val desiredDividerVisibility = if (visualMode.showsDivider()) 1f else 0f
         val animatedSettingsShare by animateFloatAsState(
             targetValue = desiredSettingsShare,
-            animationSpec = if (dividerDragging) {
+            animationSpec = if (dividerInteraction.dragging) {
                 snap()
             } else {
                 tween(durationMillis = panelTransitionDuration, easing = FastOutSlowInEasing)
@@ -200,9 +209,9 @@ internal fun SettingsTerminalStackLayout(
         val renderedSettingsShare = settingsTerminalRenderedShare(
             desiredShare = desiredSettingsShare,
             animatedShare = animatedSettingsShare,
-            dividerDragging = dividerDragging,
+            dividerDragging = dividerInteraction.dragging,
         )
-        val renderedDividerVisibility = if (dividerDragging) desiredDividerVisibility else animatedDividerVisibility
+        val renderedDividerVisibility = if (dividerInteraction.dragging) desiredDividerVisibility else animatedDividerVisibility
         val renderedDividerHeightPx = dividerHeightPx * renderedDividerVisibility
         val renderedAvailableHeightPx = (totalHeightPx - renderedDividerHeightPx).coerceAtLeast(0f)
         val settingsHeightPx = renderedAvailableHeightPx * renderedSettingsShare
@@ -234,37 +243,37 @@ internal fun SettingsTerminalStackLayout(
                         .offset(y = with(density) { settingsHeightPx.toDp() })
                         .pointerHoverIcon(PointerIcon(Cursor(Cursor.N_RESIZE_CURSOR)))
                         .onPointerEvent(PointerEventType.Enter) { event ->
-                            dividerHovered = true
-                            dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                            dividerInteraction.hovered = true
+                            dividerInteraction.pointerX = event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
                         }
                         .onPointerEvent(PointerEventType.Move) { event ->
-                            dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                            dividerInteraction.pointerX = event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
                         }
-                        .onPointerEvent(PointerEventType.Exit) { dividerHovered = false }
+                        .onPointerEvent(PointerEventType.Exit) { dividerInteraction.hovered = false }
                         .onPointerEvent(PointerEventType.Press) { event ->
-                            dividerPressed = true
-                            dividerPointerX = event.changes.firstOrNull()?.position?.x ?: dividerPointerX
+                            dividerInteraction.pressed = true
+                            dividerInteraction.pointerX = event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
                         }
-                        .onPointerEvent(PointerEventType.Release) { dividerPressed = false }
+                        .onPointerEvent(PointerEventType.Release) { dividerInteraction.pressed = false }
                         .pointerInput(splitAvailableHeightPx, targetMode) {
                             detectDragGestures(
                                 onDragStart = { position ->
-                                    dividerDragging = true
-                                    dividerPressed = true
-                                    dividerPointerX = position.x
+                                    dividerInteraction.dragging = true
+                                    dividerInteraction.pressed = true
+                                    dividerInteraction.pointerX = position.x
                                 },
                                 onDragEnd = {
-                                    dividerDragging = false
-                                    dividerPressed = false
+                                    dividerInteraction.dragging = false
+                                    dividerInteraction.pressed = false
                                 },
                                 onDragCancel = {
-                                    dividerDragging = false
-                                    dividerPressed = false
+                                    dividerInteraction.dragging = false
+                                    dividerInteraction.pressed = false
                                 },
                             ) { change, dragAmount ->
                                 if (targetMode != SettingsTerminalLayoutMode.SPLIT) return@detectDragGestures
                                 change.consume()
-                                dividerPointerX = change.position.x
+                                dividerInteraction.pointerX = change.position.x
                                 splitFraction = clampSettingsTerminalSplitFraction(
                                     requestedFraction = splitFraction + dragAmount.y / splitAvailableHeightPx,
                                     availableHeightPx = splitAvailableHeightPx,
@@ -277,9 +286,9 @@ internal fun SettingsTerminalStackLayout(
                 ) {
                     PointerFollowingDividerHighlight(
                         axis = DividerHighlightAxis.Horizontal,
-                        pointerPositionPx = dividerPointerX,
-                        visible = targetMode.showsDivider() && (dividerHovered || dividerDragging),
-                        pressed = dividerPressed || dividerDragging,
+                        pointerPositionPx = dividerInteraction.pointerX,
+                        visible = targetMode.showsDivider() && (dividerInteraction.hovered || dividerInteraction.dragging),
+                        pressed = dividerInteraction.pressed || dividerInteraction.dragging,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

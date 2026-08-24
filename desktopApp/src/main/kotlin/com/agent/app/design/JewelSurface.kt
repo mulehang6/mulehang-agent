@@ -25,7 +25,7 @@ internal enum class JewelSurfaceRole {
 }
 
 /** `0.dp` 在 Compose 边框 API 中会变成 hairline，因此显式无边框必须跳过绘制修饰符。 */
-internal fun shouldDrawJewelSurfaceBorder(borderWidth: Dp): Boolean = borderWidth.value > 0f
+internal fun shouldDrawJewelSurfaceBorder(borderWidth: Dp): Boolean = borderWidth.value > Dp.Hairline.value
 
 /**
  * 使用 Jewel 全局颜色绘制静态容器，不模拟玻璃、折射或动态背景采样。

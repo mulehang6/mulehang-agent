@@ -44,6 +44,20 @@ class AssistantMarkdownRenderPolicyTest {
         assertTrue(content.contains("下一行"))
     }
 
+    /** HTML 标签归一化不能吞掉 CommonMark 自动链接或普通比较文本。 */
+    @Test
+    fun preservesAutolinksAndComparisonTextWhileRemovingHtmlTags() {
+        val content = normalizeAssistantMarkdown(
+            "<span class=\"note\">说明</span> <https://example.com/docs> <reader@example.com> 2 < 3 > 1",
+        )
+
+        assertFalse(content.contains("<span"))
+        assertTrue(content.contains("说明"))
+        assertTrue(content.contains("<https://example.com/docs>"))
+        assertTrue(content.contains("<reader@example.com>"))
+        assertTrue(content.contains("2 < 3 > 1"))
+    }
+
     /** 已闭合的 PlantUML 围栏必须作为离线图表块提取。 */
     @Test
     fun extractsCompletedPlantUmlFenceAsDiagramBlock() {

@@ -65,6 +65,14 @@ class SettingsTerminalStackLayoutTest {
     fun `should use concise settings terminal transition timings`() {
         assertEquals(220, SETTINGS_TERMINAL_PANEL_ENTER_DURATION_MILLIS)
         assertEquals(180, SETTINGS_TERMINAL_PANEL_EXIT_DURATION_MILLIS)
+        assertEquals(
+            SETTINGS_TERMINAL_PANEL_EXIT_DURATION_MILLIS,
+            settingsTerminalPanelTransitionDuration(SettingsTerminalLayoutMode.HIDDEN),
+        )
+        assertEquals(
+            SETTINGS_TERMINAL_PANEL_ENTER_DURATION_MILLIS,
+            settingsTerminalPanelTransitionDuration(SettingsTerminalLayoutMode.SPLIT),
+        )
         assertEquals(8, SETTINGS_TERMINAL_DIVIDER_HEIGHT.value.toInt())
     }
 

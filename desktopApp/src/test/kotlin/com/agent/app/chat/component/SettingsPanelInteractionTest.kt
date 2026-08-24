@@ -2,16 +2,10 @@ package com.agent.app.chat.component
 
 import com.agent.app.design.PopupMenuHoverBackground
 import com.agent.app.design.PopupMenuSelectedBackground
-import com.agent.app.design.DesktopMaterialMode
-import com.agent.app.design.DesktopThemeMode
-import com.agent.app.design.liquidglass.LiquidGlassExpansionDirection
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.unit.IntSize
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -51,7 +45,6 @@ class SettingsPanelInteractionTest {
     @Test
     fun `should scope provider interaction colors to summary island`() {
         assertEquals(Color(0xFF252629), providerCardBackground())
-        assertEquals(Color(0xFF252629).copy(alpha = 0.58f), providerCardBackground(DesktopMaterialMode.LIQUID_GLASS))
         assertEquals(Color.Transparent, providerSummaryBackground(expanded = false, hovered = false))
         assertEquals(Color(0xFF38393B), providerSummaryBackground(expanded = false, hovered = true))
         assertEquals(
@@ -72,6 +65,33 @@ class SettingsPanelInteractionTest {
         assertEquals(SettingsSection.PROVIDERS, state.section)
         assertEquals("gateway", state.search)
         assertEquals("provider-2", state.expandedProviderId)
+    }
+
+    /** 窄侧栏改用单列信息流，使主题说明和下拉不再相互挤压。 */
+    @Test
+    fun `should switch settings content to compact layout below threshold`() {
+        assertEquals(600, SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP)
+        assertEquals(96, SETTINGS_NAVIGATION_WIDE_WIDTH_DP)
+        assertEquals(SettingsPanelLayout.COMPACT, settingsPanelLayout(599))
+        assertEquals(SettingsPanelLayout.WIDE, settingsPanelLayout(600))
+    }
+
+    /** 设置内容只在真实溢出时占用滚动条轨道，协议下拉保留所有 Provider 类型。 */
+    @Test
+    fun `should use overflow scrollbar and full provider protocol list`() {
+        assertEquals(false, shouldShowSettingsContentScrollbar(0))
+        assertEquals(true, shouldShowSettingsContentScrollbar(1))
+        assertEquals("openai-chat-completions", providerTypeLabel(ProviderType.OPENAI_CHAT_COMPLETIONS))
+        assertEquals(ProviderType.entries.size, ProviderType.entries.map(::providerTypeLabel).distinct().size)
+    }
+
+    /** Settings、终端与范围页签共享 IDEA Islands 的浅深色选中填充和描边。 */
+    @Test
+    fun `should use islands selection colors for all settings tabs`() {
+        assertEquals(Color(0xFFE3EBFE), islandsTabSelectedFill(isDark = false))
+        assertEquals(Color(0xFFA7C5FF), islandsTabSelectedBorder(isDark = false))
+        assertEquals(Color(0xFF233558), islandsTabSelectedFill(isDark = true))
+        assertEquals(Color(0xFF2E4D89), islandsTabSelectedBorder(isDark = true))
     }
 
     /** Provider 摘要不显示操作文字，但图标必须保留完整的无障碍状态描述。 */
@@ -110,44 +130,6 @@ class SettingsPanelInteractionTest {
         assertEquals("gateway.example.com", providerEndpointHost("https://gateway.example.com/v1"))
         assertEquals("localhost:11434", providerEndpointHost("localhost:11434/v1"))
         assertEquals("未配置地址", providerEndpointHost("  "))
-    }
-
-    /** 方向键、Home、End 与 Escape 共用稳定的主题选择状态。 */
-    @Test
-    fun `should navigate and close liquid glass theme select state`() {
-        val state = LiquidGlassSelectState()
-
-        state.open(DesktopThemeMode.DARK.ordinal)
-        state.move(1)
-        assertEquals(DesktopThemeMode.LIGHT.ordinal, state.focusedIndex)
-        state.moveToEdge(last = false)
-        assertEquals(DesktopThemeMode.SYSTEM.ordinal, state.focusedIndex)
-        state.moveToEdge(last = true)
-        assertEquals(DesktopThemeMode.LIGHT.ordinal, state.focusedIndex)
-        state.close()
-        assertEquals(false, state.expanded)
-    }
-
-    /** 菜单应在设置面板底部空间不足时向上展开。 */
-    @Test
-    fun `should place liquid glass menu above near panel bottom`() {
-        val state = LiquidGlassSelectState().apply {
-            updatePanelGeometry(Offset(20f, 40f), IntSize(900, 500))
-            updateAnchor(Rect(650f, 460f, 820f, 496f))
-        }
-
-        val placement = liquidGlassMenuPlacement(state, menuWidthPx = 210f, menuHeightPx = 112f, gapPx = 6f)
-
-        assertEquals(LiquidGlassExpansionDirection.UP, placement.direction)
-        assertEquals(302, placement.offset.y)
-    }
-
-    /** Liquid Glass 菜单保持参考实现的 210 宽度、24 行高和 6 间距。 */
-    @Test
-    fun `should preserve reference liquid glass menu dimensions`() {
-        assertEquals(210, LIQUID_GLASS_MENU_WIDTH_DP)
-        assertEquals(24, LIQUID_GLASS_MENU_ROW_HEIGHT_DP)
-        assertEquals(6, LIQUID_GLASS_MENU_GAP_DP)
     }
 
     /** 减弱动态覆盖必须直接关闭位移与回弹分支。 */

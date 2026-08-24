@@ -12,11 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +35,8 @@ import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppPanelBackground
 import com.agent.app.design.AppText
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.scilab.forge.jlatexmath.TeXConstants
@@ -49,6 +46,10 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 import org.jetbrains.skia.Image as SkiaImage
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.Orientation
+import org.jetbrains.jewel.ui.component.Divider
+import org.jetbrains.jewel.ui.component.Text
 
 /**
  * 显示一张远程 Markdown 图片，并在加载或失败时提供不会留白的可读反馈。
@@ -58,11 +59,12 @@ internal fun AssistantMarkdownImage(
     alt: String,
     url: String,
 ) {
-    Surface(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 8.dp,
+        solidColor = AppPanelBackground,
+        borderColor = AppLine.copy(alpha = 0.7f),
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = AppPanelBackground,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.7f)),
     ) {
         SubcomposeAsyncImage(
             model = url,
@@ -89,7 +91,7 @@ private fun AssistantImageStatus(message: String) {
     ) {
         Text(
             text = message,
-            style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
     }
 }
@@ -110,7 +112,7 @@ internal fun AssistantDefinitionListItem(
     ) {
         Text(
             text = term,
-            style = MaterialTheme.typography.bodyMedium.copy(
+            style = JewelTheme.defaultTextStyle.copy(
                 color = AppText,
                 fontWeight = FontWeight.SemiBold,
             ),
@@ -118,7 +120,7 @@ internal fun AssistantDefinitionListItem(
         Text(
             text = definition,
             modifier = Modifier.padding(start = 16.dp),
-            style = MaterialTheme.typography.bodyMedium.copy(
+            style = JewelTheme.defaultTextStyle.copy(
                 color = AppMuted,
                 lineHeight = 22.sp,
             ),
@@ -136,7 +138,7 @@ internal fun AssistantSafeHtmlSpan(
 ) {
     Text(
         text = content,
-        style = MaterialTheme.typography.bodyMedium.copy(
+        style = JewelTheme.defaultTextStyle.copy(
             color = safeHtmlColor(colorName),
             lineHeight = 22.sp,
         ),
@@ -182,14 +184,14 @@ internal fun AssistantMathFormula(
     when (val result = rendered) {
         null -> Text(
             text = "正在排版数学公式…",
-            style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
 
         else -> result.getOrNull()?.let { formula ->
             RenderedLatexFormulaView(formula, display)
         } ?: Text(
             text = if (display) "${'$'}${'$'}$source${'$'}${'$'}" else "${'$'}$source${'$'}",
-            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
+            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
     }
 }
@@ -205,11 +207,12 @@ private fun RenderedLatexFormulaView(
         height = formulaImageDimensionDp(formula.heightPx, formula.renderScale),
     )
     if (display) {
-        Surface(
+        JewelSurface(
+            role = JewelSurfaceRole.PANEL,
+            radius = 8.dp,
+            solidColor = AppPanelBackground,
+            borderColor = AppLine.copy(alpha = 0.62f),
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            color = AppPanelBackground,
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.62f)),
         ) {
             Box(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -240,11 +243,12 @@ internal fun AssistantMarkdownDetails(
     content: String,
 ) {
     var expanded by remember(summary, content) { mutableStateOf(false) }
-    Surface(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 8.dp,
+        solidColor = AppPanelBackground,
+        borderColor = AppLine.copy(alpha = 0.7f),
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = AppPanelBackground,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppLine.copy(alpha = 0.7f)),
     ) {
         Column {
             Row(
@@ -257,7 +261,7 @@ internal fun AssistantMarkdownDetails(
                 Text(
                     text = summary,
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium.copy(
+                    style = JewelTheme.defaultTextStyle.copy(
                         color = AppText,
                         fontWeight = FontWeight.Medium,
                     ),
@@ -301,10 +305,10 @@ internal fun AssistantFootnoteSection(footnotes: List<AssistantFootnote>) {
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        HorizontalDivider(color = AppLine.copy(alpha = 0.72f))
+        Divider(orientation = Orientation.Horizontal, color = AppLine.copy(alpha = 0.72f))
         Text(
             text = "脚注",
-            style = MaterialTheme.typography.labelMedium.copy(
+            style = JewelTheme.defaultTextStyle.copy(
                 color = AppMuted,
                 fontWeight = FontWeight.Medium,
             ),
@@ -312,7 +316,7 @@ internal fun AssistantFootnoteSection(footnotes: List<AssistantFootnote>) {
         footnotes.forEachIndexed { index, footnote ->
             Text(
                 text = "${index + 1}. ${footnote.content}",
-                style = MaterialTheme.typography.bodySmall.copy(
+                style = JewelTheme.defaultTextStyle.copy(
                     color = AppMuted,
                     lineHeight = 20.sp,
                 ),

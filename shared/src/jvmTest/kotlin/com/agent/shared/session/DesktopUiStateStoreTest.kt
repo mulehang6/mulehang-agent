@@ -60,18 +60,22 @@ class DesktopUiStateStoreTest {
         assertEquals("light", store.loadThemeMode())
     }
 
-    /** Liquid Glass 开关应独立于主题持久化，旧状态文件默认保持关闭。 */
+    /** 旧 Liquid Glass 字段应由 ignoreUnknownKeys 忽略，并在下次写入时自然移除。 */
     @Test
-    fun `should persist liquid glass material independently`() {
+    fun `should ignore legacy liquid glass state`() {
         val root = Files.createTempDirectory("mulehang-ui-liquid-glass-test")
         val statePath = root.resolve(".mulehang/ui-state.json")
+        Files.createDirectories(statePath.parent)
+        Files.writeString(
+            statePath,
+            """{"themeMode":"dark","liquidGlassEnabled":true}""",
+        )
         val store = DesktopUiStateStore(statePath)
 
-        assertFalse(store.loadLiquidGlassEnabled())
+        assertEquals("dark", store.loadThemeMode())
         store.saveThemeMode("light")
-        store.saveLiquidGlassEnabled(true)
 
         assertEquals("light", store.loadThemeMode())
-        assertEquals(true, store.loadLiquidGlassEnabled())
+        assertFalse(Files.readString(statePath).contains("liquidGlassEnabled"))
     }
 }

@@ -1,12 +1,7 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-
 package com.agent.app.bootstrap
 
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
 import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
@@ -20,9 +15,6 @@ fun main(args: Array<String>) {
     configureDesktopRendering()
     application {
         val initialProjectRoot = resolveInitialProjectRoot(args)
-        val windowChromeMode = remember {
-            resolveWindowChromeMode(isNativeWindowDecorationsSupported())
-        }
         val screenSize = Toolkit.getDefaultToolkit().screenSize
         val defaultTransform = GraphicsEnvironment.getLocalGraphicsEnvironment()
             .defaultScreenDevice
@@ -32,19 +24,11 @@ fun main(args: Array<String>) {
             width = calculateWindowSizeDp(screenPixels = screenSize.width, uiScale = defaultTransform.scaleX.toFloat()).dp,
             height = calculateWindowSizeDp(screenPixels = screenSize.height, uiScale = defaultTransform.scaleY.toFloat()).dp,
         )
-        Window(
+        MulehangDesktopApp(
+            initialProjectRoot = initialProjectRoot,
+            desktopWindowState = windowState,
             onCloseRequest = ::exitApplication,
-            state = windowState,
-            title = "mulehang-agent",
-            decoration = windowDecorationFor(windowChromeMode),
-        ) {
-            MulehangDesktopApp(
-                initialProjectRoot = initialProjectRoot,
-                desktopWindowState = windowState,
-                windowChromeMode = windowChromeMode,
-                onCloseRequest = ::exitApplication,
-            )
-        }
+        )
     }
 }
 
@@ -71,9 +55,3 @@ internal fun calculateWindowSizeDp(
     uiScale: Float,
     fraction: Float = 0.8f,
 ): Float = screenPixels * fraction / uiScale.coerceAtLeast(1f)
-
-/**
- * 返回点击最大化按钮后的窗口放置状态。
- */
-internal fun toggleWindowPlacement(current: WindowPlacement): WindowPlacement =
-    if (current == WindowPlacement.Maximized) WindowPlacement.Floating else WindowPlacement.Maximized

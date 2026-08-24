@@ -6,9 +6,11 @@
 
 `agent-ui-prototype1/` 是独立的 React/Vite/Ring UI 原型；`docs/` 存放设计、计划、总结和参考资料。参考项目位于此项目的同级目录，例如：[kilo](../kilocode)。都可以正常使用 IDEA MCP 分析；禁止修改它们。
 
+IDEA 开源版源码通过本地 IDE 项目配置定位，不得将机器相关路径写入仓库。
+
 ## 构建、测试与检查
 
-使用 JDK 21 和仓库 Gradle Wrapper，在根目录执行：
+使用 JetBrains Runtime 25（JDK 25）和仓库 Gradle Wrapper，在根目录执行：
 
 ```powershell
 .\\gradlew.bat :shared:jvmTest :desktopApp:test
@@ -17,6 +19,8 @@
 ```
 
 优先运行与改动范围匹配的最小任务。原型在 `agent-ui-prototype1/` 下使用 `pnpm build` 和 `pnpm lint`。先查看适用的 IDEA 运行配置；不要启动 Desktop、Vite 或其他长期运行服务。完成后检查受影响文件的问题与 diff。
+
+Gradle JVM 与运行时都必须指向包含 JCEF 的 JBR 25。本地在项目根目录未提交的 `.env` 中配置 `JCEF_HOME`；`-PjcefHome` 与系统 `JCEF_HOME` 可覆盖该值，不得提交本机路径。
 
 ## 编码与测试规范
 
@@ -45,3 +49,18 @@ Kotlin 使用 4 空格、尾随逗号、无制表符；类型为 `PascalCase`，
 - git 提交格式：type(scope): summary, type和scope英文，summary中文
 - 本地日志在 `desktopAPP/logs` 下，需要时自己看
 - worktree 新建到[worktrees](../worktrees) 下
+
+## Kotlin Multiplatform library selection
+
+When adding or recommending Kotlin Multiplatform dependencies,
+query the klibs.io MCP (https://api.klibs.io/mcp) before choosing a library.
+
+Use it to verify dependency metadata:
+
+- supported targets,
+- maven coordinate,
+- latest versions or latest stable versions,
+- license,
+- maintenance/activity signals,
+- comparable alternatives
+- etc.

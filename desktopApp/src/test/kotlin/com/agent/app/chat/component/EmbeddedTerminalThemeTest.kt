@@ -21,7 +21,7 @@ class EmbeddedTerminalThemeTest {
             desktopPalette(DesktopThemeMode.LIGHT).terminal,
         )
 
-        assertEquals(0xF7F8FA, colors.background.rgb and 0xFFFFFF)
+        assertEquals(0xFFFFFF, colors.background.rgb and 0xFFFFFF)
         assertEquals(0x1F2329, colors.foreground.rgb and 0xFFFFFF)
         assertEquals(0xA6ABB4, colors.scrollbarThumb.rgb and 0xFFFFFF)
     }
@@ -33,7 +33,7 @@ class EmbeddedTerminalThemeTest {
             desktopPalette(DesktopThemeMode.DARK).terminal,
         )
 
-        assertEquals(0x17181A, colors.background.rgb and 0xFFFFFF)
+        assertEquals(0x191A1C, colors.background.rgb and 0xFFFFFF)
         assertEquals(0xE6E8EC, colors.foreground.rgb and 0xFFFFFF)
         assertEquals(0x4B4D52, colors.scrollbarThumb.rgb and 0xFFFFFF)
     }
@@ -46,7 +46,7 @@ class EmbeddedTerminalThemeTest {
         val background = terminalAnsiPaletteColor(colorIndex = 7, foreground = false, palette = palette)
         val foreground = terminalAnsiPaletteColor(colorIndex = 7, foreground = true, palette = palette)
 
-        assertEquals(0x17181A, background.rgb and 0xFFFFFF)
+        assertEquals(0x191A1C, background.rgb and 0xFFFFFF)
         assertEquals(0xE6E8EC, foreground.rgb and 0xFFFFFF)
     }
 
@@ -61,7 +61,7 @@ class EmbeddedTerminalThemeTest {
         state.update(desktopPalette(DesktopThemeMode.LIGHT).terminal)
 
         assertEquals(0x1F2329, requireNotNull(cachedStyle.foreground).toColor().rgb and 0xFFFFFF)
-        assertEquals(0xF7F8FA, requireNotNull(cachedStyle.background).toColor().rgb and 0xFFFFFF)
+        assertEquals(0xFFFFFF, requireNotNull(cachedStyle.background).toColor().rgb and 0xFFFFFF)
     }
 
     /** 同一个动态 ANSI 色板应在状态更新后返回浅色主题默认色。 */
@@ -76,7 +76,7 @@ class EmbeddedTerminalThemeTest {
         val foreground = ansiPalette.getForeground(com.jediterm.terminal.TerminalColor.index(7))
         val background = ansiPalette.getBackground(com.jediterm.terminal.TerminalColor.index(7))
         assertEquals(0x1F2329, foreground.rgb and 0xFFFFFF)
-        assertEquals(0xF7F8FA, background.rgb and 0xFFFFFF)
+        assertEquals(0xFFFFFF, background.rgb and 0xFFFFFF)
     }
 
     /** Swing 背景与滚动条必须在 EDT 刷新为新主题色。 */

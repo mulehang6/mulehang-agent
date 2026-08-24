@@ -1,0 +1,8 @@
+The files under org/jetbrains/jewel/intui/standalone/code/highlighting are a
+compatibility backport of JetBrains Jewel standalone code highlighting from the
+IntelliJ Platform source tree. They are included because Jewel 0.39.1-262.9437.29
+does not yet contain the public implementation described by its newer standalone
+code-highlighting documentation.
+
+Copyright 2000-2026 JetBrains s.r.o. and contributors.
+Licensed under the Apache License, Version 2.0.

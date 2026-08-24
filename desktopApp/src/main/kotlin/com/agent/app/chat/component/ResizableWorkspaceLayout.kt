@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -62,11 +63,21 @@ internal fun workspaceWidthDuringTerminalMotion(
     progress: Float,
 ): Float = (totalWidthPx - terminalContainerWidthPx * progress).coerceAtLeast(0f)
 
-/** 终端开合过程中容器应占据的实际布局高度。 */
+/** 返回终端开合过程中工作区当前为其保留的宽度。 */
 internal fun terminalContainerWidthDuringMotion(
     terminalContainerWidthPx: Float,
     progress: Float,
 ): Float = terminalContainerWidthPx * progress.coerceIn(0f, 1f)
+
+/** 返回右侧 Island 在开合期间向窗口外侧移动的距离，保持其内部宽度稳定。 */
+internal fun terminalPanelTranslationXDuringMotion(
+    terminalContainerWidthPx: Float,
+    progress: Float,
+): Float = terminalContainerWidthPx - terminalContainerWidthDuringMotion(terminalContainerWidthPx, progress)
+
+/** 首次组合先保持右侧区域收起一帧，确保设置和终端都能触发入场动画。 */
+internal fun sidePanelMotionTarget(isReadyForMotion: Boolean, panelVisible: Boolean): Float =
+    if (isReadyForMotion && panelVisible) 1f else 0f
 
 /**
  * 主工作区与终端之间的桌面分割布局。
@@ -81,7 +92,7 @@ internal fun ResizableWorkspaceLayout(
 ) {
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier) {
-        val dividerWidth = 10.dp
+        val dividerWidth = ISLANDS_LAYOUT_GAP
         val dividerWidthPx = with(density) { dividerWidth.toPx() }
         val availableWidthPx = with(density) { maxWidth.toPx() } - dividerWidthPx
         val minimumTerminalWidthPx = with(density) { (if (compact) 260.dp else 320.dp).toPx() }
@@ -92,6 +103,7 @@ internal fun ResizableWorkspaceLayout(
         var dividerDragging by remember { mutableStateOf(false) }
         var dividerPressed by remember { mutableStateOf(false) }
         var dividerPointerY by remember { mutableFloatStateOf(0f) }
+        var readyForSidePanelMotion by remember { mutableStateOf(false) }
         val effectiveTerminalWidthPx = clampTerminalWidth(
             terminalWidthPx,
             availableWidthPx,
@@ -100,7 +112,10 @@ internal fun ResizableWorkspaceLayout(
         )
         val terminalContainerWidthPx = dividerWidthPx + effectiveTerminalWidthPx
         val terminalMotionProgress by animateFloatAsState(
-            targetValue = if (terminalVisible) 1f else 0f,
+            targetValue = sidePanelMotionTarget(
+                isReadyForMotion = readyForSidePanelMotion,
+                panelVisible = terminalVisible,
+            ),
             animationSpec = tween(
                 durationMillis = if (terminalVisible) {
                     TERMINAL_PANEL_ENTER_DURATION_MILLIS
@@ -115,10 +130,11 @@ internal fun ResizableWorkspaceLayout(
             terminalContainerWidthPx = terminalContainerWidthPx,
             progress = terminalMotionProgress,
         )
-        val animatedTerminalContainerWidthPx = terminalContainerWidthDuringMotion(
+        val terminalTranslationX = terminalPanelTranslationXDuringMotion(
             terminalContainerWidthPx = terminalContainerWidthPx,
             progress = terminalMotionProgress,
         )
+        val shouldComposeTerminal = terminalVisible || terminalMotionProgress > 0f
         LaunchedEffect(availableWidthPx, compact) {
             terminalWidthPx = clampTerminalWidth(
                 terminalWidthPx,
@@ -126,6 +142,9 @@ internal fun ResizableWorkspaceLayout(
                 minimumTerminalWidthPx,
                 minimumWorkspaceWidthPx,
             )
+        }
+        LaunchedEffect(Unit) {
+            readyForSidePanelMotion = true
         }
 
         Box(
@@ -138,12 +157,14 @@ internal fun ResizableWorkspaceLayout(
                     .fillMaxHeight()
                     .width(with(density) { workspaceWidthPx.toDp() }),
             )
-            Row(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(with(density) { animatedTerminalContainerWidthPx.toDp() }),
-            ) {
+            if (shouldComposeTerminal) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(with(density) { terminalContainerWidthPx.toDp() })
+                        .graphicsLayer { translationX = terminalTranslationX },
+                ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -203,6 +224,7 @@ internal fun ResizableWorkspaceLayout(
                             .fillMaxHeight()
                             .width(with(density) { effectiveTerminalWidthPx.toDp() }),
                     )
+                }
             }
         }
     }

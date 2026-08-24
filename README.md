@@ -30,13 +30,14 @@
 
 ## 环境要求
 
-使用 JDK 21、Gradle Wrapper、Kotlin Multiplatform 与 Compose Multiplatform Desktop。当前只聚焦 Windows Desktop，不启动开发服务器。
+使用 JetBrains Runtime 25（JDK 25）、Gradle Wrapper、Kotlin 2.3.20、Compose Multiplatform 1.11.0 与 Jewel `0.39.1-262.9437.29`。Gradle JVM 与运行时都必须指向 JBR 25；当前只聚焦 Windows Desktop，不启动开发服务器。
+
+本地 JCEF 路径写在根目录未提交的 `.env` 中：以 `.env.example` 为模板，将 `JCEF_HOME` 指向带 JCEF 的 JBR 25。构建会自动读取该值；`-PjcefHome` 与系统 `JCEF_HOME` 可覆盖它，CI 不依赖本地 `.env`。
 
 ## 构建与测试
 
 ```powershell
-.\gradlew.bat build
-.\gradlew.bat test
-.\gradlew.bat clean
+.\gradlew.bat :shared:jvmTest :desktopApp:test
+.\gradlew.bat :desktopApp:compileKotlin
+.\gradlew.bat :desktopApp:packageDistributionForCurrentOS
 ```
-

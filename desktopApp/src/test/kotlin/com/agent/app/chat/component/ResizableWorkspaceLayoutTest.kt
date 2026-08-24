@@ -36,4 +36,12 @@ class ResizableWorkspaceLayoutTest {
         assertEquals(500f, workspaceWidthDuringTerminalMotion(1_000f, 500f, 1f))
         assertEquals(250f, terminalContainerWidthDuringMotion(500f, 0.5f))
     }
+
+    /** 首次组合即使已有设置或终端，也应先从收起状态进入。 */
+    @Test
+    fun `should defer the first side panel frame before entering motion`() {
+        assertEquals(0f, sidePanelMotionTarget(isReadyForMotion = false, panelVisible = true))
+        assertEquals(1f, sidePanelMotionTarget(isReadyForMotion = true, panelVisible = true))
+        assertEquals(0f, sidePanelMotionTarget(isReadyForMotion = true, panelVisible = false))
+    }
 }

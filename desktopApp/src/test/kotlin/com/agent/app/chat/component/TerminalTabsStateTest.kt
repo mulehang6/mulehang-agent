@@ -4,6 +4,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import com.agent.app.design.PANEL_TAB_ICON_SIZE
+import com.agent.app.design.TERMINAL_ICON_KEY
 
 /**
  * 验证内嵌终端标签页的状态转换与终端图标意图。
@@ -105,6 +107,13 @@ class TerminalTabsStateTest {
 
         assertEquals(emptyList(), closed.tabs)
         assertEquals("终端", reopened.tabs.single().title)
+    }
+
+    /** 终端标签应采用随应用打包的 IntelliJ 终端工具窗口图标。 */
+    @Test
+    fun `should use bundled IntelliJ terminal icon at panel title size`() {
+        assertEquals(16, PANEL_TAB_ICON_SIZE.value.toInt())
+        assertEquals("icons/terminal.svg", TERMINAL_ICON_KEY.path(isNewUi = true))
     }
 
 }

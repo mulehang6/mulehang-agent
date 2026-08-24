@@ -1,6 +1,12 @@
 package com.agent.app.chat.component
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.desktopPalette
 import com.agent.shared.chat.model.ExecutionState
+import com.agent.shared.tool.model.PermissionPreset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -37,5 +43,58 @@ class ComposerPanelTest {
             ),
             composerBorderFlowSegments(pathLength = 100f, progress = 0.9f),
         )
+    }
+
+    /** 输入文本必须始终落在黑色编辑区的安全内边距内。 */
+    @Test
+    fun `should reserve composer editing insets`() {
+        assertEquals(12, COMPOSER_INPUT_HORIZONTAL_PADDING_DP)
+        assertEquals(8, COMPOSER_INPUT_VERTICAL_PADDING_DP)
+        assertEquals(DpOffset(12.dp, 8.dp), composerInputContentOffset())
+    }
+
+    /** 五种权限语义不得因紧凑菜单视觉重做而变化。 */
+    @Test
+    fun `should preserve every permission presentation in compact menu`() {
+        assertEquals(
+            setOf("Ask", "Auto", "Allow Edits", "Plan", "Full Access"),
+            PermissionPreset.entries.map { permissionPresentation(it).label }.toSet(),
+        )
+    }
+
+    /** 权限色替换 Jewel 默认蓝色；已选中行在悬停和按下时保持不变。 */
+    @Test
+    fun `should preserve selected permission row color over hover and press`() {
+        val tone = Color(0xFF245286)
+
+        assertEquals(
+            Color.Transparent,
+            permissionPresetMenuRowBackground(tone, selected = false, hovered = false, pressed = false),
+        )
+        assertEquals(
+            tone.copy(alpha = PERMISSION_MENU_HOVERED_ALPHA),
+            permissionPresetMenuRowBackground(tone, selected = false, hovered = true, pressed = false),
+        )
+        assertEquals(
+            tone.copy(alpha = PERMISSION_MENU_PRESSED_ALPHA),
+            permissionPresetMenuRowBackground(tone, selected = false, hovered = true, pressed = true),
+        )
+        assertEquals(
+            tone.copy(alpha = PERMISSION_MENU_SELECTED_ALPHA),
+            permissionPresetMenuRowBackground(tone, selected = true, hovered = true, pressed = false),
+        )
+        assertEquals(
+            tone.copy(alpha = PERMISSION_MENU_SELECTED_ALPHA),
+            permissionPresetMenuRowBackground(tone, selected = true, hovered = true, pressed = true),
+        )
+    }
+
+    /** 浅色菜单的未选权限项使用语义前景色，不能保留固定白字。 */
+    @Test
+    fun `should use readable theme text for permission menu`() {
+        val lightPalette = desktopPalette(DesktopThemeMode.LIGHT)
+
+        assertEquals(lightPalette.text, permissionPresetMenuTextColor(lightPalette))
+        assertFalse(permissionPresetMenuTextColor(lightPalette) == Color.White)
     }
 }

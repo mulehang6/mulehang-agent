@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,9 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,10 +25,13 @@ import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppText
-import com.agent.app.design.RingIsland
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
 import com.agent.shared.chat.model.ConversationItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.tool.plan.parseUpdatePlanPreview
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Text
 
 /**
  * 计划卡片里的步骤条目。
@@ -127,9 +128,11 @@ internal fun PlanCard(
     var expanded by remember { mutableStateOf(false) }
     val completedCount = entries.count { it.status == TaskPlanStatus.COMPLETED }
     val currentStep = entries.firstOrNull { it.status == TaskPlanStatus.IN_PROGRESS }?.text
-    RingIsland(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 12.dp,
         modifier = modifier,
-        color = AppSidebarBackground,
+        solidColor = AppSidebarBackground,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -144,7 +147,7 @@ internal fun PlanCard(
             ) {
                 Text(
                     text = "$title · $completedCount/${entries.size}",
-                    style = MaterialTheme.typography.titleSmall.copy(
+                    style = JewelTheme.defaultTextStyle.copy(
                         color = AppText,
                         fontWeight = FontWeight.SemiBold,
                     ),
@@ -152,12 +155,12 @@ internal fun PlanCard(
                 Text(
                     text = currentStep ?: "已完成",
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                    style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                     maxLines = 1,
                 )
                 Text(
                     text = if (expanded) "⌃" else "⌄",
-                    style = MaterialTheme.typography.labelMedium.copy(color = AppMuted),
+                    style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                 )
             }
             if (expanded) {
@@ -166,28 +169,28 @@ internal fun PlanCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Surface(
-                            modifier = Modifier.size(22.dp),
-                            shape = CircleShape,
-                            color = when (entry.status) {
+                        Box(
+                            modifier = Modifier.size(22.dp).background(
+                                color = when (entry.status) {
                                 TaskPlanStatus.IN_PROGRESS -> AppAccent
                                 TaskPlanStatus.COMPLETED -> Color(0xFF315E47)
                                 TaskPlanStatus.PENDING -> AppChipBackground
-                            },
+                                },
+                                shape = CircleShape,
+                            ),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
                                 Text(
                                     text = if (entry.status == TaskPlanStatus.COMPLETED) "✓" else entry.number.toString(),
-                                    style = MaterialTheme.typography.labelSmall.copy(
+                                    style = JewelTheme.defaultTextStyle.copy(
                                         color = if (entry.status == TaskPlanStatus.PENDING) AppMuted else Color.White,
                                         fontWeight = FontWeight.Bold,
                                     ),
                                 )
-                            }
                         }
                         Text(
                             text = entry.text,
-                            style = MaterialTheme.typography.bodyMedium.copy(color = AppText),
+                            style = JewelTheme.defaultTextStyle.copy(color = AppText),
                         )
                     }
                 }

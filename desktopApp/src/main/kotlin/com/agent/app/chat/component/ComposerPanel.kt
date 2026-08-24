@@ -1,4 +1,8 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
+)
 
 package com.agent.app.chat.component
 
@@ -11,6 +15,9 @@ import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,11 +28,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -51,7 +56,9 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
 import com.agent.app.chat.presentation.buildContextTooltip
@@ -62,29 +69,52 @@ import com.agent.app.chat.presentation.reasoningControlLabel
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.state.resolveContextWindow
-import com.agent.app.design.AppAccent
 import com.agent.app.design.AppChipBackground
-import com.agent.app.design.AppDanger
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.ComposerInputBackground
+import com.agent.app.design.DesktopPalette
 import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.RingContextIndicator
-import com.agent.app.design.RingDropdownMenuItem
-import com.agent.app.design.RingHeaderActionButton
-import com.agent.app.design.RingInputField
-import com.agent.app.design.RingPermissionDropdownMenuItem
-import com.agent.app.design.RingPrimaryButton
-import com.agent.app.design.RingSelectChip
-import com.agent.app.design.RingTooltip
-import com.agent.app.design.liquidglass.AdaptiveLiquidGlassSurface
-import com.agent.app.design.liquidglass.LiquidGlassSurfaceRole
+import com.agent.app.design.JewelSurface
+import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.LocalDesktopPalette
+import com.agent.app.design.iconKey
 import com.agent.app.platform.pickFiles
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.launch
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.ActionButton
+import org.jetbrains.jewel.ui.component.DefaultButton
+import org.jetbrains.jewel.ui.component.Icon
+import org.jetbrains.jewel.ui.component.MenuScope
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.PopupMenu
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.TextArea
+import org.jetbrains.jewel.ui.component.Tooltip
+import org.jetbrains.jewel.ui.component.styling.MenuColors
+import org.jetbrains.jewel.ui.component.styling.MenuItemColors
+import org.jetbrains.jewel.ui.component.styling.MenuStyle
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import org.jetbrains.jewel.ui.theme.menuStyle
+
+internal const val COMPOSER_INPUT_HORIZONTAL_PADDING_DP = 12
+internal const val COMPOSER_INPUT_VERTICAL_PADDING_DP = 8
+internal const val PERMISSION_MENU_HOVERED_ALPHA = 0.56f
+internal const val PERMISSION_MENU_SELECTED_ALPHA = 0.76f
+internal const val PERMISSION_MENU_PRESSED_ALPHA = 0.86f
+
+/** 返回权限菜单在当前主题下可读的文字颜色。 */
+internal fun permissionPresetMenuTextColor(palette: DesktopPalette): Color = palette.text
+
+/** 返回可编辑内容和只读占位符共同使用的左上角坐标。 */
+internal fun composerInputContentOffset(): DpOffset = DpOffset(
+    x = COMPOSER_INPUT_HORIZONTAL_PADDING_DP.dp,
+    y = COMPOSER_INPUT_VERTICAL_PADDING_DP.dp,
+)
 
 /**
  * 原型 composer。
@@ -117,16 +147,21 @@ internal fun ComposerPanel(
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
     val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
     var expandedMenu by remember { mutableStateOf<ComposerMenu?>(null) }
+    var draftFieldValue by remember { mutableStateOf(TextFieldValue(state.ui.draft)) }
     val inputScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     var inputViewportHeight by remember { mutableStateOf(0) }
+    val inputContentOffset = composerInputContentOffset()
 
     LaunchedEffect(state.ui.draft) {
+        if (draftFieldValue.text != state.ui.draft) {
+            draftFieldValue = TextFieldValue(state.ui.draft)
+        }
         inputScrollState.scrollTo(inputScrollState.maxValue)
     }
 
-    AdaptiveLiquidGlassSurface(
-        role = LiquidGlassSurfaceRole.INPUT,
+    JewelSurface(
+        role = JewelSurfaceRole.INPUT,
         radius = 18.dp,
         solidColor = ComposerBackground,
         borderColor = Color.Transparent,
@@ -178,10 +213,12 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     activeConversation.attachments.forEach { attachment ->
-                        RingTooltip(attachment.path) {
-                            Surface(
-                                shape = RoundedCornerShape(999.dp),
-                                color = AppChipBackground,
+                        Tooltip(tooltip = { Text(attachment.path) }) {
+                            JewelSurface(
+                                role = JewelSurfaceRole.CHROME,
+                                radius = 999.dp,
+                                solidColor = AppChipBackground,
+                                borderColor = AppLine,
                             ) {
                                 Row(
                                     modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
@@ -190,18 +227,12 @@ internal fun ComposerPanel(
                                 ) {
                                     Text(
                                         text = attachment.name,
-                                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall.copy(
-                                            color = AppText
-                                        ),
+                                        style = JewelTheme.defaultTextStyle.copy(color = AppText),
                                     )
-                                    RingPrimaryButton(
-                                        text = "×",
+                                    ActionButton(
                                         onClick = { state.removeAttachment(attachment.path) },
-                                        modifier = Modifier.size(26.dp),
-                                        containerColor = AppLine,
-                                        compact = true,
-                                        tooltip = "移除 ${attachment.name}",
-                                    )
+                                        tooltip = { Text("移除 ${attachment.name}") },
+                                    ) { Icon(AllIconsKeys.Actions.Cancel, "移除 ${attachment.name}") }
                                 }
                             }
                         }
@@ -212,6 +243,7 @@ internal fun ComposerPanel(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .background(ComposerInputBackground, RoundedCornerShape(12.dp))
                     .onSizeChanged { size -> inputViewportHeight = size.height }
                     .onPointerEvent(
@@ -231,11 +263,23 @@ internal fun ComposerPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(inputScrollState),
+                        .verticalScroll(inputScrollState)
+                        .padding(
+                            start = inputContentOffset.x,
+                            top = inputContentOffset.y,
+                            end = COMPOSER_INPUT_HORIZONTAL_PADDING_DP.dp + 6.dp,
+                            bottom = inputContentOffset.y,
+                        ),
                 ) {
-                    RingInputField(
+                    TextArea(
+                        value = draftFieldValue,
+                        onValueChange = { updated ->
+                            draftFieldValue = updated
+                            state.updateDraft(updated.text)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 72.dp)
                             .onPreviewKeyEvent { event ->
                                 val selectionScrollDelta = composerKeyboardSelectionScrollDelta(
                                     key = event.key,
@@ -259,11 +303,20 @@ internal fun ComposerPanel(
                                     false
                                 }
                             },
-                        value = state.ui.draft,
-                        onValueChange = state::updateDraft,
-                        minLines = 3,
-                        placeholder = "描述你想完成的任务…",
-                        borderless = true,
+                        placeholder = null,
+                        undecorated = true,
+                    )
+                }
+                if (draftFieldValue.text.isEmpty()) {
+                    Text(
+                        text = "描述你想完成的任务…",
+                        color = AppMuted,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                start = inputContentOffset.x,
+                                top = inputContentOffset.y,
+                            ),
                     )
                 }
                 if (shouldShowComposerInputScrollbar(inputScrollState.maxValue)) {
@@ -294,13 +347,11 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RingHeaderActionButton(
-                        glyph = HeaderGlyph.ADD,
+                    ActionButton(
                         onClick = { state.attachFiles(pickFiles()) },
-                        inline = true,
-                        tooltip = "添加附件",
-                    )
-                    RingSelectChip(
+                        tooltip = { Text("添加附件") },
+                    ) { Icon(HeaderGlyph.ADD.iconKey, "添加附件") }
+                    ComposerMenuButton(
                         label = selectedProfile?.providerLabel ?: currentProvider ?: "服务商",
                         expanded = expandedMenu == ComposerMenu.PROVIDER,
                         onExpandedChange = { shouldExpand ->
@@ -309,23 +360,19 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
                         },
-                        tooltip = "选择服务商",
                     ) {
-                        providerProfiles.entries.forEachIndexed { index, (_, providerModels) ->
-                            val first = providerModels.firstOrNull() ?: return@forEachIndexed
-                            RingDropdownMenuItem(
-                                text = first.providerLabel,
+                        providerProfiles.entries.forEach { (_, providerModels) ->
+                            val first = providerModels.firstOrNull() ?: return@forEach
+                            selectableItem(
                                 selected = first.providerId == currentProvider,
-                                itemIndex = index,
-                                itemCount = providerProfiles.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.selectProfile(first.id)
                                 },
-                            )
+                            ) { Text(first.providerLabel) }
                         }
                     }
-                    RingSelectChip(
+                    ComposerMenuButton(
                         label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "模型",
                         expanded = expandedMenu == ComposerMenu.MODEL,
                         onExpandedChange = { shouldExpand ->
@@ -334,23 +381,19 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
                         },
-                        tooltip = "选择模型",
                     ) {
-                        currentProviderProfiles.forEachIndexed { index, profile ->
-                            RingDropdownMenuItem(
-                                text = profile.modelLabel ?: profile.model,
+                        currentProviderProfiles.forEach { profile ->
+                            selectableItem(
                                 selected = profile.id == selectedProfile?.id,
-                                itemIndex = index,
-                                itemCount = currentProviderProfiles.size,
                                 onClick = {
                                     expandedMenu = null
                                     state.selectProfile(profile.id)
                                 },
-                            )
+                            ) { Text(profile.modelLabel ?: profile.model) }
                         }
                     }
                     if (selectedVariants.isNotEmpty()) {
-                        RingSelectChip(
+                        ComposerMenuButton(
                             label = reasoningControlLabel(activeConversation?.reasoningEffort),
                             expanded = expandedMenu == ComposerMenu.REASONING,
                             onExpandedChange = { shouldExpand ->
@@ -359,24 +402,20 @@ internal fun ComposerPanel(
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
                             },
-                            tooltip = "选择推理强度",
                         ) {
-                            selectedVariants.forEachIndexed { index, variant ->
-                                val effort = variant.reasoningEffort ?: return@forEachIndexed
-                                RingDropdownMenuItem(
-                                    text = reasoningControlLabel(effort),
+                            selectedVariants.forEach { variant ->
+                                val effort = variant.reasoningEffort ?: return@forEach
+                                selectableItem(
                                     selected = effort == activeConversation?.reasoningEffort,
-                                    itemIndex = index,
-                                    itemCount = selectedVariants.size,
                                     onClick = {
                                         expandedMenu = null
                                         state.updateReasoningEffort(effort)
                                     },
-                                )
+                                ) { Text(reasoningControlLabel(effort)) }
                             }
                         }
                     }
-                    RingContextIndicator(
+                    ComposerContextIndicator(
                         sweepAngle = contextRingSweepAngle(activeConversation?.contextUsageFraction ?: 0f),
                         tooltip = buildContextTooltip(
                             usageFraction = activeConversation?.contextUsageFraction ?: 0f,
@@ -388,7 +427,7 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RingSelectChip(
+                    PermissionMenuButton(
                         label = permissionPresentation(permissionPreset).label,
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
                         onExpandedChange = { shouldExpand ->
@@ -397,30 +436,13 @@ internal fun ComposerPanel(
                         onDismissRequest = {
                             expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
                         },
-                        tooltip = "选择执行权限",
-                    ) {
-                        Text(
-                            text = "Permission mode",
-                            modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 6.dp),
-                            style = androidx.compose.material3.MaterialTheme.typography.titleSmall.copy(color = AppMuted),
-                        )
-                        PermissionPreset.entries.forEachIndexed { index, preset ->
-                            RingPermissionDropdownMenuItem(
-                                description = permissionPresentation(preset).description,
-                                badge = permissionPresentation(preset).label,
-                                badgeColor = permissionPresentation(preset).tone,
-                                selected = preset == permissionPreset,
-                                itemIndex = index,
-                                itemCount = PermissionPreset.entries.size,
-                                onClick = {
-                                    expandedMenu = null
-                                    state.updatePermission(preset)
-                                },
-                            )
-                        }
-                    }
-                    RingPrimaryButton(
-                        text = primaryActionVisual.symbol,
+                        selectedPreset = permissionPreset,
+                        onPresetSelected = { preset ->
+                            expandedMenu = null
+                            state.updatePermission(preset)
+                        },
+                    )
+                    DefaultButton(
                         onClick = {
                             if (executionState.isStoppable()) {
                                 state.cancelActiveRun()
@@ -428,14 +450,171 @@ internal fun ComposerPanel(
                                 onSendDraft()
                             }
                         },
-                        containerColor = if (primaryActionVisual.danger) AppDanger else AppAccent,
-                        modifier = Modifier.size(40.dp),
-                        compact = true,
-                        iconGlyph = composerPrimaryActionGlyph(primaryActionVisual.danger),
-                        tooltip = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
-                    )
+                    ) {
+                        Icon(
+                            composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
+                            if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+/** 使用 Jewel 按钮和原生菜单承载 Composer 的业务选择器。 */
+@Composable
+private fun ComposerMenuButton(
+    label: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onDismissRequest: () -> Unit,
+    menuModifier: Modifier = Modifier,
+    content: MenuScope.() -> Unit,
+) {
+    Box {
+        OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
+        if (expanded) {
+            PopupMenu(
+                onDismissRequest = {
+                    onDismissRequest()
+                    true
+                },
+                horizontalAlignment = Alignment.Start,
+                modifier = menuModifier,
+                content = content,
+            )
+        }
+    }
+}
+
+/** 渲染权限选择器，使用 Jewel 标准菜单容器并在菜单项内保留权限语义色。 */
+@Composable
+private fun PermissionMenuButton(
+    label: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onDismissRequest: () -> Unit,
+    selectedPreset: PermissionPreset,
+    onPresetSelected: (PermissionPreset) -> Unit,
+) {
+    val baseMenuStyle = JewelTheme.menuStyle
+    val menuStyle = remember(baseMenuStyle) {
+        permissionMenuStyle(baseMenuStyle)
+    }
+
+    Box {
+        OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
+        if (expanded) {
+            PopupMenu(
+                onDismissRequest = {
+                    onDismissRequest()
+                    true
+                },
+                horizontalAlignment = Alignment.End,
+                style = menuStyle,
+            ) {
+                PermissionPreset.entries.forEach { preset ->
+                    val presentation = permissionPresentation(preset)
+                    selectableItem(
+                        selected = preset == selectedPreset,
+                        onClick = { onPresetSelected(preset) },
+                    ) {
+                        Tooltip(tooltip = { Text(presentation.description) }) {
+                            PermissionPresetMenuRow(
+                                presentation = presentation,
+                                selected = preset == selectedPreset,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 返回权限菜单项在悬停、选中和按下状态下的语义色背景；静止行保持透明。 */
+internal fun permissionPresetMenuRowBackground(
+    tone: Color,
+    selected: Boolean,
+    hovered: Boolean,
+    pressed: Boolean,
+): Color = when {
+    selected -> tone.copy(alpha = PERMISSION_MENU_SELECTED_ALPHA)
+    pressed -> tone.copy(alpha = PERMISSION_MENU_PRESSED_ALPHA)
+    hovered -> tone.copy(alpha = PERMISSION_MENU_HOVERED_ALPHA)
+    else -> Color.Transparent
+}
+
+/** 生成保留 Jewel 容器、阴影、焦点和键盘导航的紧凑权限菜单样式。 */
+private fun permissionMenuStyle(base: MenuStyle): MenuStyle = MenuStyle(
+    isDark = base.isDark,
+    colors = MenuColors(
+        background = base.colors.background,
+        border = base.colors.border,
+        shadow = base.colors.shadow,
+        itemColors = transparentMenuItemBackgrounds(base.colors.itemColors),
+    ),
+    metrics = base.metrics,
+    icons = base.icons,
+)
+
+/** 保持 Jewel 文本、图标、焦点和快捷键颜色，仅交由权限行绘制唯一的状态背景。 */
+private fun transparentMenuItemBackgrounds(base: MenuItemColors): MenuItemColors = MenuItemColors(
+    background = Color.Transparent,
+    backgroundDisabled = Color.Transparent,
+    backgroundFocused = Color.Transparent,
+    backgroundPressed = Color.Transparent,
+    backgroundHovered = Color.Transparent,
+    content = base.content,
+    contentDisabled = base.contentDisabled,
+    contentFocused = base.contentFocused,
+    contentPressed = base.contentPressed,
+    contentHovered = base.contentHovered,
+    iconTint = base.iconTint,
+    iconTintDisabled = base.iconTintDisabled,
+    iconTintFocused = base.iconTintFocused,
+    iconTintPressed = base.iconTintPressed,
+    iconTintHovered = base.iconTintHovered,
+    keybindingTint = base.keybindingTint,
+    keybindingTintDisabled = base.keybindingTintDisabled,
+    keybindingTintFocused = base.keybindingTintFocused,
+    keybindingTintPressed = base.keybindingTintPressed,
+    keybindingTintHovered = base.keybindingTintHovered,
+    separator = base.separator,
+)
+
+/** 渲染一行紧凑权限项；点击和键盘选择仍由外层 Jewel selectableItem 承担。 */
+@Composable
+private fun PermissionPresetMenuRow(
+    presentation: PermissionPresentation,
+    selected: Boolean,
+) {
+    val palette = LocalDesktopPalette.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    var pressed by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(5.dp))
+            .background(
+                color = permissionPresetMenuRowBackground(
+                    tone = presentation.tone,
+                    selected = selected,
+                    hovered = hovered,
+                    pressed = pressed,
+                ),
+            )
+            .hoverable(interactionSource)
+            .onPointerEvent(PointerEventType.Press) { pressed = true }
+            .onPointerEvent(PointerEventType.Release) { pressed = false },
+    ) {
+        Text(
+            text = presentation.label,
+            style = JewelTheme.defaultTextStyle.copy(color = permissionPresetMenuTextColor(palette)),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }

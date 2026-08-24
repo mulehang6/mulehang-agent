@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:OptIn(
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
+)
 
 package com.agent.app.tool.component
 
@@ -11,15 +14,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +30,12 @@ import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.shared.tool.model.QuestionAnswer
 import com.agent.shared.tool.model.QuestionPrompt
 import com.agent.shared.tool.model.FileDiffPreview
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.DefaultButton
+import org.jetbrains.jewel.ui.component.OutlinedButton
+import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.TextArea
+import org.jetbrains.jewel.ui.component.TextField
 
 /**
  * 问题卡片的展示模型。
@@ -151,11 +155,12 @@ fun QuestionCard(
     val activePrompt = model.questions[activeQuestionIndex]
     val activeAnswer = answers[activeQuestionIndex]
 
-    Surface(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 12.dp,
+        solidColor = AppSidebarBackground,
+        borderColor = AppAccent.copy(alpha = 0.72f),
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = AppSidebarBackground,
-        border = androidx.compose.foundation.BorderStroke(1.dp, AppAccent.copy(alpha = 0.72f)),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -166,16 +171,16 @@ fun QuestionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 model.questions.forEachIndexed { index, prompt ->
-                    RingPrimaryButton(
-                        text = questionnaireTabLabel(prompt.question),
-                        onClick = { activeQuestionIndex = index },
-                        containerColor = if (index == activeQuestionIndex) AppAccent else AppChipBackground,
-                    )
+                    if (index == activeQuestionIndex) {
+                        DefaultButton(onClick = { activeQuestionIndex = index }) { Text(questionnaireTabLabel(prompt.question)) }
+                    } else {
+                        OutlinedButton(onClick = { activeQuestionIndex = index }) { Text(questionnaireTabLabel(prompt.question)) }
+                    }
                 }
             }
             Text(
                 text = "${activeQuestionIndex + 1}. ${activePrompt.question}",
-                style = MaterialTheme.typography.bodyLarge.copy(color = AppText, lineHeight = 24.sp),
+                style = JewelTheme.defaultTextStyle.copy(color = AppText, lineHeight = 24.sp),
             )
             activePrompt.options.take(5).forEachIndexed { optionIndex, option ->
                 QuestionOptionRow(
@@ -201,29 +206,19 @@ fun QuestionCard(
                     },
                 )
                 AnimatedVisibility(visible = activeAnswer.mode == QuestionAnswerMode.CUSTOM) {
-                    BasicTextField(
-                        value = activeAnswer.customValue,
-                        onValueChange = { value ->
+                    val editorValue = rememberExternalTextFieldValue(activeAnswer.customValue)
+                    TextField(
+                        value = editorValue.value,
+                        onValueChange = { nextValue ->
+                            editorValue.value = nextValue
                             answers = answers.toMutableList().also { drafts ->
-                                drafts[activeQuestionIndex] = updateQuestionCustomAnswer(activeAnswer, value)
+                                drafts[activeQuestionIndex] = updateQuestionCustomAnswer(activeAnswer, nextValue.text)
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(start = 28.dp, end = 10.dp, top = 2.dp, bottom = 6.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = AppText),
-                        cursorBrush = SolidColor(AppText),
-                        decorationBox = { innerTextField ->
-                            Box(modifier = Modifier.padding(vertical = 8.dp)) {
-                                if (activeAnswer.customValue.isBlank()) {
-                                    Text(
-                                        "Type something else…",
-                                        style = MaterialTheme.typography.bodyLarge.copy(color = AppMuted)
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        },
+                        placeholder = { Text("Type something else…") },
                     )
                 }
             }
@@ -232,8 +227,7 @@ fun QuestionCard(
                 horizontalArrangement = Arrangement.End,
             ) {
                 val isLastQuestion = activeQuestionIndex == model.questions.lastIndex
-                RingPrimaryButton(
-                    text = questionnaireActionLabel(activeQuestionIndex, model.questions.size),
+                DefaultButton(
                     onClick = {
                         if (isLastQuestion) {
                             onSubmitAnswers(model.questions.mapIndexed { index, prompt ->
@@ -248,8 +242,7 @@ fun QuestionCard(
                     } else {
                         canSubmitQuestionFreeText(questionAnswerValue(activeAnswer))
                     },
-                    containerColor = AppAccent,
-                )
+                ) { Text(questionnaireActionLabel(activeQuestionIndex, model.questions.size)) }
             }
         }
     }
@@ -300,7 +293,7 @@ private fun QuestionOptionRow(
         }
         Text(
             text = "$number. $text",
-            style = MaterialTheme.typography.bodyLarge.copy(
+            style = JewelTheme.defaultTextStyle.copy(
                 color = when {
                     selected -> AppText
                     hovered -> AppText
@@ -322,11 +315,12 @@ fun ApprovalCard(
 ) {
     val model = buildApprovalCardModel(pending)
 
-    Surface(
+    JewelSurface(
+        role = JewelSurfaceRole.PANEL,
+        radius = 12.dp,
+        solidColor = AppToolInteraction,
+        borderColor = AppDanger.copy(alpha = 0.45f),
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = Color(0xFF1D171A),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4C2630)),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -334,14 +328,14 @@ fun ApprovalCard(
         ) {
             Text(
                 text = "Agent 需要执行确认",
-                style = MaterialTheme.typography.labelLarge.copy(
+                style = JewelTheme.defaultTextStyle.copy(
                     color = AppDanger,
                     fontWeight = FontWeight.SemiBold,
                 ),
             )
             Text(
                 text = model.title,
-                style = MaterialTheme.typography.bodyLarge.copy(
+                style = JewelTheme.defaultTextStyle.copy(
                     color = AppText,
                     lineHeight = 24.sp,
                 ),
@@ -349,7 +343,7 @@ fun ApprovalCard(
             model.targetPath?.takeIf { it.isNotBlank() }?.let { path ->
                 Text(
                     text = path,
-                    style = MaterialTheme.typography.bodySmall.copy(color = AppMuted),
+                    style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                 )
             }
             model.diffs.forEach { diff -> EditorDiffPreview(diff) }
@@ -362,7 +356,7 @@ fun ApprovalCard(
                         .fillMaxWidth()
                         .background(AppPanelBackground, RoundedCornerShape(14.dp))
                         .padding(12.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(
+                    style = JewelTheme.defaultTextStyle.copy(
                         color = AppText,
                         lineHeight = 20.sp,
                     ),
@@ -382,36 +376,27 @@ private fun QuestionFreeTextInput(
     onValueChange: (String) -> Unit,
     onSubmit: (String) -> Unit,
 ) {
+    val editorValue = rememberExternalTextFieldValue(value)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .border(1.dp, AppLine.copy(alpha = 0.72f), RoundedCornerShape(14.dp))
             .background(AppPanelBackground, RoundedCornerShape(14.dp)),
     ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
+        TextArea(
+            value = editorValue.value,
+            onValueChange = { nextValue ->
+                editorValue.value = nextValue
+                onValueChange(nextValue.text)
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 76.dp)
-                .padding(12.dp),
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                .heightIn(min = 76.dp),
+            textStyle = JewelTheme.defaultTextStyle.copy(
                 color = AppText,
                 lineHeight = 22.sp,
             ),
-            cursorBrush = SolidColor(AppText),
-            minLines = 3,
-            decorationBox = { innerTextField ->
-                Box {
-                    if (value.isBlank()) {
-                        Text(
-                            text = "补充你的回答…",
-                            style = MaterialTheme.typography.bodyMedium.copy(color = AppMuted),
-                        )
-                    }
-                    innerTextField()
-                }
-            },
+            placeholder = { Text("补充你的回答…") },
         )
         Row(
             modifier = Modifier
@@ -420,12 +405,10 @@ private fun QuestionFreeTextInput(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RingPrimaryButton(
-                text = "提交回答",
+            DefaultButton(
                 onClick = { questionFreeTextSubmission(value)?.let(onSubmit) },
                 enabled = canSubmitQuestionFreeText(value),
-                containerColor = AppSuccess,
-            )
+            ) { Text("提交回答") }
         }
     }
 }
@@ -444,7 +427,7 @@ fun InlineToolApprovalActions(
     ) {
         Text(
             text = "需要执行确认",
-            style = MaterialTheme.typography.labelLarge.copy(
+            style = JewelTheme.defaultTextStyle.copy(
                 color = AppDanger,
                 fontWeight = FontWeight.SemiBold,
             ),
@@ -459,20 +442,14 @@ fun InlineToolApprovalActions(
 @Composable
 private fun ApprovalResponseActions(onResponse: (ApprovalResponse) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        RingPrimaryButton(
-            text = "同意",
+        DefaultButton(
             onClick = { onResponse(ApprovalResponse.APPROVE_ONCE) },
-            containerColor = AppAccent,
-        )
-        RingPrimaryButton(
-            text = "此类命令都同意",
+        ) { Text("同意") }
+        OutlinedButton(
             onClick = { onResponse(ApprovalResponse.APPROVE_TOOL_TYPE) },
-            containerColor = AppChipBackground,
-        )
-        RingPrimaryButton(
-            text = "拒绝并停止",
+        ) { Text("此类命令都同意") }
+        OutlinedButton(
             onClick = { onResponse(ApprovalResponse.REJECT_AND_STOP) },
-            containerColor = AppChipBackground,
-        )
+        ) { Text("拒绝并停止") }
     }
 }

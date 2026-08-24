@@ -34,19 +34,23 @@ class DesktopThemeSettingsTest {
         assertEquals(DesktopAccentBlue, palette.accent)
     }
 
-    /** 浅色 palette 必须同时切换表面、文字和菜单，以避免只改变 Material 控件。 */
+    /** 浅色 palette 的非 Island 基底必须统一为 #E9EAEE，并保持文字可读。 */
     @Test
     fun `should provide readable light palette`() {
         val palette = desktopPalette(DesktopThemeMode.LIGHT)
 
         assertEquals(false, palette.isDark)
-        assertEquals(Color(0xFFF6F7F9), palette.background)
+        assertEquals(Color(0xFFE9EAEE), palette.frameBackground)
+        assertEquals(Color(0xFFE9EAEE), palette.background)
+        assertEquals(Color(0xFFE9EAEE), palette.headerBackground)
+        assertEquals(Color(0xFFE9EAEE), palette.sidebarBackground)
+        assertEquals(Color(0xFFFFFFFF), palette.workspaceBackground)
         assertEquals(Color(0xFF202124), palette.text)
         assertEquals(DesktopAccentBlue, palette.accent)
         assertEquals(Color(0xFFFFFFFF), palette.composerInputBackground)
         assertEquals(Color(0xFFF1F3F6), palette.providerCardBackground)
         assertEquals(Color(0xFFE3E7EC), palette.providerCardHoverBackground)
-        assertEquals(Color(0xFFF7F8FA), palette.terminal.background)
+        assertEquals(Color(0xFFFFFFFF), palette.terminal.background)
         assertEquals(Color(0xFF1F2329), palette.terminal.foreground)
     }
 
@@ -56,24 +60,32 @@ class DesktopThemeSettingsTest {
         val palette = desktopPalette(DesktopThemeMode.DARK)
 
         assertEquals(true, palette.isDark)
+        assertEquals(Color(0xFF202226), palette.frameBackground)
+        assertEquals(Color(0xFF202226), palette.background)
+        assertEquals(Color(0xFF202226), palette.headerBackground)
+        assertEquals(Color(0xFF26282C), palette.sidebarBackground)
+        assertEquals(Color(0xFF191A1C), palette.workspaceBackground)
         assertEquals(Color(0xFF0A0B0D), palette.composerInputBackground)
         assertEquals(Color(0xFF252629), palette.providerCardBackground)
         assertEquals(Color(0xFF38393B), palette.providerCardHoverBackground)
-        assertEquals(Color(0xFF17181A), palette.terminal.background)
+        assertEquals(Color(0xFF191A1C), palette.terminal.background)
         assertEquals(Color(0xFFE6E8EC), palette.terminal.foreground)
     }
 
-    /** Liquid Glass 只改变材质维度，深浅色与终端颜色仍由主题模式决定。 */
+    /** 标题栏维持 IDEA 的 54dp 原生窗口命中高度；项目环境光由根画布负责。 */
     @Test
-    fun `should resolve liquid glass independently from light and dark palettes`() {
-        val light = desktopPalette(DesktopThemeMode.LIGHT, materialMode = DesktopMaterialMode.LIQUID_GLASS)
-        val dark = desktopPalette(DesktopThemeMode.DARK, materialMode = DesktopMaterialMode.LIQUID_GLASS)
+    fun `should retain the IDEA title bar height for the root ambient canvas`() {
+        val metrics = ideaTitleBarMetrics()
 
-        assertEquals(DesktopMaterialMode.LIQUID_GLASS, light.materialMode)
-        assertEquals(false, light.isDark)
-        assertEquals(Color(0xFFF7F8FA), light.terminal.background)
-        assertEquals(DesktopMaterialMode.LIQUID_GLASS, dark.materialMode)
-        assertEquals(true, dark.isDark)
-        assertEquals(Color(0xFF17181A), dark.terminal.background)
+        assertEquals(Color(0xFF28434A), desktopPalette(DesktopThemeMode.DARK).titleBarGradientStart)
+        assertEquals(54f, metrics.height.value)
+    }
+
+    /** 浅色标题栏的常规悬浮必须使用中性灰，不能误用蓝色选中态。 */
+    @Test
+    fun `should use neutral title bar hover colors for both themes`() {
+        assertEquals(Color(0xFFD5D9E0), titleBarHoverBackground(isDark = false))
+        assertEquals(Color(0xFFC7CCD4), titleBarPressedBackground(isDark = false))
+        assertEquals(Color.White.copy(alpha = 0.12f), titleBarHoverBackground(isDark = true))
     }
 }

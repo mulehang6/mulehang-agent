@@ -5,13 +5,13 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,15 +35,22 @@ import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Checkbox
+import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.SimpleListItem
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
+import org.jetbrains.jewel.ui.component.styling.ComboBoxColors
+import org.jetbrains.jewel.ui.component.styling.ComboBoxStyle
+import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import org.jetbrains.jewel.ui.theme.comboBoxStyle
+import org.jetbrains.jewel.ui.theme.textFieldStyle
 
 /** 渲染展开后的 Provider 紧凑字段。 */
 @Composable
 internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfile) -> Unit, onDelete: () -> Unit) {
     var apiKeyVisible by remember(provider.id) { mutableStateOf(false) }
+    val protocolComboBoxStyle = rememberProviderProtocolComboBoxStyle()
     ProviderEditorSection("基本信息") {
         SettingsField("服务 ID", provider.id) { onChange(provider.copy(id = it)) }
         SettingsField("显示名称", provider.label.orEmpty()) { onChange(provider.copy(label = it.ifBlank { null })) }
@@ -56,6 +63,7 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
                 },
                 itemKeys = { _, type -> type.name },
                 modifier = Modifier.fillMaxWidth(),
+                style = protocolComboBoxStyle,
             ) { type, selected, active ->
                 SimpleListItem(
                     text = providerTypeLabel(type),
@@ -84,7 +92,12 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             onChange(provider.copy(defaultModel = it.ifBlank { null }))
         }
         provider.models.forEach { model ->
-            SettingsField("模型 ID", model.id, trailing = "删除") { updatedValue ->
+            SettingsField(
+                label = "模型 ID",
+                value = model.id,
+                trailing = "删除",
+                trailingDestructive = true,
+            ) { updatedValue ->
                 if (updatedValue == "__toggle_visibility__") {
                     onChange(provider.copy(models = provider.models - model))
                 } else {
@@ -92,11 +105,11 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
                 }
             }
         }
-        SettingsActionButton("新增模型") {
+        SettingsActionButton("新增", emphasized = true) {
             onChange(provider.copy(models = provider.models + ModelProfile(id = "model-${provider.models.size + 1}")))
         }
     }
-    SettingsActionButton("删除服务", destructive = true, onClick = onDelete)
+    SettingsActionButton("删除", destructive = true, onClick = onDelete)
 }
 
 /** 绘制 Provider 连接页的分组标题和清晰内容层。 */
@@ -129,6 +142,7 @@ private fun SettingsField(
     placeholder: String? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailing: String? = null,
+    trailingDestructive: Boolean = false,
     onValueChange: (String) -> Unit,
 ) {
     val editorValue = rememberExternalTextFieldValue(value)
@@ -146,15 +160,62 @@ private fun SettingsField(
             },
             trailingIcon = trailing?.let { action ->
                 {
-                    Text(
-                        action,
-                        modifier = Modifier.clickable { onValueChange("__toggle_visibility__") },
-                    )
+                    if (trailingDestructive) {
+                        SettingsActionButton(
+                            text = action,
+                            destructive = true,
+                            compact = true,
+                            modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
+                        ) {
+                            onValueChange("__toggle_visibility__")
+                        }
+                    } else {
+                        IconActionButton(
+                            key = AllIconsKeys.Actions.Show,
+                            contentDescription = action,
+                            onClick = { onValueChange("__toggle_visibility__") },
+                            modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
+                        )
+                    }
                 }
             },
         )
     }
 }
 
+/** 让只读协议下拉框沿用同组文本字段的默认底色。 */
+@Composable
+private fun rememberProviderProtocolComboBoxStyle(): ComboBoxStyle {
+    val baseStyle = JewelTheme.comboBoxStyle
+    val textFieldStyle = JewelTheme.textFieldStyle
+    return remember(baseStyle, textFieldStyle) {
+        val baseColors = baseStyle.colors
+        ComboBoxStyle(
+            colors = ComboBoxColors(
+                background = baseColors.background,
+                nonEditableBackground = textFieldStyle.colors.background,
+                backgroundDisabled = baseColors.backgroundDisabled,
+                backgroundFocused = baseColors.backgroundFocused,
+                backgroundPressed = baseColors.backgroundPressed,
+                backgroundHovered = baseColors.backgroundHovered,
+                content = baseColors.content,
+                contentDisabled = baseColors.contentDisabled,
+                contentFocused = baseColors.contentFocused,
+                contentPressed = baseColors.contentPressed,
+                contentHovered = baseColors.contentHovered,
+                border = baseColors.border,
+                borderDisabled = baseColors.borderDisabled,
+                borderFocused = baseColors.borderFocused,
+                borderPressed = baseColors.borderPressed,
+                borderHovered = baseColors.borderHovered,
+            ),
+            metrics = baseStyle.metrics,
+            icons = baseStyle.icons,
+        )
+    }
+}
+
 /** 返回 Provider 类型在下拉框中使用的稳定、单行文本。 */
 internal fun providerTypeLabel(type: ProviderType): String = type.name.lowercase().replace('_', '-')
+
+private val PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET = 4.dp

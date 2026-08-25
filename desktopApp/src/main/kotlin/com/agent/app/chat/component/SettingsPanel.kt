@@ -16,13 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.VerticalScrollbar
-import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -52,6 +48,7 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
+import org.jetbrains.jewel.ui.component.VerticalScrollbar
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /** 设置页可选择的主要分区。 */
@@ -220,17 +217,13 @@ private fun SettingsPanelContent(
                 }
             }
             if (shouldShowSettingsContentScrollbar(scrollState.maxValue)) {
-                CompositionLocalProvider(
-                    LocalScrollbarStyle provides LocalScrollbarStyle.current,
-                ) {
-                    VerticalScrollbar(
-                        adapter = rememberScrollbarAdapter(scrollState),
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .padding(vertical = 4.dp, horizontal = 2.dp),
-                    )
-                }
+                VerticalScrollbar(
+                    scrollState = scrollState,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                )
             }
         }
         if (uiState.section == SettingsSection.PROVIDERS) {
@@ -239,7 +232,7 @@ private fun SettingsPanelContent(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SettingsActionButton("保存配置", emphasized = true) {
+                SettingsActionButton("保存", emphasized = true) {
                     val validation = validateSettingsDocument(uiState.document)
                     if (validation == null) {
                         runCatching { repository.saveDocument(uiState.layer, uiState.document) }

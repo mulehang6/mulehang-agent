@@ -1,22 +1,23 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.LocalScrollbarStyle
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.VerticalScrollbar
-import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 import com.agent.app.chat.presentation.itemContentSize
@@ -36,6 +38,7 @@ import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
 import com.agent.app.design.AppWorkspaceBackground
+import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
@@ -45,7 +48,12 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.VerticalScrollbar
+import org.jetbrains.jewel.ui.component.styling.IconButtonColors
+import org.jetbrains.jewel.ui.component.styling.IconButtonMetrics
+import org.jetbrains.jewel.ui.component.styling.IconButtonStyle
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import org.jetbrains.jewel.ui.theme.iconButtonStyle
 /**
  * 原型主工作区。
  */
@@ -209,20 +217,13 @@ internal fun WorkspacePanel(
                                 }
                             }
                             if (shouldShowTimelineScrollbar(scrollState.maxValue)) {
-                                CompositionLocalProvider(
-                                    LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
-                                        unhoverColor = Color(0xFF747983),
-                                        hoverColor = Color(0xFFB8BEC8),
-                                    ),
-                                ) {
-                                    VerticalScrollbar(
-                                        adapter = rememberScrollbarAdapter(scrollState),
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .fillMaxHeight()
-                                            .padding(vertical = 12.dp, horizontal = 4.dp),
-                                    )
-                                }
+                                VerticalScrollbar(
+                                    scrollState = scrollState,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .fillMaxHeight()
+                                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                                )
                             }
                             if (
                                 activeConversation != null &&
@@ -231,14 +232,24 @@ internal fun WorkspacePanel(
                                     hasTimelineContent = activeConversation.items.isNotEmpty(),
                                 )
                             ) {
-                                IconActionButton(
-                                    key = AllIconsKeys.Actions.Download,
-                                    contentDescription = "滚动到底部",
-                                    onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
+                                val scrollToBottomButtonStyle = timelineScrollToBottomButtonStyle()
+                                // Jewel 的 tooltip 重载会包裹触发器，BoxScope 对齐必须留在其直接子节点上。
+                                Box(
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(end = 28.dp, bottom = 20.dp),
-                                )
+                                        .padding(end = 28.dp, bottom = 20.dp)
+                                        .size(36.dp),
+                                ) {
+                                    IconActionButton(
+                                        key = AllIconsKeys.Actions.MoveDown,
+                                        contentDescription = "回到底部",
+                                        onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
+                                        modifier = Modifier.fillMaxSize(),
+                                        iconModifier = Modifier.size(16.dp),
+                                        style = scrollToBottomButtonStyle,
+                                        tooltip = { Text("回到底部") },
+                                    )
+                                }
                             }
                         }
                         FooterComposerSection(
@@ -288,6 +299,40 @@ internal fun shouldShowPendingInteractionCard(
  * 主内容实际溢出时才显示垂直滚动条。
  */
 internal fun shouldShowTimelineScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
+
+/** 为回到底部浮动按钮提供 36dp 圆角表面和中性 hover 反馈。 */
+@Composable
+private fun timelineScrollToBottomButtonStyle(): IconButtonStyle {
+    val palette = LocalDesktopPalette.current
+    val base = JewelTheme.iconButtonStyle
+    return remember(base, palette) {
+        IconButtonStyle(
+            colors = IconButtonColors(
+                foregroundSelectedActivated = base.colors.foregroundSelectedActivated,
+                background = palette.panelBackground,
+                backgroundDisabled = base.colors.backgroundDisabled,
+                backgroundSelected = base.colors.backgroundSelected,
+                backgroundSelectedActivated = base.colors.backgroundSelectedActivated,
+                backgroundFocused = palette.hoverBackground,
+                backgroundPressed = palette.hoverBackground.copy(alpha = 0.8f),
+                backgroundHovered = palette.hoverBackground,
+                border = palette.line,
+                borderDisabled = base.colors.borderDisabled,
+                borderSelected = base.colors.borderSelected,
+                borderSelectedActivated = base.colors.borderSelectedActivated,
+                borderFocused = palette.line,
+                borderPressed = palette.line,
+                borderHovered = palette.line,
+            ),
+            metrics = IconButtonMetrics(
+                cornerSize = CornerSize(8.dp),
+                borderWidth = base.metrics.borderWidth,
+                padding = PaddingValues(0.dp),
+                minSize = DpSize(36.dp, 36.dp),
+            ),
+        )
+    }
+}
 
 /**
  * 空任务态主区。

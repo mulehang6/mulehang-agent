@@ -26,7 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.DpSize
@@ -43,16 +42,13 @@ import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
-import org.jetbrains.jewel.ui.component.styling.ButtonColors
-import org.jetbrains.jewel.ui.component.styling.ButtonMetrics
-import org.jetbrains.jewel.ui.component.styling.ButtonStyle
 import org.jetbrains.jewel.ui.component.styling.IconButtonColors
 import org.jetbrains.jewel.ui.component.styling.IconButtonMetrics
 import org.jetbrains.jewel.ui.component.styling.IconButtonStyle
 import org.jetbrains.jewel.ui.component.styling.MenuColors
 import org.jetbrains.jewel.ui.component.styling.MenuItemColors
 import org.jetbrains.jewel.ui.component.styling.MenuStyle
-import org.jetbrains.jewel.ui.theme.defaultButtonStyle
+import org.jetbrains.jewel.ui.icon.IconKey
 import org.jetbrains.jewel.ui.theme.iconButtonStyle
 import org.jetbrains.jewel.ui.theme.menuStyle
 
@@ -206,21 +202,57 @@ internal fun composerIconActionButtonStyle(): IconButtonStyle {
     }
 }
 
-/**
- * 返回 36dp 方形 Composer 主操作样式，停止态使用红色方块图标，发送态保留 Jewel 蓝色。
- */
+/** 渲染发送或停止任务的主操作，并显式使用真实指针状态驱动中性 hover 背景。 */
 @Composable
-internal fun composerPrimaryActionButtonStyle(danger: Boolean): ButtonStyle {
+internal fun ComposerPrimaryActionButton(
+    danger: Boolean,
+    onClick: () -> Unit,
+    iconKey: IconKey,
+    contentDescription: String,
+) {
     val palette = LocalDesktopPalette.current
-    val base = JewelTheme.defaultButtonStyle
-    return remember(base, palette, danger) {
-        ButtonStyle(
-            colors = if (danger) composerStopButtonColors(base.colors, palette) else base.colors,
-            metrics = squareComposerPrimaryButtonMetrics(base.metrics),
-            focusOutlineAlignment = base.focusOutlineAlignment,
+    val hoverInteractionSource = remember { MutableInteractionSource() }
+    val pointerHovered by hoverInteractionSource.collectIsHoveredAsState()
+    val style = composerPrimaryActionActionButtonStyle(pointerHovered)
+
+    ActionButton(
+        onClick = onClick,
+        focusable = false,
+        style = style,
+        contentPadding = PaddingValues(0.dp),
+        modifier = Modifier
+            .size(36.dp)
+            .hoverable(hoverInteractionSource),
+    ) {
+        Icon(
+            key = iconKey,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(16.dp),
+            tint = if (danger) palette.danger else palette.text,
         )
     }
 }
+
+/** 返回 36dp 方形 Composer ActionButton 样式，默认透明，仅在 hover 或按下时显示中性背景。 */
+@Composable
+private fun composerPrimaryActionActionButtonStyle(pointerHovered: Boolean): IconButtonStyle {
+    val palette = LocalDesktopPalette.current
+    val base = JewelTheme.iconButtonStyle
+    return remember(base, palette, pointerHovered) {
+        IconButtonStyle(
+            colors = composerSelectorButtonColors(base.colors, palette, pointerHovered),
+            metrics = squareComposerPrimaryActionButtonMetrics(base.metrics),
+        )
+    }
+}
+
+/** 为 Composer 主操作保留 36dp 方形尺寸与 8dp 圆角。 */
+private fun squareComposerPrimaryActionButtonMetrics(base: IconButtonMetrics): IconButtonMetrics = IconButtonMetrics(
+    cornerSize = CornerSize(8.dp),
+    borderWidth = base.borderWidth,
+    padding = PaddingValues(0.dp),
+    minSize = DpSize(36.dp, 36.dp),
+)
 
 /** 构造透明正常态与完整中性 hover 填充，背景只由对应触发器的指针状态决定。 */
 private fun composerSelectorButtonColors(
@@ -273,40 +305,6 @@ private fun composerIconActionButtonColors(
     borderFocused = base.borderFocused,
     borderPressed = base.borderPressed,
     borderHovered = base.border,
-)
-
-/** 构造停止任务时的透明主按钮，红色只保留给停止方块图标。 */
-private fun composerStopButtonColors(base: ButtonColors, palette: DesktopPalette): ButtonColors {
-    val transparent = SolidColor(Color.Transparent)
-    val hovered = SolidColor(palette.hoverBackground)
-    val pressed = SolidColor(palette.hoverBackground.copy(alpha = 0.8f))
-
-    return ButtonColors(
-        background = transparent,
-        backgroundDisabled = base.backgroundDisabled,
-        backgroundFocused = transparent,
-        backgroundPressed = pressed,
-        backgroundHovered = hovered,
-        content = palette.danger,
-        contentDisabled = base.contentDisabled,
-        contentFocused = palette.danger,
-        contentPressed = palette.danger,
-        contentHovered = palette.danger,
-        border = transparent,
-        borderDisabled = base.borderDisabled,
-        borderFocused = transparent,
-        borderPressed = transparent,
-        borderHovered = transparent,
-    )
-}
-
-/** 将 Jewel 默认主按钮的度量压缩为 36dp 方形和 8dp 圆角。 */
-private fun squareComposerPrimaryButtonMetrics(base: ButtonMetrics): ButtonMetrics = ButtonMetrics(
-    cornerSize = CornerSize(8.dp),
-    padding = PaddingValues(0.dp),
-    minSize = DpSize(36.dp, 36.dp),
-    borderWidth = base.borderWidth,
-    focusOutlineExpand = base.focusOutlineExpand,
 )
 
 /** 生成保留 Jewel 容器、阴影、焦点和键盘导航的紧凑权限菜单样式。 */

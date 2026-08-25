@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -80,7 +79,6 @@ import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.ActionButton
-import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextArea
@@ -140,7 +138,6 @@ internal fun ComposerPanel(
     var inputViewportHeight by remember { mutableStateOf(0) }
     val inputContentOffset = composerInputContentOffset()
     val iconActionButtonStyle = composerIconActionButtonStyle()
-    val primaryActionButtonStyle = composerPrimaryActionButtonStyle(primaryActionVisual.danger)
 
     LaunchedEffect(state.ui.draft) {
         if (draftFieldValue.text != state.ui.draft) {
@@ -426,7 +423,8 @@ internal fun ComposerPanel(
                             state.updatePermission(preset)
                         },
                     )
-                    DefaultButton(
+                    ComposerPrimaryActionButton(
+                        danger = primaryActionVisual.danger,
                         onClick = {
                             if (executionState.isStoppable()) {
                                 state.cancelActiveRun()
@@ -434,15 +432,9 @@ internal fun ComposerPanel(
                                 onSendDraft()
                             }
                         },
-                        modifier = Modifier.size(36.dp),
-                        style = primaryActionButtonStyle,
-                    ) {
-                        Icon(
-                            composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
-                            if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
+                        iconKey = composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
+                        contentDescription = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
+                    )
                 }
             }
         }

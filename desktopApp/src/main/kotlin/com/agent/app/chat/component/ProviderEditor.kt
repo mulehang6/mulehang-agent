@@ -35,14 +35,12 @@ import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Checkbox
-import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.SimpleListItem
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
 import org.jetbrains.jewel.ui.component.styling.ComboBoxColors
 import org.jetbrains.jewel.ui.component.styling.ComboBoxStyle
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.theme.comboBoxStyle
 import org.jetbrains.jewel.ui.theme.textFieldStyle
 
@@ -82,9 +80,10 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             "API Key",
             provider.apiKey,
             visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailing = if (apiKeyVisible) "隐藏" else "显示",
-            trailingTextAction = true,
-            onTrailingAction = { apiKeyVisible = !apiKeyVisible },
+            trailingAction = SettingsFieldAction(
+                label = if (apiKeyVisible) "隐藏" else "显示",
+                onClick = { apiKeyVisible = !apiKeyVisible },
+            ),
         ) {
             onChange(provider.copy(apiKey = it))
         }
@@ -97,11 +96,11 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             SettingsField(
                 label = "模型 ID",
                 value = model.id,
-                trailing = "删除",
-                trailingDestructive = true,
-                onTrailingAction = {
-                    onChange(provider.copy(models = provider.models - model))
-                },
+                trailingAction = SettingsFieldAction(
+                    label = "删除",
+                    destructive = true,
+                    onClick = { onChange(provider.copy(models = provider.models - model)) },
+                ),
             ) { updatedValue ->
                 onChange(provider.copy(models = provider.models.map { if (it.id == model.id) model.copy(id = updatedValue) else it }))
             }
@@ -135,6 +134,13 @@ private fun SettingsRow(label: String, content: @Composable () -> Unit) {
     }
 }
 
+/** 描述设置字段的末尾动作，标签、语义色和回调不可拆分。 */
+private data class SettingsFieldAction(
+    val label: String,
+    val destructive: Boolean = false,
+    val onClick: () -> Unit,
+)
+
 /** 绘制无浮动标签的紧凑文本字段，并将末尾动作与文本更新分离。 */
 @Composable
 private fun SettingsField(
@@ -142,10 +148,7 @@ private fun SettingsField(
     value: String,
     placeholder: String? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
-    trailing: String? = null,
-    trailingDestructive: Boolean = false,
-    trailingTextAction: Boolean = false,
-    onTrailingAction: (() -> Unit)? = null,
+    trailingAction: SettingsFieldAction? = null,
     onValueChange: (String) -> Unit,
 ) {
     val editorValue = rememberExternalTextFieldValue(value)
@@ -161,26 +164,15 @@ private fun SettingsField(
             placeholder = placeholder?.let { hint ->
                 { Text(hint) }
             },
-            trailingIcon = trailing?.let { action ->
-                onTrailingAction?.let { onAction ->
-                    {
-                        if (trailingDestructive || trailingTextAction) {
-                            SettingsActionButton(
-                                text = action,
-                                destructive = trailingDestructive,
-                                compact = true,
-                                modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
-                            ) {
-                                onAction()
-                            }
-                        } else {
-                            IconActionButton(
-                                key = AllIconsKeys.Actions.Show,
-                                contentDescription = action,
-                                onClick = onAction,
-                                modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
-                            )
-                        }
+            trailingIcon = trailingAction?.let { action ->
+                {
+                    SettingsActionButton(
+                        text = action.label,
+                        destructive = action.destructive,
+                        compact = true,
+                        modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
+                    ) {
+                        action.onClick()
                     }
                 }
             },

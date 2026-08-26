@@ -73,7 +73,7 @@ internal fun ProviderSettingsContent(
 ) {
     GroupHeader("AI 服务")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        SettingsActionButton("新增服务") {
+        SettingsActionButton("新增", emphasized = true) {
             val id = "provider-${document.providers.size + 1}"
             onDocumentChange(document.copy(providers = document.providers + newProvider(id)))
             onExpandedProviderChange(id)
@@ -221,15 +221,20 @@ private fun SettingsGroup(
     )
 }
 
-/** 绘制小型操作按钮，仅保存操作使用固定强调色。 */
+/** 绘制设置页主操作、普通操作和紧凑字段操作按钮。 */
 @Composable
 internal fun SettingsActionButton(
     text: String,
     emphasized: Boolean = false,
     destructive: Boolean = false,
+    compact: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     var hovered by remember(text) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(if (compact) 4.dp else 5.dp)
+    val horizontalPadding = if (compact) 6.dp else 10.dp
+    val verticalPadding = if (compact) 2.dp else 7.dp
     val color = when {
         emphasized -> AppAccent
         destructive -> AppDanger.copy(alpha = if (hovered) 0.9f else 0.62f)
@@ -237,10 +242,10 @@ internal fun SettingsActionButton(
     }
     Text(
         text,
-        modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(color)
+        modifier = modifier.clip(shape).background(color)
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
-            .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
+            .clickable(onClick = onClick).padding(horizontal = horizontalPadding, vertical = verticalPadding),
         style = JewelTheme.defaultTextStyle.copy(color = AppText),
     )
 }

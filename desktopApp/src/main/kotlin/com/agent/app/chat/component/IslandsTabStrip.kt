@@ -3,13 +3,19 @@ package com.agent.app.chat.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,7 +106,7 @@ private fun IslandsTabContent(
             .clip(shape)
             .background(fill)
             .border(ISLANDS_TAB_BORDER_WIDTH, border, shape)
-            .padding(horizontal = 10.dp),
+            .padding(start = 10.dp, end = if (tab.closable) 4.dp else 10.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         tab.iconKey?.let { key ->
@@ -119,18 +125,36 @@ private fun IslandsTabContent(
             color = AppText,
         )
         if (tab.closable) {
-            Icon(
-                key = JewelTheme.editorTabStyle.icons.close,
-                contentDescription = "关闭 ${tab.label}",
+            val closeInteractionSource = remember { MutableInteractionSource() }
+            val closeHovered by closeInteractionSource.collectIsHoveredAsState()
+            val closeHoverFill = when {
+                !closeHovered -> Color.Transparent
+                selected && palette.isDark -> Color.White.copy(alpha = 0.16f)
+                selected -> Color.Black.copy(alpha = 0.08f)
+                palette.isDark -> Color.White.copy(alpha = 0.12f)
+                else -> Color.Black.copy(alpha = 0.08f)
+            }
+
+            Box(
                 modifier = Modifier
                     .padding(start = 8.dp)
-                    .size(16.dp)
+                    .size(ISLANDS_TAB_CLOSE_BUTTON_SIZE)
+                    .clip(CircleShape)
+                    .background(closeHoverFill)
+                    .hoverable(closeInteractionSource)
                     .clickable(
                         role = Role.Button,
                         onClick = tab.onClose,
                     ),
-                tint = iconTint,
-            )
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                Icon(
+                    key = JewelTheme.editorTabStyle.icons.close,
+                    contentDescription = "关闭 ${tab.label}",
+                    modifier = Modifier.size(ISLANDS_TAB_CLOSE_ICON_SIZE),
+                    tint = iconTint,
+                )
+            }
         }
     }
 }
@@ -184,4 +208,6 @@ internal fun islandsTabSelectedBorder(isDark: Boolean): Color =
 private val ISLANDS_TAB_HEIGHT = 28.dp
 private val ISLANDS_TAB_CORNER_RADIUS = 7.dp
 private val ISLANDS_TAB_BORDER_WIDTH = 1.dp
+private val ISLANDS_TAB_CLOSE_BUTTON_SIZE = 20.dp
+private val ISLANDS_TAB_CLOSE_ICON_SIZE = 14.dp
 private const val ISLANDS_TAB_HOVER_ALPHA = 0.74f

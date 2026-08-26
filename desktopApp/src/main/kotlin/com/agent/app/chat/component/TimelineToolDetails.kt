@@ -51,6 +51,7 @@ import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.markdown.Markdown
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.VerticalScrollbar
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 /**
  * 以固定最大高度显示工具详情的原始代码文本，并仅在内容溢出时展示滚动条。
@@ -87,20 +88,13 @@ internal fun ToolEventOutputPane(
             ),
         )
         if (shouldShowToolOutputScrollbar(maxScrollValue = scrollState.maxValue)) {
-            CompositionLocalProvider(
-                LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
-                    unhoverColor = Color(0xFF8D96A6),
-                    hoverColor = Color(0xFFD7DEEA),
-                ),
-            ) {
-                VerticalScrollbar(
-                    adapter = rememberScrollbarAdapter(scrollState),
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .padding(vertical = 6.dp, horizontal = 3.dp),
-                )
-            }
+            VerticalScrollbar(
+                scrollState = scrollState,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(vertical = 6.dp, horizontal = 3.dp),
+            )
         }
     }
 }

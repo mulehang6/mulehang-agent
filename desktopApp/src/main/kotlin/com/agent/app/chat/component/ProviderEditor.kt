@@ -5,13 +5,13 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,11 +39,16 @@ import org.jetbrains.jewel.ui.component.ListComboBox
 import org.jetbrains.jewel.ui.component.SimpleListItem
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
+import org.jetbrains.jewel.ui.component.styling.ComboBoxColors
+import org.jetbrains.jewel.ui.component.styling.ComboBoxStyle
+import org.jetbrains.jewel.ui.theme.comboBoxStyle
+import org.jetbrains.jewel.ui.theme.textFieldStyle
 
 /** 渲染展开后的 Provider 紧凑字段。 */
 @Composable
 internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfile) -> Unit, onDelete: () -> Unit) {
     var apiKeyVisible by remember(provider.id) { mutableStateOf(false) }
+    val protocolComboBoxStyle = rememberProviderProtocolComboBoxStyle()
     ProviderEditorSection("基本信息") {
         SettingsField("服务 ID", provider.id) { onChange(provider.copy(id = it)) }
         SettingsField("显示名称", provider.label.orEmpty()) { onChange(provider.copy(label = it.ifBlank { null })) }
@@ -56,6 +61,7 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
                 },
                 itemKeys = { _, type -> type.name },
                 modifier = Modifier.fillMaxWidth(),
+                style = protocolComboBoxStyle,
             ) { type, selected, active ->
                 SimpleListItem(
                     text = providerTypeLabel(type),
@@ -74,9 +80,12 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             "API Key",
             provider.apiKey,
             visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailing = if (apiKeyVisible) "隐藏" else "显示",
+            trailingAction = SettingsFieldAction(
+                label = if (apiKeyVisible) "隐藏" else "显示",
+                onClick = { apiKeyVisible = !apiKeyVisible },
+            ),
         ) {
-            if (it == "__toggle_visibility__") apiKeyVisible = !apiKeyVisible else onChange(provider.copy(apiKey = it))
+            onChange(provider.copy(apiKey = it))
         }
     }
     ProviderEditorSection("模型") {
@@ -84,19 +93,23 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             onChange(provider.copy(defaultModel = it.ifBlank { null }))
         }
         provider.models.forEach { model ->
-            SettingsField("模型 ID", model.id, trailing = "删除") { updatedValue ->
-                if (updatedValue == "__toggle_visibility__") {
-                    onChange(provider.copy(models = provider.models - model))
-                } else {
-                    onChange(provider.copy(models = provider.models.map { if (it.id == model.id) model.copy(id = updatedValue) else it }))
-                }
+            SettingsField(
+                label = "模型 ID",
+                value = model.id,
+                trailingAction = SettingsFieldAction(
+                    label = "删除",
+                    destructive = true,
+                    onClick = { onChange(provider.copy(models = provider.models - model)) },
+                ),
+            ) { updatedValue ->
+                onChange(provider.copy(models = provider.models.map { if (it.id == model.id) model.copy(id = updatedValue) else it }))
             }
         }
-        SettingsActionButton("新增模型") {
+        SettingsActionButton("新增", emphasized = true) {
             onChange(provider.copy(models = provider.models + ModelProfile(id = "model-${provider.models.size + 1}")))
         }
     }
-    SettingsActionButton("删除服务", destructive = true, onClick = onDelete)
+    SettingsActionButton("删除", destructive = true, onClick = onDelete)
 }
 
 /** 绘制 Provider 连接页的分组标题和清晰内容层。 */
@@ -121,14 +134,21 @@ private fun SettingsRow(label: String, content: @Composable () -> Unit) {
     }
 }
 
-/** 绘制无浮动标签的紧凑文本字段。 */
+/** 描述设置字段的末尾动作，标签、语义色和回调不可拆分。 */
+private data class SettingsFieldAction(
+    val label: String,
+    val destructive: Boolean = false,
+    val onClick: () -> Unit,
+)
+
+/** 绘制无浮动标签的紧凑文本字段，并将末尾动作与文本更新分离。 */
 @Composable
 private fun SettingsField(
     label: String,
     value: String,
     placeholder: String? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
-    trailing: String? = null,
+    trailingAction: SettingsFieldAction? = null,
     onValueChange: (String) -> Unit,
 ) {
     val editorValue = rememberExternalTextFieldValue(value)
@@ -144,17 +164,55 @@ private fun SettingsField(
             placeholder = placeholder?.let { hint ->
                 { Text(hint) }
             },
-            trailingIcon = trailing?.let { action ->
+            trailingIcon = trailingAction?.let { action ->
                 {
-                    Text(
-                        action,
-                        modifier = Modifier.clickable { onValueChange("__toggle_visibility__") },
-                    )
+                    SettingsActionButton(
+                        text = action.label,
+                        destructive = action.destructive,
+                        compact = true,
+                        modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
+                    ) {
+                        action.onClick()
+                    }
                 }
             },
         )
     }
 }
 
+/** 让只读协议下拉框沿用同组文本字段的默认底色。 */
+@Composable
+private fun rememberProviderProtocolComboBoxStyle(): ComboBoxStyle {
+    val baseStyle = JewelTheme.comboBoxStyle
+    val textFieldStyle = JewelTheme.textFieldStyle
+    return remember(baseStyle, textFieldStyle) {
+        val baseColors = baseStyle.colors
+        ComboBoxStyle(
+            colors = ComboBoxColors(
+                background = baseColors.background,
+                nonEditableBackground = textFieldStyle.colors.background,
+                backgroundDisabled = baseColors.backgroundDisabled,
+                backgroundFocused = baseColors.backgroundFocused,
+                backgroundPressed = baseColors.backgroundPressed,
+                backgroundHovered = baseColors.backgroundHovered,
+                content = baseColors.content,
+                contentDisabled = baseColors.contentDisabled,
+                contentFocused = baseColors.contentFocused,
+                contentPressed = baseColors.contentPressed,
+                contentHovered = baseColors.contentHovered,
+                border = baseColors.border,
+                borderDisabled = baseColors.borderDisabled,
+                borderFocused = baseColors.borderFocused,
+                borderPressed = baseColors.borderPressed,
+                borderHovered = baseColors.borderHovered,
+            ),
+            metrics = baseStyle.metrics,
+            icons = baseStyle.icons,
+        )
+    }
+}
+
 /** 返回 Provider 类型在下拉框中使用的稳定、单行文本。 */
 internal fun providerTypeLabel(type: ProviderType): String = type.name.lowercase().replace('_', '-')
+
+private val PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET = 4.dp

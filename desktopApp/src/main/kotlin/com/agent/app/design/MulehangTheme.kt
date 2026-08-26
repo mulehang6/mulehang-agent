@@ -1,5 +1,6 @@
 package com.agent.app.design
 
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
@@ -17,6 +18,8 @@ import org.jetbrains.jewel.intui.markdown.standalone.styling.light
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.code.highlighting.SimpleCodeHighlighter
 import org.jetbrains.jewel.intui.standalone.code.highlighting.SyntaxHighlightColors
+import org.jetbrains.jewel.intui.standalone.styling.dark as darkScrollbarStyle
+import org.jetbrains.jewel.intui.standalone.styling.light as lightScrollbarStyle
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.intui.window.decoratedWindow
@@ -31,6 +34,9 @@ import org.jetbrains.jewel.markdown.processing.MarkdownProcessor
 import org.jetbrains.jewel.markdown.rendering.MarkdownBlockRenderer
 import org.jetbrains.jewel.markdown.rendering.MarkdownStyling
 import org.jetbrains.jewel.ui.ComponentStyling
+import org.jetbrains.jewel.ui.component.styling.LocalScrollbarStyle
+import org.jetbrains.jewel.ui.component.styling.ScrollbarMetrics
+import org.jetbrains.jewel.ui.component.styling.ScrollbarStyle
 import org.jetbrains.jewel.intui.window.styling.dark
 import org.jetbrains.jewel.intui.window.styling.defaults
 import org.jetbrains.jewel.intui.window.styling.light
@@ -53,6 +59,20 @@ internal fun titleBarHoverBackground(isDark: Boolean): Color =
 /** 返回标题栏按下色，并与常规悬浮色保持清晰层级。 */
 internal fun titleBarPressedBackground(isDark: Boolean): Color =
     if (isDark) Color.White.copy(alpha = 0.18f) else Color(0xFFC7CCD4)
+
+/** 创建沿用平台默认颜色和行为、仅把滚动条拇指改为圆角的 Jewel 样式。 */
+private fun roundedScrollbarStyle(isDark: Boolean): ScrollbarStyle {
+    val baseStyle = if (isDark) ScrollbarStyle.darkScrollbarStyle() else ScrollbarStyle.lightScrollbarStyle()
+    return ScrollbarStyle(
+        colors = baseStyle.colors,
+        metrics = ScrollbarMetrics(
+            thumbCornerSize = CornerSize(percent = 50),
+            minThumbLength = baseStyle.metrics.minThumbLength,
+        ),
+        trackClickBehavior = baseStyle.trackClickBehavior,
+        scrollbarVisibility = baseStyle.scrollbarVisibility,
+    )
+}
 
 /**
  * 应用唯一的 Jewel 主题入口，同时提供 IDEA 标题栏所需的窗口样式。
@@ -105,10 +125,13 @@ internal fun MulehangTheme(
     } else {
         TitleBarStyle.light(colors = titleBarColors, metrics = ideaTitleBarMetrics())
     }
+    val applicationScrollbarStyle = remember(isDark) { roundedScrollbarStyle(isDark) }
 
     IntUiTheme(
         theme = themeDefinition,
-        styling = ComponentStyling.decoratedWindow(titleBarStyle = titleBarStyle),
+        styling = ComponentStyling
+            .decoratedWindow(titleBarStyle = titleBarStyle)
+            .provide(LocalScrollbarStyle provides applicationScrollbarStyle),
         swingCompatMode = true,
     ) {
         val markdownStyling = remember(isDark) {

@@ -27,8 +27,8 @@ internal val HeaderGlyph.iconKey: IconKey
         HeaderGlyph.ADD -> AllIconsKeys.General.Add
         HeaderGlyph.CODE -> AllIconsKeys.FileTypes.Any_type
         HeaderGlyph.SEARCH -> AllIconsKeys.Actions.Find
-        HeaderGlyph.SEND -> AllIconsKeys.Actions.Execute
-        HeaderGlyph.STOP -> AllIconsKeys.Actions.Cancel
+        HeaderGlyph.SEND -> AllIconsKeys.General.ArrowUp
+        HeaderGlyph.STOP -> AllIconsKeys.Actions.Suspend
     }
 
 /** 将右侧工具栏业务动作映射到 IntelliJ 图标包。 */

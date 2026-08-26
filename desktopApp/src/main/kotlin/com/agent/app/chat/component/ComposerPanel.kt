@@ -11,14 +11,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.LocalScrollbarStyle
-import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.rememberScrollbarAdapter
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +72,6 @@ import com.agent.app.design.DesktopPalette
 import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
-import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.iconKey
 import com.agent.app.platform.pickFiles
 import com.agent.shared.chat.model.ExecutionState
@@ -87,19 +79,12 @@ import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.ActionButton
-import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.Icon
-import org.jetbrains.jewel.ui.component.MenuScope
-import org.jetbrains.jewel.ui.component.OutlinedButton
-import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextArea
 import org.jetbrains.jewel.ui.component.Tooltip
-import org.jetbrains.jewel.ui.component.styling.MenuColors
-import org.jetbrains.jewel.ui.component.styling.MenuItemColors
-import org.jetbrains.jewel.ui.component.styling.MenuStyle
+import org.jetbrains.jewel.ui.component.VerticalScrollbar
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
-import org.jetbrains.jewel.ui.theme.menuStyle
 
 internal const val COMPOSER_INPUT_HORIZONTAL_PADDING_DP = 12
 internal const val COMPOSER_INPUT_VERTICAL_PADDING_DP = 8
@@ -152,6 +137,7 @@ internal fun ComposerPanel(
     val scope = rememberCoroutineScope()
     var inputViewportHeight by remember { mutableStateOf(0) }
     val inputContentOffset = composerInputContentOffset()
+    val iconActionButtonStyle = composerIconActionButtonStyle()
 
     LaunchedEffect(state.ui.draft) {
         if (draftFieldValue.text != state.ui.draft) {
@@ -232,6 +218,7 @@ internal fun ComposerPanel(
                                     ActionButton(
                                         onClick = { state.removeAttachment(attachment.path) },
                                         tooltip = { Text("移除 ${attachment.name}") },
+                                        style = iconActionButtonStyle,
                                     ) { Icon(AllIconsKeys.Actions.Cancel, "移除 ${attachment.name}") }
                                 }
                             }
@@ -320,20 +307,13 @@ internal fun ComposerPanel(
                     )
                 }
                 if (shouldShowComposerInputScrollbar(inputScrollState.maxValue)) {
-                    CompositionLocalProvider(
-                        LocalScrollbarStyle provides LocalScrollbarStyle.current.copy(
-                            unhoverColor = Color(0xFF8D96A6),
-                            hoverColor = Color(0xFFD7DEEA),
-                        ),
-                    ) {
-                        VerticalScrollbar(
-                            adapter = rememberScrollbarAdapter(inputScrollState),
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .fillMaxHeight()
-                                .padding(vertical = 8.dp, horizontal = 3.dp),
-                        )
-                    }
+                    VerticalScrollbar(
+                        scrollState = inputScrollState,
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .padding(vertical = 8.dp, horizontal = 3.dp),
+                    )
                 }
             }
 
@@ -350,8 +330,9 @@ internal fun ComposerPanel(
                     ActionButton(
                         onClick = { state.attachFiles(pickFiles()) },
                         tooltip = { Text("添加附件") },
+                        style = iconActionButtonStyle,
                     ) { Icon(HeaderGlyph.ADD.iconKey, "添加附件") }
-                    ComposerMenuButton(
+                    ComposerSelectorMenuButton(
                         label = selectedProfile?.providerLabel ?: currentProvider ?: "服务商",
                         expanded = expandedMenu == ComposerMenu.PROVIDER,
                         onExpandedChange = { shouldExpand ->
@@ -372,7 +353,7 @@ internal fun ComposerPanel(
                             ) { Text(first.providerLabel) }
                         }
                     }
-                    ComposerMenuButton(
+                    ComposerSelectorMenuButton(
                         label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "模型",
                         expanded = expandedMenu == ComposerMenu.MODEL,
                         onExpandedChange = { shouldExpand ->
@@ -393,7 +374,7 @@ internal fun ComposerPanel(
                         }
                     }
                     if (selectedVariants.isNotEmpty()) {
-                        ComposerMenuButton(
+                        ComposerSelectorMenuButton(
                             label = reasoningControlLabel(activeConversation?.reasoningEffort),
                             expanded = expandedMenu == ComposerMenu.REASONING,
                             onExpandedChange = { shouldExpand ->
@@ -427,7 +408,7 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PermissionMenuButton(
+                    ComposerPermissionMenuButton(
                         label = permissionPresentation(permissionPreset).label,
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
                         onExpandedChange = { shouldExpand ->
@@ -442,7 +423,8 @@ internal fun ComposerPanel(
                             state.updatePermission(preset)
                         },
                     )
-                    DefaultButton(
+                    ComposerPrimaryActionButton(
+                        danger = primaryActionVisual.danger,
                         onClick = {
                             if (executionState.isStoppable()) {
                                 state.cancelActiveRun()
@@ -450,83 +432,9 @@ internal fun ComposerPanel(
                                 onSendDraft()
                             }
                         },
-                    ) {
-                        Icon(
-                            composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
-                            if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 使用 Jewel 按钮和原生菜单承载 Composer 的业务选择器。 */
-@Composable
-private fun ComposerMenuButton(
-    label: String,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onDismissRequest: () -> Unit,
-    menuModifier: Modifier = Modifier,
-    content: MenuScope.() -> Unit,
-) {
-    Box {
-        OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
-        if (expanded) {
-            PopupMenu(
-                onDismissRequest = {
-                    onDismissRequest()
-                    true
-                },
-                horizontalAlignment = Alignment.Start,
-                modifier = menuModifier,
-                content = content,
-            )
-        }
-    }
-}
-
-/** 渲染权限选择器，使用 Jewel 标准菜单容器并在菜单项内保留权限语义色。 */
-@Composable
-private fun PermissionMenuButton(
-    label: String,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onDismissRequest: () -> Unit,
-    selectedPreset: PermissionPreset,
-    onPresetSelected: (PermissionPreset) -> Unit,
-) {
-    val baseMenuStyle = JewelTheme.menuStyle
-    val menuStyle = remember(baseMenuStyle) {
-        permissionMenuStyle(baseMenuStyle)
-    }
-
-    Box {
-        OutlinedButton(onClick = { onExpandedChange(!expanded) }) { Text(label) }
-        if (expanded) {
-            PopupMenu(
-                onDismissRequest = {
-                    onDismissRequest()
-                    true
-                },
-                horizontalAlignment = Alignment.End,
-                style = menuStyle,
-            ) {
-                PermissionPreset.entries.forEach { preset ->
-                    val presentation = permissionPresentation(preset)
-                    selectableItem(
-                        selected = preset == selectedPreset,
-                        onClick = { onPresetSelected(preset) },
-                    ) {
-                        Tooltip(tooltip = { Text(presentation.description) }) {
-                            PermissionPresetMenuRow(
-                                presentation = presentation,
-                                selected = preset == selectedPreset,
-                            )
-                        }
-                    }
+                        iconKey = composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
+                        contentDescription = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
+                    )
                 }
             }
         }
@@ -544,77 +452,4 @@ internal fun permissionPresetMenuRowBackground(
     pressed -> tone.copy(alpha = PERMISSION_MENU_PRESSED_ALPHA)
     hovered -> tone.copy(alpha = PERMISSION_MENU_HOVERED_ALPHA)
     else -> Color.Transparent
-}
-
-/** 生成保留 Jewel 容器、阴影、焦点和键盘导航的紧凑权限菜单样式。 */
-private fun permissionMenuStyle(base: MenuStyle): MenuStyle = MenuStyle(
-    isDark = base.isDark,
-    colors = MenuColors(
-        background = base.colors.background,
-        border = base.colors.border,
-        shadow = base.colors.shadow,
-        itemColors = transparentMenuItemBackgrounds(base.colors.itemColors),
-    ),
-    metrics = base.metrics,
-    icons = base.icons,
-)
-
-/** 保持 Jewel 文本、图标、焦点和快捷键颜色，仅交由权限行绘制唯一的状态背景。 */
-private fun transparentMenuItemBackgrounds(base: MenuItemColors): MenuItemColors = MenuItemColors(
-    background = Color.Transparent,
-    backgroundDisabled = Color.Transparent,
-    backgroundFocused = Color.Transparent,
-    backgroundPressed = Color.Transparent,
-    backgroundHovered = Color.Transparent,
-    content = base.content,
-    contentDisabled = base.contentDisabled,
-    contentFocused = base.contentFocused,
-    contentPressed = base.contentPressed,
-    contentHovered = base.contentHovered,
-    iconTint = base.iconTint,
-    iconTintDisabled = base.iconTintDisabled,
-    iconTintFocused = base.iconTintFocused,
-    iconTintPressed = base.iconTintPressed,
-    iconTintHovered = base.iconTintHovered,
-    keybindingTint = base.keybindingTint,
-    keybindingTintDisabled = base.keybindingTintDisabled,
-    keybindingTintFocused = base.keybindingTintFocused,
-    keybindingTintPressed = base.keybindingTintPressed,
-    keybindingTintHovered = base.keybindingTintHovered,
-    separator = base.separator,
-)
-
-/** 渲染一行紧凑权限项；点击和键盘选择仍由外层 Jewel selectableItem 承担。 */
-@Composable
-private fun PermissionPresetMenuRow(
-    presentation: PermissionPresentation,
-    selected: Boolean,
-) {
-    val palette = LocalDesktopPalette.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
-    var pressed by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(5.dp))
-            .background(
-                color = permissionPresetMenuRowBackground(
-                    tone = presentation.tone,
-                    selected = selected,
-                    hovered = hovered,
-                    pressed = pressed,
-                ),
-            )
-            .hoverable(interactionSource)
-            .onPointerEvent(PointerEventType.Press) { pressed = true }
-            .onPointerEvent(PointerEventType.Release) { pressed = false },
-    ) {
-        Text(
-            text = presentation.label,
-            style = JewelTheme.defaultTextStyle.copy(color = permissionPresetMenuTextColor(palette)),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-    }
 }

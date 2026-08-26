@@ -83,8 +83,10 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             provider.apiKey,
             visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
             trailing = if (apiKeyVisible) "隐藏" else "显示",
+            trailingTextAction = true,
+            onTrailingAction = { apiKeyVisible = !apiKeyVisible },
         ) {
-            if (it == "__toggle_visibility__") apiKeyVisible = !apiKeyVisible else onChange(provider.copy(apiKey = it))
+            onChange(provider.copy(apiKey = it))
         }
     }
     ProviderEditorSection("模型") {
@@ -97,12 +99,11 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
                 value = model.id,
                 trailing = "删除",
                 trailingDestructive = true,
-            ) { updatedValue ->
-                if (updatedValue == "__toggle_visibility__") {
+                onTrailingAction = {
                     onChange(provider.copy(models = provider.models - model))
-                } else {
-                    onChange(provider.copy(models = provider.models.map { if (it.id == model.id) model.copy(id = updatedValue) else it }))
-                }
+                },
+            ) { updatedValue ->
+                onChange(provider.copy(models = provider.models.map { if (it.id == model.id) model.copy(id = updatedValue) else it }))
             }
         }
         SettingsActionButton("新增", emphasized = true) {
@@ -134,7 +135,7 @@ private fun SettingsRow(label: String, content: @Composable () -> Unit) {
     }
 }
 
-/** 绘制无浮动标签的紧凑文本字段。 */
+/** 绘制无浮动标签的紧凑文本字段，并将末尾动作与文本更新分离。 */
 @Composable
 private fun SettingsField(
     label: String,
@@ -143,6 +144,8 @@ private fun SettingsField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     trailing: String? = null,
     trailingDestructive: Boolean = false,
+    trailingTextAction: Boolean = false,
+    onTrailingAction: (() -> Unit)? = null,
     onValueChange: (String) -> Unit,
 ) {
     val editorValue = rememberExternalTextFieldValue(value)
@@ -159,23 +162,25 @@ private fun SettingsField(
                 { Text(hint) }
             },
             trailingIcon = trailing?.let { action ->
-                {
-                    if (trailingDestructive) {
-                        SettingsActionButton(
-                            text = action,
-                            destructive = true,
-                            compact = true,
-                            modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
-                        ) {
-                            onValueChange("__toggle_visibility__")
+                onTrailingAction?.let { onAction ->
+                    {
+                        if (trailingDestructive || trailingTextAction) {
+                            SettingsActionButton(
+                                text = action,
+                                destructive = trailingDestructive,
+                                compact = true,
+                                modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
+                            ) {
+                                onAction()
+                            }
+                        } else {
+                            IconActionButton(
+                                key = AllIconsKeys.Actions.Show,
+                                contentDescription = action,
+                                onClick = onAction,
+                                modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
+                            )
                         }
-                    } else {
-                        IconActionButton(
-                            key = AllIconsKeys.Actions.Show,
-                            contentDescription = action,
-                            onClick = { onValueChange("__toggle_visibility__") },
-                            modifier = Modifier.offset(x = PROVIDER_FIELD_TRAILING_ACTION_END_OFFSET),
-                        )
                     }
                 }
             },

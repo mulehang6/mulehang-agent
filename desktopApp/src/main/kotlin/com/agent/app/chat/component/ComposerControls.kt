@@ -26,6 +26,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.DpSize
@@ -64,20 +69,25 @@ internal fun ComposerSelectorMenuButton(
     menuModifier: Modifier = Modifier,
     content: MenuScope.() -> Unit,
 ) {
+    var popupFocusable by remember { mutableStateOf(false) }
+
     Box {
         ComposerMenuTrigger(
             label = label,
             onClick = { onExpandedChange(!expanded) },
+            onKeyboardActivation = { popupFocusable = true },
+            onPointerActivation = { popupFocusable = false },
         )
         if (expanded) {
             PopupMenu(
                 onDismissRequest = {
+                    popupFocusable = false
                     onDismissRequest()
                     true
                 },
                 horizontalAlignment = androidx.compose.ui.Alignment.Start,
                 modifier = menuModifier,
-                popupProperties = PopupProperties(focusable = false),
+                popupProperties = PopupProperties(focusable = popupFocusable),
                 content = content,
             )
         }
@@ -100,21 +110,25 @@ internal fun ComposerPermissionMenuButton(
     val menuStyle = remember(baseMenuStyle) {
         composerPermissionMenuStyle(baseMenuStyle)
     }
+    var popupFocusable by remember { mutableStateOf(false) }
 
     Box {
         ComposerMenuTrigger(
             label = label,
             onClick = { onExpandedChange(!expanded) },
+            onKeyboardActivation = { popupFocusable = true },
+            onPointerActivation = { popupFocusable = false },
         )
         if (expanded) {
             PopupMenu(
                 onDismissRequest = {
+                    popupFocusable = false
                     onDismissRequest()
                     true
                 },
                 horizontalAlignment = androidx.compose.ui.Alignment.End,
                 style = menuStyle,
-                popupProperties = PopupProperties(focusable = false),
+                popupProperties = PopupProperties(focusable = popupFocusable),
             ) {
                 PermissionPreset.entries.forEach { preset ->
                     val presentation = permissionPresentation(preset)
@@ -135,11 +149,13 @@ internal fun ComposerPermissionMenuButton(
     }
 }
 
-/** 渲染带下拉箭头的 Composer ActionButton，并独立追踪真实指针的 hover 状态。 */
+/** 渲染带下拉箭头的 Composer ActionButton，并区分键盘与指针打开方式。 */
 @Composable
 private fun ComposerMenuTrigger(
     label: String,
     onClick: () -> Unit,
+    onKeyboardActivation: () -> Unit,
+    onPointerActivation: () -> Unit,
 ) {
     val palette = LocalDesktopPalette.current
     val triggerContentColor = palette.text.copy(alpha = 0.82f)
@@ -149,10 +165,18 @@ private fun ComposerMenuTrigger(
 
     ActionButton(
         onClick = onClick,
-        focusable = false,
+        focusable = true,
         style = style,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-        modifier = Modifier.hoverable(hoverInteractionSource),
+        modifier = Modifier
+            .hoverable(hoverInteractionSource)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.Spacebar)) {
+                    onKeyboardActivation()
+                }
+                false
+            }
+            .onPointerEvent(PointerEventType.Press) { onPointerActivation() },
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -217,7 +241,7 @@ internal fun ComposerPrimaryActionButton(
 
     ActionButton(
         onClick = onClick,
-        focusable = false,
+        focusable = true,
         style = style,
         contentPadding = PaddingValues(0.dp),
         modifier = Modifier
@@ -265,7 +289,7 @@ private fun composerSelectorButtonColors(
     backgroundDisabled = Color.Transparent,
     backgroundSelected = Color.Transparent,
     backgroundSelectedActivated = Color.Transparent,
-    backgroundFocused = Color.Transparent,
+    backgroundFocused = palette.hoverBackground,
     backgroundPressed = palette.hoverBackground,
     backgroundHovered = palette.hoverBackground,
     border = Color.Transparent,

@@ -1,8 +1,10 @@
 package com.agent.app.design
 
 import androidx.compose.ui.graphics.Color
+import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** 验证桌面动态主题的模式解析和核心视觉 token。 */
 class DesktopThemeSettingsTest {
@@ -72,6 +74,29 @@ class DesktopThemeSettingsTest {
         assertEquals(Color(0xFFE6E8EC), palette.terminal.foreground)
     }
 
+    /** 深色主文字必须避免纯白，并在常用主界面表面保持 AA 可读性。 */
+    @Test
+    fun `should use soft accessible primary text for dark palette`() {
+        val palette = desktopPalette(DesktopThemeMode.DARK)
+        val systemDarkPalette = desktopPalette(DesktopThemeMode.SYSTEM, systemIsDark = true)
+        val primaryText = Color(0xFFD7DAE0)
+
+        assertEquals(primaryText, palette.text)
+        assertEquals(primaryText, systemDarkPalette.text)
+        listOf(
+            palette.workspaceBackground,
+            palette.frameBackground,
+            palette.sidebarBackground,
+            palette.composerBackground,
+            palette.composerInputBackground,
+        ).forEach { surface ->
+            assertTrue(
+                contrastRatio(primaryText, surface) >= 4.5,
+                "深色主文字在 $surface 上必须达到 AA 对比度",
+            )
+        }
+    }
+
     /** 标题栏维持 IDEA 的 54dp 原生窗口命中高度；项目环境光由根画布负责。 */
     @Test
     fun `should retain the IDEA title bar height for the root ambient canvas`() {
@@ -87,5 +112,29 @@ class DesktopThemeSettingsTest {
         assertEquals(Color(0xFFD5D9E0), titleBarHoverBackground(isDark = false))
         assertEquals(Color(0xFFC7CCD4), titleBarPressedBackground(isDark = false))
         assertEquals(Color.White.copy(alpha = 0.12f), titleBarHoverBackground(isDark = true))
+    }
+
+    /** 计算两个 sRGB 颜色的 WCAG 对比度。 */
+    private fun contrastRatio(first: Color, second: Color): Double {
+        val firstLuminance = relativeLuminance(first)
+        val secondLuminance = relativeLuminance(second)
+        return (maxOf(firstLuminance, secondLuminance) + 0.05) /
+            (minOf(firstLuminance, secondLuminance) + 0.05)
+    }
+
+    /** 将一个 sRGB 颜色转换为相对亮度。 */
+    private fun relativeLuminance(color: Color): Double =
+        0.2126 * linearized(color.red) +
+            0.7152 * linearized(color.green) +
+            0.0722 * linearized(color.blue)
+
+    /** 将一个 sRGB 分量转换为线性亮度。 */
+    private fun linearized(component: Float): Double {
+        val value = component.toDouble()
+        return if (value <= 0.04045) {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).pow(2.4)
+        }
     }
 }

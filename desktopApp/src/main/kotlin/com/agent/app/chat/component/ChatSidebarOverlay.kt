@@ -5,6 +5,7 @@ package com.agent.app.chat.component
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,9 +57,10 @@ internal fun TaskSidebarIsland(
                 modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
             ) {
                 Icon(
-                    key = AllIconsKeys.General.HideToolWindow,
+                    key = AllIconsKeys.Actions.SplitVertically,
                     contentDescription = "收起任务侧栏",
                     tint = AppMuted,
+                    modifier = Modifier.size(24.dp),
                 )
             }
         }

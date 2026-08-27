@@ -138,7 +138,7 @@ internal fun desktopPalette(
             providerCardBackground = Color(0xFF252629),
             providerCardHoverBackground = Color(0xFF38393B),
             line = Color(0xFF393B40),
-            text = Color(0xFFFFFFFF),
+            text = Color(0xFFD7DAE0),
             muted = Color(0xFF9DA0A8),
             accent = DesktopAccentBlue,
             markdownLink = DesktopAccentBlue.copy(alpha = 0.68f),

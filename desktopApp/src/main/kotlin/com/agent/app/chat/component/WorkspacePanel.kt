@@ -241,7 +241,7 @@ internal fun WorkspacePanel(
                                         .size(36.dp),
                                 ) {
                                     IconActionButton(
-                                        key = AllIconsKeys.Actions.MoveDown,
+                                        key = AllIconsKeys.General.ArrowDown,
                                         contentDescription = "回到底部",
                                         onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
                                         modifier = Modifier.fillMaxSize(),

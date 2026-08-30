@@ -19,12 +19,17 @@ import com.agent.app.chat.component.ChatTitleBar
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
+import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
 import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.app.design.MulehangTheme
+import com.agent.app.design.ProvideDesktopAppearance
+import com.agent.app.design.adjustedDesktopUiScalePercent
 import com.agent.app.design.desktopPalette
 import com.agent.app.design.ideaFrameAmbientBackground
+import com.agent.app.design.loadDesktopFontCatalog
 import com.agent.app.platform.BridgeWindowsTitleBarInputToCompose
+import com.agent.app.platform.RegisterGlobalAppearanceShortcuts
 import com.agent.app.platform.SuppressWindowsWindowBorder
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
@@ -34,6 +39,7 @@ import com.agent.shared.agent.recording.RecordingAgentGateway
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository
+import com.agent.shared.session.DesktopAppearancePreferences
 import com.agent.shared.session.DesktopUiStateStore
 import com.agent.shared.session.LoadAppSessionUseCase
 import com.agent.shared.chat.persistence.SqliteTaskRepository
@@ -55,6 +61,31 @@ internal fun MulehangDesktopApp(
     val userHome = remember { Paths.get(System.getProperty("user.home")) }
     val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
     var themeMode by remember { mutableStateOf(DesktopThemeMode.fromStorage(uiStateStore.loadThemeMode())) }
+    val fontCatalog = remember { loadDesktopFontCatalog() }
+    var appearancePreferences by remember { mutableStateOf(uiStateStore.loadAppearancePreferences()) }
+    val appearance = remember(appearancePreferences, fontCatalog) {
+        DesktopAppearance(
+            preferences = appearancePreferences,
+            fontCatalog = fontCatalog,
+        )
+    }
+    val updateAppearancePreferences = remember {
+        { updatedPreferences: DesktopAppearancePreferences ->
+            appearancePreferences = updatedPreferences.normalized()
+        }
+    }
+    val persistAppearancePreferences = remember(uiStateStore) {
+        { updatedPreferences: DesktopAppearancePreferences ->
+            uiStateStore.saveAppearancePreferences(updatedPreferences.normalized())
+        }
+    }
+    val applyAndPersistAppearancePreferences = remember(uiStateStore) {
+        { updatedPreferences: DesktopAppearancePreferences ->
+            val normalizedPreferences = updatedPreferences.normalized()
+            appearancePreferences = normalizedPreferences
+            uiStateStore.saveAppearancePreferences(normalizedPreferences)
+        }
+    }
     val projectRootState = remember {
         mutableStateOf(
             initialProjectRoot ?: uiStateStore.loadRecentWorkspace()
@@ -123,62 +154,84 @@ internal fun MulehangDesktopApp(
             state = desktopWindowState,
             title = "mulehang-agent",
         ) {
-            SuppressWindowsWindowBorder(window = window, frameColor = palette.frameBackground)
-            BridgeWindowsTitleBarInputToCompose(window = window)
-            ChatTitleBar(
-                state = windowState,
-                projectRoot = projectRootState.value,
-                sidebarVisible = sidebarVisible,
-                onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
-                onOpenSettings = { settingsVisible = true },
-                onRequestClose = requestClose,
-                onGlobalFeedback = {},
-                frameGradientAnchorPx = frameGradientAnchorPx,
-                onFrameGradientAnchorChanged = { anchorPx -> frameGradientAnchorPx = anchorPx },
-            )
-            val contentModifier = if (palette.isDark) {
-                val contentOriginYPx = with(LocalDensity.current) {
-                    (
-                        IDEA_TITLE_BAR_HEIGHT.roundToPx() +
-                            IDEA_TITLE_BAR_SEPARATOR_HEIGHT.roundToPx()
-                    ).toFloat()
-                }
-                Modifier
-                    .fillMaxSize()
-                    .ideaFrameAmbientBackground(
-                        frameColor = palette.frameBackground,
-                        projectColor = palette.titleBarGradientStart,
-                        anchorXPx = frameGradientAnchorPx,
-                        originYPx = contentOriginYPx,
-                    )
-            } else {
-                Modifier
-                    .fillMaxSize()
-                    .background(palette.background)
-            }
-            Box(modifier = contentModifier) {
-                ChatScreen(
+            ProvideDesktopAppearance(appearance = appearance) {
+                SuppressWindowsWindowBorder(window = window, frameColor = palette.frameBackground)
+                BridgeWindowsTitleBarInputToCompose(window = window)
+                RegisterGlobalAppearanceShortcuts(
+                    window = window,
+                    onIncrease = {
+                        applyAndPersistAppearancePreferences(
+                            appearancePreferences.copy(
+                                scalePercent = adjustedDesktopUiScalePercent(appearancePreferences.scalePercent, 1),
+                            ),
+                        )
+                    },
+                    onDecrease = {
+                        applyAndPersistAppearancePreferences(
+                            appearancePreferences.copy(
+                                scalePercent = adjustedDesktopUiScalePercent(appearancePreferences.scalePercent, -1),
+                            ),
+                        )
+                    },
+                )
+                ChatTitleBar(
                     state = windowState,
+                    projectRoot = projectRootState.value,
                     sidebarVisible = sidebarVisible,
                     onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
-                    projectRoot = projectRootState.value,
-                    userHome = userHome,
-                    themeMode = themeMode,
-                    onThemeChanged = { updatedMode ->
-                        themeMode = updatedMode
-                        uiStateStore.saveThemeMode(updatedMode.storageValue)
-                    },
-                    onSettingsChanged = {
-                        projectRootState.value?.let { root ->
-                            appScope.launch {
-                                val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
-                                windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
-                            }
-                        }
-                    },
-                    settingsVisible = settingsVisible,
-                    onSettingsVisibilityChange = { visible -> settingsVisible = visible },
+                    onOpenSettings = { settingsVisible = true },
+                    onRequestClose = requestClose,
+                    onGlobalFeedback = {},
+                    frameGradientAnchorPx = frameGradientAnchorPx,
+                    onFrameGradientAnchorChanged = { anchorPx -> frameGradientAnchorPx = anchorPx },
                 )
+                val contentModifier = if (palette.isDark) {
+                    val contentOriginYPx = with(LocalDensity.current) {
+                        (
+                            IDEA_TITLE_BAR_HEIGHT.roundToPx() +
+                                IDEA_TITLE_BAR_SEPARATOR_HEIGHT.roundToPx()
+                        ).toFloat()
+                    }
+                    Modifier
+                        .fillMaxSize()
+                        .ideaFrameAmbientBackground(
+                            frameColor = palette.frameBackground,
+                            projectColor = palette.titleBarGradientStart,
+                            anchorXPx = frameGradientAnchorPx,
+                            originYPx = contentOriginYPx,
+                        )
+                } else {
+                    Modifier
+                        .fillMaxSize()
+                        .background(palette.background)
+                }
+                Box(modifier = contentModifier) {
+                    ChatScreen(
+                        state = windowState,
+                        sidebarVisible = sidebarVisible,
+                        onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
+                        projectRoot = projectRootState.value,
+                        userHome = userHome,
+                        themeMode = themeMode,
+                        onThemeChanged = { updatedMode ->
+                            themeMode = updatedMode
+                            uiStateStore.saveThemeMode(updatedMode.storageValue)
+                        },
+                        appearance = appearance,
+                        onAppearanceChanged = updateAppearancePreferences,
+                        onAppearanceChangeFinished = persistAppearancePreferences,
+                        onSettingsChanged = {
+                            projectRootState.value?.let { root ->
+                                appScope.launch {
+                                    val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
+                                    windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+                                }
+                            }
+                        },
+                        settingsVisible = settingsVisible,
+                        onSettingsVisibilityChange = { visible -> settingsVisible = visible },
+                    )
+                }
             }
         }
     }

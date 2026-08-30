@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppWorkspaceBackground
+import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
@@ -43,6 +44,7 @@ import com.agent.shared.settings.model.SettingsDocument
 import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
 import com.agent.shared.settings.persistence.DesktopPathResolver
 import com.agent.shared.settings.persistence.DesktopSettingsRepository
+import com.agent.shared.session.DesktopAppearancePreferences
 import java.nio.file.Path
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
@@ -53,9 +55,28 @@ import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /** 设置页可选择的主要分区。 */
 internal enum class SettingsSection(val label: String) {
+    APPEARANCE("外观"),
     THEME("主题"),
     PROVIDERS("AI 服务"),
 }
+
+/**
+ * 返回指定配置范围可见的设置分类；外观只属于用户级全局偏好。
+ */
+internal fun settingsSectionsFor(layer: ConfigLayer): List<SettingsSection> = when (layer) {
+    ConfigLayer.USER -> SettingsSection.entries
+    ConfigLayer.PROJECT,
+    ConfigLayer.ENVIRONMENT,
+    -> listOf(SettingsSection.THEME, SettingsSection.PROVIDERS)
+}
+
+/**
+ * 切换配置范围后保留仍可用的分类，否则安全回退到主题分类。
+ */
+internal fun settingsSectionAfterScopeChange(
+    currentSection: SettingsSection,
+    nextLayer: ConfigLayer,
+): SettingsSection = currentSection.takeIf { it in settingsSectionsFor(nextLayer) } ?: SettingsSection.THEME
 
 internal const val SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP = 600
 
@@ -88,6 +109,9 @@ internal fun SettingsPanel(
     userHome: Path,
     themeMode: DesktopThemeMode,
     onThemeChanged: (DesktopThemeMode) -> Unit,
+    appearance: DesktopAppearance,
+    onAppearanceChanged: (DesktopAppearancePreferences) -> Unit,
+    onAppearanceChangeFinished: (DesktopAppearancePreferences) -> Unit,
     onFocus: () -> Unit,
     onClose: () -> Unit,
     onSettingsSaved: () -> Unit,
@@ -125,12 +149,17 @@ internal fun SettingsPanel(
                 SettingsScopeBar(
                     layer = uiState.layer,
                     projectEnabled = projectRoot != null,
-                    onLayerChange = { uiState.layer = it },
+                    onLayerChange = { nextLayer ->
+                        uiState.layer = nextLayer
+                        uiState.section = settingsSectionAfterScopeChange(uiState.section, nextLayer)
+                    },
                 )
+                val visibleSections = settingsSectionsFor(uiState.layer)
                 if (layout == SettingsPanelLayout.COMPACT) {
                     Column(modifier = Modifier.fillMaxSize().padding(top = 14.dp)) {
                         SettingsNavigation(
                             section = uiState.section,
+                            sections = visibleSections,
                             compact = true,
                             onSectionChange = { section, _ ->
                                 uiState.section = section
@@ -141,6 +170,9 @@ internal fun SettingsPanel(
                             repository = repository,
                             themeMode = themeMode,
                             onThemeChanged = onThemeChanged,
+                            appearance = appearance,
+                            onAppearanceChanged = onAppearanceChanged,
+                            onAppearanceChangeFinished = onAppearanceChangeFinished,
                             onSettingsSaved = onSettingsSaved,
                             compact = true,
                             scrollState = uiState.contentScrollState,
@@ -154,6 +186,7 @@ internal fun SettingsPanel(
                     Row(modifier = Modifier.fillMaxSize().padding(top = 18.dp)) {
                         SettingsNavigation(
                             section = uiState.section,
+                            sections = visibleSections,
                             onSectionChange = { section, _ ->
                                 uiState.section = section
                             },
@@ -163,6 +196,9 @@ internal fun SettingsPanel(
                             repository = repository,
                             themeMode = themeMode,
                             onThemeChanged = onThemeChanged,
+                            appearance = appearance,
+                            onAppearanceChanged = onAppearanceChanged,
+                            onAppearanceChangeFinished = onAppearanceChangeFinished,
                             onSettingsSaved = onSettingsSaved,
                             compact = false,
                             scrollState = uiState.contentScrollState,
@@ -186,6 +222,9 @@ private fun SettingsPanelContent(
     repository: DesktopSettingsRepository,
     themeMode: DesktopThemeMode,
     onThemeChanged: (DesktopThemeMode) -> Unit,
+    appearance: DesktopAppearance,
+    onAppearanceChanged: (DesktopAppearancePreferences) -> Unit,
+    onAppearanceChangeFinished: (DesktopAppearancePreferences) -> Unit,
     onSettingsSaved: () -> Unit,
     compact: Boolean,
     scrollState: ScrollState,
@@ -201,6 +240,13 @@ private fun SettingsPanelContent(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 when (uiState.section) {
+                    SettingsSection.APPEARANCE -> AppearanceSettingsContent(
+                        appearance = appearance,
+                        compact = compact,
+                        onPreferencesChanged = onAppearanceChanged,
+                        onPreferencesChangeFinished = onAppearanceChangeFinished,
+                    )
+
                     SettingsSection.THEME -> ThemeSettingsContent(
                         themeMode = themeMode,
                         compact = compact,

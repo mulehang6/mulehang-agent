@@ -1,12 +1,17 @@
 package com.agent.app.chat.component
 
 import com.agent.app.design.TerminalPalette
+import com.agent.shared.session.normalizeDesktopUiScalePercent
 import com.jediterm.core.Color as TerminalRgbColor
 import com.jediterm.terminal.TerminalColor
 import com.jediterm.terminal.TextStyle
 import com.jediterm.terminal.emulator.ColorPalette
 import com.jediterm.terminal.ui.JediTermWidget
+import com.jediterm.terminal.ui.TerminalPanel
+import com.jediterm.terminal.model.StyleState
+import com.jediterm.terminal.model.TerminalTextBuffer
 import com.jediterm.terminal.ui.settings.DefaultSettingsProvider
+import com.jediterm.terminal.ui.settings.SettingsProvider
 import java.awt.Color as AwtColor
 import java.awt.Component
 import java.awt.Container
@@ -39,9 +44,58 @@ internal class TerminalThemeState(initialPalette: TerminalPalette) {
     }
 }
 
+/**
+ * 终端会话应继承的代码字体与全局缩放外观。
+ */
+internal data class TerminalAppearance(
+    val codeFontFamily: String? = null,
+    val scalePercent: Int = 100,
+) {
+    /** 返回当前终端应使用的 AWT 字体；无效的物理字体名称安全回退到系统等宽字体。 */
+    fun font(): Font {
+        val fontSize = terminalFontSize(scalePercent)
+        val requestedFamilyName = codeFontFamily?.takeIf(String::isNotBlank)
+        val selectedFont = requestedFamilyName?.let { familyName ->
+            Font(familyName, Font.PLAIN, fontSize)
+        }
+        return selectedFont?.takeUnless { font ->
+            isUnresolvedTerminalFont(font, requestedFamilyName)
+        } ?: Font(Font.MONOSPACED, Font.PLAIN, fontSize)
+    }
+}
+
+/** AWT 将不存在的物理字体解析为 Dialog 时，将其视为失败而不是应用该逻辑字体。 */
+private fun isUnresolvedTerminalFont(font: Font, requestedFamilyName: String): Boolean =
+    font.family.equals(Font.DIALOG, ignoreCase = true) &&
+        !requestedFamilyName.equals(Font.DIALOG, ignoreCase = true)
+
+/**
+ * 保存单个 JediTerm 会话当前使用的字体和缩放配置。
+ */
+internal class TerminalAppearanceState(initialAppearance: TerminalAppearance) {
+    @Volatile
+    private var currentAppearance: TerminalAppearance = initialAppearance
+
+    /** 返回绘制线程应读取的最新终端外观。 */
+    fun appearance(): TerminalAppearance = currentAppearance
+
+    /** 原子替换外观，不创建或关闭终端会话。 */
+    fun update(appearance: TerminalAppearance) {
+        currentAppearance = appearance
+    }
+}
+
+/**
+ * 将全局缩放映射为终端字体字号，避免过小的不可读字体。
+ */
+internal fun terminalFontSize(scalePercent: Int): Int =
+    (DEFAULT_TERMINAL_FONT_SIZE * normalizeDesktopUiScalePercent(scalePercent) / 100f).roundToInt()
+        .coerceAtLeast(1)
+
 /** 为一个会话提供 supplier-backed 默认色和动态 ANSI 色板。 */
 internal class DynamicTerminalSettingsProvider(
     internal val themeState: TerminalThemeState,
+    internal val appearanceState: TerminalAppearanceState,
 ) : DefaultSettingsProvider() {
     private val foreground = dynamicTerminalColor(themeState) { it.foreground }
     private val background = dynamicTerminalColor(themeState) { it.background }
@@ -60,8 +114,8 @@ internal class DynamicTerminalSettingsProvider(
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun getDefaultStyle(): TextStyle = TextStyle(foreground, background)
 
-    /** 返回终端统一字体。 */
-    override fun getTerminalFont() = terminalFont()
+    /** 返回读取当前会话外观状态的终端字体。 */
+    override fun getTerminalFont(): Font = appearanceState.appearance().font()
 
     /** 禁用系统响铃，避免终端错误反馈干扰桌面交互。 */
     override fun audibleBell(): Boolean = false
@@ -83,7 +137,29 @@ private class DynamicTerminalColorPalette(
 /** 使用会话主题状态创建带动态滚动条的 JediTerm 组件。 */
 internal class ThemedJediTermWidget(
     themeState: TerminalThemeState,
-) : JediTermWidget(DynamicTerminalSettingsProvider(themeState)) {
+    appearanceState: TerminalAppearanceState,
+) : JediTermWidget(DynamicTerminalSettingsProvider(themeState, appearanceState)) {
+    /**
+     * 创建公开字体刷新入口的终端面板；其底层 PTY 与文本缓冲由父组件继续持有。
+     */
+    override fun createTerminalPanel(
+        settingsProvider: SettingsProvider,
+        styleState: StyleState,
+        terminalTextBuffer: TerminalTextBuffer,
+    ): TerminalPanel = AppearanceAwareTerminalPanel(settingsProvider, terminalTextBuffer, styleState)
+
+    /**
+     * 在 Swing EDT 上重建字体度量并请求终端尺寸刷新，不触碰底层会话生命周期。
+     */
+    fun refreshFontAndResize() {
+        val refresh = Runnable {
+            (terminalPanel as? AppearanceAwareTerminalPanel)?.refreshFontAndResize()
+            revalidate()
+            repaint()
+        }
+        if (SwingUtilities.isEventDispatchThread()) refresh.run() else SwingUtilities.invokeLater(refresh)
+    }
+
     /** 创建随会话色板更新、仅在存在缓冲内容时显示的滚动条。 */
     override fun createScrollBar(): JScrollBar {
         val initializedThemeState = (mySettingsProvider as DynamicTerminalSettingsProvider).themeState
@@ -101,6 +177,20 @@ internal class ThemedJediTermWidget(
         }
         updateThemedTerminalScrollbarVisibility(scrollBar)
         return scrollBar
+    }
+}
+
+/**
+ * 将 JediTerm 受保护的字体重建路径安全暴露给同一会话的外观更新。
+ */
+private class AppearanceAwareTerminalPanel(
+    settingsProvider: SettingsProvider,
+    terminalTextBuffer: TerminalTextBuffer,
+    styleState: StyleState,
+) : TerminalPanel(settingsProvider, terminalTextBuffer, styleState) {
+    /** 仅刷新字体和网格尺寸，不关闭终端或丢弃缓冲。 */
+    fun refreshFontAndResize() {
+        reinitFontAndResize()
     }
 }
 
@@ -251,8 +341,8 @@ internal fun synchronizeTerminalInteropBackground(component: Component, palette:
     }
 }
 
-/** 返回终端默认字体。 */
-internal fun terminalFont(): Font = Font("Maple Mono NF CN SemiBold", Font.PLAIN, 14)
+/** 为尚未装配会话外观的调用返回系统等宽默认字体。 */
+internal fun terminalFont(appearance: TerminalAppearance = TerminalAppearance()): Font = appearance.font()
 
 /** 判断终端缓冲内容是否超过当前可见范围。 */
 internal fun shouldShowTerminalScrollbar(minimum: Int, maximum: Int, extent: Int): Boolean =
@@ -275,6 +365,9 @@ internal fun terminalAnsiPaletteColor(
 
 /** PowerShell 默认使用的 ANSI 黑、白与亮白索引。 */
 private val DEFAULT_TERMINAL_COLOR_INDICES = setOf(0, 7, 15)
+
+/** 100% 全局缩放下终端使用的基础字号。 */
+private const val DEFAULT_TERMINAL_FONT_SIZE = 14
 
 /** Windows 控制台基础 ANSI 色，非默认色仍保持错误、警告等语义。 */
 private val WINDOWS_TERMINAL_ANSI_COLORS = listOf(

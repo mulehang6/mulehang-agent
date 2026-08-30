@@ -54,7 +54,10 @@ class EmbeddedTerminalThemeTest {
     @Test
     fun `should update cached default style without rebuilding terminal`() {
         val state = TerminalThemeState(desktopPalette(DesktopThemeMode.DARK).terminal)
-        val provider = DynamicTerminalSettingsProvider(state)
+        val provider = DynamicTerminalSettingsProvider(
+            state,
+            TerminalAppearanceState(TerminalAppearance()),
+        )
         @Suppress("DEPRECATION")
         val cachedStyle = provider.defaultStyle
 
@@ -68,7 +71,10 @@ class EmbeddedTerminalThemeTest {
     @Test
     fun `should update ansi defaults from terminal theme state`() {
         val state = TerminalThemeState(desktopPalette(DesktopThemeMode.DARK).terminal)
-        val provider = DynamicTerminalSettingsProvider(state)
+        val provider = DynamicTerminalSettingsProvider(
+            state,
+            TerminalAppearanceState(TerminalAppearance()),
+        )
         val ansiPalette = provider.terminalColorPalette
 
         state.update(desktopPalette(DesktopThemeMode.LIGHT).terminal)
@@ -101,7 +107,10 @@ class EmbeddedTerminalThemeTest {
         val state = TerminalThemeState(desktopPalette(DesktopThemeMode.DARK).terminal)
 
         SwingUtilities.invokeAndWait {
-            val widget = ThemedJediTermWidget(state)
+            val widget = ThemedJediTermWidget(
+                state,
+                TerminalAppearanceState(TerminalAppearance()),
+            )
             try {
                 val scrollbar = widget.componentTree().filterIsInstance<JScrollBar>().firstOrNull()
                 assertNotNull(scrollbar)

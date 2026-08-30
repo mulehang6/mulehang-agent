@@ -2,6 +2,7 @@ package com.agent.app.chat.component
 
 import com.agent.app.design.PopupMenuHoverBackground
 import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
@@ -12,6 +13,23 @@ import kotlin.test.assertNull
 
 /** 设置 Island 的交互色与稳定状态回归测试。 */
 class SettingsPanelInteractionTest {
+
+    /** 外观只属于用户级全局设置，切到项目或环境范围时安全回退到主题。 */
+    @Test
+    fun `should show appearance only for global settings scope`() {
+        assertEquals(
+            listOf(SettingsSection.APPEARANCE, SettingsSection.THEME, SettingsSection.PROVIDERS),
+            settingsSectionsFor(ConfigLayer.USER),
+        )
+        assertEquals(
+            listOf(SettingsSection.THEME, SettingsSection.PROVIDERS),
+            settingsSectionsFor(ConfigLayer.PROJECT),
+        )
+        assertEquals(
+            SettingsSection.THEME,
+            settingsSectionAfterScopeChange(SettingsSection.APPEARANCE, ConfigLayer.ENVIRONMENT),
+        )
+    }
 
     /** 设置导航的悬浮和选中态必须与下拉菜单完全同源。 */
     @Test

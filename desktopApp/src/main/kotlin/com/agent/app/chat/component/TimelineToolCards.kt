@@ -5,7 +5,6 @@ package com.agent.app.chat.component
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,45 +12,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import com.agent.app.chat.presentation.*
-import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.*
 import com.agent.app.tool.component.EditorDiffPreview
 import com.agent.shared.chat.model.*
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.svg.SVGDOM
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.math.roundToInt
 import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.foundation.ExperimentalJewelApi
-import org.jetbrains.jewel.markdown.Markdown
-import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
 /**
  * 暂存工具事件的展示状态，使快速完成的非终端工具仍可展示完整的运行图标动效。
  */
@@ -87,49 +61,6 @@ internal fun initialTimelineToolDisplayItem(item: ToolEventItem): ToolEventItem 
 internal fun shouldSynthesizeRunningToolDisplay(item: ToolEventItem): Boolean =
     false
 
-/** 渲染工具组中前景当前卡和一张带纵深反馈的后置预览卡。 */
-@Composable
-private fun TimelineToolCardStack(items: List<ToolEventItem>) {
-    val visibleItems = visibleToolCardStack(items)
-    val currentItem = visibleItems.firstOrNull() ?: return
-    val previewItem = visibleItems.getOrNull(1)
-    val density = LocalDensity.current
-    val previewOffsetX = with(density) { 8.dp.toPx() }
-    val previewOffsetY = with(density) { 6.dp.toPx() }
-    Box(modifier = Modifier.fillMaxWidth()) {
-        previewItem?.let { item ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        alpha = 0.52f
-                        scaleX = 0.97f
-                        scaleY = 0.97f
-                        translationX = previewOffsetX
-                        translationY = previewOffsetY
-                    },
-            ) {
-                TimelineToolStackCard(item = item, preview = true)
-            }
-        }
-        AnimatedContent(
-            targetState = currentItem,
-            transitionSpec = {
-                (slideInHorizontally(tween(durationMillis = 220)) { width -> width / 8 } +
-                        fadeIn(tween(durationMillis = 180)) +
-                        scaleIn(initialScale = 0.97f, animationSpec = tween(durationMillis = 220)))
-                    .togetherWith(
-                        slideOutHorizontally(tween(durationMillis = 160)) { width -> -width / 5 } +
-                                fadeOut(tween(durationMillis = 130)),
-                    )
-            },
-            label = "tool-card-stack",
-        ) { item ->
-            TimelineToolStackCard(item = item, preview = false)
-        }
-    }
-}
-
 /** 渲染树状工具组中的紧凑工具行，不再包裹整行卡片。 */
 @Composable
 internal fun TimelineToolStackCard(
@@ -152,6 +83,7 @@ internal fun TimelineToolTextRow(
     isFailure: Boolean,
     preview: Boolean = false,
 ) {
+    val typography = LocalDesktopTypography.current
     val hasDetails = toolEventHasDetails(item) || item.errorMessage?.isNotBlank() == true
     val glyph = timelineToolGlyph(item)
     val running = shouldAnimateTimelineToolGlyph(item.status)
@@ -222,7 +154,7 @@ internal fun TimelineToolTextRow(
                 style = JewelTheme.defaultTextStyle.copy(
                     color = titleTint,
                     fontSize = TOOL_ROW_FONT_SIZE_SP.sp,
-                    fontFamily = if (isTerminalToolEvent(item)) FontFamily.Monospace else FontFamily.Default,
+                    fontFamily = if (isTerminalToolEvent(item)) typography.codeFontFamily else typography.uiFontFamily,
                 ),
             )
             if (hasDetails && !preview) {

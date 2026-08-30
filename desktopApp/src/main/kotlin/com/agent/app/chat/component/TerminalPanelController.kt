@@ -16,13 +16,16 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * 该控制器只保存界面生命周期状态，不改变终端创建或关闭时机。
  */
-internal class TerminalPanelController(initialPalette: TerminalPalette) {
+internal class TerminalPanelController(
+    initialPalette: TerminalPalette,
+    initialAppearance: TerminalAppearance,
+) {
     var tabs by mutableStateOf(TerminalTabsState())
         private set
     var visible by mutableStateOf(false)
         private set
     private var pendingTabCloseId by mutableStateOf<Long?>(null)
-    val sessions = TerminalSessionStore(initialPalette)
+    val sessions = TerminalSessionStore(initialPalette, initialAppearance)
 
     /** 选择现有终端标签。 */
     fun select(tabId: Long) {
@@ -94,13 +97,24 @@ internal class TerminalPanelController(initialPalette: TerminalPalette) {
     fun updateTheme(palette: TerminalPalette) {
         sessions.updateTheme(palette)
     }
+
+    /** 将代码字体和全局缩放同步到现有和后续会话。 */
+    fun updateAppearance(appearance: TerminalAppearance) {
+        sessions.updateAppearance(appearance)
+    }
 }
 
 /** 创建并绑定组合生命周期的终端面板控制器。 */
 @Composable
-internal fun rememberTerminalPanelController(palette: TerminalPalette): TerminalPanelController {
-    val controller = remember { TerminalPanelController(palette) }
-    SideEffect { controller.updateTheme(palette) }
+internal fun rememberTerminalPanelController(
+    palette: TerminalPalette,
+    appearance: TerminalAppearance,
+): TerminalPanelController {
+    val controller = remember { TerminalPanelController(palette, appearance) }
+    SideEffect {
+        controller.updateTheme(palette)
+        controller.updateAppearance(appearance)
+    }
     DisposableEffect(controller) {
         onDispose(controller::closeAll)
     }

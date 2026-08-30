@@ -250,15 +250,22 @@ class ChatScreenPresentationTest {
         )
     }
 
-    /**
-     * 终端应使用指定的 Maple Mono 半粗 Nerd Font 字体。
-     */
+    /** 终端应继承代码字体和全局缩放，默认时回退到系统等宽字体。 */
     @Test
-    fun `should use maple mono semibold terminal font`() {
-        val font = terminalFont()
+    fun `should resolve terminal font from appearance`() {
+        val defaultFont = terminalFont()
+        val configuredFont = terminalFont(
+            TerminalAppearance(codeFontFamily = java.awt.Font.MONOSPACED, scalePercent = 150),
+        )
+        val missingFont = terminalFont(
+            TerminalAppearance(codeFontFamily = "Missing Physical Font", scalePercent = 100),
+        )
 
-        assertEquals("Maple Mono NF CN SemiBold", font.name)
-        assertEquals(14, font.size)
+        assertEquals(java.awt.Font.MONOSPACED, defaultFont.name)
+        assertEquals(14, defaultFont.size)
+        assertEquals(java.awt.Font.MONOSPACED, configuredFont.name)
+        assertEquals(21, configuredFont.size)
+        assertEquals(java.awt.Font.MONOSPACED, missingFont.name)
     }
 
     /**

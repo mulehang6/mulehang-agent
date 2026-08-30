@@ -35,19 +35,24 @@ internal interface TerminalHandle {
 
     /** 在不重建终端进程的前提下应用新的会话色板。 */
     fun updateTheme(palette: TerminalPalette)
+
+    /** 在不重建终端进程的前提下应用新的代码字体和缩放。 */
+    fun updateAppearance(appearance: TerminalAppearance)
 }
 
 /** 保存各终端标签页的进程句柄，避免切换标签页时销毁后台会话。 */
 internal class TerminalSessionStore(
     initialPalette: TerminalPalette,
-    private val terminalFactory: (String, TerminalPalette) -> TerminalHandle = ::createPowerShellHandle,
+    initialAppearance: TerminalAppearance = TerminalAppearance(),
+    private val terminalFactory: (String, TerminalPalette, TerminalAppearance) -> TerminalHandle = ::createPowerShellHandle,
 ) {
     private val sessions = linkedMapOf<Long, TerminalHandle>()
     private var currentPalette = initialPalette
+    private var currentAppearance = initialAppearance
 
     /** 为 [tab] 创建并启动一次终端会话。 */
     fun create(tab: TerminalTab) {
-        sessions.getOrPut(tab.id) { terminalFactory(tab.workspacePath, currentPalette) }.start()
+        sessions.getOrPut(tab.id) { terminalFactory(tab.workspacePath, currentPalette, currentAppearance) }.start()
     }
 
     /** 返回 [tabId] 对应的持久终端会话。 */
@@ -80,12 +85,20 @@ internal class TerminalSessionStore(
         currentPalette = palette
         sessions.values.forEach { it.updateTheme(palette) }
     }
+
+    /** 同步更新存量会话，并让后续新会话继承最新代码字体和缩放。 */
+    fun updateAppearance(appearance: TerminalAppearance) {
+        if (appearance == currentAppearance) return
+        currentAppearance = appearance
+        sessions.values.forEach { it.updateAppearance(appearance) }
+    }
 }
 
 /** 用 JediTerm 组件实现一个可持久化的 PowerShell 终端句柄。 */
 private class JediTermTerminalHandle(
     private val terminalResult: Result<ThemedJediTermWidget>,
     private val themeState: TerminalThemeState,
+    private val appearanceState: TerminalAppearanceState,
 ) : TerminalHandle {
     private val terminal = terminalResult.getOrNull()
     private var started = false
@@ -122,12 +135,19 @@ private class JediTermTerminalHandle(
         themeState.update(palette)
         terminal?.let { refreshTerminalSwingTheme(it, palette) }
     }
+
+    /** 更新动态外观状态并走 JediTerm 的非破坏性字体重建路径。 */
+    override fun updateAppearance(appearance: TerminalAppearance) {
+        appearanceState.update(appearance)
+        terminal?.refreshFontAndResize()
+    }
 }
 
 /** 创建带独立主题状态的 PowerShell 终端组件。 */
 private fun createPowerShellTerminal(
     workspacePath: String,
     themeState: TerminalThemeState,
+    appearanceState: TerminalAppearanceState,
 ): ThemedJediTermWidget {
     val command = buildPowerShellCommand()
     val process = PtyProcessBuilder(command.toTypedArray())
@@ -136,18 +156,24 @@ private fun createPowerShellTerminal(
         .setConsole(false)
         .setUseWinConPty(true)
         .start()
-    return ThemedJediTermWidget(themeState).apply {
+    return ThemedJediTermWidget(themeState, appearanceState).apply {
         installSwingBorderCleanup(this)
         setTtyConnector(PowerShellTtyConnector(process, command))
     }
 }
 
 /** 创建可跨标签页保留的 PowerShell 终端句柄。 */
-private fun createPowerShellHandle(workspacePath: String, palette: TerminalPalette): TerminalHandle {
+private fun createPowerShellHandle(
+    workspacePath: String,
+    palette: TerminalPalette,
+    appearance: TerminalAppearance,
+): TerminalHandle {
     val themeState = TerminalThemeState(palette)
+    val appearanceState = TerminalAppearanceState(appearance)
     return JediTermTerminalHandle(
-        terminalResult = runCatching { createPowerShellTerminal(workspacePath, themeState) },
+        terminalResult = runCatching { createPowerShellTerminal(workspacePath, themeState, appearanceState) },
         themeState = themeState,
+        appearanceState = appearanceState,
     )
 }
 

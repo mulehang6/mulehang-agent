@@ -80,12 +80,13 @@ internal fun SettingsScopeBar(
 @Composable
 internal fun SettingsNavigation(
     section: SettingsSection,
+    sections: List<SettingsSection> = SettingsSection.entries,
     onSectionChange: (SettingsSection, Boolean) -> Unit,
     compact: Boolean = false,
 ) {
     if (compact) {
         IslandsTabStrip(
-            tabs = SettingsSection.entries.map { entry ->
+            tabs = sections.map { entry ->
                 IslandsTab(
                     label = entry.label,
                     selected = entry == section,
@@ -100,7 +101,7 @@ internal fun SettingsNavigation(
         modifier = Modifier.width(SETTINGS_NAVIGATION_WIDE_WIDTH_DP.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SettingsSection.entries.forEach { entry ->
+        sections.forEach { entry ->
             SettingsNavigationItem(
                 label = entry.label,
                 selected = entry == section,

@@ -59,6 +59,39 @@ class DiagramSvgPreviewTest {
         assertTrue(bounds.vertical > 0f)
     }
 
+    /** 全局倍率只参与最终绘制计算，不会改写图表自行保存的缩放值。 */
+    @Test
+    fun combinesGlobalScaleWithLocalZoomWithoutChangingLocalZoom() {
+        val localZoomPercent = 150
+
+        assertEquals(
+            1.5f,
+            diagramSvgRenderScale(
+                fitScale = 1f,
+                zoomPercent = localZoomPercent,
+                globalScalePercent = 100,
+            ),
+        )
+        assertEquals(
+            3f,
+            diagramSvgRenderScale(
+                fitScale = 1f,
+                zoomPercent = localZoomPercent,
+                globalScalePercent = 200,
+            ),
+        )
+        assertTrue(
+            diagramSvgPanBounds(
+                intrinsicSize = DiagramSvgIntrinsicSize(400f, 200f),
+                fitScale = 1f,
+                viewportWidth = 400f,
+                viewportHeight = 200f,
+                zoomPercent = 100,
+                globalScalePercent = 200,
+            ).horizontal > 0f,
+        )
+    }
+
     /** 普通滚轮必须留给会话时间线，只有 Ctrl 加滚轮才由图表缩放消费。 */
     @Test
     fun handlesOnlyCtrlWheelInsideDiagram() {

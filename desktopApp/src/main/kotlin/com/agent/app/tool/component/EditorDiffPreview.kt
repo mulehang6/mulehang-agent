@@ -20,7 +20,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +29,7 @@ import com.agent.app.design.AppMuted
 import com.agent.app.design.AppPanelBackground
 import com.agent.app.design.AppSuccess
 import com.agent.app.design.AppText
+import com.agent.app.design.LocalDesktopTypography
 import com.agent.shared.tool.model.FileChangeKind
 import com.agent.shared.tool.model.FileDiffLineKind
 import com.agent.shared.tool.model.FileDiffLinePreview
@@ -67,6 +67,7 @@ internal fun EditorDiffPreview(diff: FileDiffPreview) {
 /** 文件级标题为编辑器画布提供变更类型和路径上下文。 */
 @Composable
 private fun EditorDiffFileHeader(diff: FileDiffPreview) {
+    val typography = LocalDesktopTypography.current
     val tint = when (diff.kind) {
         FileChangeKind.CREATED -> AppSuccess
         FileChangeKind.MODIFIED -> AppMuted
@@ -89,7 +90,7 @@ private fun EditorDiffFileHeader(diff: FileDiffPreview) {
         Spacer(Modifier.width(8.dp))
         Text(
             text = diff.path,
-            style = JewelTheme.defaultTextStyle.copy(color = AppText, fontFamily = FontFamily.Monospace),
+            style = JewelTheme.defaultTextStyle.copy(color = AppText, fontFamily = typography.codeFontFamily),
         )
     }
 }
@@ -149,7 +150,7 @@ private fun EditorLineNumber(number: Int?) {
 @Composable
 private fun editorDiffTextStyle(color: Color) = JewelTheme.defaultTextStyle.copy(
     color = color,
-    fontFamily = FontFamily.Monospace,
+    fontFamily = LocalDesktopTypography.current.codeFontFamily,
     fontSize = 12.sp,
     lineHeight = 18.sp,
 )

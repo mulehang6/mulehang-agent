@@ -3,7 +3,9 @@ package com.agent.app.platform
 import java.awt.event.KeyEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** 验证窗口级全局外观快捷键的主键盘映射。 */
 class GlobalAppearanceShortcutTest {
@@ -27,5 +29,19 @@ class GlobalAppearanceShortcutTest {
         assertNull(resolveUiScaleShortcut(KeyEvent.VK_EQUALS, isControlDown = false))
         assertNull(resolveUiScaleShortcut(KeyEvent.VK_ADD, isControlDown = true))
         assertNull(resolveUiScaleShortcut(KeyEvent.VK_SUBTRACT, isControlDown = true))
+    }
+
+    /** 窗口失焦时必须丢弃未收到抬起事件的快捷键，避免恢复焦点后吞掉普通输入。 */
+    @Test
+    fun `should discard a shortcut sequence after focus loss`() {
+        val sequence = UiScaleShortcutKeySequence()
+
+        sequence.recordPressedKey(KeyEvent.VK_EQUALS)
+        assertTrue(sequence.shouldConsumeTypedEvent())
+
+        sequence.clear()
+
+        assertFalse(sequence.shouldConsumeTypedEvent())
+        assertFalse(sequence.consumeReleasedKey(KeyEvent.VK_EQUALS))
     }
 }

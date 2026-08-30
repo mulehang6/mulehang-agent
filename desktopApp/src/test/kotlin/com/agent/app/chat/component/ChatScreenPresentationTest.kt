@@ -255,7 +255,7 @@ class ChatScreenPresentationTest {
     fun `should resolve terminal font from appearance`() {
         val defaultFont = terminalFont()
         val configuredFont = terminalFont(
-            TerminalAppearance(codeFontFamily = "JetBrains Mono", scalePercent = 150),
+            TerminalAppearance(codeFontFamily = java.awt.Font.MONOSPACED, scalePercent = 150),
         )
         val missingFont = terminalFont(
             TerminalAppearance(codeFontFamily = "Missing Physical Font", scalePercent = 100),
@@ -263,7 +263,7 @@ class ChatScreenPresentationTest {
 
         assertEquals(java.awt.Font.MONOSPACED, defaultFont.name)
         assertEquals(14, defaultFont.size)
-        assertEquals("JetBrains Mono", configuredFont.name)
+        assertEquals(java.awt.Font.MONOSPACED, configuredFont.name)
         assertEquals(21, configuredFont.size)
         assertEquals(java.awt.Font.MONOSPACED, missingFont.name)
     }

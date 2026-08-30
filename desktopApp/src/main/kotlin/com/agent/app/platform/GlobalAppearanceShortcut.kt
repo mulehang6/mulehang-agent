@@ -8,6 +8,8 @@ import androidx.compose.ui.awt.ComposeWindow
 import java.awt.KeyboardFocusManager
 import java.awt.KeyEventDispatcher
 import java.awt.event.KeyEvent
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 
 /**
  * 可由全局外观快捷键触发的缩放调整方向。
@@ -33,6 +35,29 @@ internal fun resolveUiScaleShortcut(
 }
 
 /**
+ * 跟踪已消费快捷键的完整按键序列，确保尾随的键入和抬起事件不会泄漏到当前焦点组件。
+ */
+internal class UiScaleShortcutKeySequence {
+    private val consumedKeyCodes = mutableSetOf<Int>()
+
+    /** 记录已经由全局缩放处理的按下按键。 */
+    fun recordPressedKey(keyCode: Int) {
+        consumedKeyCodes += keyCode
+    }
+
+    /** 返回尾随的 KEY_TYPED 事件是否仍属于已消费的快捷键序列。 */
+    fun shouldConsumeTypedEvent(): Boolean = consumedKeyCodes.isNotEmpty()
+
+    /** 移除并报告已消费快捷键的抬起事件。 */
+    fun consumeReleasedKey(keyCode: Int): Boolean = consumedKeyCodes.remove(keyCode)
+
+    /** 窗口不再接收输入时放弃尚未结束的快捷键序列。 */
+    fun clear() {
+        consumedKeyCodes.clear()
+    }
+}
+
+/**
  * 在指定桌面窗口处于前台时注册全局界面缩放快捷键。
  *
  * 已识别的完整按键序列会被消费，避免按键字符进入终端或当前输入框。
@@ -46,9 +71,15 @@ internal fun RegisterGlobalAppearanceShortcuts(
     val currentOnIncrease by rememberUpdatedState(onIncrease)
     val currentOnDecrease by rememberUpdatedState(onDecrease)
     DisposableEffect(window) {
-        val consumedKeyCodes = mutableSetOf<Int>()
+        val shortcutSequence = UiScaleShortcutKeySequence()
+        val windowFocusListener = object : WindowAdapter() {
+            override fun windowLostFocus(event: WindowEvent) {
+                shortcutSequence.clear()
+            }
+        }
         val dispatcher = KeyEventDispatcher { event ->
             if (KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow !== window) {
+                shortcutSequence.clear()
                 return@KeyEventDispatcher false
             }
 
@@ -59,19 +90,19 @@ internal fun RegisterGlobalAppearanceShortcuts(
                         UiScaleShortcutAction.DECREASE -> currentOnDecrease()
                         null -> return@KeyEventDispatcher false
                     }
-                    consumedKeyCodes += event.keyCode
+                    shortcutSequence.recordPressedKey(event.keyCode)
                     event.consume()
                     true
                 }
 
                 KeyEvent.KEY_TYPED -> {
-                    if (consumedKeyCodes.isEmpty()) return@KeyEventDispatcher false
+                    if (!shortcutSequence.shouldConsumeTypedEvent()) return@KeyEventDispatcher false
                     event.consume()
                     true
                 }
 
                 KeyEvent.KEY_RELEASED -> {
-                    if (!consumedKeyCodes.remove(event.keyCode)) return@KeyEventDispatcher false
+                    if (!shortcutSequence.consumeReleasedKey(event.keyCode)) return@KeyEventDispatcher false
                     event.consume()
                     true
                 }
@@ -80,10 +111,12 @@ internal fun RegisterGlobalAppearanceShortcuts(
             }
         }
         val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
+        window.addWindowFocusListener(windowFocusListener)
         focusManager.addKeyEventDispatcher(dispatcher)
 
         onDispose {
             focusManager.removeKeyEventDispatcher(dispatcher)
+            window.removeWindowFocusListener(windowFocusListener)
         }
     }
 }

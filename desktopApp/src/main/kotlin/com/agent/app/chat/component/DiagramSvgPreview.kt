@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.LocalDesktopPalette
+import com.agent.shared.session.normalizeDesktopUiScalePercent
 import org.jetbrains.skia.Data
 import org.jetbrains.skia.svg.SVGDOM
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -85,6 +86,17 @@ internal fun diagramSvgFitScale(
     )
 }
 
+/** 将图表自身缩放与全局界面倍率组合为最终的 SVG 绘制倍率。 */
+internal fun diagramSvgRenderScale(
+    fitScale: Float,
+    zoomPercent: Int,
+    globalScalePercent: Int,
+): Float {
+    val diagramScale = normalizeDiagramZoomPercent(zoomPercent) / DIAGRAM_DEFAULT_ZOOM_PERCENT.toFloat()
+    val globalScale = normalizeDesktopUiScalePercent(globalScalePercent) / 100f
+    return fitScale * diagramScale * globalScale
+}
+
 /** 计算矢量图在当前缩放值下允许的平移边界。 */
 internal fun diagramSvgPanBounds(
     intrinsicSize: DiagramSvgIntrinsicSize,
@@ -92,10 +104,11 @@ internal fun diagramSvgPanBounds(
     viewportWidth: Float,
     viewportHeight: Float,
     zoomPercent: Int,
+    globalScalePercent: Int = 100,
 ): DiagramPanBounds {
-    val zoomScale = normalizeDiagramZoomPercent(zoomPercent) / DIAGRAM_DEFAULT_ZOOM_PERCENT.toFloat()
-    val renderedWidth = intrinsicSize.width * fitScale * zoomScale
-    val renderedHeight = intrinsicSize.height * fitScale * zoomScale
+    val renderScale = diagramSvgRenderScale(fitScale, zoomPercent, globalScalePercent)
+    val renderedWidth = intrinsicSize.width * renderScale
+    val renderedHeight = intrinsicSize.height * renderScale
     return DiagramPanBounds(
         horizontal = ((renderedWidth - viewportWidth) / 2f).coerceAtLeast(0f),
         vertical = ((renderedHeight - viewportHeight) / 2f).coerceAtLeast(0f),
@@ -129,6 +142,7 @@ internal fun DiagramSvgSurface(
     source: String,
     svg: String,
     zoomPercent: Int,
+    globalScalePercent: Int,
     zoomInput: androidx.compose.ui.text.input.TextFieldValue,
     onZoomInputChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit,
     onZoomChange: (Int) -> Unit,
@@ -179,6 +193,7 @@ internal fun DiagramSvgSurface(
                         document = document,
                         intrinsicSize = intrinsicSize,
                         zoomPercent = zoomPercent,
+                        globalScalePercent = globalScalePercent,
                         viewportWidthPx = viewportWidthPx,
                         viewportHeightPx = viewportHeightPx,
                         onDiagramZoom = onZoomChange,
@@ -198,6 +213,7 @@ private fun DiagramSvgCanvas(
     document: SVGDOM,
     intrinsicSize: DiagramSvgIntrinsicSize,
     zoomPercent: Int,
+    globalScalePercent: Int,
     viewportWidthPx: Float,
     viewportHeightPx: Float,
     onDiagramZoom: (Int) -> Unit,
@@ -205,6 +221,7 @@ private fun DiagramSvgCanvas(
 ) {
     var panOffset by remember(document) { mutableStateOf(Offset.Zero) }
     val normalizedZoom = normalizeDiagramZoomPercent(zoomPercent)
+    val normalizedGlobalScale = normalizeDesktopUiScalePercent(globalScalePercent)
     val contentInsetPx = with(LocalDensity.current) { DIAGRAM_VIEWPORT_CONTENT_INSET_DP.dp.toPx() }
     val fitScale = diagramSvgFitScale(
         intrinsicSize = intrinsicSize,
@@ -212,8 +229,10 @@ private fun DiagramSvgCanvas(
         viewportHeight = viewportHeightPx,
         contentInset = contentInsetPx,
     )
-    val dragModifier = if (normalizedZoom > DIAGRAM_DEFAULT_ZOOM_PERCENT) {
-        Modifier.pointerInput(document, normalizedZoom, viewportWidthPx, viewportHeightPx, fitScale) {
+    val renderScale = diagramSvgRenderScale(fitScale, normalizedZoom, normalizedGlobalScale)
+    val isPannable = renderScale > fitScale
+    val dragModifier = if (isPannable) {
+        Modifier.pointerInput(document, normalizedZoom, normalizedGlobalScale, viewportWidthPx, viewportHeightPx, fitScale) {
             detectTransformGestures { _, pan, zoom, _ ->
                 if (zoom != 1f) {
                     onDiagramZoom(
@@ -227,6 +246,7 @@ private fun DiagramSvgCanvas(
                         viewportWidth = viewportWidthPx,
                         viewportHeight = viewportHeightPx,
                         zoomPercent = normalizedZoom,
+                        globalScalePercent = normalizedGlobalScale,
                     )
                     panOffset = Offset(
                         x = clampDiagramPanOffset(panOffset.x + pan.x, bounds.horizontal),
@@ -245,6 +265,7 @@ private fun DiagramSvgCanvas(
             viewportWidth = viewportWidthPx,
             viewportHeight = viewportHeightPx,
             zoomPercent = normalizedZoom,
+            globalScalePercent = normalizedGlobalScale,
         )
         panOffset = Offset(
             x = clampDiagramPanOffset(panOffset.x, bounds.horizontal),
@@ -277,8 +298,6 @@ private fun DiagramSvgCanvas(
             }
             .then(dragModifier),
     ) {
-        val zoomScale = normalizedZoom / DIAGRAM_DEFAULT_ZOOM_PERCENT.toFloat()
-        val renderScale = fitScale * zoomScale
         val renderedWidth = intrinsicSize.width * renderScale
         val renderedHeight = intrinsicSize.height * renderScale
         val centeredOffset = Offset(

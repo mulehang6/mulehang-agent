@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.LocalDesktopPalette
+import com.agent.app.design.LocalDesktopUiScalePercent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -60,6 +61,7 @@ internal fun AssistantDiagramPreview(
     source: String,
 ) {
     val palette = LocalDesktopPalette.current
+    val globalScalePercent = LocalDesktopUiScalePercent.current
     var displayMode by remember(kind, source, palette.isDark) {
         mutableStateOf(DiagramPreviewDisplayMode.RENDERED)
     }
@@ -156,6 +158,7 @@ internal fun AssistantDiagramPreview(
                     source = source,
                     svg = renderedSvg!!,
                     zoomPercent = zoomPercent,
+                    globalScalePercent = globalScalePercent,
                     zoomInput = zoomInput,
                     onZoomInputChange = { zoomInput = it },
                     onZoomChange = updateZoom,

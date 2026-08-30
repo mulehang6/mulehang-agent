@@ -186,6 +186,7 @@ compose.desktop {
         mainClass = "com.agent.app.bootstrap.MainKt"
         javaHome = jcefHome.absolutePath
         jvmArgs += "--add-modules=jcef"
+        jvmArgs += "--add-opens=java.desktop/sun.font=ALL-UNNAMED"
 
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)

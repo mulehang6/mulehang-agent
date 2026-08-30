@@ -22,9 +22,11 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
+import com.agent.shared.session.DesktopAppearancePreferences
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 import java.nio.file.Path
@@ -63,12 +65,22 @@ internal fun ChatScreen(
     userHome: Path,
     themeMode: DesktopThemeMode,
     onThemeChanged: (DesktopThemeMode) -> Unit,
+    appearance: DesktopAppearance,
+    onAppearanceChanged: (DesktopAppearancePreferences) -> Unit,
+    onAppearanceChangeFinished: (DesktopAppearancePreferences) -> Unit,
     onSettingsChanged: () -> Unit,
     settingsVisible: Boolean = false,
     onSettingsVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val palette = LocalDesktopPalette.current
-    val terminalPanel = rememberTerminalPanelController(palette.terminal)
+    val resolvedCodeFont = appearance.codeFont
+    val terminalAppearance = remember(resolvedCodeFont.effectiveAwtFontFamilyName, appearance.preferences.scalePercent) {
+        TerminalAppearance(
+            codeFontFamily = resolvedCodeFont.effectiveAwtFontFamilyName,
+            scalePercent = appearance.preferences.scalePercent,
+        )
+    }
+    val terminalPanel = rememberTerminalPanelController(palette.terminal, terminalAppearance)
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var appFeedbackToken by remember { mutableStateOf(0L) }
     var islandFocus by remember { mutableStateOf(WorkspaceIslandFocus.NONE) }
@@ -162,6 +174,9 @@ internal fun ChatScreen(
                                             userHome = userHome,
                                             themeMode = themeMode,
                                             onThemeChanged = onThemeChanged,
+                                            appearance = appearance,
+                                            onAppearanceChanged = onAppearanceChanged,
+                                            onAppearanceChangeFinished = onAppearanceChangeFinished,
                                             onFocus = { islandFocus = WorkspaceIslandFocus.SETTINGS },
                                             onClose = {
                                                 onSettingsVisibilityChange(false)

@@ -20,7 +20,7 @@ class TerminalSessionStoreTest {
     fun `should close only the terminal session whose tab was closed`() {
         val first = FakeTerminalHandle()
         val second = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { path, _ -> if (path == "C:/one") first else second }
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _ -> if (path == "C:/one") first else second }
 
         store.create(TerminalTab(1, "C:/one", "终端 1"))
         store.create(TerminalTab(2, "C:/two", "终端 2"))
@@ -37,7 +37,7 @@ class TerminalSessionStoreTest {
     @Test
     fun `should delegate focus to the active terminal session`() {
         val handle = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { _, _ -> handle }
+        val store = TerminalSessionStore(darkTerminalPalette()) { _, _, _ -> handle }
         store.create(TerminalTab(1, "C:/workspace", "终端 1"))
 
         store.focusActiveIfNeeded(1)
@@ -52,7 +52,7 @@ class TerminalSessionStoreTest {
     fun `should close each remaining terminal exactly once when store is disposed`() {
         val first = FakeTerminalHandle()
         val second = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { path, _ -> if (path == "C:/one") first else second }
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _ -> if (path == "C:/one") first else second }
         store.create(TerminalTab(1, "C:/one", "终端 1"))
         store.create(TerminalTab(2, "C:/two", "终端 2"))
 
@@ -70,7 +70,7 @@ class TerminalSessionStoreTest {
     fun `should close every terminal session except retained tab`() {
         val first = FakeTerminalHandle()
         val second = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { path, _ -> if (path == "C:/one") first else second }
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _ -> if (path == "C:/one") first else second }
         store.create(TerminalTab(1, "C:/one", "终端 1"))
         store.create(TerminalTab(2, "C:/two", "终端 2"))
 
@@ -86,7 +86,7 @@ class TerminalSessionStoreTest {
     fun `should update existing and future terminal sessions`() {
         val handles = mutableListOf<FakeTerminalHandle>()
         val initialPalettes = mutableListOf<TerminalPalette>()
-        val store = TerminalSessionStore(darkTerminalPalette()) { _, palette ->
+        val store = TerminalSessionStore(darkTerminalPalette()) { _, palette, _ ->
             initialPalettes += palette
             FakeTerminalHandle().also(handles::add)
         }
@@ -99,6 +99,28 @@ class TerminalSessionStoreTest {
         assertEquals(lightPalette, handles.first().themes.single())
         assertEquals(lightPalette, initialPalettes.last())
     }
+
+    /**
+     * 字体或缩放更新应覆盖存量会话，并让新会话继承外观而不触发关闭流程。
+     */
+    @Test
+    fun `should update existing and future terminal appearance without closing sessions`() {
+        val handles = mutableListOf<FakeTerminalHandle>()
+        val initialAppearances = mutableListOf<TerminalAppearance>()
+        val store = TerminalSessionStore(darkTerminalPalette()) { _, _, appearance ->
+            initialAppearances += appearance
+            FakeTerminalHandle().also(handles::add)
+        }
+        store.create(TerminalTab(1, "C:/one", "终端 1"))
+
+        val updatedAppearance = TerminalAppearance(codeFontFamily = "Cascadia Mono", scalePercent = 130)
+        store.updateAppearance(updatedAppearance)
+        store.create(TerminalTab(2, "C:/two", "终端 2"))
+
+        assertEquals(updatedAppearance, handles.first().appearances.single())
+        assertEquals(updatedAppearance, initialAppearances.last())
+        assertEquals(0, handles.first().closeCalls)
+    }
 }
 
 /**
@@ -108,6 +130,7 @@ private class FakeTerminalHandle : TerminalHandle {
     var closeCalls = 0
     var focusCalls = 0
     val themes = mutableListOf<TerminalPalette>()
+    val appearances = mutableListOf<TerminalAppearance>()
 
     override val component: Component? = null
     override val errorMessage: String = "error"
@@ -125,6 +148,11 @@ private class FakeTerminalHandle : TerminalHandle {
     /** 记录会话收到的主题更新。 */
     override fun updateTheme(palette: TerminalPalette) {
         themes += palette
+    }
+
+    /** 记录会话收到的字体和缩放更新。 */
+    override fun updateAppearance(appearance: TerminalAppearance) {
+        appearances += appearance
     }
 }
 

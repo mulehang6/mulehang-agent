@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.agent.app.design.AppAccent
+import com.agent.app.design.LocalDesktopTypography
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 
@@ -22,8 +23,8 @@ import org.jetbrains.jewel.ui.component.Text
 internal val AssistantMarkdownHighlightBackground = Color(0xFF3A414A)
 
 /** 返回正文反引号代码共用的透明背景强调色样式。 */
-internal fun assistantMarkdownInlineCodeStyle(): SpanStyle = SpanStyle(
-    fontFamily = FontFamily.Monospace,
+internal fun assistantMarkdownInlineCodeStyle(codeFontFamily: FontFamily): SpanStyle = SpanStyle(
+    fontFamily = codeFontFamily,
     color = AppAccent,
 )
 
@@ -36,12 +37,15 @@ internal fun containsAssistantMarkdownInlineExtensions(content: String): Boolean
  *
  * 此函数只处理已经识别出扩展语法的文本，普通 Markdown 仍交由原有 CommonMark renderer 渲染。
  */
-internal fun renderAssistantMarkdownInlineExtensions(content: String): AnnotatedString {
+internal fun renderAssistantMarkdownInlineExtensions(
+    content: String,
+    codeFontFamily: FontFamily,
+): AnnotatedString {
     val normalizedListMarkers = content.replace(LIST_ITEM_MARKER, "• ")
     return buildAnnotatedString {
         var cursor = 0
         while (cursor < normalizedListMarkers.length) {
-            val next = findNextInlineExtension(normalizedListMarkers, cursor) ?: break
+            val next = findNextInlineExtension(normalizedListMarkers, cursor, codeFontFamily) ?: break
             append(normalizedListMarkers.substring(cursor, next.match.range.first))
             withStyle(next.style) {
                 append(requireNotNull(next.match.groups[1]?.value))
@@ -55,9 +59,10 @@ internal fun renderAssistantMarkdownInlineExtensions(content: String): Annotated
 /** 将扩展 Markdown 呈现为可选中的原生 Compose 文本。 */
 @Composable
 internal fun AssistantMarkdownInlineExtensionsText(content: String) {
+    val typography = LocalDesktopTypography.current
     SelectionContainer {
         Text(
-            text = renderAssistantMarkdownInlineExtensions(content),
+            text = renderAssistantMarkdownInlineExtensions(content, typography.codeFontFamily),
             modifier = Modifier.fillMaxWidth(),
             style = JewelTheme.defaultTextStyle.copy(
                 lineHeight = 25.sp,
@@ -67,21 +72,25 @@ internal fun AssistantMarkdownInlineExtensionsText(content: String) {
 }
 
 /** 找到当前位置起最靠前的一项受支持行内扩展。 */
-private fun findNextInlineExtension(content: String, startIndex: Int): AssistantMarkdownInlineExtension? =
+private fun findNextInlineExtension(
+    content: String,
+    startIndex: Int,
+    codeFontFamily: FontFamily,
+): AssistantMarkdownInlineExtension? =
     INLINE_RENDER_PATTERNS.mapNotNull { pattern ->
         pattern.find(content, startIndex)?.let { match ->
             AssistantMarkdownInlineExtension(
                 match = match,
-                style = styleForInlineExtension(pattern),
+                style = styleForInlineExtension(pattern, codeFontFamily),
             )
         }
     }.minByOrNull { extension -> extension.match.range.first }
 
 /** 将扩展匹配规则映射为对应的 Compose 文本样式。 */
-private fun styleForInlineExtension(pattern: Regex): SpanStyle = when (pattern) {
+private fun styleForInlineExtension(pattern: Regex, codeFontFamily: FontFamily): SpanStyle = when (pattern) {
     HTML_UNDERLINE -> SpanStyle(textDecoration = TextDecoration.Underline)
     HIGHLIGHT -> SpanStyle(background = AssistantMarkdownHighlightBackground)
-    INLINE_CODE -> assistantMarkdownInlineCodeStyle()
+    INLINE_CODE -> assistantMarkdownInlineCodeStyle(codeFontFamily)
     SUBSCRIPT -> SpanStyle(
         baselineShift = BaselineShift.Subscript,
         fontSize = 0.75.em,

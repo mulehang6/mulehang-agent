@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import com.agent.app.design.AppAccent
@@ -20,14 +21,17 @@ class AssistantMarkdownInlineExtensionsTest {
     /** 行内代码应直接使用强调色文字，且不再附带灰色包裹框。 */
     @Test
     fun `should render inline code as blue text without a background wrapper`() {
-        assertEquals(AppAccent, assistantMarkdownInlineCodeStyle().color)
-        assertEquals(Color.Unspecified, assistantMarkdownInlineCodeStyle().background)
+        assertEquals(AppAccent, assistantMarkdownInlineCodeStyle(TestCodeFontFamily).color)
+        assertEquals(Color.Unspecified, assistantMarkdownInlineCodeStyle(TestCodeFontFamily).background)
     }
 
     /** 扩展 Markdown 与反引号代码混用时，也必须移除反引号并复用无底色的蓝色样式。 */
     @Test
     fun `should style inline code in extension markdown without a background wrapper`() {
-        val rendered = renderAssistantMarkdownInlineExtensions("==重点== 和 `gradlew.bat help`")
+        val rendered = renderAssistantMarkdownInlineExtensions(
+            "==重点== 和 `gradlew.bat help`",
+            TestCodeFontFamily,
+        )
 
         assertEquals("重点 和 gradlew.bat help", rendered.text)
         assertTrue(rendered.spanStyles.any {
@@ -51,6 +55,7 @@ class AssistantMarkdownInlineExtensionsTest {
             - H~2~O
             - X^2^
             """.trimIndent(),
+            TestCodeFontFamily,
         )
 
         assertEquals("• 下划线\n• 高亮\n• H2O\n• X2", rendered.text)
@@ -60,3 +65,6 @@ class AssistantMarkdownInlineExtensionsTest {
         assertTrue(rendered.spanStyles.any { it.item.baselineShift == BaselineShift.Superscript })
     }
 }
+
+/** 测试行内代码样式时使用的稳定等宽字体。 */
+private val TestCodeFontFamily = FontFamily.Monospace

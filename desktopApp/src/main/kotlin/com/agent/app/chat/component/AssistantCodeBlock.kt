@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.design.AppLine
@@ -31,6 +30,7 @@ import com.agent.app.design.AppPanelBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.LocalDesktopTypography
 import java.awt.datatransfer.StringSelection
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -49,6 +49,7 @@ internal fun AssistantCodeBlock(
     source: String,
 ) {
     val codeHighlighter = LocalCodeHighlighter.current
+    val typography = LocalDesktopTypography.current
     val highlightedSource by remember(codeHighlighter, language, source) {
         codeHighlighter.highlight(source, language.orEmpty())
     }.collectAsState(initial = AnnotatedString(source))
@@ -81,7 +82,7 @@ internal fun AssistantCodeBlock(
                     text = highlightedSource,
                     style = JewelTheme.defaultTextStyle.copy(
                         color = AppText,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = typography.codeFontFamily,
                         fontSize = 14.sp,
                         lineHeight = 21.sp,
                     ),

@@ -109,6 +109,7 @@ internal fun ComposerPanel(
     state: ChatWindowState,
     onSendDraft: () -> Unit,
     composerInputMaxHeight: Dp,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
@@ -317,16 +318,9 @@ internal fun ComposerPanel(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+            ComposerControlBar(
+                compact = compact,
+                startControls = {
                     ActionButton(
                         onClick = { state.attachFiles(pickFiles()) },
                         tooltip = { Text("添加附件") },
@@ -403,11 +397,8 @@ internal fun ComposerPanel(
                             contextWindow = selectedProfile?.let(::resolveContextWindow),
                         ),
                     )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                },
+                endControls = {
                     ComposerPermissionMenuButton(
                         label = permissionPresentation(permissionPreset).label,
                         expanded = expandedMenu == ComposerMenu.PERMISSION,
@@ -435,8 +426,8 @@ internal fun ComposerPanel(
                         iconKey = composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
                         contentDescription = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
                     )
-                }
-            }
+                },
+            )
         }
     }
 }

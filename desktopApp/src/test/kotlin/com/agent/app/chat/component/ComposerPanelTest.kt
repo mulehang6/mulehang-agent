@@ -62,6 +62,16 @@ class ComposerPanelTest {
         )
     }
 
+    /** 宽窗口保持左右分组，紧凑窗口将权限和主动作纳入同一条横向工具栏。 */
+    @Test
+    fun `should use split or horizontal scrolling composer controls by layout`() {
+        assertEquals(ComposerControlLayoutMode.SPLIT, composerControlLayout(compact = false))
+        assertEquals(
+            ComposerControlLayoutMode.HORIZONTAL_SCROLL,
+            composerControlLayout(compact = true),
+        )
+    }
+
     /** 权限色替换 Jewel 默认蓝色；已选中行在悬停和按下时保持不变。 */
     @Test
     fun `should preserve selected permission row color over hover and press`() {

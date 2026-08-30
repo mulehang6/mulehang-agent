@@ -149,7 +149,6 @@ internal fun WorkspacePanel(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                horizontal = if (compact) 8.dp else 0.dp,
                 vertical = ISLANDS_LAYOUT_GAP,
             ),
     ) {

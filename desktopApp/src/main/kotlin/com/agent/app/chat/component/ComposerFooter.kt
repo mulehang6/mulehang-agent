@@ -96,6 +96,7 @@ internal fun FooterComposerSection(
                 state = state,
                 onSendDraft = onSendDraft,
                 composerInputMaxHeight = composerInputMaxHeight,
+                compact = compact,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

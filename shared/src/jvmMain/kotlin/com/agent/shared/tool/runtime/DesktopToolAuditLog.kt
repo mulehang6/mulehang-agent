@@ -34,7 +34,7 @@ class DesktopToolAuditLog(workspacePath: String) {
     }.getOrDefault(Unit)
 
     private fun redact(value: String): String = value
-        .replace(Regex("(?i)(api[_-]?key|token|password)\\s*[=:]\\s*[^\\s,\\\"]+"), "$1=[REDACTED]")
+        .replace(Regex("(?i)(api[_-]?key|token|password)\\s*[=:]\\s*[^\\s,\"]+"), "$1=[REDACTED]")
         .replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
 
     private companion object {

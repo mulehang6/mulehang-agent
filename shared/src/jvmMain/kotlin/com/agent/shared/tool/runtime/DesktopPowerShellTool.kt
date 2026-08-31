@@ -85,7 +85,7 @@ class DesktopPowerShellTool(
                             "-NoLogo",
                             "-NoProfile",
                             "-Command",
-                            "\$PSVersionTable.PSVersion.ToString()",
+                            $$"$PSVersionTable.PSVersion.ToString()",
                         ),
                         workingDirectory = File(System.getProperty("user.dir")),
                         timeoutMillis = VERSION_PROBE_TIMEOUT_MILLIS,

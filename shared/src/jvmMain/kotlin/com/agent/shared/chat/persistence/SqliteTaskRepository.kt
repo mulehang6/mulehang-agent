@@ -25,7 +25,7 @@ class SqliteTaskRepository(
                     context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json,
                     updated_at
                 FROM task
-                ORDER BY updated_at DESC, id ASC
+                ORDER BY updated_at DESC, id 
                 """.trimIndent(),
             ).use { statement ->
                 statement.executeQuery().use { resultSet ->
@@ -254,7 +254,7 @@ class SqliteTaskRepository(
      */
     private fun loadTimeline(connection: Connection, taskId: String): List<PersistedTimelineItem> =
         connection.prepareStatement(
-            "SELECT sequence, type, payload_json FROM task_timeline_item WHERE task_id = ? ORDER BY sequence ASC",
+            "SELECT sequence, type, payload_json FROM task_timeline_item WHERE task_id = ? ORDER BY sequence ",
         ).use { statement ->
             statement.setString(1, taskId)
             statement.executeQuery().use { resultSet ->
@@ -277,7 +277,7 @@ class SqliteTaskRepository(
      */
     private fun loadHistory(connection: Connection, taskId: String): List<PersistedHistoryItem> =
         connection.prepareStatement(
-            "SELECT sequence, type, payload_json FROM task_history_item WHERE task_id = ? ORDER BY sequence ASC",
+            "SELECT sequence, type, payload_json FROM task_history_item WHERE task_id = ? ORDER BY sequence ",
         ).use { statement ->
             statement.setString(1, taskId)
             statement.executeQuery().use { resultSet ->

@@ -1,5 +1,3 @@
-@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-
 package com.agent.shared.agent.provider.deepseek
 
 import kotlinx.serialization.json.Json

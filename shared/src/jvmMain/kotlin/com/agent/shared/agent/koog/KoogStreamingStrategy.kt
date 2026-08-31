@@ -143,7 +143,7 @@ internal fun extractToolOperationIntent(toolName: String, argumentsPreview: Stri
 }
 
 private val OPERATION_INTENT_ARGUMENT_PATTERN =
-    Regex("\\\"?operation_intent\\\"?\\s*[=:]\\s*[\\\"']?([^,}\\n\\\"']+)")
+    Regex("\"?operation_intent\"?\\s*[=:]\\s*[\"']?([^,}\\n\"']+)")
 
 /**
  * 构建带流式 LLM 节点的单轮策略，保留 Koog 的工具执行节点与生命周期事件。

@@ -38,8 +38,10 @@ import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.buildWorkspaceLabel
 import com.agent.app.design.AppMuted
 import com.agent.app.design.DesktopAccentBlue
+import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.app.design.LocalDesktopPalette
+import com.agent.app.design.ProvideDesktopAppearance
 import com.agent.app.design.ideaFrameAmbientBackground
 import com.agent.app.platform.pickWorkspaceDirectory
 import java.awt.Toolkit
@@ -80,12 +82,14 @@ internal const val TITLE_BAR_BRANCH_COPY_ACTION_LABEL = "复制分支名"
 internal fun DecoratedWindowScope.ChatTitleBar(
     state: ChatWindowState,
     projectRoot: Path?,
+    appearance: DesktopAppearance,
     sidebarVisible: Boolean,
     onSidebarVisibilityChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onRequestClose: () -> Unit,
     onGlobalFeedback: (AppFeedbackState) -> Unit,
     frameGradientAnchorPx: Float?,
+    frameAmbientDensityScale: Float,
     onFrameGradientAnchorChanged: (Float) -> Unit,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
@@ -114,13 +118,15 @@ internal fun DecoratedWindowScope.ChatTitleBar(
                 projectColor = palette.titleBarGradientStart,
                 anchorXPx = frameGradientAnchorPx,
                 bottomPaintOverflowPx = titleBarSeparatorHeightPx,
+                canvasDensityScale = frameAmbientDensityScale,
             )
         } else {
             Modifier
         },
         gradientStartColor = Color.Unspecified,
     ) {
-        Row(
+        ProvideDesktopAppearance(appearance = appearance) {
+            Row(
             modifier = Modifier
                 .align(Alignment.Start)
                 .fillMaxHeight()
@@ -262,6 +268,7 @@ internal fun DecoratedWindowScope.ChatTitleBar(
                         )
                     }
                 }
+            }
             }
         }
     }

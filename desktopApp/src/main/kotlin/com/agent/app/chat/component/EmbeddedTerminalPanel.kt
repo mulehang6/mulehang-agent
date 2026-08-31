@@ -9,12 +9,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,12 +40,17 @@ import com.agent.app.design.OffsetPopupPositionProvider
 import com.agent.app.design.TerminalSurfaceBackground
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.LocalDesktopUiScalePercent
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.ActionButton
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import java.awt.BorderLayout
+import java.awt.Component
+import javax.swing.JPanel
+import com.agent.app.design.unscaledDesktopInteropDensity
 
 /** 返回终端标题栏关闭图标的可访问文案，明确其不会终止终端会话。 */
 internal fun terminalPanelHideActionLabel(): String = "收起终端"
@@ -66,9 +73,14 @@ internal fun EmbeddedTerminalPanel(
     val terminalPalette = LocalDesktopPalette.current.terminal
     val terminalChromeBackground = TerminalSurfaceBackground
     val activeTab = tabs.tabs.firstOrNull { it.id == tabs.activeTabId }
-    val activeSession = activeTab?.let { sessions.session(it.id) }
-    val activeComponent = activeSession?.component
     val density = LocalDensity.current
+    val uiScalePercent = LocalDesktopUiScalePercent.current
+    val interopDensity = remember(density, uiScalePercent) {
+        unscaledDesktopInteropDensity(
+            contentDensity = density,
+            scalePercent = uiScalePercent,
+        )
+    }
     val contextMenuLabels = terminalTabContextMenuLabels()
     var terminalOrigin by remember { mutableStateOf(Offset.Zero) }
     var contextMenuTabId by remember { mutableStateOf<Long?>(null) }
@@ -136,19 +148,48 @@ internal fun EmbeddedTerminalPanel(
             Box(
                 modifier = Modifier.fillMaxSize().background(TerminalSurfaceBackground),
             ) {
-                if (activeComponent != null) {
-                    SwingPanel(
-                        factory = { activeComponent },
-                        modifier = Modifier.fillMaxSize(),
-                        background = TerminalSurfaceBackground,
-                        update = { synchronizeTerminalInteropBackground(it, terminalPalette) },
-                    )
-                } else {
+                if (activeTab == null) {
                     Text(
-                        text = activeSession?.errorMessage ?: "无法启动 PowerShell",
+                        text = "没有可显示的终端",
                         modifier = Modifier.padding(12.dp),
                         style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                     )
+                } else {
+                    val activeSession = sessions.session(activeTab.id)
+                    val activeComponent = activeSession?.component
+                    if (activeComponent != null) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            ) {
+                                CompositionLocalProvider(LocalDensity provides interopDensity) {
+                                    SwingPanel(
+                                        factory = { TerminalSwingHost(activeTab.id, activeComponent) },
+                                        modifier = Modifier.fillMaxSize(),
+                                        background = TerminalSurfaceBackground,
+                                        update = { host ->
+                                            host.mount(activeTab.id, activeComponent)
+                                            synchronizeTerminalInteropBackground(host, terminalPalette)
+                                        },
+                                    )
+                                }
+                            }
+                            activeSession.verticalScrollModel?.let { scrollModel ->
+                                TerminalJewelScrollbar(
+                                    scrollModel = scrollModel,
+                                    modifier = Modifier.fillMaxHeight(),
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = activeSession?.errorMessage ?: "无法启动终端",
+                            modifier = Modifier.padding(12.dp),
+                            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+                        )
+                    }
                 }
             }
         }
@@ -175,6 +216,37 @@ internal fun EmbeddedTerminalPanel(
                 }) { Text(contextMenuLabels[2]) }
             }
         }
+    }
+}
+
+/**
+ * 为 Compose 的单个 [SwingPanel] 保存当前活动终端组件。
+ *
+ * Compose Desktop 只会为同一 [SwingPanel] 调用一次 factory；因此标签切换必须在这个稳定宿主中
+ * 按标签 ID 替换实际的 JediTerm 组件，而不能复用首次创建的组件。
+ */
+internal class TerminalSwingHost(
+    initialTabId: Long,
+    initialComponent: Component,
+) : JPanel(BorderLayout()) {
+    private var mountedTabId: Long? = null
+    private var mountedComponent: Component? = null
+
+    init {
+        mount(initialTabId, initialComponent)
+    }
+
+    /**
+     * 将 [component] 作为 [tabId] 对应的唯一可见终端，先移除上一个标签的 Swing 组件。
+     */
+    fun mount(tabId: Long, component: Component) {
+        if (mountedTabId == tabId && mountedComponent === component) return
+        removeAll()
+        add(component, BorderLayout.CENTER)
+        mountedTabId = tabId
+        mountedComponent = component
+        revalidate()
+        repaint()
     }
 }
 

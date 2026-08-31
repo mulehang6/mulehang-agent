@@ -41,6 +41,23 @@ data class DesktopAppearancePreferences(
 }
 
 /**
+ * 内嵌终端的用户级偏好。
+ *
+ * Shell 仅以稳定类型标识持久化，机器相关的可执行文件路径由桌面端在启动时重新检测。
+ */
+data class DesktopTerminalPreferences(
+    val defaultShellId: String = DEFAULT_DESKTOP_TERMINAL_SHELL_ID,
+) {
+    /** 返回可安全应用和持久化的规范化终端偏好。 */
+    fun normalized(): DesktopTerminalPreferences = copy(
+        defaultShellId = defaultShellId.trim().ifBlank { DEFAULT_DESKTOP_TERMINAL_SHELL_ID },
+    )
+}
+
+/** 旧版 Windows PowerShell 的稳定持久化标识，也是终端的默认回退项。 */
+const val DEFAULT_DESKTOP_TERMINAL_SHELL_ID: String = "windows-powershell"
+
+/**
  * 将任意缩放百分比归一到支持范围内最近的 10% 档位。
  */
 fun normalizeDesktopUiScalePercent(scalePercent: Int?): Int {
@@ -136,6 +153,23 @@ class DesktopUiStateStore(
     }
 
     /**
+     * 读取用户级终端偏好；旧状态未包含该字段时兼容到旧版 Windows PowerShell。
+     */
+    fun loadTerminalPreferences(): DesktopTerminalPreferences = DesktopTerminalPreferences(
+        defaultShellId = readState()?.defaultTerminalShellId ?: DEFAULT_DESKTOP_TERMINAL_SHELL_ID,
+    ).normalized()
+
+    /** 保存用户级终端偏好，并只记录稳定 Shell 类型标识。 */
+    fun saveTerminalPreferences(preferences: DesktopTerminalPreferences) {
+        val current = readState() ?: UiStateDocument()
+        saveState(
+            current.copy(
+                defaultTerminalShellId = preferences.normalized().defaultShellId,
+            ),
+        )
+    }
+
+    /**
      * 读取 UI 状态文档，文件不存在时返回 null。
      */
     private fun readState(): UiStateDocument? {
@@ -160,5 +194,6 @@ class DesktopUiStateStore(
         val uiScalePercent: Int? = null,
         val uiFontFamily: String? = null,
         val codeFontFamily: String? = null,
+        val defaultTerminalShellId: String? = null,
     )
 }

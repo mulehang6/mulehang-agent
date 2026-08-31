@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.agent.app.design.TerminalPalette
+import com.agent.app.platform.buildPowerShellCommand
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -19,13 +20,14 @@ import kotlin.time.Duration.Companion.milliseconds
 internal class TerminalPanelController(
     initialPalette: TerminalPalette,
     initialAppearance: TerminalAppearance,
+    initialLaunchCommand: List<String> = buildPowerShellCommand(),
 ) {
     var tabs by mutableStateOf(TerminalTabsState())
         private set
     var visible by mutableStateOf(false)
         private set
     private var pendingTabCloseId by mutableStateOf<Long?>(null)
-    val sessions = TerminalSessionStore(initialPalette, initialAppearance)
+    val sessions = TerminalSessionStore(initialPalette, initialAppearance, initialLaunchCommand)
 
     /** 选择现有终端标签。 */
     fun select(tabId: Long) {
@@ -102,6 +104,11 @@ internal class TerminalPanelController(
     fun updateAppearance(appearance: TerminalAppearance) {
         sessions.updateAppearance(appearance)
     }
+
+    /** 仅更新后续新建终端的启动命令，不会干扰已打开的会话。 */
+    fun updateLaunchCommand(command: List<String>) {
+        sessions.updateLaunchCommand(command)
+    }
 }
 
 /** 创建并绑定组合生命周期的终端面板控制器。 */
@@ -109,11 +116,13 @@ internal class TerminalPanelController(
 internal fun rememberTerminalPanelController(
     palette: TerminalPalette,
     appearance: TerminalAppearance,
+    launchCommand: List<String> = buildPowerShellCommand(),
 ): TerminalPanelController {
-    val controller = remember { TerminalPanelController(palette, appearance) }
+    val controller = remember { TerminalPanelController(palette, appearance, launchCommand) }
     SideEffect {
         controller.updateTheme(palette)
         controller.updateAppearance(appearance)
+        controller.updateLaunchCommand(launchCommand)
     }
     DisposableEffect(controller) {
         onDispose(controller::closeAll)

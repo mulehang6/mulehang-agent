@@ -6,7 +6,6 @@ package com.agent.app.chat.component
 internal data class TerminalTab(
     val id: Long,
     val workspacePath: String,
-    val title: String,
 )
 
 /**
@@ -25,13 +24,20 @@ internal fun TerminalTabsState.addTab(workspacePath: String): TerminalTabsState 
     val tab = TerminalTab(
         id = nextTabId,
         workspacePath = workspacePath,
-        title = if (nextTabId == 1L) "终端" else "终端 $nextTabId",
     )
     return copy(
         tabs = tabs + tab,
         activeTabId = tab.id,
         nextTabId = nextTabId + 1,
     )
+}
+
+/**
+ * 按当前从左到右的可见位置生成终端标签名；内部 [TerminalTab.id] 不参与展示编号。
+ */
+internal fun terminalTabLabel(visibleIndex: Int): String {
+    val position = visibleIndex + 1
+    return if (position == 1) "终端" else "终端 $position"
 }
 
 /**
@@ -91,8 +97,13 @@ internal fun terminalRailAction(
 /** 仅关闭最后一个标签时需等待终端面板退出动画，避免窗口内容突然清空。 */
 internal fun shouldDeferTerminalTabClose(tabs: TerminalTabsState): Boolean = tabs.tabs.size == 1
 
-/** 在最后一个标签关闭后清空窗口状态，令下一次打开创建全新的首个终端。 */
-internal fun TerminalTabsState.resetAfterTerminalWindowClosed(): TerminalTabsState = TerminalTabsState()
+/**
+ * 在最后一个标签关闭后清空可见窗口状态，同时保留单调递增的会话 ID，避免后续会话复用旧 ID。
+ */
+internal fun TerminalTabsState.resetAfterTerminalWindowClosed(): TerminalTabsState = copy(
+    tabs = emptyList(),
+    activeTabId = null,
+)
 
 /**
  * 判断是否需要向终端发送新的 Swing 焦点请求。

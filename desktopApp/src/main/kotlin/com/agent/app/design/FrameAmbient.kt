@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 
 /** IDEA `IslandsGradientPainter` 使用的项目色混合强度。 */
@@ -46,6 +47,12 @@ internal fun ideaFrameAmbientSpec(
         heightPx = IDEA_FRAME_GRADIENT_HEIGHT.value * densityScale,
     )
 }
+
+/**
+ * 返回标题栏与正文必须共用的实际环境光画布密度，避免原生标题栏的基础密度导致渐变坐标分叉。
+ */
+internal fun scaledFrameAmbientDensityScale(baseDensity: Density, scalePercent: Int): Float =
+    scaledDesktopDensity(baseDensity, scalePercent).density
 
 /**
  * 计算 [value] 在 [from] 与 [to] 之间的 sRGB 直线混色。
@@ -104,6 +111,7 @@ internal fun FrameAmbientSpec.colorAt(
  * 标题栏和内容区可分别调用该修饰符，但必须通过 [originYPx] 采样同一张虚拟根画布。
  * [bottomPaintOverflowPx] 仅用于覆盖紧随标题栏的 Jewel 固定分隔区域，必须传入实际布局取整后的像素高度，
  * 不改变该区域的采样坐标。
+ * [canvasDensityScale] 用于在原生未缩放标题栏与已缩放正文之间显式共享同一张画布的实际密度。
  */
 internal fun Modifier.ideaFrameAmbientBackground(
     frameColor: Color,
@@ -111,8 +119,12 @@ internal fun Modifier.ideaFrameAmbientBackground(
     anchorXPx: Float?,
     originYPx: Float = 0f,
     bottomPaintOverflowPx: Float = 0f,
+    canvasDensityScale: Float? = null,
 ): Modifier = drawWithCache {
-    val spec = ideaFrameAmbientSpec(anchorXPx = anchorXPx, densityScale = density)
+    val effectiveDensityScale = canvasDensityScale
+        ?.takeIf { scale -> scale.isFinite() && scale > 0f }
+        ?: density
+    val spec = ideaFrameAmbientSpec(anchorXPx = anchorXPx, densityScale = effectiveDensityScale)
     val safeOriginYPx = originYPx.takeIf(Float::isFinite)?.coerceAtLeast(0f) ?: 0f
     val paintHeight = size.height + bottomPaintOverflowPx.coerceAtLeast(0f)
     val gradientStartY = (-safeOriginYPx).coerceAtLeast(0f)

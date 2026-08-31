@@ -39,12 +39,14 @@ import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.iconKey
 import com.agent.app.design.rememberExternalTextFieldValue
+import com.agent.app.platform.TerminalShellCatalog
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.SettingsDocument
 import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
 import com.agent.shared.settings.persistence.DesktopPathResolver
 import com.agent.shared.settings.persistence.DesktopSettingsRepository
 import com.agent.shared.session.DesktopAppearancePreferences
+import com.agent.shared.session.DesktopTerminalPreferences
 import java.nio.file.Path
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Icon
@@ -57,11 +59,12 @@ import org.jetbrains.jewel.ui.icons.AllIconsKeys
 internal enum class SettingsSection(val label: String) {
     APPEARANCE("外观"),
     THEME("主题"),
+    TOOLS("工具"),
     PROVIDERS("AI 服务"),
 }
 
 /**
- * 返回指定配置范围可见的设置分类；外观只属于用户级全局偏好。
+ * 返回指定配置范围可见的设置分类；外观和工具只属于用户级全局偏好。
  */
 internal fun settingsSectionsFor(layer: ConfigLayer): List<SettingsSection> = when (layer) {
     ConfigLayer.USER -> SettingsSection.entries
@@ -112,6 +115,9 @@ internal fun SettingsPanel(
     appearance: DesktopAppearance,
     onAppearanceChanged: (DesktopAppearancePreferences) -> Unit,
     onAppearanceChangeFinished: (DesktopAppearancePreferences) -> Unit,
+    terminalPreferences: DesktopTerminalPreferences,
+    terminalShellCatalog: TerminalShellCatalog,
+    onTerminalPreferencesChanged: (DesktopTerminalPreferences) -> Unit,
     onFocus: () -> Unit,
     onClose: () -> Unit,
     onSettingsSaved: () -> Unit,
@@ -173,6 +179,9 @@ internal fun SettingsPanel(
                             appearance = appearance,
                             onAppearanceChanged = onAppearanceChanged,
                             onAppearanceChangeFinished = onAppearanceChangeFinished,
+                            terminalPreferences = terminalPreferences,
+                            terminalShellCatalog = terminalShellCatalog,
+                            onTerminalPreferencesChanged = onTerminalPreferencesChanged,
                             onSettingsSaved = onSettingsSaved,
                             compact = true,
                             scrollState = uiState.contentScrollState,
@@ -199,6 +208,9 @@ internal fun SettingsPanel(
                             appearance = appearance,
                             onAppearanceChanged = onAppearanceChanged,
                             onAppearanceChangeFinished = onAppearanceChangeFinished,
+                            terminalPreferences = terminalPreferences,
+                            terminalShellCatalog = terminalShellCatalog,
+                            onTerminalPreferencesChanged = onTerminalPreferencesChanged,
                             onSettingsSaved = onSettingsSaved,
                             compact = false,
                             scrollState = uiState.contentScrollState,
@@ -225,6 +237,9 @@ private fun SettingsPanelContent(
     appearance: DesktopAppearance,
     onAppearanceChanged: (DesktopAppearancePreferences) -> Unit,
     onAppearanceChangeFinished: (DesktopAppearancePreferences) -> Unit,
+    terminalPreferences: DesktopTerminalPreferences,
+    terminalShellCatalog: TerminalShellCatalog,
+    onTerminalPreferencesChanged: (DesktopTerminalPreferences) -> Unit,
     onSettingsSaved: () -> Unit,
     compact: Boolean,
     scrollState: ScrollState,
@@ -251,6 +266,13 @@ private fun SettingsPanelContent(
                         themeMode = themeMode,
                         compact = compact,
                         onThemeChanged = onThemeChanged,
+                    )
+
+                    SettingsSection.TOOLS -> ToolsSettingsContent(
+                        preferences = terminalPreferences,
+                        shellCatalog = terminalShellCatalog,
+                        compact = compact,
+                        onPreferencesChanged = onTerminalPreferencesChanged,
                     )
 
                     SettingsSection.PROVIDERS -> ProviderSettingsContent(

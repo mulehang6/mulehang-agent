@@ -89,4 +89,19 @@ class DesktopAppearanceTest {
             assertEquals(37.5f, 10.sp.toPx())
         }
     }
+
+    /** Swing 终端报告的是 AWT 像素，测量时不得再叠加自定义全局缩放。 */
+    @Test
+    fun `should restore base density for Swing interop measurement`() {
+        val baseDensity = Density(density = 2f, fontScale = 1.25f)
+        val scaledDensity = scaledDesktopDensity(baseDensity, scalePercent = 130)
+
+        val interopDensity = unscaledDesktopInteropDensity(
+            contentDensity = scaledDensity,
+            scalePercent = 130,
+        )
+
+        assertEquals(baseDensity.density, interopDensity.density)
+        assertEquals(baseDensity.fontScale, interopDensity.fontScale)
+    }
 }

@@ -4,10 +4,9 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-/**
- * 验证按项目记忆的 UI 状态存储。
- */
+/** 验证按项目记忆的 UI 状态存储及用户级终端偏好。 */
 class DesktopUiStateStoreTest {
 
     /**
@@ -121,5 +120,25 @@ class DesktopUiStateStoreTest {
 
         assertEquals("light", store.loadThemeMode())
         assertFalse(Files.readString(statePath).contains("liquidGlassEnabled"))
+    }
+
+    /** 旧状态缺少 Shell 字段时必须默认到旧版 Windows PowerShell，保存时只写稳定类型标识。 */
+    @Test
+    fun `should default and persist terminal shell preference independently`() {
+        val root = Files.createTempDirectory("mulehang-ui-terminal-state-test")
+        val statePath = root.resolve(".mulehang/ui-state.json")
+        Files.createDirectories(statePath.parent)
+        Files.writeString(statePath, """{"uiScalePercent":130,"uiFontFamily":"Consolas"}""")
+        val store = DesktopUiStateStore(statePath)
+
+        assertEquals(DEFAULT_DESKTOP_TERMINAL_SHELL_ID, store.loadTerminalPreferences().defaultShellId)
+
+        store.saveTerminalPreferences(DesktopTerminalPreferences(defaultShellId = "powershell-7"))
+
+        assertEquals("powershell-7", store.loadTerminalPreferences().defaultShellId)
+        val persisted = Files.readString(statePath)
+        assertTrue(persisted.contains("\"defaultTerminalShellId\": \"powershell-7\""))
+        assertFalse(persisted.contains("powershell.exe"))
+        assertFalse(persisted.contains("C:/"))
     }
 }

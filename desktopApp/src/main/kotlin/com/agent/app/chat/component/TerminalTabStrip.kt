@@ -28,10 +28,10 @@ internal fun TerminalTabStrip(
     onContextMenuRequested: (Long, Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tabData = tabs.map { tab ->
+    val tabData = tabs.mapIndexed { visibleIndex, tab ->
         var tabOrigin by remember(tab.id) { mutableStateOf(Offset.Zero) }
         IslandsTab(
-            label = tab.title,
+            label = terminalTabLabel(visibleIndex),
             selected = tab.id == activeTabId,
             iconKey = RightRailGlyph.TERMINAL.iconKey,
             closable = true,

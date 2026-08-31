@@ -20,17 +20,18 @@ import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.DesktopAppearance
-import com.agent.app.design.IDEA_TITLE_BAR_HEIGHT
-import com.agent.app.design.IDEA_TITLE_BAR_SEPARATOR_HEIGHT
 import com.agent.app.design.MulehangTheme
 import com.agent.app.design.ProvideDesktopAppearance
 import com.agent.app.design.adjustedDesktopUiScalePercent
 import com.agent.app.design.desktopPalette
 import com.agent.app.design.ideaFrameAmbientBackground
+import com.agent.app.design.ideaTitleBarContentOriginPx
 import com.agent.app.design.loadDesktopFontCatalog
+import com.agent.app.design.scaledFrameAmbientDensityScale
 import com.agent.app.platform.BridgeWindowsTitleBarInputToCompose
 import com.agent.app.platform.RegisterGlobalAppearanceShortcuts
 import com.agent.app.platform.SuppressWindowsWindowBorder
+import com.agent.app.platform.loadDesktopTerminalShellCatalog
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.agent.koog.KoogConversationTitleGenerator
@@ -40,6 +41,7 @@ import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository
 import com.agent.shared.session.DesktopAppearancePreferences
+import com.agent.shared.session.DesktopTerminalPreferences
 import com.agent.shared.session.DesktopUiStateStore
 import com.agent.shared.session.LoadAppSessionUseCase
 import com.agent.shared.chat.persistence.SqliteTaskRepository
@@ -63,6 +65,8 @@ internal fun MulehangDesktopApp(
     var themeMode by remember { mutableStateOf(DesktopThemeMode.fromStorage(uiStateStore.loadThemeMode())) }
     val fontCatalog = remember { loadDesktopFontCatalog() }
     var appearancePreferences by remember { mutableStateOf(uiStateStore.loadAppearancePreferences()) }
+    val terminalShellCatalog = remember { loadDesktopTerminalShellCatalog() }
+    var terminalPreferences by remember { mutableStateOf(uiStateStore.loadTerminalPreferences()) }
     val appearance = remember(appearancePreferences, fontCatalog) {
         DesktopAppearance(
             preferences = appearancePreferences,
@@ -84,6 +88,13 @@ internal fun MulehangDesktopApp(
             val normalizedPreferences = updatedPreferences.normalized()
             appearancePreferences = normalizedPreferences
             uiStateStore.saveAppearancePreferences(normalizedPreferences)
+        }
+    }
+    val applyAndPersistTerminalPreferences = remember(uiStateStore) {
+        { updatedPreferences: DesktopTerminalPreferences ->
+            val normalizedPreferences = updatedPreferences.normalized()
+            terminalPreferences = normalizedPreferences
+            uiStateStore.saveTerminalPreferences(normalizedPreferences)
         }
     }
     val projectRootState = remember {
@@ -148,50 +159,59 @@ internal fun MulehangDesktopApp(
     }
 
     val palette = desktopPalette(mode = themeMode, systemIsDark = isSystemInDarkTheme())
-    MulehangTheme(isDark = palette.isDark, palette = palette) {
+    MulehangTheme(
+        isDark = palette.isDark,
+        palette = palette,
+        titleBarScalePercent = appearance.preferences.scalePercent,
+    ) {
         DecoratedWindow(
             onCloseRequest = requestClose,
             state = desktopWindowState,
             title = "mulehang-agent",
         ) {
+            val nativeTitleBarDensity = LocalDensity.current
+            val contentOriginYPx = ideaTitleBarContentOriginPx(
+                baseDensity = nativeTitleBarDensity,
+                scalePercent = appearance.preferences.scalePercent,
+            )
+            val frameAmbientDensityScale = scaledFrameAmbientDensityScale(
+                baseDensity = nativeTitleBarDensity,
+                scalePercent = appearance.preferences.scalePercent,
+            )
+            SuppressWindowsWindowBorder(window = window, frameColor = palette.frameBackground)
+            BridgeWindowsTitleBarInputToCompose(window = window)
+            RegisterGlobalAppearanceShortcuts(
+                window = window,
+                onIncrease = {
+                    applyAndPersistAppearancePreferences(
+                        appearancePreferences.copy(
+                            scalePercent = adjustedDesktopUiScalePercent(appearancePreferences.scalePercent, 1),
+                        ),
+                    )
+                },
+                onDecrease = {
+                    applyAndPersistAppearancePreferences(
+                        appearancePreferences.copy(
+                            scalePercent = adjustedDesktopUiScalePercent(appearancePreferences.scalePercent, -1),
+                        ),
+                    )
+                },
+            )
+            ChatTitleBar(
+                state = windowState,
+                projectRoot = projectRootState.value,
+                appearance = appearance,
+                sidebarVisible = sidebarVisible,
+                onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
+                onOpenSettings = { settingsVisible = true },
+                onRequestClose = requestClose,
+                onGlobalFeedback = {},
+                frameGradientAnchorPx = frameGradientAnchorPx,
+                frameAmbientDensityScale = frameAmbientDensityScale,
+                onFrameGradientAnchorChanged = { anchorPx -> frameGradientAnchorPx = anchorPx },
+            )
             ProvideDesktopAppearance(appearance = appearance) {
-                SuppressWindowsWindowBorder(window = window, frameColor = palette.frameBackground)
-                BridgeWindowsTitleBarInputToCompose(window = window)
-                RegisterGlobalAppearanceShortcuts(
-                    window = window,
-                    onIncrease = {
-                        applyAndPersistAppearancePreferences(
-                            appearancePreferences.copy(
-                                scalePercent = adjustedDesktopUiScalePercent(appearancePreferences.scalePercent, 1),
-                            ),
-                        )
-                    },
-                    onDecrease = {
-                        applyAndPersistAppearancePreferences(
-                            appearancePreferences.copy(
-                                scalePercent = adjustedDesktopUiScalePercent(appearancePreferences.scalePercent, -1),
-                            ),
-                        )
-                    },
-                )
-                ChatTitleBar(
-                    state = windowState,
-                    projectRoot = projectRootState.value,
-                    sidebarVisible = sidebarVisible,
-                    onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
-                    onOpenSettings = { settingsVisible = true },
-                    onRequestClose = requestClose,
-                    onGlobalFeedback = {},
-                    frameGradientAnchorPx = frameGradientAnchorPx,
-                    onFrameGradientAnchorChanged = { anchorPx -> frameGradientAnchorPx = anchorPx },
-                )
                 val contentModifier = if (palette.isDark) {
-                    val contentOriginYPx = with(LocalDensity.current) {
-                        (
-                            IDEA_TITLE_BAR_HEIGHT.roundToPx() +
-                                IDEA_TITLE_BAR_SEPARATOR_HEIGHT.roundToPx()
-                        ).toFloat()
-                    }
                     Modifier
                         .fillMaxSize()
                         .ideaFrameAmbientBackground(
@@ -199,6 +219,7 @@ internal fun MulehangDesktopApp(
                             projectColor = palette.titleBarGradientStart,
                             anchorXPx = frameGradientAnchorPx,
                             originYPx = contentOriginYPx,
+                            canvasDensityScale = frameAmbientDensityScale,
                         )
                 } else {
                     Modifier
@@ -220,6 +241,9 @@ internal fun MulehangDesktopApp(
                         appearance = appearance,
                         onAppearanceChanged = updateAppearancePreferences,
                         onAppearanceChangeFinished = persistAppearancePreferences,
+                        terminalPreferences = terminalPreferences,
+                        terminalShellCatalog = terminalShellCatalog,
+                        onTerminalPreferencesChanged = applyAndPersistTerminalPreferences,
                         onSettingsChanged = {
                             projectRootState.value?.let { root ->
                                 appScope.launch {

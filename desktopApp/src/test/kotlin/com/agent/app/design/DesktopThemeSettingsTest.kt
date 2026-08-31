@@ -97,13 +97,17 @@ class DesktopThemeSettingsTest {
         }
     }
 
-    /** 标题栏维持 IDEA 的 54dp 原生窗口命中高度；项目环境光由根画布负责。 */
+    /** 标题栏以未缩放原生密度测量，但其实际布局高度必须随全局缩放同步变化。 */
     @Test
-    fun `should retain the IDEA title bar height for the root ambient canvas`() {
-        val metrics = ideaTitleBarMetrics()
+    fun `should scale the IDEA title bar metrics with global scale`() {
+        val compactMetrics = ideaTitleBarMetrics(scalePercent = 60)
+        val defaultMetrics = ideaTitleBarMetrics(scalePercent = 100)
+        val enlargedMetrics = ideaTitleBarMetrics(scalePercent = 130)
 
         assertEquals(Color(0xFF28434A), desktopPalette(DesktopThemeMode.DARK).titleBarGradientStart)
-        assertEquals(54f, metrics.height.value)
+        assertEquals(32.4f, compactMetrics.height.value)
+        assertEquals(54f, defaultMetrics.height.value)
+        assertEquals(70.2f, enlargedMetrics.height.value)
     }
 
     /** 浅色标题栏的常规悬浮必须使用中性灰，不能误用蓝色选中态。 */

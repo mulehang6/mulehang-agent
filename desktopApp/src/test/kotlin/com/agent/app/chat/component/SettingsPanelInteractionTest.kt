@@ -14,11 +14,16 @@ import kotlin.test.assertNull
 /** 设置 Island 的交互色与稳定状态回归测试。 */
 class SettingsPanelInteractionTest {
 
-    /** 外观只属于用户级全局设置，切到项目或环境范围时安全回退到主题。 */
+    /** 外观和工具只属于用户级全局设置，切到项目或环境范围时安全回退到主题。 */
     @Test
     fun `should show appearance only for global settings scope`() {
         assertEquals(
-            listOf(SettingsSection.APPEARANCE, SettingsSection.THEME, SettingsSection.PROVIDERS),
+            listOf(
+                SettingsSection.APPEARANCE,
+                SettingsSection.THEME,
+                SettingsSection.TOOLS,
+                SettingsSection.PROVIDERS,
+            ),
             settingsSectionsFor(ConfigLayer.USER),
         )
         assertEquals(
@@ -28,6 +33,10 @@ class SettingsPanelInteractionTest {
         assertEquals(
             SettingsSection.THEME,
             settingsSectionAfterScopeChange(SettingsSection.APPEARANCE, ConfigLayer.ENVIRONMENT),
+        )
+        assertEquals(
+            SettingsSection.THEME,
+            settingsSectionAfterScopeChange(SettingsSection.TOOLS, ConfigLayer.PROJECT),
         )
     }
 

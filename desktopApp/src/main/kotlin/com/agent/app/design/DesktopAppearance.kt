@@ -217,6 +217,19 @@ internal fun scaledDesktopDensity(baseDensity: Density, scalePercent: Int): Dens
 )
 
 /**
+ * 移除 [ProvideDesktopAppearance] 额外叠加的全局缩放，供以 AWT 像素报告尺寸的 Swing 互操作组件测量。
+ *
+ * JediTerm 会将实际像素网格反写为 Swing 偏好尺寸；若继续使用全局缩放后的 Compose 密度，
+ * SwingPanel 会再次放大该尺寸并触发持续的终端重排。字体缩放由终端自身的外观状态负责，
+ * 因此这里保留系统字体倍率但只还原布局密度。
+ */
+internal fun unscaledDesktopInteropDensity(contentDensity: Density, scalePercent: Int): Density = Density(
+    density = contentDensity.density * DesktopAppearancePreferences.DEFAULT_UI_SCALE_PERCENT /
+        normalizeDesktopUiScalePercent(scalePercent).toFloat(),
+    fontScale = contentDensity.fontScale,
+)
+
+/**
  * 在实际窗口内容组合中注入全局缩放、字体和代码字体，保证窗口子组合也能读取这些外观值。
  */
 @Composable

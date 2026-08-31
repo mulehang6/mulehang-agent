@@ -17,17 +17,10 @@ import java.awt.Component
 import java.awt.Container
 import java.awt.Dimension
 import java.awt.Font
-import java.awt.Graphics
-import java.awt.Graphics2D
-import java.awt.Rectangle
-import java.awt.RenderingHints
 import javax.swing.BoundedRangeModel
-import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JScrollBar
 import javax.swing.SwingUtilities
-import javax.swing.event.ChangeListener
-import javax.swing.plaf.basic.BasicScrollBarUI
 import kotlin.math.roundToInt
 
 /** 保存单个 JediTerm 会话当前使用的终端色板。 */
@@ -94,7 +87,7 @@ internal fun terminalFontSize(scalePercent: Int): Int =
 
 /** 为一个会话提供 supplier-backed 默认色和动态 ANSI 色板。 */
 internal class DynamicTerminalSettingsProvider(
-    internal val themeState: TerminalThemeState,
+    themeState: TerminalThemeState,
     internal val appearanceState: TerminalAppearanceState,
 ) : DefaultSettingsProvider() {
     private val foreground = dynamicTerminalColor(themeState) { it.foreground }
@@ -134,7 +127,7 @@ private class DynamicTerminalColorPalette(
         terminalAnsiPaletteColor(colorIndex, foreground = false, palette = themeState.palette())
 }
 
-/** 使用会话主题状态创建带动态滚动条的 JediTerm 组件。 */
+/** 使用会话主题状态创建、并向 Compose 暴露滚动模型的 JediTerm 组件。 */
 internal class ThemedJediTermWidget(
     themeState: TerminalThemeState,
     appearanceState: TerminalAppearanceState,
@@ -160,24 +153,16 @@ internal class ThemedJediTermWidget(
         if (SwingUtilities.isEventDispatchThread()) refresh.run() else SwingUtilities.invokeLater(refresh)
     }
 
-    /** 创建随会话色板更新、仅在存在缓冲内容时显示的滚动条。 */
-    override fun createScrollBar(): JScrollBar {
-        val initializedThemeState = (mySettingsProvider as DynamicTerminalSettingsProvider).themeState
-        val scrollBar = ThemedTerminalScrollBar().apply {
-            isOpaque = false
-            unitIncrement = 3
-            setUI(ThemedTerminalScrollBarUi(initializedThemeState))
-        }
-        val modelListener = ChangeListener { updateThemedTerminalScrollbarVisibility(scrollBar) }
-        scrollBar.model.addChangeListener(modelListener)
-        scrollBar.addPropertyChangeListener("model") { event ->
-            (event.oldValue as? BoundedRangeModel)?.removeChangeListener(modelListener)
-            (event.newValue as? BoundedRangeModel)?.addChangeListener(modelListener)
-            updateThemedTerminalScrollbarVisibility(scrollBar)
-        }
-        updateThemedTerminalScrollbarVisibility(scrollBar)
-        return scrollBar
-    }
+    /**
+     * 返回 JediTerm 的实际滚动模型，供紧邻 Swing 互操作区域的 Jewel 滚动条双向同步。
+     *
+     * 不能让 Compose 组件覆盖 [SwingPanel][androidx.compose.ui.awt.SwingPanel]，因为默认的 Swing
+     * 互操作层始终位于 Compose 之上；因此仅暴露模型，不复用 Swing 的可视滚动条。
+     */
+    fun verticalScrollModel(): BoundedRangeModel = terminalPanel.verticalScrollModel
+
+    /** 创建零宽的 Swing 模型宿主；实际可见滚动条由 Compose/Jewel 渲染。 */
+    override fun createScrollBar(): JScrollBar = TerminalScrollModelHost()
 }
 
 /**
@@ -237,77 +222,23 @@ private fun Component.revalidateIfContainer() {
     if (this is JComponent) revalidate()
 }
 
-/** 仅在可见时占据八像素宽度的终端滚动条。 */
-private class ThemedTerminalScrollBar : JScrollBar(VERTICAL) {
-    /** 根据可见状态返回紧凑宽度。 */
-    override fun getPreferredSize(): Dimension = if (isVisible) Dimension(8, 0) else Dimension(0, 0)
-}
-
-/** 绘制读取会话主题状态的透明轨道和圆角滑块。 */
-private class ThemedTerminalScrollBarUi(
-    private val themeState: TerminalThemeState,
-) : BasicScrollBarUI() {
-    /** 配置透明轨道和首次使用的滑块颜色。 */
-    override fun configureScrollBarColors() {
-        trackColor = AwtColor(0, 0, 0, 0)
-        thumbColor = terminalInteropColors(themeState.palette()).scrollbarThumb
-    }
-
-    /** 隐藏滚动条顶部按钮。 */
-    override fun createDecreaseButton(orientation: Int): JButton = zeroSizeButton()
-
-    /** 隐藏滚动条底部按钮。 */
-    override fun createIncreaseButton(orientation: Int): JButton = zeroSizeButton()
-
-    /** 透明轨道无需额外绘制。 */
-    override fun paintTrack(graphics: Graphics, component: JComponent, trackBounds: Rectangle) = Unit
-
-    /** 使用最新主题色绘制圆角滑块。 */
-    override fun paintThumb(graphics: Graphics, component: JComponent, thumbBounds: Rectangle) {
-        if (!scrollbar.isEnabled || thumbBounds.isEmpty) return
-        val graphics2D = graphics.create() as Graphics2D
-        try {
-            graphics2D.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            graphics2D.color = terminalInteropColors(themeState.palette()).scrollbarThumb
-            graphics2D.fillRoundRect(
-                thumbBounds.x + 1,
-                thumbBounds.y + 2,
-                (thumbBounds.width - 2).coerceAtLeast(5),
-                (thumbBounds.height - 4).coerceAtLeast(8),
-                6,
-                6,
-            )
-        } finally {
-            graphics2D.dispose()
-        }
-    }
-
-    /** 防止极短缓冲区产生不可操作的滑块。 */
-    override fun getMinimumThumbSize(): Dimension = Dimension(5, 24)
-
-    /** 创建不占空间的滚动按钮。 */
-    private fun zeroSizeButton(): JButton = JButton().apply {
-        preferredSize = Dimension(0, 0)
-        minimumSize = Dimension(0, 0)
-        maximumSize = Dimension(0, 0)
+/**
+ * 让 JediTerm 继续持有 [BoundedRangeModel] 的零宽 Swing 滚动条。
+ *
+ * JediTerm 的 [com.jediterm.terminal.ui.JediTermWidget.TerminalLayout] 会根据首选宽度为滚动条留出空间；
+ * 固定为零可避免 Swing 原生控件与右侧的 Jewel 组件同时可见。
+ */
+private class TerminalScrollModelHost : JScrollBar(VERTICAL) {
+    init {
         isOpaque = false
-        isFocusable = false
-        border = null
+        unitIncrement = 3
     }
-}
 
-/** 根据缓冲区范围更新终端滚动条可见性。 */
-private fun updateThemedTerminalScrollbarVisibility(scrollBar: JScrollBar) {
-    val update = Runnable {
-        val model = scrollBar.model
-        val visible = shouldShowTerminalScrollbar(model.minimum, model.maximum, model.extent)
-        if (scrollBar.isVisible != visible) {
-            scrollBar.isVisible = visible
-            scrollBar.parent?.revalidate()
-            scrollBar.parent?.repaint()
-        }
-    }
-    if (SwingUtilities.isEventDispatchThread()) update.run() else SwingUtilities.invokeLater(update)
+    /** 永远不让 JediTerm 的布局为 Swing 原生滚动条保留可见宽度。 */
+    override fun getPreferredSize(): Dimension = Dimension(0, 0)
+
+    /** 保持最小尺寸为零，避免父级布局在收缩时重新暴露滚动条。 */
+    override fun getMinimumSize(): Dimension = Dimension(0, 0)
 }
 
 /** 将 Compose 颜色转换为 AWT RGBA 色。 */
@@ -322,14 +253,12 @@ internal fun androidx.compose.ui.graphics.Color.toTerminalAwtColor(): AwtColor =
 internal data class TerminalInteropColors(
     val background: AwtColor,
     val foreground: AwtColor,
-    val scrollbarThumb: AwtColor,
 )
 
 /** 将明确的终端色板映射为 JediTerm 与 Swing 可消费的颜色。 */
 internal fun terminalInteropColors(palette: TerminalPalette): TerminalInteropColors = TerminalInteropColors(
     background = palette.background.toTerminalAwtColor(),
     foreground = palette.foreground.toTerminalAwtColor(),
-    scrollbarThumb = palette.scrollbarThumb.toTerminalAwtColor(),
 )
 
 /** 同步 Swing 祖先链背景，避免互操作区域扩张时露出窗口默认色。 */
@@ -344,7 +273,7 @@ internal fun synchronizeTerminalInteropBackground(component: Component, palette:
 /** 为尚未装配会话外观的调用返回系统等宽默认字体。 */
 internal fun terminalFont(appearance: TerminalAppearance = TerminalAppearance()): Font = appearance.font()
 
-/** 判断终端缓冲内容是否超过当前可见范围。 */
+/** 判断 JediTerm 模型是否包含超出当前可见区域的历史内容。 */
 internal fun shouldShowTerminalScrollbar(minimum: Int, maximum: Int, extent: Int): Boolean =
     maximum - minimum > extent
 

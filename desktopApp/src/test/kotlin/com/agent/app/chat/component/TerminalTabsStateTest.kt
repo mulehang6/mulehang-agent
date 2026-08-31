@@ -13,14 +13,15 @@ import com.agent.app.design.TERMINAL_ICON_KEY
 class TerminalTabsStateTest {
 
     /**
-     * 新建标签页时应分配连续标题、记录创建路径并选中最新标签。
+     * 新建标签页时应分配单调递增会话 ID，并按当前可见顺序生成连续标题。
      */
     @Test
     fun `should create and select sequential terminal tabs`() {
         val first = TerminalTabsState().addTab("C:/workspace")
         val second = first.addTab("D:/other")
 
-        assertEquals(listOf("终端", "终端 2"), second.tabs.map(TerminalTab::title))
+        assertEquals(listOf("终端", "终端 2"), List(second.tabs.size, ::terminalTabLabel))
+        assertEquals(listOf(1L, 2L), second.tabs.map(TerminalTab::id))
         assertEquals(2L, second.activeTabId)
         assertEquals("D:/other", second.tabs.last().workspacePath)
     }
@@ -54,6 +55,39 @@ class TerminalTabsStateTest {
 
         assertEquals(listOf(2L), retained.tabs.map(TerminalTab::id))
         assertEquals(2L, retained.activeTabId)
+    }
+
+    /**
+     * 关闭中间标签后，剩余标签的展示编号应连续，但内部会话 ID 不能复用。
+     */
+    @Test
+    fun `should keep visible labels contiguous after closing a middle terminal tab`() {
+        val closedMiddle = TerminalTabsState()
+            .addTab("C:/one")
+            .addTab("C:/two")
+            .addTab("C:/three")
+            .closeTab(2L)
+
+        assertEquals(listOf(1L, 3L), closedMiddle.tabs.map(TerminalTab::id))
+        assertEquals(listOf("终端", "终端 2"), List(closedMiddle.tabs.size, ::terminalTabLabel))
+        assertEquals(4L, closedMiddle.nextTabId)
+    }
+
+    /**
+     * 只剩首个终端后再新建时，显示名必须为“终端 2”，即使内部 ID 已单调增长到第六个。
+     */
+    @Test
+    fun `should renumber visible labels after closing several terminal tabs`() {
+        val firstFive = generateSequence(TerminalTabsState()) { tabs -> tabs.addTab("C:/workspace") }
+            .drop(1)
+            .take(5)
+            .last()
+        val onlyFirst = listOf(2L, 3L, 4L, 5L).fold(firstFive) { tabs, tabId -> tabs.closeTab(tabId) }
+        val reopened = onlyFirst.addTab("C:/workspace")
+
+        assertEquals(listOf(1L, 6L), reopened.tabs.map(TerminalTab::id))
+        assertEquals(listOf("终端", "终端 2"), List(reopened.tabs.size, ::terminalTabLabel))
+        assertEquals(7L, reopened.nextTabId)
     }
 
     /**
@@ -99,14 +133,16 @@ class TerminalTabsStateTest {
         )
     }
 
-    /** 关闭最后一个标签后应重置窗口状态，使下一次打开重新从首个终端开始。 */
+    /** 关闭最后一个标签后应重置可见状态，但不能复用已关闭会话的内部 ID。 */
     @Test
-    fun `should reset terminal numbering after the terminal window closes`() {
+    fun `should reset visible label without reusing terminal session id`() {
         val closed = TerminalTabsState().addTab("C:/workspace").resetAfterTerminalWindowClosed()
         val reopened = closed.addTab("C:/workspace")
 
         assertEquals(emptyList(), closed.tabs)
-        assertEquals("终端", reopened.tabs.single().title)
+        assertEquals("终端", terminalTabLabel(0))
+        assertEquals(2L, reopened.tabs.single().id)
+        assertEquals(3L, reopened.nextTabId)
     }
 
     /** 终端标签应采用随应用打包的 IntelliJ 终端工具窗口图标。 */

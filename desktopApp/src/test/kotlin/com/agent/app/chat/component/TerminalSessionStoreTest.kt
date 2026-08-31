@@ -4,8 +4,10 @@ import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.TerminalPalette
 import com.agent.app.design.desktopPalette
 import java.awt.Component
+import javax.swing.JPanel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 
 /**
@@ -20,10 +22,10 @@ class TerminalSessionStoreTest {
     fun `should close only the terminal session whose tab was closed`() {
         val first = FakeTerminalHandle()
         val second = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _ -> if (path == "C:/one") first else second }
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _, _ -> if (path == "C:/one") first else second }
 
-        store.create(TerminalTab(1, "C:/one", "终端 1"))
-        store.create(TerminalTab(2, "C:/two", "终端 2"))
+        store.create(TerminalTab(1, "C:/one"))
+        store.create(TerminalTab(2, "C:/two"))
         store.close(1)
 
         assertEquals(1, first.closeCalls)
@@ -37,8 +39,8 @@ class TerminalSessionStoreTest {
     @Test
     fun `should delegate focus to the active terminal session`() {
         val handle = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { _, _, _ -> handle }
-        store.create(TerminalTab(1, "C:/workspace", "终端 1"))
+        val store = TerminalSessionStore(darkTerminalPalette()) { _, _, _, _ -> handle }
+        store.create(TerminalTab(1, "C:/workspace"))
 
         store.focusActiveIfNeeded(1)
 
@@ -52,9 +54,9 @@ class TerminalSessionStoreTest {
     fun `should close each remaining terminal exactly once when store is disposed`() {
         val first = FakeTerminalHandle()
         val second = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _ -> if (path == "C:/one") first else second }
-        store.create(TerminalTab(1, "C:/one", "终端 1"))
-        store.create(TerminalTab(2, "C:/two", "终端 2"))
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _, _ -> if (path == "C:/one") first else second }
+        store.create(TerminalTab(1, "C:/one"))
+        store.create(TerminalTab(2, "C:/two"))
 
         store.closeAll()
         store.closeAll()
@@ -70,9 +72,9 @@ class TerminalSessionStoreTest {
     fun `should close every terminal session except retained tab`() {
         val first = FakeTerminalHandle()
         val second = FakeTerminalHandle()
-        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _ -> if (path == "C:/one") first else second }
-        store.create(TerminalTab(1, "C:/one", "终端 1"))
-        store.create(TerminalTab(2, "C:/two", "终端 2"))
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _, _ -> if (path == "C:/one") first else second }
+        store.create(TerminalTab(1, "C:/one"))
+        store.create(TerminalTab(2, "C:/two"))
 
         store.closeAllExcept(2)
 
@@ -86,15 +88,15 @@ class TerminalSessionStoreTest {
     fun `should update existing and future terminal sessions`() {
         val handles = mutableListOf<FakeTerminalHandle>()
         val initialPalettes = mutableListOf<TerminalPalette>()
-        val store = TerminalSessionStore(darkTerminalPalette()) { _, palette, _ ->
+        val store = TerminalSessionStore(darkTerminalPalette()) { _, palette, _, _ ->
             initialPalettes += palette
             FakeTerminalHandle().also(handles::add)
         }
-        store.create(TerminalTab(1, "C:/one", "终端 1"))
+        store.create(TerminalTab(1, "C:/one"))
 
         val lightPalette = desktopPalette(DesktopThemeMode.LIGHT).terminal
         store.updateTheme(lightPalette)
-        store.create(TerminalTab(2, "C:/two", "终端 2"))
+        store.create(TerminalTab(2, "C:/two"))
 
         assertEquals(lightPalette, handles.first().themes.single())
         assertEquals(lightPalette, initialPalettes.last())
@@ -107,18 +109,61 @@ class TerminalSessionStoreTest {
     fun `should update existing and future terminal appearance without closing sessions`() {
         val handles = mutableListOf<FakeTerminalHandle>()
         val initialAppearances = mutableListOf<TerminalAppearance>()
-        val store = TerminalSessionStore(darkTerminalPalette()) { _, _, appearance ->
+        val store = TerminalSessionStore(darkTerminalPalette()) { _, _, appearance, _ ->
             initialAppearances += appearance
             FakeTerminalHandle().also(handles::add)
         }
-        store.create(TerminalTab(1, "C:/one", "终端 1"))
+        store.create(TerminalTab(1, "C:/one"))
 
         val updatedAppearance = TerminalAppearance(codeFontFamily = "Cascadia Mono", scalePercent = 130)
         store.updateAppearance(updatedAppearance)
-        store.create(TerminalTab(2, "C:/two", "终端 2"))
+        store.create(TerminalTab(2, "C:/two"))
 
         assertEquals(updatedAppearance, handles.first().appearances.single())
         assertEquals(updatedAppearance, initialAppearances.last())
+        assertEquals(0, handles.first().closeCalls)
+    }
+
+    /**
+     * 各标签必须持有不同的 Swing 边界，供活动标签通过组合键重新挂载对应组件。
+     */
+    @Test
+    fun `should keep independent swing components for different terminal tabs`() {
+        val first = FakeTerminalHandle(component = JPanel())
+        val second = FakeTerminalHandle(component = JPanel())
+        val store = TerminalSessionStore(darkTerminalPalette()) { path, _, _, _ ->
+            if (path == "C:/one") first else second
+        }
+
+        store.create(TerminalTab(1, "C:/one"))
+        store.create(TerminalTab(2, "C:/two"))
+
+        assertSame(first, store.session(1))
+        assertSame(second, store.session(2))
+        assertNotSame(first.component, second.component)
+    }
+
+    /**
+     * 修改默认 Shell 只能影响后续新会话，不能重建或关闭已打开的终端。
+     */
+    @Test
+    fun `should apply updated shell command only to future terminal sessions`() {
+        val launchCommands = mutableListOf<List<String>>()
+        val handles = mutableListOf<FakeTerminalHandle>()
+        val store = TerminalSessionStore(
+            initialPalette = darkTerminalPalette(),
+            initialLaunchCommand = listOf("powershell.exe", "-NoLogo"),
+        ) { _, _, _, launchCommand ->
+            launchCommands += launchCommand
+            FakeTerminalHandle().also(handles::add)
+        }
+
+        store.create(TerminalTab(1, "C:/one"))
+        store.updateLaunchCommand(listOf("cmd.exe"))
+        store.create(TerminalTab(2, "C:/two"))
+
+        assertEquals(listOf("powershell.exe", "-NoLogo"), launchCommands.first())
+        assertEquals(listOf("cmd.exe"), launchCommands.last())
         assertEquals(0, handles.first().closeCalls)
     }
 }
@@ -126,13 +171,14 @@ class TerminalSessionStoreTest {
 /**
  * 仅替代进程与 Swing 边界的终端会话测试替身。
  */
-private class FakeTerminalHandle : TerminalHandle {
+private class FakeTerminalHandle(
+    override val component: Component? = null,
+) : TerminalHandle {
     var closeCalls = 0
     var focusCalls = 0
     val themes = mutableListOf<TerminalPalette>()
     val appearances = mutableListOf<TerminalAppearance>()
 
-    override val component: Component? = null
     override val errorMessage: String = "error"
 
     override fun start() = Unit

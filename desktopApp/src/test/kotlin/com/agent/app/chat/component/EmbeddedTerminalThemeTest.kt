@@ -23,7 +23,6 @@ class EmbeddedTerminalThemeTest {
 
         assertEquals(0xFFFFFF, colors.background.rgb and 0xFFFFFF)
         assertEquals(0x1F2329, colors.foreground.rgb and 0xFFFFFF)
-        assertEquals(0xA6ABB4, colors.scrollbarThumb.rgb and 0xFFFFFF)
     }
 
     /** 深色主题保持既有控制台配色，避免主题映射倒置。 */
@@ -35,7 +34,6 @@ class EmbeddedTerminalThemeTest {
 
         assertEquals(0x191A1C, colors.background.rgb and 0xFFFFFF)
         assertEquals(0xE6E8EC, colors.foreground.rgb and 0xFFFFFF)
-        assertEquals(0x4B4D52, colors.scrollbarThumb.rgb and 0xFFFFFF)
     }
 
     /** PowerShell 的默认白色 ANSI 背景在深色终端中必须回落为终端背景。 */
@@ -101,7 +99,7 @@ class EmbeddedTerminalThemeTest {
         assertEquals(expected, scrollbar.background.rgb)
     }
 
-    /** JediTerm 父类构造期间创建滚动条时必须读取已经初始化的 SettingsProvider 状态。 */
+    /** JediTerm 父类构造期间必须创建零宽模型宿主，供 Compose 侧的 Jewel 滚动条同步。 */
     @Test
     fun `should construct themed widget without reading uninitialized subclass state`() {
         val state = TerminalThemeState(desktopPalette(DesktopThemeMode.DARK).terminal)
@@ -114,7 +112,9 @@ class EmbeddedTerminalThemeTest {
             try {
                 val scrollbar = widget.componentTree().filterIsInstance<JScrollBar>().firstOrNull()
                 assertNotNull(scrollbar)
-                assertEquals("ThemedTerminalScrollBarUi", scrollbar.ui.javaClass.simpleName)
+                assertEquals(0, scrollbar.preferredSize.width)
+                assertEquals(0, scrollbar.minimumSize.width)
+                assertNotNull(widget.verticalScrollModel())
 
                 state.update(desktopPalette(DesktopThemeMode.LIGHT).terminal)
                 scrollbar.repaint()
@@ -123,6 +123,7 @@ class EmbeddedTerminalThemeTest {
             }
         }
     }
+
 }
 
 /** 返回测试组件及其全部 Swing 后代。 */

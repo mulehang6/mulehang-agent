@@ -26,7 +26,9 @@ import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.LocalDesktopPalette
 import com.agent.app.design.RightRailGlyph
+import com.agent.app.platform.TerminalShellCatalog
 import com.agent.shared.session.DesktopAppearancePreferences
+import com.agent.shared.session.DesktopTerminalPreferences
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
 import java.nio.file.Path
@@ -68,6 +70,9 @@ internal fun ChatScreen(
     appearance: DesktopAppearance,
     onAppearanceChanged: (DesktopAppearancePreferences) -> Unit,
     onAppearanceChangeFinished: (DesktopAppearancePreferences) -> Unit,
+    terminalPreferences: DesktopTerminalPreferences,
+    terminalShellCatalog: TerminalShellCatalog,
+    onTerminalPreferencesChanged: (DesktopTerminalPreferences) -> Unit,
     onSettingsChanged: () -> Unit,
     settingsVisible: Boolean = false,
     onSettingsVisibilityChange: (Boolean) -> Unit = {},
@@ -80,7 +85,14 @@ internal fun ChatScreen(
             scalePercent = appearance.preferences.scalePercent,
         )
     }
-    val terminalPanel = rememberTerminalPanelController(palette.terminal, terminalAppearance)
+    val terminalShell = remember(terminalShellCatalog, terminalPreferences) {
+        terminalShellCatalog.resolve(terminalPreferences)
+    }
+    val terminalPanel = rememberTerminalPanelController(
+        palette = palette.terminal,
+        appearance = terminalAppearance,
+        launchCommand = terminalShell.descriptor.launchCommand(),
+    )
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var appFeedbackToken by remember { mutableStateOf(0L) }
     var islandFocus by remember { mutableStateOf(WorkspaceIslandFocus.NONE) }
@@ -177,6 +189,9 @@ internal fun ChatScreen(
                                             appearance = appearance,
                                             onAppearanceChanged = onAppearanceChanged,
                                             onAppearanceChangeFinished = onAppearanceChangeFinished,
+                                            terminalPreferences = terminalPreferences,
+                                            terminalShellCatalog = terminalShellCatalog,
+                                            onTerminalPreferencesChanged = onTerminalPreferencesChanged,
                                             onFocus = { islandFocus = WorkspaceIslandFocus.SETTINGS },
                                             onClose = {
                                                 onSettingsVisibilityChange(false)

@@ -69,16 +69,43 @@ class FrameAmbientTest {
         assertNotEquals(separatorColor, contentColor)
     }
 
-    /** 一点五倍缩放下，Jewel 的一 dp 分隔区按整数布局像素占用两像素。 */
+    /** 一点五倍系统密度下，标题栏、固定分隔线和正文环境光起点必须共用实际布局高度。 */
     @Test
-    fun `should align the separator paint and content origin to integer layout pixels`() {
+    fun `should align title bar separator and content origin for every global scale`() {
         val density = Density(1.5f)
-        val titleBarHeightPx = with(density) { IDEA_TITLE_BAR_HEIGHT.roundToPx() }
         val separatorHeightPx = with(density) { IDEA_TITLE_BAR_SEPARATOR_HEIGHT.roundToPx() }
-        val contentOriginYPx = (titleBarHeightPx + separatorHeightPx).toFloat()
 
-        assertEquals(81, titleBarHeightPx)
         assertEquals(2, separatorHeightPx)
-        assertEquals(83f, contentOriginYPx)
+        assertEquals(51f, ideaTitleBarContentOriginPx(baseDensity = density, scalePercent = 60))
+        assertEquals(83f, ideaTitleBarContentOriginPx(baseDensity = density, scalePercent = 100))
+        assertEquals(107f, ideaTitleBarContentOriginPx(baseDensity = density, scalePercent = 130))
+    }
+
+    /** 原生标题栏和缩放正文必须复用同一实际环境光画布密度。 */
+    @Test
+    fun `should use one scaled ambient canvas density for title bar and content`() {
+        val baseDensity = Density(1.5f)
+        val compactDensityScale = scaledFrameAmbientDensityScale(baseDensity, scalePercent = 60)
+        val defaultDensityScale = scaledFrameAmbientDensityScale(baseDensity, scalePercent = 100)
+        val enlargedDensityScale = scaledFrameAmbientDensityScale(baseDensity, scalePercent = 130)
+
+        assertEquals(0.9f, compactDensityScale, absoluteTolerance = 0.0001f)
+        assertEquals(1.5f, defaultDensityScale, absoluteTolerance = 0.0001f)
+        assertEquals(1.95f, enlargedDensityScale, absoluteTolerance = 0.0001f)
+        assertEquals(
+            180f,
+            ideaFrameAmbientSpec(anchorXPx = null, densityScale = compactDensityScale).heightPx,
+            absoluteTolerance = 0.01f,
+        )
+        assertEquals(
+            300f,
+            ideaFrameAmbientSpec(anchorXPx = null, densityScale = defaultDensityScale).heightPx,
+            absoluteTolerance = 0.01f,
+        )
+        assertEquals(
+            390f,
+            ideaFrameAmbientSpec(anchorXPx = null, densityScale = enlargedDensityScale).heightPx,
+            absoluteTolerance = 0.01f,
+        )
     }
 }

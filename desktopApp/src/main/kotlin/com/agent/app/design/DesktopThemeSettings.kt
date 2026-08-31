@@ -64,7 +64,6 @@ internal data class DesktopPalette(
 internal data class TerminalPalette(
     val background: Color,
     val foreground: Color,
-    val scrollbarThumb: Color,
 )
 
 /** 将“跟随系统”解析为可渲染的深色或浅色模式，便于测试系统分支。 */
@@ -116,7 +115,6 @@ internal fun desktopPalette(
             terminal = TerminalPalette(
                 background = Color(0xFFFFFFFF),
                 foreground = Color(0xFF1F2329),
-                scrollbarThumb = Color(0xFFA6ABB4),
             ),
         )
     } else {
@@ -153,7 +151,6 @@ internal fun desktopPalette(
             terminal = TerminalPalette(
                 background = Color(0xFF191A1C),
                 foreground = Color(0xFFE6E8EC),
-                scrollbarThumb = Color(0xFF4B4D52),
             ),
         )
     }

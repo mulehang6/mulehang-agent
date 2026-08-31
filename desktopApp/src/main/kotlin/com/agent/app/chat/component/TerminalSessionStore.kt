@@ -13,6 +13,7 @@ import java.awt.KeyboardFocusManager
 import java.awt.event.ContainerAdapter
 import java.awt.event.ContainerEvent
 import java.nio.charset.StandardCharsets
+import javax.swing.BoundedRangeModel
 import javax.swing.JComponent
 import javax.swing.SwingUtilities
 
@@ -20,6 +21,14 @@ import javax.swing.SwingUtilities
 internal interface TerminalHandle {
     /** 返回可交给 SwingPanel 承载的终端组件；创建失败时为 null。 */
     val component: Component?
+
+    /**
+     * 返回终端历史的实际滚动模型；不支持滚动的测试或失败句柄保持为 null。
+     *
+     * 可视滚动条由 Compose/Jewel 侧持有，因此这里不暴露 Swing 的 [javax.swing.JScrollBar]。
+     */
+    val verticalScrollModel: BoundedRangeModel?
+        get() = null
 
     /** 返回终端创建失败时应展示的消息。 */
     val errorMessage: String
@@ -44,15 +53,20 @@ internal interface TerminalHandle {
 internal class TerminalSessionStore(
     initialPalette: TerminalPalette,
     initialAppearance: TerminalAppearance = TerminalAppearance(),
-    private val terminalFactory: (String, TerminalPalette, TerminalAppearance) -> TerminalHandle = ::createPowerShellHandle,
+    initialLaunchCommand: List<String> = buildPowerShellCommand(),
+    private val terminalFactory: (String, TerminalPalette, TerminalAppearance, List<String>) -> TerminalHandle =
+        ::createTerminalHandle,
 ) {
     private val sessions = linkedMapOf<Long, TerminalHandle>()
     private var currentPalette = initialPalette
     private var currentAppearance = initialAppearance
+    private var currentLaunchCommand = initialLaunchCommand.toList()
 
     /** 为 [tab] 创建并启动一次终端会话。 */
     fun create(tab: TerminalTab) {
-        sessions.getOrPut(tab.id) { terminalFactory(tab.workspacePath, currentPalette, currentAppearance) }.start()
+        sessions.getOrPut(tab.id) {
+            terminalFactory(tab.workspacePath, currentPalette, currentAppearance, currentLaunchCommand)
+        }.start()
     }
 
     /** 返回 [tabId] 对应的持久终端会话。 */
@@ -92,9 +106,18 @@ internal class TerminalSessionStore(
         currentAppearance = appearance
         sessions.values.forEach { it.updateAppearance(appearance) }
     }
+
+    /**
+     * 更新后续新建终端的启动命令；已创建的终端保留各自正在运行的进程。
+     */
+    fun updateLaunchCommand(command: List<String>) {
+        val normalizedCommand = command.toList()
+        if (normalizedCommand == currentLaunchCommand) return
+        currentLaunchCommand = normalizedCommand
+    }
 }
 
-/** 用 JediTerm 组件实现一个可持久化的 PowerShell 终端句柄。 */
+/** 用 JediTerm 组件实现一个可持久化的 Windows 终端句柄。 */
 private class JediTermTerminalHandle(
     private val terminalResult: Result<ThemedJediTermWidget>,
     private val themeState: TerminalThemeState,
@@ -105,8 +128,12 @@ private class JediTermTerminalHandle(
 
     override val component: Component? = terminal
 
+    /** 将 JediTerm 的历史滚动模型交给 Compose 侧的 Jewel 滚动条同步。 */
+    override val verticalScrollModel: BoundedRangeModel?
+        get() = terminal?.verticalScrollModel()
+
     override val errorMessage: String
-        get() = terminalResult.exceptionOrNull()?.message ?: "无法启动 PowerShell"
+        get() = terminalResult.exceptionOrNull()?.message ?: "无法启动终端"
 
     /** 仅首次调用时启动 PTY。 */
     override fun start() {
@@ -143,14 +170,14 @@ private class JediTermTerminalHandle(
     }
 }
 
-/** 创建带独立主题状态的 PowerShell 终端组件。 */
-private fun createPowerShellTerminal(
+/** 创建带独立主题状态和指定启动命令的终端组件。 */
+private fun createTerminal(
     workspacePath: String,
     themeState: TerminalThemeState,
     appearanceState: TerminalAppearanceState,
+    launchCommand: List<String>,
 ): ThemedJediTermWidget {
-    val command = buildPowerShellCommand()
-    val process = PtyProcessBuilder(command.toTypedArray())
+    val process = PtyProcessBuilder(launchCommand.toTypedArray())
         .setDirectory(workspacePath)
         .setEnvironment(System.getenv())
         .setConsole(false)
@@ -158,20 +185,21 @@ private fun createPowerShellTerminal(
         .start()
     return ThemedJediTermWidget(themeState, appearanceState).apply {
         installSwingBorderCleanup(this)
-        setTtyConnector(PowerShellTtyConnector(process, command))
+        setTtyConnector(WindowsPtyTtyConnector(process, launchCommand))
     }
 }
 
-/** 创建可跨标签页保留的 PowerShell 终端句柄。 */
-private fun createPowerShellHandle(
+/** 创建可跨标签页保留、且使用指定 Shell 命令的终端句柄。 */
+private fun createTerminalHandle(
     workspacePath: String,
     palette: TerminalPalette,
     appearance: TerminalAppearance,
+    launchCommand: List<String>,
 ): TerminalHandle {
     val themeState = TerminalThemeState(palette)
     val appearanceState = TerminalAppearanceState(appearance)
     return JediTermTerminalHandle(
-        terminalResult = runCatching { createPowerShellTerminal(workspacePath, themeState, appearanceState) },
+        terminalResult = runCatching { createTerminal(workspacePath, themeState, appearanceState, launchCommand) },
         themeState = themeState,
         appearanceState = appearanceState,
     )
@@ -199,12 +227,16 @@ internal fun installSwingBorderCleanup(component: Component) {
 }
 
 /** 将 PTY4J 的 Windows 进程适配为 JediTerm 连接器。 */
-private class PowerShellTtyConnector(
+private class WindowsPtyTtyConnector(
     private val process: PtyProcess,
-    command: List<String>,
+    private val command: List<String>,
 ) : ProcessTtyConnector(process, StandardCharsets.UTF_8, command) {
     /** 返回终端标签使用的进程名称。 */
-    override fun getName(): String = "PowerShell"
+    override fun getName(): String = command.firstOrNull()
+        ?.substringAfterLast('\\')
+        ?.substringAfterLast('/')
+        ?.ifBlank { null }
+        ?: "Terminal"
 
     /** 将 JediTerm 网格尺寸同步给 Windows PTY。 */
     override fun resize(termSize: TermSize) {

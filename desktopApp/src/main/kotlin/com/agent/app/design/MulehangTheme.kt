@@ -4,7 +4,10 @@ import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.agent.shared.session.DesktopAppearancePreferences
+import com.agent.shared.session.normalizeDesktopUiScalePercent
 import coil3.compose.LocalPlatformContext
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -47,10 +50,29 @@ import org.jetbrains.jewel.window.styling.TitleBarStyle
 /** 与 IDEA 一致的标题栏高度，100% 缩放时对应 54px。 */
 internal val IDEA_TITLE_BAR_HEIGHT = 54.dp
 
-/** 创建固定高度的标题栏度量，保持系统控制按钮在标题栏内垂直居中。 */
-internal fun ideaTitleBarMetrics(): TitleBarMetrics = TitleBarMetrics.defaults(
-    height = IDEA_TITLE_BAR_HEIGHT,
+/** 根据全局缩放计算标题栏实际布局高度；原生窗口仍使用未缩放密度解释该高度。 */
+internal fun scaledIdeaTitleBarHeight(scalePercent: Int) =
+    IDEA_TITLE_BAR_HEIGHT * normalizeDesktopUiScalePercent(scalePercent) /
+        DesktopAppearancePreferences.DEFAULT_UI_SCALE_PERCENT.toFloat()
+
+/**
+ * 创建实际布局高度的标题栏度量，保持系统控制按钮与正文使用同一套缩放后几何值。
+ */
+internal fun ideaTitleBarMetrics(
+    scalePercent: Int = DesktopAppearancePreferences.DEFAULT_UI_SCALE_PERCENT,
+): TitleBarMetrics = TitleBarMetrics.defaults(
+    height = scaledIdeaTitleBarHeight(scalePercent),
 )
+
+/**
+ * 以原生标题栏所在的未缩放密度计算正文环境光的起点，包含固定分隔线占用。
+ */
+internal fun ideaTitleBarContentOriginPx(baseDensity: Density, scalePercent: Int): Float = with(baseDensity) {
+    (
+        scaledIdeaTitleBarHeight(scalePercent).roundToPx() +
+            IDEA_TITLE_BAR_SEPARATOR_HEIGHT.roundToPx()
+    ).toFloat()
+}
 
 /** 返回标题栏常规悬浮色；浅色主题保持中性灰，蓝色仅用于选中和主操作。 */
 internal fun titleBarHoverBackground(isDark: Boolean): Color =
@@ -83,6 +105,7 @@ private fun roundedScrollbarStyle(isDark: Boolean): ScrollbarStyle {
 internal fun MulehangTheme(
     isDark: Boolean,
     palette: DesktopPalette,
+    titleBarScalePercent: Int = DesktopAppearancePreferences.DEFAULT_UI_SCALE_PERCENT,
     content: @Composable () -> Unit,
 ) {
     val themeDefinition = remember(isDark) {
@@ -121,9 +144,9 @@ internal fun MulehangTheme(
         )
     }
     val titleBarStyle = if (palette.isDark) {
-        TitleBarStyle.dark(colors = titleBarColors, metrics = ideaTitleBarMetrics())
+        TitleBarStyle.dark(colors = titleBarColors, metrics = ideaTitleBarMetrics(titleBarScalePercent))
     } else {
-        TitleBarStyle.light(colors = titleBarColors, metrics = ideaTitleBarMetrics())
+        TitleBarStyle.light(colors = titleBarColors, metrics = ideaTitleBarMetrics(titleBarScalePercent))
     }
     val applicationScrollbarStyle = remember(isDark) { roundedScrollbarStyle(isDark) }
 

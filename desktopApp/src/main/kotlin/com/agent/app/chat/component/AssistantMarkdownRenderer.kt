@@ -8,6 +8,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.markdown.extensions.markdownBlockRenderer
 import org.jetbrains.jewel.markdown.Markdown
 /**
  * 单条助手回答块。
@@ -66,6 +68,7 @@ internal fun AssistantMarkdownText(content: String) {
         markdown = normalizedContent,
         modifier = Modifier.fillMaxWidth(),
         selectable = true,
+        blockRenderer = JewelTheme.markdownBlockRenderer,
     )
 }
 

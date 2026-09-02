@@ -18,6 +18,14 @@ import kotlinx.coroutines.runBlocking
 import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.intui.standalone.code.highlighting.SimpleCodeHighlighter
 import org.jetbrains.jewel.intui.standalone.code.highlighting.SyntaxHighlightColors
+import org.jetbrains.jewel.intui.markdown.standalone.styling.dark
+import org.jetbrains.jewel.intui.markdown.standalone.styling.extensions.github.tables.dark
+import org.jetbrains.jewel.markdown.MarkdownBlock
+import org.jetbrains.jewel.markdown.extensions.github.tables.GfmTableStyling
+import org.jetbrains.jewel.markdown.extensions.github.tables.GitHubTableProcessorExtension
+import org.jetbrains.jewel.markdown.extensions.github.tables.GitHubTableRendererExtension
+import org.jetbrains.jewel.markdown.processing.MarkdownProcessor
+import org.jetbrains.jewel.markdown.rendering.MarkdownStyling
 
 /** 验证流式 Markdown、Jewel 高亮和离线图表预览之间的渲染边界。 */
 @OptIn(ExperimentalJewelApi::class)
@@ -107,6 +115,28 @@ class AssistantMarkdownRenderPolicyTest {
         val code = assertIs<AssistantMarkdownBlock.Code>(blocks.single())
         assertEquals("python", code.language)
         assertEquals("def greet():\n    return \"hi\"", code.source)
+    }
+
+    /** GFM 表格需同时由 Jewel 的解析器和块渲染扩展处理，避免解析后留下空白区域。 */
+    @Test
+    @Suppress("UnstableApiUsage")
+    fun parsesAndRendersGfmTablesWithPairedJewelExtensions() {
+        val processor = MarkdownProcessor(extensions = listOf(GitHubTableProcessorExtension))
+        val table = assertIs<MarkdownBlock.CustomBlock>(
+            processor.processMarkdownDocument(
+                listOf(
+                    "Skill | 用途",
+                    "--- | ---",
+                    "`jewel-markdown` | 渲染 Markdown",
+                ).joinToString(separator = "\n"),
+            ).single(),
+        )
+        val tableRenderer = GitHubTableRendererExtension(
+            tableStyling = GfmTableStyling.dark(),
+            rootStyling = MarkdownStyling.dark(),
+        ).blockRenderer
+
+        assertTrue(tableRenderer.canRender(table))
     }
 
     /** Jewel 的内置 Python grammar 应为关键字和字符串给出不同颜色。 */

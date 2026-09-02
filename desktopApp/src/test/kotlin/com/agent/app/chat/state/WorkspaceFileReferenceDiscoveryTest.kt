@@ -1,6 +1,7 @@
 package com.agent.app.chat.state
 
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,6 +25,7 @@ class WorkspaceFileReferenceDiscoveryTest {
         val references = discoverWorkspaceFileReferences(workspace.toString(), "kt")
 
         assertEquals(listOf("App.kt", "src/Feature.kt"), references.map(WorkspaceFileReference::relativePath))
-        assertTrue(references.all { reference -> reference.absolutePath.startsWith(workspace.toString()) })
+        val realWorkspace = workspace.toRealPath()
+        assertTrue(references.all { reference -> Path.of(reference.absolutePath).startsWith(realWorkspace) })
     }
 }

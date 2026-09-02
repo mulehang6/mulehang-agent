@@ -5,6 +5,7 @@ import ai.koog.prompt.streaming.StreamFrame
 import com.agent.shared.agent.api.AgentGateway
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
+import com.agent.shared.agent.resource.McpToolRegistryBridge
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.interaction.RejectingDesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
@@ -39,6 +40,7 @@ class KoogAgentGateway(
         bridge: DesktopToolInteractionBridge,
         emitEvent: suspend (AgentStreamEvent) -> Unit,
     ) -> String = ::runWithKoogAgent,
+    private val mcpToolRegistryBridge: McpToolRegistryBridge = McpToolRegistryBridge(),
 ) : AgentGateway {
     /**
      * 运行一次消息请求。
@@ -67,7 +69,7 @@ class KoogAgentGateway(
                     }
                 },
             )
-            val registry = DesktopToolRegistryFactory(
+            val desktopRegistry = DesktopToolRegistryFactory(
                 workspacePath = request.workspacePath,
                 permissionPreset = request.permissionPreset,
                 interactionBridge = bridge,
@@ -75,10 +77,25 @@ class KoogAgentGateway(
                 approvalAgent = approvalAgentFactory(request) ?: com.agent.shared.tool.runtime.ManualFallbackToolApprovalAgent,
             ).create()
             launch(executionDispatcher) {
+                val mcpLease = mcpToolRegistryBridge.create(
+                    baseRegistry = desktopRegistry,
+                    servers = request.runtimeResources.mcpServers,
+                    permissionPreset = request.permissionPreset,
+                    interactionBridge = bridge,
+                )
                 try {
+                    mcpLease.diagnostics.forEach { diagnostic ->
+                        eventQueue.send(
+                            AgentStreamEvent.ToolCallFailed(
+                                toolCallId = null,
+                                name = "MCP:${diagnostic.serverId}",
+                                reason = diagnostic.message,
+                            ),
+                        )
+                    }
                     val result = agentRunner(
                         request,
-                        registry,
+                        mcpLease.registry,
                         bridge,
                         eventQueue::send,
                     )
@@ -88,6 +105,7 @@ class KoogAgentGateway(
                 } catch (e: Exception) {
                     eventQueue.send(AgentStreamEvent.Failed(e.message ?: "执行错误"))
                 } finally {
+                    mcpLease.close()
                     eventQueue.close()
                     forwardingJob.join()
                     close()

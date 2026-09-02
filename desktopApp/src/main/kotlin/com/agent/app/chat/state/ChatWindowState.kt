@@ -3,15 +3,24 @@ package com.agent.app.chat.state
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.agent.app.chat.media.SessionMediaStore
 import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
+import com.agent.app.platform.ClipboardPngImage
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.agent.api.ConversationTitleGenerator
 import com.agent.shared.agent.api.ConversationTitleRequest
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.api.UserInputPart
+import com.agent.shared.agent.resource.AgentCommandExpansion
+import com.agent.shared.agent.resource.AgentPromptCommand
+import com.agent.shared.agent.resource.AgentResourceDiagnostic
+import com.agent.shared.agent.resource.AgentResourceDiagnosticSeverity
+import com.agent.shared.agent.resource.AgentResourceSnapshot
+import com.agent.shared.agent.resource.expandSlashCommand
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessage
@@ -23,6 +32,7 @@ import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.resolver.ModelCapabilitiesResolver
+import com.agent.shared.settings.resolver.supportsImageInput
 import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.QuestionAnswer
 import com.agent.shared.tool.model.QuestionPrompt
@@ -32,6 +42,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
 
 /**
  * 窗口级状态持有者，负责多会话、composer 控件和流式消息归并。
@@ -46,6 +59,9 @@ class ChatWindowState(
     private val conversationTitleGenerator: ConversationTitleGenerator? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val workspaceDirectoryExists: (String) -> Boolean = { path -> path.isNotBlank() },
+    private val resourceSnapshotProvider: (String) -> AgentResourceSnapshot? = { null },
+    private val resourceReloader: (String) -> AgentResourceSnapshot? = { null },
+    private val sessionMediaStore: SessionMediaStore? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeRunJob: Job? = null
@@ -55,12 +71,38 @@ class ChatWindowState(
     private val conversationTitleJobs = mutableMapOf<String, Job>()
     private val conversationTitleGenerationVersions = mutableMapOf<String, Int>()
     private var snapshot by mutableStateOf(snapshot)
+    private var resourceSnapshot by mutableStateOf(AgentResourceSnapshot.empty())
+    private var runtimeResourceDiagnostics by mutableStateOf(emptyList<AgentResourceDiagnostic>())
 
     /**
      * 当前窗口可选的全部 profile。
      */
     val availableProfiles: List<ConfigProfile>
         get() = snapshot.profiles
+
+    /** 当前资源快照中可由 composer 命令浏览器展示的命令。 */
+    val availablePromptCommands: List<AgentPromptCommand>
+        get() = resourceSnapshot.commands
+
+    /** 当前资源快照的版本号，供扩展中心展示“已重载”状态。 */
+    val resourceVersion: Long
+        get() = resourceSnapshot.version
+
+    /** 扩展中心展示的本轮已发现包；是否生效取决于其启用状态。 */
+    val extensionPackages
+        get() = resourceSnapshot.packages
+
+    /** 扩展中心展示的本轮已加载 Skills。 */
+    val loadedSkills
+        get() = resourceSnapshot.skills
+
+    /** 扩展中心展示的资源解析、冲突与不支持能力诊断。 */
+    val resourceDiagnostics
+        get() = (resourceSnapshot.diagnostics + runtimeResourceDiagnostics).distinct()
+
+    /** 扩展中心展示的受控 MCP 服务声明。 */
+    val mcpServers
+        get() = resourceSnapshot.mcpServers
 
     /**
      * 当前窗口的完整 UI 状态。
@@ -132,8 +174,64 @@ class ChatWindowState(
     /**
      * 更新当前输入框草稿。
      */
-    fun updateDraft(value: String) {
-        ui = ui.copy(draft = value)
+    fun updateDraft(
+        value: String,
+        selectionStart: Int = value.length,
+    ) {
+        val currentAttachments = ui.activeConversationOrNull?.attachments.orEmpty()
+        val retainedAttachments = currentAttachments.filter { attachment -> value.contains(attachment.token) }
+        if (retainedAttachments.size != currentAttachments.size) {
+            mutateActiveConversation { conversation ->
+                conversation.copy(attachments = retainedAttachments)
+            }
+        }
+        ui = ui.copy(
+            draft = value,
+            draftSelectionStart = selectionStart.coerceIn(0, value.length),
+        )
+    }
+
+    /**
+     * 将命令浏览器中的选择插回 composer，而不是直接运行，用户仍可补充参数后再发送。
+     */
+    fun insertPromptCommand(command: AgentPromptCommand) {
+        val draft = ui.draft
+        val selection = ui.draftSelectionStart.coerceIn(0, draft.length)
+        val slashStart = draft.lastIndexOf('/', startIndex = (selection - 1).coerceAtLeast(0))
+            .takeIf { index -> index >= 0 && draft.substring(index + 1, selection).none(Char::isWhitespace) }
+            ?: selection
+        val replacement = "/${command.name} "
+        val nextDraft = draft.replaceRange(slashStart, selection, replacement)
+        updateDraft(nextDraft, slashStart + replacement.length)
+    }
+
+    /**
+     * 手动重载当前工作区或仅用户级资源。正在运行中的请求已经携带旧快照，因此不会受影响。
+     */
+    fun reloadAgentResources(): Boolean {
+        val workspacePath = ui.activeConversationOrNull?.workspacePath.orEmpty()
+        val next = resourceReloader(workspacePath) ?: return false
+        resourceSnapshot = next
+        runtimeResourceDiagnostics = emptyList()
+        return true
+    }
+
+    /** 进入应用或切换工作区时读取当前发布快照，不触发手动 reload。 */
+    fun refreshActiveResourceSnapshot() {
+        refreshResourceSnapshotFor(ui.activeConversationOrNull?.workspacePath.orEmpty())
+    }
+
+    /**
+     * 获取指定工作区当前已发布的资源快照。provider 返回 null 时保持普通聊天可用，不注入
+     * 可能属于另一个工作区的旧资源。
+     */
+    private fun refreshResourceSnapshotFor(workspacePath: String): AgentResourceSnapshot {
+        return resourceSnapshotProvider(workspacePath)?.also { next ->
+            if (resourceSnapshot.version != next.version || resourceSnapshot.workspacePath != next.workspacePath) {
+                runtimeResourceDiagnostics = emptyList()
+            }
+            resourceSnapshot = next
+        } ?: AgentResourceSnapshot.empty()
     }
 
     /**
@@ -142,6 +240,7 @@ class ChatWindowState(
     fun selectConversation(conversationId: String) {
         if (findConversationOrNull(conversationId) != null) {
             ui = ui.copy(activeTaskId = conversationId)
+            refreshResourceSnapshotFor(ui.activeConversationOrNull?.workspacePath.orEmpty())
         }
     }
 
@@ -451,29 +550,73 @@ class ChatWindowState(
      * 为当前会话挂载附件。
      */
     fun attachFiles(paths: List<String>) {
-        if (paths.isEmpty()) return
-        mutateActiveConversation { conversation ->
-            val attachments = conversation.attachments + paths.map { path ->
-                ChatAttachmentUiState(
-                    path = path,
-                    name = path.substringAfterLast('\\').substringAfterLast('/'),
-                )
-            }
-            conversation.copy(
-                attachments = attachments.distinctBy { it.path },
-                contextUsageFraction = estimateContextUsage(
-                    items = conversation.items,
-                    attachmentCount = attachments.size,
-                    contextWindow = contextWindowForConversation(conversation),
-                ),
-            )
+        paths.asSequence()
+            .mapNotNull(::createFileAttachmentOrNull)
+            .forEach { attachment -> appendDraftAttachment(attachment) }
+    }
+
+    /**
+     * 将工作区内的文本文件作为 `@` 引用插入。真实路径与工作区真实路径比较，符号链接也不能借此
+     * 逃出项目边界。
+     */
+    fun attachWorkspaceFile(path: String): String? {
+        val conversation = ui.activeConversationOrNull ?: return "请先选择工作区。"
+        val workspace = runCatching {
+            Paths.get(conversation.workspacePath).toRealPath()
+        }.getOrElse {
+            return "当前工作区不可用，无法引用文件。"
         }
+        val target = runCatching { Paths.get(path).toRealPath() }.getOrElse {
+            return "找不到要引用的文件。"
+        }
+        if (!target.startsWith(workspace) || !Files.isRegularFile(target)) {
+            return "只能引用当前工作区内的普通文件。"
+        }
+        val relativePath = workspace.relativize(target).toString().replace('\\', '/')
+        val attachment = createFileAttachmentOrNull(
+            path = target,
+            displayName = relativePath,
+            preferredToken = "@$relativePath",
+        ) ?: return "无法读取要引用的文件。"
+        appendDraftAttachment(attachment, replaceActiveAtReference = true)
+        return null
+    }
+
+    /**
+     * 把剪贴板 PNG 存入会话媒体库并在插入点写入稳定的“图 N” token。
+     */
+    fun addClipboardImage(image: ClipboardPngImage): String? {
+        val conversation = ui.activeConversationOrNull ?: return "请先选择会话。"
+        val mediaStore = sessionMediaStore ?: return "当前环境未配置会话媒体库，无法粘贴图片。"
+        val storedImage = runCatching {
+            mediaStore.storePng(conversation.id, image.bytes)
+        }.getOrElse {
+            return "保存粘贴图片失败：${it.message ?: "未知错误"}"
+        }
+        val label = nextImageLabel(conversation.attachments)
+        appendDraftAttachment(
+            ChatAttachmentUiState(
+                path = storedImage.path.toString(),
+                name = label,
+                token = "[$label]",
+                kind = ChatAttachmentKind.IMAGE,
+                mimeType = storedImage.mimeType,
+                mediaId = storedImage.mediaId,
+                imageLabel = label,
+            ),
+        )
+        return null
     }
 
     /**
      * 从当前会话输入区移除指定路径的附件并重新估算上下文占用。
      */
     fun removeAttachment(path: String) {
+        val removedTokens = ui.activeConversationOrNull
+            ?.attachments
+            ?.filter { attachment -> attachment.path == path }
+            ?.map(ChatAttachmentUiState::token)
+            .orEmpty()
         mutateActiveConversation { conversation ->
             val attachments = conversation.attachments.filterNot { it.path == path }
             conversation.copy(
@@ -483,6 +626,13 @@ class ChatWindowState(
                     attachmentCount = attachments.size,
                     contextWindow = contextWindowForConversation(conversation),
                 ),
+            )
+        }
+        if (removedTokens.isNotEmpty()) {
+            val nextDraft = removedTokens.fold(ui.draft) { draft, token -> draft.replace(token, "") }
+            ui = ui.copy(
+                draft = nextDraft,
+                draftSelectionStart = ui.draftSelectionStart.coerceAtMost(nextDraft.length),
             )
         }
     }
@@ -696,6 +846,41 @@ class ChatWindowState(
             return
         }
 
+        val inputParts = buildOrderedDraftInputParts(
+            draft = prompt,
+            attachments = sourceConversation.attachments,
+        )
+        if (inputParts.any { part -> part is UserInputPart.Image } && !profile.supportsImageInput()) {
+            mutateConversation(targetConversationId) { conversation ->
+                conversation.copy(
+                    executionState = ExecutionState.Failed(
+                        AppError(
+                            title = "当前模型不支持图片输入",
+                            message = "请切换到支持视觉输入的模型后再发送图像。",
+                        ),
+                    ),
+                )
+            }
+            return
+        }
+
+        val runResources = refreshResourceSnapshotFor(sourceConversation.workspacePath)
+        when (val expansion = runResources.expandSlashCommand(prompt)) {
+            AgentCommandExpansion.ReloadResources -> {
+                if (reloadAgentResources()) {
+                    ui = ui.copy(draft = "")
+                }
+                return
+            }
+
+            is AgentCommandExpansion.InsertText -> {
+                ui = ui.copy(draft = expansion.text)
+                return
+            }
+
+            null -> Unit
+        }
+
         val requestHistory = sourceConversation.history
         val shouldGenerateConversationTitle = sourceConversation.title == DEFAULT_CONVERSATION_TITLE &&
                 sourceConversation.history.none { message -> message is AgentConversationHistoryMessage.User } &&
@@ -716,7 +901,10 @@ class ChatWindowState(
                 },
                 items = nextItems,
                 attachments = emptyList(),
-                history = conversation.history + AgentConversationHistoryMessage.User(content = prompt),
+                history = conversation.history + AgentConversationHistoryMessage.User(
+                    content = prompt,
+                    inputParts = inputParts,
+                ),
                 executionState = ExecutionState.Running,
                 streamingAssistantItemIndex = null,
                 streamingReasoningItemIndex = null,
@@ -728,7 +916,7 @@ class ChatWindowState(
                 ),
             )
         }
-        ui = ui.copy(draft = "")
+        ui = ui.copy(draft = "", draftSelectionStart = 0)
         if (shouldGenerateConversationTitle) {
             requestConversationTitle(
                 conversationId = targetConversationId,
@@ -745,6 +933,8 @@ class ChatWindowState(
                         prompt = prompt,
                         profile = profile,
                         history = requestHistory,
+                        inputParts = inputParts,
+                        runtimeResources = runResources.toRuntimeResources(),
                         reasoningEffort = reasoningEffort,
                         workspacePath = sourceConversation.workspacePath,
                         permissionPreset = sourceConversation.permissionPreset,
@@ -838,6 +1028,139 @@ class ChatWindowState(
         persistenceCoordinator?.flush(ui.tasks, onFlushed) ?: onFlushed()
     }
 
+    /** 将用户通过文件选择器显式添加的文件转换为不可变文本快照附件。 */
+    private fun createFileAttachmentOrNull(path: String): ChatAttachmentUiState? = runCatching {
+        Paths.get(path).toRealPath()
+    }.getOrNull()?.let(::createFileAttachmentOrNull) ?: path
+        .takeIf(String::isNotBlank)
+        ?.let { unresolvedPath ->
+            val displayName = unresolvedPath.substringAfterLast('\\').substringAfterLast('/')
+            ChatAttachmentUiState(
+                path = unresolvedPath,
+                name = displayName,
+                snapshotContent = "[文件快照不可用：$displayName]",
+                mimeType = "text/plain",
+            )
+        }
+
+    /** 读取一个常规文件的当前内容；发送后的历史只使用这份快照，不会再次读取工作区。 */
+    private fun createFileAttachmentOrNull(
+        path: Path,
+        displayName: String = path.fileName.toString(),
+        preferredToken: String = "@$displayName",
+    ): ChatAttachmentUiState? {
+        if (!Files.isRegularFile(path)) return null
+        val snapshot = readFileSnapshot(path) ?: return null
+        return ChatAttachmentUiState(
+            path = path.toString(),
+            name = displayName,
+            token = preferredToken,
+            kind = ChatAttachmentKind.FILE_SNAPSHOT,
+            snapshotContent = snapshot.content,
+            mimeType = snapshot.mimeType,
+        )
+    }
+
+    /**
+     * 在当前选择位置插入附件 token。选择 `@` 文件时，用该引用片段替换而不是再追加一个 token。
+     */
+    private fun appendDraftAttachment(
+        attachment: ChatAttachmentUiState,
+        replaceActiveAtReference: Boolean = false,
+    ) {
+        val conversation = ui.activeConversationOrNull ?: return
+        val existing = conversation.attachments.firstOrNull { current -> current.path == attachment.path }
+        val attachmentToInsert = existing ?: attachment.copy(
+            token = uniqueAttachmentToken(attachment.token, conversation.attachments),
+        )
+        if (existing == null) {
+            mutateActiveConversation { current ->
+                val attachments = current.attachments + attachmentToInsert
+                current.copy(
+                    attachments = attachments,
+                    contextUsageFraction = estimateContextUsage(
+                        items = current.items,
+                        attachmentCount = attachments.size,
+                        contextWindow = contextWindowForConversation(current),
+                    ),
+                )
+            }
+        }
+
+        val draft = ui.draft
+        val selection = ui.draftSelectionStart.coerceIn(0, draft.length)
+        val referenceRange = if (replaceActiveAtReference) {
+            activeAtReferenceRange(draft, selection)
+        } else {
+            null
+        }
+        val replacementStart = referenceRange?.first ?: selection
+        val replacementEndExclusive = referenceRange?.last?.plus(1) ?: selection
+        val nextDraft = draft.replaceRange(
+            replacementStart,
+            replacementEndExclusive,
+            attachmentToInsert.token,
+        )
+        ui = ui.copy(
+            draft = nextDraft,
+            draftSelectionStart = replacementStart + attachmentToInsert.token.length,
+        )
+    }
+
+    /** 返回光标前尚未完成的 `@path` 输入范围；电子邮件等普通文本不视为文件引用。 */
+    private fun activeAtReferenceRange(
+        draft: String,
+        selection: Int,
+    ): IntRange? {
+        if (selection == 0) return null
+        val atIndex = draft.lastIndexOf('@', startIndex = selection - 1)
+        if (atIndex < 0) return null
+        if (atIndex > 0 && !draft[atIndex - 1].isWhitespace()) return null
+        if (draft.substring(atIndex + 1, selection).any(Char::isWhitespace)) return null
+        return atIndex until selection
+    }
+
+    /** 在同一条草稿中为同名文件或图片生成不会混淆顺序的可见 token。 */
+    private fun uniqueAttachmentToken(
+        preferredToken: String,
+        attachments: List<ChatAttachmentUiState>,
+    ): String {
+        if (attachments.none { attachment -> attachment.token == preferredToken }) return preferredToken
+        var index = 2
+        while (attachments.any { attachment -> attachment.token == "$preferredToken ($index)" }) {
+            index += 1
+        }
+        return "$preferredToken ($index)"
+    }
+
+    /** 根据已在草稿中的图号生成下一个稳定编号。 */
+    private fun nextImageLabel(attachments: List<ChatAttachmentUiState>): String {
+        val highestImageNumber = attachments
+            .mapNotNull { attachment -> IMAGE_LABEL_PATTERN.matchEntire(attachment.imageLabel.orEmpty()) }
+            .maxOfOrNull { match -> match.groupValues[1].toIntOrNull() ?: 0 }
+            ?: 0
+        return "图${highestImageNumber + 1}"
+    }
+
+    /** 将文本文件限制在安全、可预测的大小内，并为非文本内容保留清晰说明。 */
+    private fun readFileSnapshot(path: Path): FileSnapshot? = runCatching {
+        val mimeType = Files.probeContentType(path) ?: "text/plain"
+        val size = Files.size(path)
+        if (size > MAX_FILE_SNAPSHOT_BYTES) {
+            return@runCatching FileSnapshot(
+                content = "[文件快照未展开：文件超过 ${MAX_FILE_SNAPSHOT_BYTES / 1024} KB 限制。]",
+                mimeType = mimeType,
+            )
+        }
+        val bytes = Files.readAllBytes(path)
+        val content = if (bytes.any { byte -> byte == 0.toByte() }) {
+            "[文件快照未展开：检测到二进制内容。]"
+        } else {
+            bytes.toString(Charsets.UTF_8)
+        }
+        FileSnapshot(content = content, mimeType = mimeType)
+    }.getOrNull()
+
     /**
      * 仅当当前 profile 支持所选档位时才将 reasoning effort 送入执行链路。
      */
@@ -889,6 +1212,7 @@ class ChatWindowState(
      * 将 agent 事件应用到指定活动会话。
      */
     private fun applyAgentEvent(conversationId: String, event: AgentStreamEvent) {
+        reportMcpResourceDiagnostic(event)
         when (event) {
             is AgentStreamEvent.QuestionRequested -> {
                 pendingQuestionConversationId = conversationId
@@ -911,6 +1235,19 @@ class ChatWindowState(
             ?: activeContextWindow()
         mutateConversation(conversationId) { conversation ->
             reduceAgentEvent(conversation, event, contextWindow)
+        }
+    }
+
+    /** 将 MCP 连接与工具冲突诊断同步到扩展中心，避免只在时间线里短暂可见。 */
+    private fun reportMcpResourceDiagnostic(event: AgentStreamEvent) {
+        val failure = event as? AgentStreamEvent.ToolCallFailed ?: return
+        if (!failure.name.startsWith("MCP:")) return
+        val diagnostic = AgentResourceDiagnostic(
+            severity = AgentResourceDiagnosticSeverity.WARNING,
+            message = "${failure.name.removePrefix("MCP:")}：${failure.reason}",
+        )
+        if (diagnostic !in runtimeResourceDiagnostics) {
+            runtimeResourceDiagnostics += diagnostic
         }
     }
 
@@ -1124,3 +1461,12 @@ class ChatWindowState(
         ui.tasks.firstOrNull { it.id == conversationId }
 
 }
+
+/** 已读取文件的不可变内容与探测到的 MIME 类型。 */
+private data class FileSnapshot(
+    val content: String,
+    val mimeType: String,
+)
+
+private val IMAGE_LABEL_PATTERN = Regex("图(\\d+)")
+private const val MAX_FILE_SNAPSHOT_BYTES = 1_024 * 1_024

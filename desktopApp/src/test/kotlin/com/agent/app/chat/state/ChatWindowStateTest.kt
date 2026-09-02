@@ -2,7 +2,14 @@ package com.agent.app.chat.state
 
 import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
+import com.agent.app.chat.media.SessionMediaStore
+import com.agent.app.chat.media.StoredSessionImage
+import com.agent.app.platform.ClipboardPngImage
 import com.agent.shared.agent.api.*
+import com.agent.shared.agent.resource.AgentPromptCommand
+import com.agent.shared.agent.resource.AgentPromptCommandKind
+import com.agent.shared.agent.resource.AgentResourceOrigin
+import com.agent.shared.agent.resource.AgentResourceSnapshot
 import com.agent.shared.chat.model.*
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
@@ -20,6 +27,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import kotlin.test.*
+import java.nio.file.Path
 
 /**
  * 验证桌面聊天窗口状态的消息发送流转。
@@ -758,6 +766,103 @@ class ChatWindowStateTest {
         state.removeAttachment("D:\\tmp\\ChatScreen.kt")
 
         assertEquals(listOf("design.png"), state.ui.activeConversation.attachments.map { it.name })
+    }
+
+    /** 不支持视觉输入的 profile 必须在发送前失败，不能悄悄丢掉用户粘贴的图片。 */
+    @Test
+    fun `should reject pasted image before sending to profile without vision capability`() = runTest(dispatcher) {
+        val mediaStore = object : SessionMediaStore {
+            override fun storePng(conversationId: String, bytes: ByteArray): StoredSessionImage = StoredSessionImage(
+                mediaId = "image-1",
+                path = Path.of("C:\\session-media\\image-1.png"),
+            )
+        }
+        val textOnlyProfile = profile(model = "text-only").copy(supportsVision = false)
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(textOnlyProfile), activeProfile = textOnlyProfile),
+            projectPath = "E:\\abc\\def",
+            sessionMediaStore = mediaStore,
+        )
+
+        assertEquals(null, state.addClipboardImage(ClipboardPngImage(byteArrayOf(1), 1, 1)))
+        state.sendDraft()
+
+        assertTrue(state.state.executionState is ExecutionState.Failed)
+        assertTrue(state.errorMessage.orEmpty().contains("不支持图片输入"))
+        assertTrue(state.ui.activeConversation.history.isEmpty())
+    }
+
+    /** prompt 命令先插入编辑器，用户再次发送才运行；`/reload` 则直接执行资源重载控制动作。 */
+    @Test
+    fun `should insert prompt command before send and reload resources without creating history`() = runTest(dispatcher) {
+        val profile = profile()
+        val commands = listOf(
+            AgentPromptCommand(
+                name = "review",
+                description = "review",
+                template = "请审查 ${'$'}1",
+                kind = AgentPromptCommandKind.PROMPT,
+                origin = AgentResourceOrigin.USER_AUTO_DISCOVERY,
+            ),
+            AgentPromptCommand(
+                name = "reload",
+                description = "reload",
+                kind = AgentPromptCommandKind.BUILTIN,
+                origin = AgentResourceOrigin.BUILTIN,
+            ),
+        )
+        val resourceSnapshot = AgentResourceSnapshot.empty().copy(version = 1, commands = commands)
+        var reloadCount = 0
+        var capturedPrompt: String? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedPrompt = request.prompt
+                return flowOf(AgentStreamEvent.Started, AgentStreamEvent.Completed(""))
+            }
+        }
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile), activeProfile = profile),
+            projectPath = "E:\\commands",
+            resourceSnapshotProvider = { resourceSnapshot },
+            resourceReloader = {
+                reloadCount += 1
+                resourceSnapshot.copy(version = 2)
+            },
+        )
+
+        state.updateDraft("/review src/App.kt")
+        state.sendDraft()
+        assertEquals("请审查 src/App.kt", state.ui.draft)
+        assertTrue(state.ui.activeConversation.history.isEmpty())
+
+        state.sendDraft()
+        advanceUntilIdle()
+        assertEquals("请审查 src/App.kt", capturedPrompt)
+
+        state.updateDraft("/reload")
+        state.sendDraft()
+        assertEquals(1, reloadCount)
+        assertEquals("", state.ui.draft)
+        assertEquals(1, state.ui.activeConversation.history.count { it is AgentConversationHistoryMessage.User })
+    }
+
+    /** 未选择工作区时也应重载用户级资源，保证 `~/.agents/skills` 无需先打开项目。 */
+    @Test
+    fun `should reload user resources without an active workspace`() {
+        var reloadedWorkspace: String? = null
+        val state = ChatWindowState(
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = emptyList(), activeProfile = null),
+            resourceReloader = { workspacePath ->
+                reloadedWorkspace = workspacePath
+                AgentResourceSnapshot.empty()
+            },
+        )
+
+        assertTrue(state.reloadAgentResources())
+        assertEquals("", reloadedWorkspace)
     }
 
     /**

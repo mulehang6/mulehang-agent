@@ -2,6 +2,7 @@
 
 package com.agent.shared.agent.koog
 
+import com.agent.shared.agent.provider.deepseek.DeepSeekKoogTransportAdapter
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -67,7 +68,7 @@ class SseTerminatorFilteringKoogHttpClientTest {
      */
     @Test
     fun `should remove echoed reasoning config before responses decoding`() {
-        val normalizedData = normalizeSseDataForKoog(
+        val normalizedData = DeepSeekKoogTransportAdapter.normalizeSseData(
             """{"type":"response.created","response":{"model":"deepseek-v4-flash","reasoning":{"effort":"xhigh"},"output":[]}}""",
         )
 
@@ -82,7 +83,7 @@ class SseTerminatorFilteringKoogHttpClientTest {
      */
     @Test
     fun `should restore completed status for replayed responses reasoning items`() {
-        val normalizedBody = normalizeResponsesRequestBodyForKoog(
+        val normalizedBody = DeepSeekKoogTransportAdapter.normalizeRequestBody(
             """{"input":[{"type":"reasoning","id":"reasoning-1","content":[{"type":"reasoning_text","text":"think"}]}]}""",
         )
 
@@ -98,7 +99,7 @@ class SseTerminatorFilteringKoogHttpClientTest {
         val requestBody =
             """{"input":[{"type":"reasoning","status":"incomplete","content":[{"type":"reasoning_text","text":"think"}]}]}"""
 
-        assertEquals(requestBody, normalizeResponsesRequestBodyForKoog(requestBody))
+        assertEquals(requestBody, DeepSeekKoogTransportAdapter.normalizeRequestBody(requestBody))
     }
 
     /**
@@ -108,7 +109,7 @@ class SseTerminatorFilteringKoogHttpClientTest {
      */
     @Test
     fun `should fill empty reasoning item content before koog decoding`() {
-        val normalizedData = normalizeSseDataForKoog(
+        val normalizedData = DeepSeekKoogTransportAdapter.normalizeSseData(
             """{"type":"response.output_item.done","output_index":0,"item":{"id":"rs_1","type":"reasoning","summary":[]}}""",
         )
 
@@ -125,7 +126,7 @@ class SseTerminatorFilteringKoogHttpClientTest {
      */
     @Test
     fun `should fill missing reasoning content in request body`() {
-        val normalizedBody = normalizeResponsesRequestBodyForKoog(
+        val normalizedBody = DeepSeekKoogTransportAdapter.normalizeRequestBody(
             """{"input":[{"type":"reasoning","id":"rs_1","summary":[],"status":"completed"}]}""",
         )
 
@@ -142,7 +143,7 @@ class SseTerminatorFilteringKoogHttpClientTest {
      */
     @Test
     fun `should append trailing empty user message after tool outputs`() {
-        val normalizedBody = normalizeResponsesRequestBodyForKoog(
+        val normalizedBody = DeepSeekKoogTransportAdapter.normalizeRequestBody(
             """{"input":[{"type":"function_call","call_id":"c1","name":"list_dir","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"[]"}]}""",
         )
 
@@ -163,6 +164,6 @@ class SseTerminatorFilteringKoogHttpClientTest {
         val requestBody =
             """{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}]}"""
 
-        assertEquals(requestBody, normalizeResponsesRequestBodyForKoog(requestBody))
+        assertEquals(requestBody, DeepSeekKoogTransportAdapter.normalizeRequestBody(requestBody))
     }
 }

@@ -17,10 +17,8 @@ import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.agent.prompt.buildLlmModel
-import com.agent.shared.agent.prompt.isDeepSeekChatCompletionsProfile
-import com.agent.shared.agent.provider.deepseek.DeepSeekChatCompletionsStreamer
+import com.agent.shared.agent.provider.ProviderKoogTransportAdapters
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
-import kotlinx.coroutines.flow.Flow
 
 /**
  * 使用 Koog agent + ToolRegistry 执行当前桌面轮次。
@@ -40,7 +38,13 @@ internal suspend fun runWithKoogAgent(
         .promptExecutor(buildPromptExecutor(request.profile))
         .llmModel(buildLlmModel(request.profile))
         .toolRegistry(toolRegistry)
-        .prompt(buildAgentPrompt(request.profile, request.reasoningEffort))
+        .prompt(
+            buildAgentPrompt(
+                profile = request.profile,
+                reasoningEffort = request.reasoningEffort,
+                runtimeResources = request.runtimeResources,
+            ),
+        )
         .maxIterations(50)
         .graphStrategy(buildStreamingSingleRunStrategy(request, emitEvent))
         .install {
@@ -155,7 +159,11 @@ private fun buildStreamingSingleRunStrategy(
     val nodeCallLlm by node<String, Message.Assistant>("call_llm_streaming") { message ->
         llm.writeSession {
             appendPrompt {
-                buildConversationMessages(request.history, message).forEach(::message)
+                buildConversationMessages(
+                    history = request.history,
+                    prompt = message,
+                    inputParts = request.inputParts,
+                ).forEach(::message)
             }
             requestStreamingAssistantMessage(request, emitEvent)
         }
@@ -191,22 +199,6 @@ private fun buildStreamingSingleRunStrategy(
 }
 
 /**
- * 对 DeepSeek chat-completions 走自定义 streamer，其余 provider 继续使用 Koog 默认流式请求。
- */
-private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingFrames(
-    request: AgentRunRequest,
-): Flow<StreamFrame> = if (request.profile.isDeepSeekChatCompletionsProfile()) {
-    DeepSeekChatCompletionsStreamer().stream(
-        prompt = prompt,
-        config = request.profile,
-        reasoningEffort = request.reasoningEffort,
-        tools = tools,
-    )
-} else {
-    requestLLMStreaming()
-}
-
-/**
  * 请求流式响应，并在收敛出 assistant message 后回写到当前 prompt。
  *
  * Koog 的 `requestLLM()` 会自动执行这一步，而 `requestLLMStreaming()` 不会；自定义流式
@@ -217,7 +209,8 @@ private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingAssistantMessag
     emitEvent: suspend (AgentStreamEvent) -> Unit,
 ): Message.Assistant {
     val response = collectAssistantMessageFromStream(
-        frames = requestStreamingFrames(request),
+        frames = ProviderKoogTransportAdapters.streamFramesOrNull(this, request)
+            ?: requestLLMStreaming(),
         emitEvent = emitEvent,
     )
     rewritePrompt { currentPrompt ->

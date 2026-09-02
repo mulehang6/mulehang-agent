@@ -27,11 +27,27 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * 验证 DeepSeek chat-completions 专用流式适配。
  */
 class DeepSeekChatCompletionsStreamerTest {
+
+    /** DeepSeek wire-format 适配必须只匹配 DeepSeek profile，普通 OpenAI 服务不能继承该补丁。 */
+    @Test
+    fun `should enable transport adapter only for deepseek profiles`() {
+        assertTrue(DeepSeekKoogTransportAdapter.supports(deepSeekProfile()))
+        assertFalse(
+            DeepSeekKoogTransportAdapter.supports(
+                deepSeekProfile().copy(
+                    id = "openai",
+                    baseUrl = "https://api.openai.com/v1",
+                    model = "gpt-4.1",
+                ),
+            ),
+        )
+    }
 
     /**
      * 请求体应显式开启 thinking，并带上 reasoning effort。

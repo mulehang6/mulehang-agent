@@ -9,6 +9,10 @@ sealed interface AgentConversationHistoryMessage {
      */
     data class User(
         val content: String,
+        /**
+         * 用户消息发送时的有序输入。旧历史只有 [content] 时自动退回为一个文本片段。
+         */
+        val inputParts: List<UserInputPart> = listOf(UserInputPart.Text(content)),
     ) : AgentConversationHistoryMessage
 
     /**

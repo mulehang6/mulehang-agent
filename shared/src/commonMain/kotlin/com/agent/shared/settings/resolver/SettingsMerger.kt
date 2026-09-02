@@ -139,6 +139,7 @@ object SettingsMerger {
                     limit = environment.toModelLimit(default = model.limit),
                     reasoningEfforts = reasoningEfforts,
                     defaultReasoningEffort = defaultReasoningEffort,
+                    supportsVision = model.supportsVision,
                 )
             }
     }

@@ -1,10 +1,12 @@
 package com.agent.app.chat.persistence
 
 import com.agent.app.chat.state.ChatAttachmentUiState
+import com.agent.app.chat.state.ChatAttachmentKind
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.chat.model.AppError
 import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessage
@@ -92,18 +94,33 @@ internal object ChatTaskSnapshotMapper {
         pendingApproval = null,
     )
 
-    /** 将附件编码为对象，保留原始路径。 */
+    /** 将附件编码为对象，保留 token、快照和会话媒体引用。 */
     private fun encodeAttachment(source: ChatAttachmentUiState): JsonObject = buildJsonObject {
         put("path", source.path)
         put("name", source.name)
+        put("token", source.token)
+        put("kind", source.kind.name)
+        putNullable("snapshotContent", source.snapshotContent)
+        putNullable("mimeType", source.mimeType)
+        putNullable("mediaId", source.mediaId)
+        putNullable("imageLabel", source.imageLabel)
     }
 
-    /** 从持久化对象恢复附件。 */
+    /** 从持久化对象恢复附件，并兼容旧版本仅有路径和名称的记录。 */
     private fun decodeAttachment(source: JsonElement): ChatAttachmentUiState {
         val objectValue = source.jsonObject
+        val name = objectValue.requiredString("name")
         return ChatAttachmentUiState(
             path = objectValue.requiredString("path"),
-            name = objectValue.requiredString("name"),
+            name = name,
+            token = objectValue.optionalString("token") ?: "@$name",
+            kind = objectValue.optionalString("kind")
+                ?.let { value -> ChatAttachmentKind.entries.firstOrNull { it.name == value } }
+                ?: ChatAttachmentKind.FILE_SNAPSHOT,
+            snapshotContent = objectValue.optionalString("snapshotContent"),
+            mimeType = objectValue.optionalString("mimeType"),
+            mediaId = objectValue.optionalString("mediaId"),
+            imageLabel = objectValue.optionalString("imageLabel"),
         )
     }
 
@@ -193,6 +210,7 @@ internal object ChatTaskSnapshotMapper {
     private fun encodeHistory(sequence: Int, source: AgentConversationHistoryMessage): PersistedHistoryItem = when (source) {
         is AgentConversationHistoryMessage.User -> PersistedHistoryItem(sequence, "user", buildJsonObject {
             put("content", source.content)
+            put("inputParts", buildJsonArray { source.inputParts.forEach { add(encodeUserInputPart(it)) } })
         }.toString())
 
         is AgentConversationHistoryMessage.Assistant -> PersistedHistoryItem(sequence, "assistant", buildJsonObject {
@@ -204,7 +222,13 @@ internal object ChatTaskSnapshotMapper {
     private fun decodeHistory(source: PersistedHistoryItem): AgentConversationHistoryMessage {
         val objectValue = json.parseToJsonElement(source.payloadJson).jsonObject
         return when (source.type) {
-            "user" -> AgentConversationHistoryMessage.User(objectValue.requiredString("content"))
+            "user" -> AgentConversationHistoryMessage.User(
+                content = objectValue.requiredString("content"),
+                inputParts = objectValue["inputParts"]
+                    ?.jsonArray
+                    ?.map(::decodeUserInputPart)
+                    ?: listOf(UserInputPart.Text(objectValue.requiredString("content"))),
+            )
             "assistant" -> AgentConversationHistoryMessage.Assistant(
                 objectValue.getValue("parts").jsonArray.map(::decodeHistoryPart),
             )
@@ -252,6 +276,53 @@ internal object ChatTaskSnapshotMapper {
             "tool_call" -> AgentConversationHistoryPart.ToolCall(objectValue.optionalString("id"), objectValue.requiredString("name"), objectValue.optionalString("argumentsPreview"))
             "tool_result" -> AgentConversationHistoryPart.ToolResult(objectValue.optionalString("id"), objectValue.requiredString("name"), objectValue.optionalString("resultPreview"))
             else -> error("Unsupported history part type: ${objectValue.requiredString("type")}")
+        }
+    }
+
+    /** 编码一条用户有序输入片段，供任务恢复时逐项重放。 */
+    private fun encodeUserInputPart(source: UserInputPart): JsonObject = buildJsonObject {
+        when (source) {
+            is UserInputPart.Text -> {
+                put("type", "text")
+                put("text", source.text)
+            }
+
+            is UserInputPart.FileSnapshot -> {
+                put("type", "file")
+                put("path", source.path)
+                put("content", source.content)
+                put("mimeType", source.mimeType)
+            }
+
+            is UserInputPart.Image -> {
+                put("type", "image")
+                put("mediaId", source.mediaId)
+                put("storagePath", source.storagePath)
+                put("mimeType", source.mimeType)
+                put("label", source.label)
+            }
+        }
+    }
+
+    /** 解码一条用户有序输入片段；未知类型视为损坏快照并拒绝恢复。 */
+    private fun decodeUserInputPart(source: JsonElement): UserInputPart {
+        val objectValue = source.jsonObject
+        return when (objectValue.requiredString("type")) {
+            "text" -> UserInputPart.Text(objectValue.requiredString("text"))
+            "file" -> UserInputPart.FileSnapshot(
+                path = objectValue.requiredString("path"),
+                content = objectValue.requiredString("content"),
+                mimeType = objectValue.requiredString("mimeType"),
+            )
+
+            "image" -> UserInputPart.Image(
+                mediaId = objectValue.requiredString("mediaId"),
+                storagePath = objectValue.requiredString("storagePath"),
+                mimeType = objectValue.requiredString("mimeType"),
+                label = objectValue.requiredString("label"),
+            )
+
+            else -> error("Unsupported user input part type: ${objectValue.requiredString("type")}")
         }
     }
 

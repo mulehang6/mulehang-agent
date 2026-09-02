@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.window.WindowState
 import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.component.ChatTitleBar
+import com.agent.app.chat.media.DesktopSessionMediaStore
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
@@ -37,6 +38,8 @@ import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.agent.koog.KoogConversationTitleGenerator
 import com.agent.shared.agent.recording.JsonLinesAgentRunRecorder
 import com.agent.shared.agent.recording.RecordingAgentGateway
+import com.agent.shared.agent.resource.AgentResourceRuntime
+import com.agent.shared.agent.resource.DesktopAgentResourceRequestFactory
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository
@@ -45,6 +48,11 @@ import com.agent.shared.session.DesktopTerminalPreferences
 import com.agent.shared.session.DesktopUiStateStore
 import com.agent.shared.session.LoadAppSessionUseCase
 import com.agent.shared.chat.persistence.SqliteTaskRepository
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.SettingsDocument
+import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
+import com.agent.shared.settings.persistence.DesktopPathResolver
+import com.agent.shared.settings.persistence.DesktopSettingsRepository
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -110,6 +118,8 @@ internal fun MulehangDesktopApp(
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
     }
+    val agentResourceRuntime = remember { AgentResourceRuntime() }
+    val sessionMediaStore = remember(userHome) { DesktopSessionMediaStore(userHome) }
     val stateHolder = remember { mutableStateOf<ChatWindowState?>(null) }
     val appScope = rememberCoroutineScope()
     val taskPersistenceCoordinator = TaskPersistenceCoordinator(
@@ -133,9 +143,16 @@ internal fun MulehangDesktopApp(
             },
             persistenceCoordinator = taskPersistenceCoordinator,
             conversationTitleGenerator = KoogConversationTitleGenerator(),
+            resourceSnapshotProvider = { workspacePath ->
+                resourceLoadRequest(userHome, workspacePath)?.let(agentResourceRuntime::snapshotFor)
+            },
+            resourceReloader = { workspacePath ->
+                resourceLoadRequest(userHome, workspacePath)?.let(agentResourceRuntime::reload)
+            },
             workspaceDirectoryExists = { path ->
                 path.isNotBlank() && runCatching { Files.isDirectory(Paths.get(path)) }.getOrDefault(false)
             },
+            sessionMediaStore = sessionMediaStore,
         )
     }
     stateHolder.value = windowState
@@ -144,10 +161,12 @@ internal fun MulehangDesktopApp(
     }
 
     LaunchedEffect(projectRootState.value) {
-        val projectRoot = projectRootState.value ?: return@LaunchedEffect
-        uiStateStore.saveRecentWorkspace(projectRoot.toString())
-        val repository = DesktopAppSessionRepository(projectRoot = projectRoot, userHome = userHome)
-        windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+        projectRootState.value?.let { projectRoot ->
+            uiStateStore.saveRecentWorkspace(projectRoot.toString())
+            val repository = DesktopAppSessionRepository(projectRoot = projectRoot, userHome = userHome)
+            windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+        }
+        windowState.refreshActiveResourceSnapshot()
     }
     LaunchedEffect(Unit) {
         runCatching { taskPersistenceCoordinator.load() }
@@ -260,3 +279,20 @@ internal fun MulehangDesktopApp(
         }
     }
 }
+
+/** 读取原始用户/项目 settings 后构造资源加载请求；仅显式 reload 才重新读取并发布新快照。 */
+private fun resourceLoadRequest(
+    userHome: Path,
+    workspacePath: String,
+) = runCatching {
+    val workspace = workspacePath.trim().takeIf(String::isNotBlank)?.let(Paths::get)
+    val repository = DesktopSettingsRepository(
+        pathResolver = DesktopPathResolver(userHome, workspace ?: userHome),
+        environmentOverrides = DesktopEnvironmentOverrides(),
+    )
+    DesktopAgentResourceRequestFactory(userHome).create(
+        workspacePath = workspace,
+        userDocument = repository.loadDocument(ConfigLayer.USER),
+        projectDocument = workspace?.let { repository.loadDocument(ConfigLayer.PROJECT) } ?: SettingsDocument(),
+    )
+}.getOrNull()

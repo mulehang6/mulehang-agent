@@ -19,4 +19,6 @@ data class ConfigProfile(
     val limit: ModelLimit? = null,
     val reasoningEfforts: List<ReasoningEffort>? = null,
     val defaultReasoningEffort: ReasoningEffort? = null,
+    /** 模型的图片输入能力；null 表示由运行时的内建模型规则保守判断。 */
+    val supportsVision: Boolean? = null,
 )

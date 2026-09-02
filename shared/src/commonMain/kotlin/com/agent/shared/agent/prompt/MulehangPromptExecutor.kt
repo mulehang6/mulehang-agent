@@ -12,6 +12,7 @@ import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.resolver.supportsImageInput
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -36,6 +37,9 @@ internal fun buildLlmModel(config: ConfigProfile): LLModel {
         add(LLMCapability.Schema.JSON.Standard)
         if (!config.reasoningEfforts.isNullOrEmpty()) {
             add(LLMCapability.Thinking)
+        }
+        if (config.supportsImageInput()) {
+            add(LLMCapability.Vision.Image)
         }
         if (endpointCapability != null) {
             add(endpointCapability)
@@ -104,14 +108,6 @@ private fun ConfigProfile.toLlmProvider(): LLMProvider = when (providerType) {
     ProviderType.ANTHROPIC -> LLMProvider.Anthropic
     else -> throw IllegalConfigExceptions { "暂不支持的 providerType: $providerType" }
 }
-
-/**
- * 判断当前 profile 是否走 DeepSeek 的 OpenAI chat-completions 兼容接口。
- */
-internal fun ConfigProfile.isDeepSeekChatCompletionsProfile(): Boolean =
-    providerType == ProviderType.OPENAI_CHAT_COMPLETIONS &&
-        (baseUrl.contains("deepseek.com", ignoreCase = true) ||
-                model.startsWith("deepseek", ignoreCase = true))
 
 /**
  * 按 endpoint 类型生成原始推理请求字段，绕过 Koog 的标准档位枚举限制。

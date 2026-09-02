@@ -1,5 +1,6 @@
 package com.agent.shared.agent.koog
 
+import com.agent.shared.agent.provider.deepseek.DeepSeekKoogTransportAdapter
 import ai.koog.http.client.KoogHttpClient
 import ai.koog.prompt.Prompt
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
@@ -145,7 +146,7 @@ class KoogResponsesReplayDiagnosticTest {
                 connectTimeoutMillis: Long,
                 socketTimeoutMillis: Long,
                 json: Json,
-            ): KoogHttpClient = SseTerminatorFilteringKoogHttpClient(recording)
+            ): KoogHttpClient = SseTerminatorFilteringKoogHttpClient(recording, DeepSeekKoogTransportAdapter)
         }
         val client = OpenAILLMClient(
             apiKey = "test-key",

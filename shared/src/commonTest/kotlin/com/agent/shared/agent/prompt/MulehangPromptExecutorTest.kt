@@ -30,7 +30,6 @@ class MulehangPromptExecutorTest {
         assertTrue(model.supports(LLMCapability.Completion))
         assertTrue(model.supports(LLMCapability.Thinking))
         assertTrue(model.supports(LLMCapability.OpenAIEndpoint.Completions))
-        assertTrue(deepSeekProfile().isDeepSeekChatCompletionsProfile())
     }
 
     /**

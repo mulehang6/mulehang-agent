@@ -19,6 +19,7 @@ kotlin {
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
         }
         jvmMain.dependencies {
+            implementation("ai.koog:agents-mcp:1.1.1-beta")
             implementation("org.slf4j:slf4j-api:2.0.17")
             implementation("ch.qos.logback:logback-classic:1.5.18")
             implementation("io.ktor:ktor-client-java:3.3.3")

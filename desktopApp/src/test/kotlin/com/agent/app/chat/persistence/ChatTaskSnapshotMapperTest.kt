@@ -1,11 +1,13 @@
 package com.agent.app.chat.persistence
 
 import com.agent.app.chat.state.ChatAttachmentUiState
+import com.agent.app.chat.state.ChatAttachmentKind
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ConversationTitleState
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
@@ -97,6 +99,51 @@ class ChatTaskSnapshotMapperTest {
         )
 
         assertEquals(source, ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source)))
+    }
+
+    /** 文件快照与会话媒体引用必须连同图号顺序写入历史，重启后仍可准确重放给模型。 */
+    @Test
+    fun `should preserve ordered file and image input parts with session media references`() {
+        val orderedInput = listOf(
+            UserInputPart.Text("先读 "),
+            UserInputPart.FileSnapshot("src/App.kt", "fun main() = Unit", "text/x-kotlin"),
+            UserInputPart.Text("，再看 "),
+            UserInputPart.Image("media-1", "C:\\media\\media-1.png", "image/png", "图1"),
+            UserInputPart.Text("，最后看 "),
+            UserInputPart.Image("media-2", "C:\\media\\media-2.png", "image/png", "图2"),
+        )
+        val source = ChatConversationUiState(
+            id = "task-multimodal",
+            title = "多模态顺序",
+            workspacePath = "D:\\workspace",
+            attachments = listOf(
+                ChatAttachmentUiState(
+                    path = "C:\\media\\media-1.png",
+                    name = "图1",
+                    token = "[图1]",
+                    kind = ChatAttachmentKind.IMAGE,
+                    mediaId = "media-1",
+                    imageLabel = "图1",
+                    mimeType = "image/png",
+                ),
+                ChatAttachmentUiState(
+                    path = "C:\\media\\media-2.png",
+                    name = "图2",
+                    token = "[图2]",
+                    kind = ChatAttachmentKind.IMAGE,
+                    mediaId = "media-2",
+                    imageLabel = "图2",
+                    mimeType = "image/png",
+                ),
+            ),
+            history = listOf(AgentConversationHistoryMessage.User("先读 @src/App.kt [图1] [图2]", orderedInput)),
+            executionState = ExecutionState.Idle,
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
+
+        assertEquals(source.attachments, restored.attachments)
+        assertEquals(orderedInput, (restored.history.single() as AgentConversationHistoryMessage.User).inputParts)
     }
 
     /**

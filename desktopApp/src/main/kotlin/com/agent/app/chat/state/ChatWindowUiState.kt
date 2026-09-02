@@ -2,6 +2,7 @@ package com.agent.app.chat.state
 
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationItem
@@ -12,12 +13,27 @@ import com.agent.shared.tool.model.FileDiffPreview
 import com.agent.shared.tool.model.QuestionPrompt
 import com.agent.shared.tool.model.normalizeQuestionPrompts
 
+/** composer 中有序文件或图片 token 的种类。 */
+enum class ChatAttachmentKind {
+    FILE_SNAPSHOT,
+    IMAGE,
+}
+
 /**
  * 附件在 composer 中的展示状态。
+ *
+ * [token] 是插入到文本框的可见占位符。发送前按 token 在草稿中的位置重建
+ * [UserInputPart] 顺序，因此图片、文件和前后文字不会被附件条的显示顺序篡改。
  */
 data class ChatAttachmentUiState(
     val path: String,
     val name: String,
+    val token: String = "@$name",
+    val kind: ChatAttachmentKind = ChatAttachmentKind.FILE_SNAPSHOT,
+    val snapshotContent: String? = null,
+    val mimeType: String? = null,
+    val mediaId: String? = null,
+    val imageLabel: String? = null,
 )
 
 /**
@@ -173,6 +189,8 @@ data class ChatWindowUiState(
     val selectedProfileId: String? = null,
     val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
     val persistenceErrorMessage: String? = null,
+    /** composer 当前插入点，用于在 `@`、图片和命令选择时保持 token 顺序。 */
+    val draftSelectionStart: Int = draft.length,
 ) {
     /**
      * 当前激活的对话线程。

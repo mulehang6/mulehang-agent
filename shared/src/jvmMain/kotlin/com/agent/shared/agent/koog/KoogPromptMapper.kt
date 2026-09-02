@@ -5,13 +5,19 @@ import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.RequestMetaInfo
 import ai.koog.prompt.message.ResponseMetaInfo
+import ai.koog.prompt.message.AttachmentContent
+import ai.koog.prompt.message.AttachmentSource
 import ai.koog.utils.time.KoogClock
 import kotlinx.serialization.json.Json
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
+import com.agent.shared.agent.api.AgentRuntimeResources
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.agent.prompt.buildPromptParams
 import com.agent.shared.settings.model.ConfigProfile
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * 构建 agent 基础 prompt，只承载 provider 参数，不预写用户正文。
@@ -19,11 +25,15 @@ import com.agent.shared.settings.model.ConfigProfile
 internal fun buildAgentPrompt(
     profile: ConfigProfile,
     reasoningEffort: ReasoningEffort?,
+    runtimeResources: AgentRuntimeResources = AgentRuntimeResources(),
 ): Prompt = Prompt.build(
     id = "mulehang-chat",
     params = buildPromptParams(profile, reasoningEffort),
 ) {
     system(agentSystemPrompt())
+    runtimeResources.systemPromptAppendix
+        .takeIf(String::isNotBlank)
+        ?.let(::system)
 }
 
 /**
@@ -173,11 +183,12 @@ internal fun conversationTitleSystemPrompt(): String = """
 internal fun buildConversationMessages(
     history: List<AgentConversationHistoryMessage>,
     prompt: String,
+    inputParts: List<UserInputPart> = listOf(UserInputPart.Text(prompt)),
     clock: KoogClock = KoogClock.System,
 ): List<Message> = history.flatMap { message ->
     message.toKoogMessages(clock)
 } + Message.User(
-    content = prompt,
+    parts = inputParts.toKoogRequestParts(),
     metaInfo = RequestMetaInfo.create(clock = clock),
 )
 
@@ -187,13 +198,48 @@ internal fun buildConversationMessages(
 private fun AgentConversationHistoryMessage.toKoogMessages(clock: KoogClock): List<Message> = when (this) {
     is AgentConversationHistoryMessage.User -> listOf(
         Message.User(
-            content = content,
+            parts = inputParts.toKoogRequestParts(),
             metaInfo = RequestMetaInfo.create(clock = clock),
         ),
     )
 
     is AgentConversationHistoryMessage.Assistant -> assistantHistoryToKoogMessages(parts, clock)
 }
+
+/**
+ * 将有序输入映射为 Koog request parts，文件内容与图片编号在此保持与草稿完全相同的顺序。
+ */
+private fun List<UserInputPart>.toKoogRequestParts(): List<MessagePart.RequestPart> = flatMap { part ->
+    when (part) {
+        is UserInputPart.Text -> listOf(MessagePart.Text(part.text))
+        is UserInputPart.FileSnapshot -> listOf(
+            MessagePart.Text(
+                "<file name=\"${part.path.escapeXmlAttribute()}\">\n${part.content}\n</file>",
+            ),
+        )
+
+        is UserInputPart.Image -> listOf(
+            MessagePart.Text("${part.label}："),
+            MessagePart.Attachment(
+                AttachmentSource.Image(
+                    content = AttachmentContent.Binary.Bytes(
+                        Files.readAllBytes(Path.of(part.storagePath)),
+                    ),
+                    format = part.mimeType.substringAfter('/').substringBefore('+').ifBlank { "png" },
+                    mimeType = part.mimeType,
+                    fileName = part.label,
+                ),
+            ),
+        )
+    }
+}
+
+/** 转义 `<file>` 属性中会破坏 XML 结构的字符，正文保留原始快照。 */
+private fun String.escapeXmlAttribute(): String =
+    replace("&", "&amp;")
+        .replace("\"", "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
 
 /**
  * 将 assistant 历史片段展开为 Koog 所需的 assistant/user/tool-result 消息序列。

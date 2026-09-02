@@ -9,4 +9,5 @@ import kotlinx.serialization.Serializable
 data class SettingsDocument(
     val providers: List<ProviderProfile> = emptyList(),
     val fasterModel: FasterModelProfile? = null,
+    val agentResources: AgentResourceSettings = AgentResourceSettings(),
 )

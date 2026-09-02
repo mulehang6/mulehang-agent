@@ -19,6 +19,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -133,10 +136,14 @@ internal fun HistoryPanel(
 @Composable
 internal fun ToolRail(
     activeGlyph: RightRailGlyph,
+    notificationsVisible: Boolean,
     onToolClick: (RightRailGlyph) -> Unit,
+    onNotificationAnchorChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val toolGroups = buildRightRailGroups()
+    val topGroup = toolGroups.firstOrNull().orEmpty()
+    val bottomGroup = toolGroups.drop(1).flatten()
     JewelSurface(
         role = JewelSurfaceRole.CHROME,
         radius = 0.dp,
@@ -154,23 +161,38 @@ internal fun ToolRail(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                toolGroups.firstOrNull()?.let { topGroup ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        topGroup.forEach { item ->
-                            ToolRailAction(
-                                glyph = item.glyph,
-                                selected = item.glyph == activeGlyph,
-                                onClick = { onToolClick(item.glyph) },
-                            )
-                        }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    topGroup.forEach { item ->
+                        ToolRailAction(
+                            glyph = item.glyph,
+                            selected = item.glyph == activeGlyph ||
+                                    (item.glyph == RightRailGlyph.NOTIFICATIONS && notificationsVisible),
+                            onClick = { onToolClick(item.glyph) },
+                            onPositioned = if (item.glyph == RightRailGlyph.NOTIFICATIONS) {
+                                onNotificationAnchorChanged
+                            } else {
+                                null
+                            },
+                        )
                     }
                 }
-                toolGroups.drop(1).flatten().forEach { item ->
-                    ToolRailAction(
-                        glyph = item.glyph,
-                        selected = item.glyph == activeGlyph,
-                        onClick = { onToolClick(item.glyph) },
-                    )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    bottomGroup.forEach { item ->
+                        ToolRailAction(
+                            glyph = item.glyph,
+                            selected = item.glyph == activeGlyph ||
+                                    (item.glyph == RightRailGlyph.NOTIFICATIONS && notificationsVisible),
+                            onClick = { onToolClick(item.glyph) },
+                            onPositioned = if (item.glyph == RightRailGlyph.NOTIFICATIONS) {
+                                onNotificationAnchorChanged
+                            } else {
+                                null
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -187,6 +209,7 @@ private fun ToolRailAction(
     glyph: RightRailGlyph,
     selected: Boolean,
     onClick: () -> Unit,
+    onPositioned: ((Rect) -> Unit)?,
 ) {
     val palette = LocalDesktopPalette.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -206,6 +229,15 @@ private fun ToolRailAction(
             borderColor = Color.Transparent,
             modifier = Modifier
                 .size(TOOL_RAIL_ACTION_SIZE_DP.dp)
+                .then(
+                    if (onPositioned == null) {
+                        Modifier
+                    } else {
+                        Modifier.onGloballyPositioned { coordinates ->
+                            onPositioned(coordinates.boundsInRoot())
+                        }
+                    },
+                )
                 .hoverable(interactionSource)
                 .clickable(
                     interactionSource = interactionSource,

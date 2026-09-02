@@ -13,6 +13,8 @@ import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.PopupMenuBackground
 import com.agent.app.design.PopupMenuHoverBackground
 import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.app.design.AppDanger
+import com.agent.app.design.AppText
 import com.agent.app.design.buildRightRailGroups
 import com.agent.app.design.selectMenuItemBackground
 import com.agent.app.design.desktopPalette
@@ -69,7 +71,9 @@ class ChatScreenPresentationTest {
     /** 标题栏和侧栏任务入口必须展示完全相同的操作菜单。 */
     @Test
     fun `should expose the same task context menu actions everywhere`() {
-        assertEquals(listOf("Fork", "删除", "Archive", "重命名"), taskContextMenuLabels())
+        assertEquals(listOf("重命名", "创建分支", "归档", "删除"), taskContextMenuLabels())
+        assertEquals(AppDanger, taskContextMenuTextColor("删除"))
+        assertEquals(AppText, taskContextMenuTextColor("重命名"))
         assertEquals(listOf("编辑", "删除"), workspaceContextMenuLabels())
     }
 
@@ -203,16 +207,17 @@ class ChatScreenPresentationTest {
         )
     }
 
-    /**
-     * 右侧 rail 在顶部保留终端入口，并在底部提供设置入口。
-     */
+    /** 右侧 rail 在顶部保留终端入口，底部按“通知、设置”紧邻排列。 */
     @Test
-    fun `should expose terminal and settings rail buttons`() {
+    fun `should expose terminal notification and settings rail buttons`() {
         val groups = buildRightRailGroups()
 
-        assertEquals(listOf(1, 1), groups.map { it.size })
+        assertEquals(listOf(1, 2), groups.map { it.size })
         assertEquals(RightRailGlyph.TERMINAL, groups.first().single().glyph)
-        assertEquals(RightRailGlyph.SETTINGS, groups.last().single().glyph)
+        assertEquals(
+            listOf(RightRailGlyph.NOTIFICATIONS, RightRailGlyph.SETTINGS),
+            groups.last().map { it.glyph },
+        )
         assertEquals(false, groups.flatten().any { it.active })
     }
 

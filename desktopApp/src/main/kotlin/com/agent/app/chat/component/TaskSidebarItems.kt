@@ -231,20 +231,20 @@ internal fun MenuScope.taskContextMenuActions(
 ) {
     selectableItem(
         selected = false,
+        onClick = onRename,
+    ) { Text(taskContextMenuLabels()[0], color = taskContextMenuTextColor(taskContextMenuLabels()[0])) }
+    selectableItem(
+        selected = false,
         enabled = false,
         onClick = {},
-    ) { Text(taskContextMenuLabels()[0]) }
+    ) { Text(taskContextMenuLabels()[1], color = taskContextMenuTextColor(taskContextMenuLabels()[1])) }
+    selectableItem(
+        selected = false,
+        enabled = false,
+        onClick = {},
+    ) { Text(taskContextMenuLabels()[2], color = taskContextMenuTextColor(taskContextMenuLabels()[2])) }
     selectableItem(
         selected = false,
         onClick = onDelete,
-    ) { Text(taskContextMenuLabels()[1]) }
-    selectableItem(
-        selected = false,
-        enabled = false,
-        onClick = {},
-    ) { Text(taskContextMenuLabels()[2]) }
-    selectableItem(
-        selected = false,
-        onClick = onRename,
-    ) { Text(taskContextMenuLabels()[3]) }
+    ) { Text(taskContextMenuLabels()[3], color = taskContextMenuTextColor(taskContextMenuLabels()[3])) }
 }

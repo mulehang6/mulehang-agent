@@ -133,7 +133,10 @@ internal fun shouldShowConversationTitleText(titleState: ConversationTitleState)
 /**
  * 返回侧栏和标题栏共用的任务上下文菜单操作顺序。
  */
-internal fun taskContextMenuLabels(): List<String> = listOf("Fork", "删除", "Archive", "重命名")
+internal fun taskContextMenuLabels(): List<String> = listOf("重命名", "创建分支", "归档", "删除")
+
+/** 删除是任务菜单中唯一的破坏性操作，因此使用危险色区分。 */
+internal fun taskContextMenuTextColor(label: String): Color = if (label == "删除") AppDanger else AppText
 
 /** 返回工作区右键菜单的紧凑操作文案。 */
 internal fun workspaceContextMenuLabels(): List<String> = listOf("编辑", "删除")

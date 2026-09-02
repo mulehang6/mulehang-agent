@@ -42,6 +42,10 @@ import com.agent.app.design.rememberExternalTextFieldValue
 import com.agent.app.platform.TerminalShellCatalog
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.SettingsDocument
+import com.agent.shared.agent.resource.AgentExtensionPackageResource
+import com.agent.shared.agent.resource.AgentMcpServerResource
+import com.agent.shared.agent.resource.AgentResourceDiagnostic
+import com.agent.shared.agent.resource.AgentSkillResource
 import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
 import com.agent.shared.settings.persistence.DesktopPathResolver
 import com.agent.shared.settings.persistence.DesktopSettingsRepository
@@ -61,6 +65,7 @@ internal enum class SettingsSection(val label: String) {
     THEME("主题"),
     TOOLS("工具"),
     PROVIDERS("AI 服务"),
+    EXTENSIONS("扩展"),
 }
 
 /**
@@ -68,9 +73,8 @@ internal enum class SettingsSection(val label: String) {
  */
 internal fun settingsSectionsFor(layer: ConfigLayer): List<SettingsSection> = when (layer) {
     ConfigLayer.USER -> SettingsSection.entries
-    ConfigLayer.PROJECT,
-    ConfigLayer.ENVIRONMENT,
-    -> listOf(SettingsSection.THEME, SettingsSection.PROVIDERS)
+    ConfigLayer.PROJECT -> listOf(SettingsSection.THEME, SettingsSection.PROVIDERS, SettingsSection.EXTENSIONS)
+    ConfigLayer.ENVIRONMENT -> listOf(SettingsSection.THEME, SettingsSection.PROVIDERS)
 }
 
 /**
@@ -102,6 +106,10 @@ internal class SettingsPanelUiState {
     var search by mutableStateOf("")
     var expandedProviderId by mutableStateOf<String?>(null)
     var feedback by mutableStateOf<String?>(null)
+    /** 仅保留当前应用会话的设置变更记录，不写入任何配置文件。 */
+    val changeNotifications = SettingsChangeNotifications()
+    /** Provider 编辑器输入只在成功保存后汇总为一条通知。 */
+    var providerFieldsChangedSinceLastSave by mutableStateOf(false)
     val contentScrollState = ScrollState(initial = 0)
 }
 
@@ -121,6 +129,11 @@ internal fun SettingsPanel(
     onFocus: () -> Unit,
     onClose: () -> Unit,
     onSettingsSaved: () -> Unit,
+    onReloadResources: () -> Boolean,
+    extensionPackages: List<AgentExtensionPackageResource>,
+    loadedSkills: List<AgentSkillResource>,
+    resourceDiagnostics: List<AgentResourceDiagnostic>,
+    mcpServers: List<AgentMcpServerResource>,
     uiState: SettingsPanelUiState,
     modifier: Modifier = Modifier,
 ) {
@@ -134,6 +147,7 @@ internal fun SettingsPanel(
         uiState.document = repository.loadDocument(uiState.layer)
         uiState.expandedProviderId = null
         uiState.feedback = null
+        uiState.providerFieldsChangedSinceLastSave = false
     }
     LaunchedEffect(uiState.section, uiState.layer) {
         uiState.contentScrollState.scrollTo(0)
@@ -183,6 +197,13 @@ internal fun SettingsPanel(
                             terminalShellCatalog = terminalShellCatalog,
                             onTerminalPreferencesChanged = onTerminalPreferencesChanged,
                             onSettingsSaved = onSettingsSaved,
+                            onReloadResources = onReloadResources,
+                            projectRoot = projectRoot,
+                            userHome = userHome,
+                            extensionPackages = extensionPackages,
+                            loadedSkills = loadedSkills,
+                            resourceDiagnostics = resourceDiagnostics,
+                            mcpServers = mcpServers,
                             compact = true,
                             scrollState = uiState.contentScrollState,
                             modifier = Modifier
@@ -212,6 +233,13 @@ internal fun SettingsPanel(
                             terminalShellCatalog = terminalShellCatalog,
                             onTerminalPreferencesChanged = onTerminalPreferencesChanged,
                             onSettingsSaved = onSettingsSaved,
+                            onReloadResources = onReloadResources,
+                            projectRoot = projectRoot,
+                            userHome = userHome,
+                            extensionPackages = extensionPackages,
+                            loadedSkills = loadedSkills,
+                            resourceDiagnostics = resourceDiagnostics,
+                            mcpServers = mcpServers,
                             compact = false,
                             scrollState = uiState.contentScrollState,
                             modifier = Modifier
@@ -241,6 +269,13 @@ private fun SettingsPanelContent(
     terminalShellCatalog: TerminalShellCatalog,
     onTerminalPreferencesChanged: (DesktopTerminalPreferences) -> Unit,
     onSettingsSaved: () -> Unit,
+    onReloadResources: () -> Boolean,
+    projectRoot: Path?,
+    userHome: Path,
+    extensionPackages: List<AgentExtensionPackageResource>,
+    loadedSkills: List<AgentSkillResource>,
+    resourceDiagnostics: List<AgentResourceDiagnostic>,
+    mcpServers: List<AgentMcpServerResource>,
     compact: Boolean,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
@@ -281,6 +316,32 @@ private fun SettingsPanelContent(
                         expandedProviderId = uiState.expandedProviderId,
                         onExpandedProviderChange = { uiState.expandedProviderId = it },
                         onDocumentChange = { uiState.document = it },
+                        onChangeNotification = { message ->
+                            uiState.changeNotifications.record(
+                                SettingsChangeNotificationCategory.AI_SERVICES,
+                                "${settingsChangeScopeLabel(uiState.layer)}：$message",
+                            )
+                        },
+                        onProviderFieldsChanged = { uiState.providerFieldsChangedSinceLastSave = true },
+                    )
+
+                    SettingsSection.EXTENSIONS -> ExtensionSettingsContent(
+                        document = uiState.document,
+                        layer = uiState.layer,
+                        projectRoot = projectRoot,
+                        userHome = userHome,
+                        extensionPackages = extensionPackages,
+                        loadedSkills = loadedSkills,
+                        resourceDiagnostics = resourceDiagnostics,
+                        mcpServers = mcpServers,
+                        onDocumentChange = { uiState.document = it },
+                        onChangeNotification = { message ->
+                            uiState.changeNotifications.record(
+                                SettingsChangeNotificationCategory.EXTENSIONS,
+                                "${settingsChangeScopeLabel(uiState.layer)}：$message",
+                            )
+                        },
+                        onReloadResources = onReloadResources,
                     )
                 }
             }
@@ -294,7 +355,7 @@ private fun SettingsPanelContent(
                 )
             }
         }
-        if (uiState.section == SettingsSection.PROVIDERS) {
+        if (uiState.section == SettingsSection.PROVIDERS || uiState.section == SettingsSection.EXTENSIONS) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -306,6 +367,13 @@ private fun SettingsPanelContent(
                         runCatching { repository.saveDocument(uiState.layer, uiState.document) }
                             .onSuccess {
                                 uiState.feedback = "已保存，后续任务将使用最新配置。"
+                                if (uiState.section == SettingsSection.PROVIDERS && uiState.providerFieldsChangedSinceLastSave) {
+                                    uiState.changeNotifications.record(
+                                        SettingsChangeNotificationCategory.AI_SERVICES,
+                                        "${settingsChangeScopeLabel(uiState.layer)}：已保存 AI 服务修改。",
+                                    )
+                                    uiState.providerFieldsChangedSinceLastSave = false
+                                }
                                 onSettingsSaved()
                             }
                             .onFailure { uiState.feedback = "保存失败：${it.message ?: "未知错误"}" }

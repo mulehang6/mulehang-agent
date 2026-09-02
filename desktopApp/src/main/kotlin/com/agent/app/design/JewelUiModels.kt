@@ -24,6 +24,7 @@ internal enum class RightRailGlyph {
     HISTORY,
     COPY,
     FILTER,
+    NOTIFICATIONS,
     SETTINGS,
 }
 
@@ -36,7 +37,10 @@ internal data class RightRailButtonModel(
 /** 返回当前 Air 信息架构保留的右侧工具栏分组。 */
 internal fun buildRightRailGroups(): List<List<RightRailButtonModel>> = listOf(
     listOf(RightRailButtonModel(glyph = RightRailGlyph.TERMINAL)),
-    listOf(RightRailButtonModel(glyph = RightRailGlyph.SETTINGS)),
+    listOf(
+        RightRailButtonModel(glyph = RightRailGlyph.NOTIFICATIONS),
+        RightRailButtonModel(glyph = RightRailGlyph.SETTINGS),
+    ),
 )
 
 /** 返回业务选择行的状态色，Jewel 原生下拉菜单不调用此函数。 */

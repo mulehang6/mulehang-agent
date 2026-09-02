@@ -2,19 +2,24 @@ package com.agent.app.chat.component
 
 import com.agent.app.design.PopupMenuHoverBackground
 import com.agent.app.design.PopupMenuSelectedBackground
+import com.agent.app.design.AppAccent
+import com.agent.shared.agent.resource.AgentResourceOrigin
+import com.agent.shared.agent.resource.AgentSkillResource
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import androidx.compose.ui.graphics.Color
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertNotEquals
 
 /** 设置 Island 的交互色与稳定状态回归测试。 */
 class SettingsPanelInteractionTest {
 
-    /** 外观和工具只属于用户级全局设置，切到项目或环境范围时安全回退到主题。 */
+    /** 外观和工具只属于用户级全局设置；扩展可按用户或项目范围管理，环境层保持只读配置范围。 */
     @Test
     fun `should show appearance only for global settings scope`() {
         assertEquals(
@@ -23,11 +28,12 @@ class SettingsPanelInteractionTest {
                 SettingsSection.THEME,
                 SettingsSection.TOOLS,
                 SettingsSection.PROVIDERS,
+                SettingsSection.EXTENSIONS,
             ),
             settingsSectionsFor(ConfigLayer.USER),
         )
         assertEquals(
-            listOf(SettingsSection.THEME, SettingsSection.PROVIDERS),
+            listOf(SettingsSection.THEME, SettingsSection.PROVIDERS, SettingsSection.EXTENSIONS),
             settingsSectionsFor(ConfigLayer.PROJECT),
         )
         assertEquals(
@@ -51,6 +57,17 @@ class SettingsPanelInteractionTest {
             PopupMenuSelectedBackground,
             settingsItemBackground(selected = true, hovered = true),
         )
+    }
+
+    /** 强调操作在悬停和按下时提供可见反馈，普通/危险操作不改变原有缩放语义。 */
+    @Test
+    fun `should provide hover and press feedback for emphasized settings actions`() {
+        assertEquals(AppAccent, emphasizedSettingsActionBackground(hovered = false, pressed = false))
+        assertNotEquals(AppAccent, emphasizedSettingsActionBackground(hovered = true, pressed = false))
+        assertNotEquals(AppAccent, emphasizedSettingsActionBackground(hovered = true, pressed = true))
+        assertEquals(0.97f, settingsActionScale(emphasized = true, pressed = true))
+        assertEquals(1f, settingsActionScale(emphasized = true, pressed = false))
+        assertEquals(1f, settingsActionScale(emphasized = false, pressed = true))
     }
 
     /** 未设置辅助模型时，只用 Provider 的首个模型作为不写入配置的占位回退。 */
@@ -170,5 +187,35 @@ class SettingsPanelInteractionTest {
             if (previous == null) System.clearProperty("mulehang.reducedMotion")
             else System.setProperty("mulehang.reducedMotion", previous)
         }
+    }
+
+    /** 自动加载区域只显示当前快照中由默认用户级 `.agents/skills` 根发现的 Skill。 */
+    @Test
+    fun `should show loaded user agents skills only`() {
+        val userHome = Files.createTempDirectory("mulehang-settings-home")
+        val agentsSkill = AgentSkillResource(
+            name = "review",
+            description = "review code",
+            location = userHome.resolve(".agents/skills/review/SKILL.md"),
+            content = "review code",
+            disableModelInvocation = false,
+            origin = AgentResourceOrigin.USER_AUTO_DISCOVERY,
+        )
+        val mulehangSkill = agentsSkill.copy(
+            name = "mulehang",
+            location = userHome.resolve(".mulehang/skills/mulehang/SKILL.md"),
+        )
+        val configuredSkill = agentsSkill.copy(
+            name = "configured",
+            origin = AgentResourceOrigin.USER_CONFIGURATION,
+        )
+
+        assertEquals(
+            listOf(agentsSkill),
+            autoLoadedUserAgentsSkills(
+                loadedSkills = listOf(agentsSkill, mulehangSkill, configuredSkill),
+                userHome = userHome,
+            ),
+        )
     }
 }

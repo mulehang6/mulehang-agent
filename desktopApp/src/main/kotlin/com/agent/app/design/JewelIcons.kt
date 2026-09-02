@@ -17,6 +17,12 @@ internal val TERMINAL_ICON_KEY: IconKey = PathIconKey(
     iconClass = ApplicationIconResources::class.java,
 )
 
+/** Composer 空闲态使用应用自带的纸飞机图标，避免混淆为运行或执行操作。 */
+internal val COMPOSER_SEND_ICON_KEY: IconKey = PathIconKey(
+    path = "icons/send.svg",
+    iconClass = ApplicationIconResources::class.java,
+)
+
 /** 将业务级标题栏动作映射到 IntelliJ 图标包。 */
 internal val HeaderGlyph.iconKey: IconKey
     get() = when (this) {
@@ -27,7 +33,7 @@ internal val HeaderGlyph.iconKey: IconKey
         HeaderGlyph.ADD -> AllIconsKeys.General.Add
         HeaderGlyph.CODE -> AllIconsKeys.FileTypes.Any_type
         HeaderGlyph.SEARCH -> AllIconsKeys.Actions.Find
-        HeaderGlyph.SEND -> AllIconsKeys.General.ArrowUp
+        HeaderGlyph.SEND -> COMPOSER_SEND_ICON_KEY
         HeaderGlyph.STOP -> AllIconsKeys.Actions.Suspend
     }
 
@@ -41,6 +47,7 @@ internal val RightRailGlyph.iconKey: IconKey
         RightRailGlyph.HISTORY -> AllIconsKeys.Vcs.History
         RightRailGlyph.COPY -> AllIconsKeys.Actions.Copy
         RightRailGlyph.FILTER -> AllIconsKeys.General.Filter
+        RightRailGlyph.NOTIFICATIONS -> AllIconsKeys.Toolwindows.Notifications
         RightRailGlyph.SETTINGS -> AllIconsKeys.General.Settings
     }
 
@@ -54,5 +61,6 @@ internal val RightRailGlyph.tooltip: String
         RightRailGlyph.HISTORY -> "历史"
         RightRailGlyph.COPY -> "复制"
         RightRailGlyph.FILTER -> "筛选"
+        RightRailGlyph.NOTIFICATIONS -> "设置变更通知"
         RightRailGlyph.SETTINGS -> "设置"
     }

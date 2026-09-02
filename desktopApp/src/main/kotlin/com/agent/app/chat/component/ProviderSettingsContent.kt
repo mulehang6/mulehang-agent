@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+)
 
 package com.agent.app.chat.component
 
@@ -13,6 +16,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.semantics.contentDescription
@@ -70,6 +77,8 @@ internal fun ProviderSettingsContent(
     expandedProviderId: String?,
     onExpandedProviderChange: (String?) -> Unit,
     onDocumentChange: (SettingsDocument) -> Unit,
+    onChangeNotification: (String) -> Unit,
+    onProviderFieldsChanged: () -> Unit,
 ) {
     GroupHeader("AI 服务")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -77,6 +86,7 @@ internal fun ProviderSettingsContent(
             val id = "provider-${document.providers.size + 1}"
             onDocumentChange(document.copy(providers = document.providers + newProvider(id)))
             onExpandedProviderChange(id)
+            onChangeNotification("已新增 AI 服务：$id")
         }
     }
     document.providers.filter { provider ->
@@ -116,6 +126,9 @@ internal fun ProviderSettingsContent(
                                 },
                             ),
                         )
+                        onChangeNotification(
+                            "已${if (enabled) "启用" else "停用"} AI 服务：${provider.label ?: provider.id}",
+                        )
                     },
                     modifier = Modifier.padding(horizontal = 8.dp).semantics {
                         contentDescription = "${provider.label ?: provider.id}启用状态"
@@ -138,10 +151,12 @@ internal fun ProviderSettingsContent(
                             onDocumentChange(
                                 document.copy(providers = document.providers.map { if (it.id == provider.id) updated else it }),
                             )
+                            onProviderFieldsChanged()
                         },
                         onDelete = {
                             onDocumentChange(document.copy(providers = document.providers - provider))
                             onExpandedProviderChange(null)
+                            onChangeNotification("已删除 AI 服务：${provider.label ?: provider.id}")
                         },
                     )
                 }
@@ -232,23 +247,49 @@ internal fun SettingsActionButton(
     onClick: () -> Unit,
 ) {
     var hovered by remember(text) { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(if (compact) 4.dp else 5.dp)
     val horizontalPadding = if (compact) 6.dp else 10.dp
     val verticalPadding = if (compact) 2.dp else 7.dp
     val color = when {
-        emphasized -> AppAccent
+        emphasized -> emphasizedSettingsActionBackground(hovered = hovered, pressed = pressed)
         destructive -> AppDanger.copy(alpha = if (hovered) 0.9f else 0.62f)
         else -> settingsItemBackground(selected = false, hovered = hovered)
     }
+    val scale by animateFloatAsState(
+        targetValue = settingsActionScale(emphasized = emphasized, pressed = pressed),
+        animationSpec = tween(durationMillis = if (pressed) 100 else 130),
+        label = "settings-action-scale",
+    )
     Text(
-        text,
-        modifier = modifier.clip(shape).background(color)
+        text = text,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .background(color)
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
-            .clickable(onClick = onClick).padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            .hoverable(interactionSource)
+            .clickable(interactionSource = interactionSource, onClick = onClick)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         style = JewelTheme.defaultTextStyle.copy(color = AppText),
     )
 }
+
+/** 返回强调操作在默认、悬停及按下阶段的强调色，普通/危险操作不使用此规则。 */
+internal fun emphasizedSettingsActionBackground(hovered: Boolean, pressed: Boolean): Color = when {
+    pressed -> lerp(AppAccent, Color.Black, 0.16f)
+    hovered -> lerp(AppAccent, Color.White, 0.12f)
+    else -> AppAccent
+}
+
+/** 强调操作按下时提供短暂的物理反馈，其余操作维持既有尺寸。 */
+internal fun settingsActionScale(emphasized: Boolean, pressed: Boolean): Float =
+    if (emphasized && pressed) 0.97f else 1f
 
 /** 返回设置项和菜单共用的 hover/选中背景。 */
 internal fun settingsItemBackground(selected: Boolean, hovered: Boolean, enabled: Boolean = true): Color =

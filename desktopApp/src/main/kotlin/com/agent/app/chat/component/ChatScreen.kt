@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
@@ -96,6 +97,7 @@ internal fun ChatScreen(
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var appFeedbackToken by remember { mutableStateOf(0L) }
     var islandFocus by remember { mutableStateOf(WorkspaceIslandFocus.NONE) }
+    var notificationAnchor by remember { mutableStateOf<Rect?>(null) }
     val settingsUiState = remember { SettingsPanelUiState() }
     val showAppFeedback: (AppFeedbackState) -> Unit = { feedback ->
         appFeedbackToken = nextAppFeedbackToken(appFeedbackToken)
@@ -120,6 +122,9 @@ internal fun ChatScreen(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = isCompactDesktopLayout(maxWidth.value.toInt())
+        LaunchedEffect(compact) {
+            if (compact) notificationAnchor = null
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -201,6 +206,11 @@ internal fun ChatScreen(
                                                 )
                                             },
                                             onSettingsSaved = onSettingsChanged,
+                                            onReloadResources = state::reloadAgentResources,
+                                            extensionPackages = state.extensionPackages,
+                                            loadedSkills = state.loadedSkills,
+                                            resourceDiagnostics = state.resourceDiagnostics,
+                                            mcpServers = state.mcpServers,
                                             uiState = settingsUiState,
                                             modifier = settingsModifier,
                                         )
@@ -246,8 +256,17 @@ internal fun ChatScreen(
                                 WorkspaceIslandFocus.CHAT,
                                 -> RightRailGlyph.CODE
                             },
+                            notificationsVisible = settingsUiState.changeNotifications.historyVisible ||
+                                    settingsUiState.changeNotifications.transientEntry != null,
                             onToolClick = { glyph ->
-                                if (glyph == RightRailGlyph.SETTINGS) {
+                                if (glyph == RightRailGlyph.NOTIFICATIONS) {
+                                    settingsUiState.changeNotifications.toggleHistory()
+                                    islandFocus = when {
+                                        terminalVisible -> WorkspaceIslandFocus.TERMINAL
+                                        settingsVisible -> WorkspaceIslandFocus.SETTINGS
+                                        else -> WorkspaceIslandFocus.CHAT
+                                    }
+                                } else if (glyph == RightRailGlyph.SETTINGS) {
                                     val willShowSettings = !settingsVisible
                                     onSettingsVisibilityChange(willShowSettings)
                                     islandFocus = if (willShowSettings) {
@@ -272,6 +291,7 @@ internal fun ChatScreen(
                                     }
                                 }
                             },
+                            onNotificationAnchorChanged = { anchor -> notificationAnchor = anchor },
                             modifier = Modifier
                                 .width(TOOL_RAIL_WIDTH_DP.dp)
                                 .fillMaxHeight(),
@@ -283,6 +303,10 @@ internal fun ChatScreen(
         appFeedback?.let { feedback ->
             AppFeedbackOverlay(feedback)
         }
+        SettingsChangeNotificationOverlay(
+            notifications = settingsUiState.changeNotifications,
+            anchor = notificationAnchor,
+        )
     }
 }
 

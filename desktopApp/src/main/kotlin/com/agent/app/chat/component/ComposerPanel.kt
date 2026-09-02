@@ -22,11 +22,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,6 +42,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -49,6 +53,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -60,6 +65,8 @@ import com.agent.app.chat.presentation.groupProfilesByProvider
 import com.agent.app.chat.presentation.modelVariantsFor
 import com.agent.app.chat.presentation.reasoningControlLabel
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.app.chat.state.WorkspaceFileReference
+import com.agent.app.chat.state.discoverWorkspaceFileReferences
 import com.agent.app.chat.state.isStoppable
 import com.agent.app.chat.state.resolveContextWindow
 import com.agent.app.design.AppChipBackground
@@ -74,9 +81,12 @@ import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.iconKey
 import com.agent.app.platform.pickFiles
+import com.agent.app.platform.readClipboardImageAsPng
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.ActionButton
 import org.jetbrains.jewel.ui.component.Icon
@@ -109,7 +119,6 @@ internal fun ComposerPanel(
     state: ChatWindowState,
     onSendDraft: () -> Unit,
     composerInputMaxHeight: Dp,
-    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
@@ -132,19 +141,91 @@ internal fun ComposerPanel(
     val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
     val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
     val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
+    val selectorSlots = buildList {
+        add(
+            ComposerSelectorSlot(
+                menu = ComposerMenu.PROVIDER,
+                label = selectedProfile?.providerLabel ?: currentProvider ?: "服务商",
+            ),
+        )
+        add(
+            ComposerSelectorSlot(
+                menu = ComposerMenu.MODEL,
+                label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "模型",
+            ),
+        )
+        if (selectedVariants.isNotEmpty()) {
+            add(
+                ComposerSelectorSlot(
+                    menu = ComposerMenu.REASONING,
+                    label = reasoningControlLabel(activeConversation?.reasoningEffort),
+                ),
+            )
+        }
+        add(
+            ComposerSelectorSlot(
+                menu = ComposerMenu.PERMISSION,
+                label = permissionPresentation(permissionPreset).label,
+            ),
+        )
+    }
     var expandedMenu by remember { mutableStateOf<ComposerMenu?>(null) }
+    var expandedMenuOpenedWithKeyboard by remember { mutableStateOf(false) }
     var draftFieldValue by remember { mutableStateOf(TextFieldValue(state.ui.draft)) }
+    var commandSelectionIndex by remember { mutableIntStateOf(0) }
+    var referenceSelectionIndex by remember { mutableIntStateOf(0) }
+    var commandBrowserDismissed by remember { mutableStateOf(false) }
+    var referenceBrowserDismissed by remember { mutableStateOf(false) }
+    var suppressComposerEnterKeyUp by remember { mutableStateOf(false) }
+    var workspaceReferences by remember { mutableStateOf<List<WorkspaceFileReference>>(emptyList()) }
     val inputScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     var inputViewportHeight by remember { mutableStateOf(0) }
     val inputContentOffset = composerInputContentOffset()
     val iconActionButtonStyle = composerIconActionButtonStyle()
+    val slashQuery = activeSlashCommandQuery(state.ui.draft, state.ui.draftSelectionStart)
+    val referenceQuery = activeWorkspaceReferenceQuery(state.ui.draft, state.ui.draftSelectionStart)
+    val matchingCommands = state.availablePromptCommands.filter { command ->
+        slashQuery == null || command.name.contains(slashQuery, ignoreCase = true) ||
+                command.description.contains(slashQuery, ignoreCase = true)
+    }
+    val commandBrowserVisible = slashQuery != null && !commandBrowserDismissed
+    val referenceBrowserVisible = !commandBrowserVisible && referenceQuery != null && !referenceBrowserDismissed
 
-    LaunchedEffect(state.ui.draft) {
-        if (draftFieldValue.text != state.ui.draft) {
-            draftFieldValue = TextFieldValue(state.ui.draft)
+    LaunchedEffect(state.ui.draft, state.ui.draftSelectionStart) {
+        val selectionStart = state.ui.draftSelectionStart.coerceIn(0, state.ui.draft.length)
+        if (
+            draftFieldValue.text != state.ui.draft ||
+            draftFieldValue.selection.start != selectionStart ||
+            draftFieldValue.selection.end != selectionStart
+        ) {
+            draftFieldValue = TextFieldValue(state.ui.draft, selection = TextRange(selectionStart))
         }
         inputScrollState.scrollTo(inputScrollState.maxValue)
+    }
+    LaunchedEffect(slashQuery) {
+        commandBrowserDismissed = false
+    }
+    LaunchedEffect(referenceQuery) {
+        referenceBrowserDismissed = false
+    }
+    LaunchedEffect(matchingCommands) {
+        commandSelectionIndex = commandSelectionIndex.coerceIn(0, (matchingCommands.lastIndex).coerceAtLeast(0))
+    }
+    LaunchedEffect(activeConversation?.workspacePath, referenceQuery) {
+        workspaceReferences = if (referenceQuery == null) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.IO) {
+                discoverWorkspaceFileReferences(
+                    workspacePath = activeConversation?.workspacePath.orEmpty(),
+                    query = referenceQuery,
+                )
+            }
+        }
+    }
+    LaunchedEffect(workspaceReferences) {
+        referenceSelectionIndex = referenceSelectionIndex.coerceIn(0, workspaceReferences.lastIndex.coerceAtLeast(0))
     }
 
     JewelSurface(
@@ -228,6 +309,27 @@ internal fun ComposerPanel(
                 }
             }
 
+            if (commandBrowserVisible) {
+                SlashCommandBrowser(
+                    commands = matchingCommands,
+                    selectedIndex = commandSelectionIndex,
+                    onCommandSelected = { command ->
+                        state.insertPromptCommand(command)
+                        commandBrowserDismissed = true
+                    },
+                )
+            } else if (referenceBrowserVisible) {
+                WorkspaceFileReferenceBrowser(
+                    references = workspaceReferences,
+                    selectedIndex = referenceSelectionIndex,
+                    onReferenceSelected = { reference ->
+                        if (state.attachWorkspaceFile(reference.absolutePath) == null) {
+                            referenceBrowserDismissed = true
+                        }
+                    },
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -263,12 +365,104 @@ internal fun ComposerPanel(
                         value = draftFieldValue,
                         onValueChange = { updated ->
                             draftFieldValue = updated
-                            state.updateDraft(updated.text)
+                            state.updateDraft(updated.text, updated.selection.start)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 72.dp)
                             .onPreviewKeyEvent { event ->
+                                if (
+                                    event.type == KeyEventType.KeyUp &&
+                                    event.key == Key.Enter &&
+                                    suppressComposerEnterKeyUp
+                                ) {
+                                    suppressComposerEnterKeyUp = false
+                                    return@onPreviewKeyEvent true
+                                }
+                                if (
+                                    event.type == KeyEventType.KeyDown &&
+                                    event.key == Key.V &&
+                                    event.isCtrlPressed
+                                ) {
+                                    val pastedImage = readClipboardImageAsPng()
+                                    if (pastedImage != null) {
+                                        state.addClipboardImage(pastedImage)
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                if (commandBrowserVisible && event.type == KeyEventType.KeyDown) {
+                                    when (event.key) {
+                                        Key.DirectionDown -> {
+                                            commandSelectionIndex = (commandSelectionIndex + 1)
+                                                .coerceAtMost(matchingCommands.lastIndex.coerceAtLeast(0))
+                                            return@onPreviewKeyEvent true
+                                        }
+
+                                        Key.DirectionUp -> {
+                                            commandSelectionIndex = (commandSelectionIndex - 1).coerceAtLeast(0)
+                                            return@onPreviewKeyEvent true
+                                        }
+
+                                        Key.Enter,
+                                        Key.Tab,
+                                        -> {
+                                            matchingCommands.getOrNull(commandSelectionIndex)?.let { command ->
+                                                state.insertPromptCommand(command)
+                                                commandBrowserDismissed = true
+                                                suppressComposerEnterKeyUp = event.key == Key.Enter
+                                                return@onPreviewKeyEvent true
+                                            }
+                                        }
+
+                                        Key.Period -> if (event.isCtrlPressed) {
+                                            matchingCommands.getOrNull(commandSelectionIndex)?.let { command ->
+                                                state.insertPromptCommand(command)
+                                                commandBrowserDismissed = true
+                                                return@onPreviewKeyEvent true
+                                            }
+                                        }
+
+                                        Key.Escape -> {
+                                            commandBrowserDismissed = true
+                                            return@onPreviewKeyEvent true
+                                        }
+
+                                        else -> Unit
+                                    }
+                                }
+                                if (referenceBrowserVisible && event.type == KeyEventType.KeyDown) {
+                                    when (event.key) {
+                                        Key.DirectionDown -> {
+                                            referenceSelectionIndex = (referenceSelectionIndex + 1)
+                                                .coerceAtMost(workspaceReferences.lastIndex.coerceAtLeast(0))
+                                            return@onPreviewKeyEvent true
+                                        }
+
+                                        Key.DirectionUp -> {
+                                            referenceSelectionIndex = (referenceSelectionIndex - 1).coerceAtLeast(0)
+                                            return@onPreviewKeyEvent true
+                                        }
+
+                                        Key.Enter,
+                                        Key.Tab,
+                                        -> {
+                                            workspaceReferences.getOrNull(referenceSelectionIndex)?.let { reference ->
+                                                if (state.attachWorkspaceFile(reference.absolutePath) == null) {
+                                                    referenceBrowserDismissed = true
+                                                }
+                                                suppressComposerEnterKeyUp = event.key == Key.Enter
+                                                return@onPreviewKeyEvent true
+                                            }
+                                        }
+
+                                        Key.Escape -> {
+                                            referenceBrowserDismissed = true
+                                            return@onPreviewKeyEvent true
+                                        }
+
+                                        else -> Unit
+                                    }
+                                }
                                 val selectionScrollDelta = composerKeyboardSelectionScrollDelta(
                                     key = event.key,
                                     isShiftPressed = event.isShiftPressed,
@@ -319,77 +513,130 @@ internal fun ComposerPanel(
             }
 
             ComposerControlBar(
-                compact = compact,
-                startControls = {
+                attachment = {
                     ActionButton(
                         onClick = { state.attachFiles(pickFiles()) },
                         tooltip = { Text("添加附件") },
                         style = iconActionButtonStyle,
+                        modifier = Modifier.size(36.dp),
                     ) { Icon(HeaderGlyph.ADD.iconKey, "添加附件") }
-                    ComposerSelectorMenuButton(
-                        label = selectedProfile?.providerLabel ?: currentProvider ?: "服务商",
-                        expanded = expandedMenu == ComposerMenu.PROVIDER,
-                        onExpandedChange = { shouldExpand ->
-                            expandedMenu = ComposerMenu.PROVIDER.takeIf { shouldExpand }
-                        },
-                        onDismissRequest = {
-                            expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
-                        },
-                    ) {
-                        providerProfiles.entries.forEach { (_, providerModels) ->
-                            val first = providerModels.firstOrNull() ?: return@forEach
-                            selectableItem(
-                                selected = first.providerId == currentProvider,
-                                onClick = {
-                                    expandedMenu = null
-                                    state.selectProfile(first.id)
-                                },
-                            ) { Text(first.providerLabel) }
-                        }
-                    }
-                    ComposerSelectorMenuButton(
-                        label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "模型",
-                        expanded = expandedMenu == ComposerMenu.MODEL,
-                        onExpandedChange = { shouldExpand ->
-                            expandedMenu = ComposerMenu.MODEL.takeIf { shouldExpand }
-                        },
-                        onDismissRequest = {
-                            expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
-                        },
-                    ) {
-                        currentProviderProfiles.forEach { profile ->
-                            selectableItem(
-                                selected = profile.id == selectedProfile?.id,
-                                onClick = {
-                                    expandedMenu = null
-                                    state.selectProfile(profile.id)
-                                },
-                            ) { Text(profile.modelLabel ?: profile.model) }
-                        }
-                    }
-                    if (selectedVariants.isNotEmpty()) {
-                        ComposerSelectorMenuButton(
-                            label = reasoningControlLabel(activeConversation?.reasoningEffort),
-                            expanded = expandedMenu == ComposerMenu.REASONING,
-                            onExpandedChange = { shouldExpand ->
-                                expandedMenu = ComposerMenu.REASONING.takeIf { shouldExpand }
-                            },
-                            onDismissRequest = {
-                                expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
-                            },
-                        ) {
-                            selectedVariants.forEach { variant ->
-                                val effort = variant.reasoningEffort ?: return@forEach
-                                selectableItem(
-                                    selected = effort == activeConversation?.reasoningEffort,
-                                    onClick = {
-                                        expandedMenu = null
-                                        state.updateReasoningEffort(effort)
+                },
+                selectorGroup = {
+                    ComposerSelectorStrip(
+                        slots = selectorSlots,
+                        keepCardVisible = expandedMenu != null,
+                        control = { slot, displayLabel, showChevron, selectorModifier, compactPreview ->
+                            val expanded = !compactPreview && expandedMenu == slot.menu
+                            when (slot.menu) {
+                                ComposerMenu.PROVIDER -> ComposerSelectorMenuButton(
+                                    label = slot.label,
+                                    displayLabel = displayLabel,
+                                    showChevron = showChevron,
+                                    expanded = expanded,
+                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
+                                        expandedMenu = ComposerMenu.PROVIDER.takeIf { shouldExpand }
+                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
                                     },
-                                ) { Text(reasoningControlLabel(effort)) }
+                                    onDismissRequest = {
+                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
+                                        expandedMenuOpenedWithKeyboard = false
+                                    },
+                                    modifier = selectorModifier,
+                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
+                                ) {
+                                    providerProfiles.entries.forEach { (_, providerModels) ->
+                                        val first = providerModels.firstOrNull() ?: return@forEach
+                                        selectableItem(
+                                            selected = first.providerId == currentProvider,
+                                            onClick = {
+                                                expandedMenu = null
+                                                state.selectProfile(first.id)
+                                            },
+                                        ) { Text(first.providerLabel) }
+                                    }
+                                }
+
+                                ComposerMenu.MODEL -> ComposerSelectorMenuButton(
+                                    label = slot.label,
+                                    displayLabel = displayLabel,
+                                    showChevron = showChevron,
+                                    expanded = expanded,
+                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
+                                        expandedMenu = ComposerMenu.MODEL.takeIf { shouldExpand }
+                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                    },
+                                    onDismissRequest = {
+                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
+                                        expandedMenuOpenedWithKeyboard = false
+                                    },
+                                    modifier = selectorModifier,
+                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
+                                ) {
+                                    currentProviderProfiles.forEach { profile ->
+                                        selectableItem(
+                                            selected = profile.id == selectedProfile?.id,
+                                            onClick = {
+                                                expandedMenu = null
+                                                state.selectProfile(profile.id)
+                                            },
+                                        ) { Text(profile.modelLabel ?: profile.model) }
+                                    }
+                                }
+
+                                ComposerMenu.REASONING -> ComposerSelectorMenuButton(
+                                    label = slot.label,
+                                    displayLabel = displayLabel,
+                                    showChevron = showChevron,
+                                    expanded = expanded,
+                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
+                                        expandedMenu = ComposerMenu.REASONING.takeIf { shouldExpand }
+                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                    },
+                                    onDismissRequest = {
+                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
+                                        expandedMenuOpenedWithKeyboard = false
+                                    },
+                                    modifier = selectorModifier,
+                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
+                                ) {
+                                    selectedVariants.forEach { variant ->
+                                        val effort = variant.reasoningEffort ?: return@forEach
+                                        selectableItem(
+                                            selected = effort == activeConversation?.reasoningEffort,
+                                            onClick = {
+                                                expandedMenu = null
+                                                state.updateReasoningEffort(effort)
+                                            },
+                                        ) { Text(reasoningControlLabel(effort)) }
+                                    }
+                                }
+
+                                ComposerMenu.PERMISSION -> ComposerPermissionMenuButton(
+                                    label = slot.label,
+                                    displayLabel = displayLabel,
+                                    showChevron = showChevron,
+                                    expanded = expanded,
+                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
+                                        expandedMenu = ComposerMenu.PERMISSION.takeIf { shouldExpand }
+                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                    },
+                                    onDismissRequest = {
+                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
+                                        expandedMenuOpenedWithKeyboard = false
+                                    },
+                                    selectedPreset = permissionPreset,
+                                    onPresetSelected = { preset ->
+                                        expandedMenu = null
+                                        state.updatePermission(preset)
+                                    },
+                                    modifier = selectorModifier,
+                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
+                                )
                             }
-                        }
-                    }
+                        },
+                    )
+                },
+                contextIndicator = {
                     ComposerContextIndicator(
                         sweepAngle = contextRingSweepAngle(activeConversation?.contextUsageFraction ?: 0f),
                         tooltip = buildContextTooltip(
@@ -398,22 +645,7 @@ internal fun ComposerPanel(
                         ),
                     )
                 },
-                endControls = {
-                    ComposerPermissionMenuButton(
-                        label = permissionPresentation(permissionPreset).label,
-                        expanded = expandedMenu == ComposerMenu.PERMISSION,
-                        onExpandedChange = { shouldExpand ->
-                            expandedMenu = ComposerMenu.PERMISSION.takeIf { shouldExpand }
-                        },
-                        onDismissRequest = {
-                            expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
-                        },
-                        selectedPreset = permissionPreset,
-                        onPresetSelected = { preset ->
-                            expandedMenu = null
-                            state.updatePermission(preset)
-                        },
-                    )
+                primaryAction = {
                     ComposerPrimaryActionButton(
                         danger = primaryActionVisual.danger,
                         onClick = {

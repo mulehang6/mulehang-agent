@@ -53,6 +53,23 @@ class ComposerPanelTest {
         assertEquals(DpOffset(12.dp, 8.dp), composerInputContentOffset())
     }
 
+    /** `/` 仅在消息开头且还未开始输入参数时打开命令浏览器。 */
+    @Test
+    fun `should expose slash command query only at active command prefix`() {
+        assertEquals("review", activeSlashCommandQuery("/review", 7))
+        assertEquals("", activeSlashCommandQuery("/", 1))
+        assertEquals(null, activeSlashCommandQuery("请 /review", 9))
+        assertEquals(null, activeSlashCommandQuery("/review inspect", 15))
+    }
+
+    /** `@` 浏览器仅解析独立的工作区文件输入，不抢占电子邮件或已完成的普通文本。 */
+    @Test
+    fun `should expose workspace file query only after standalone at sign`() {
+        assertEquals("src/App", activeWorkspaceReferenceQuery("读取 @src/App", 11))
+        assertEquals(null, activeWorkspaceReferenceQuery("mail@example.com", 16))
+        assertEquals(null, activeWorkspaceReferenceQuery("读取 @src App", 11))
+    }
+
     /** 五种权限语义不得因紧凑菜单视觉重做而变化。 */
     @Test
     fun `should preserve every permission presentation in compact menu`() {
@@ -62,13 +79,64 @@ class ComposerPanelTest {
         )
     }
 
-    /** 宽窗口保持左右分组，紧凑窗口将权限和主动作纳入同一条横向工具栏。 */
+    /** 选择器组从右向左收窄，权限变化期间不会推挤其左侧的选择器。 */
     @Test
-    fun `should use split or horizontal scrolling composer controls by layout`() {
-        assertEquals(ComposerControlLayoutMode.SPLIT, composerControlLayout(compact = false))
+    fun `should collapse permission before the selectors to its left`() {
+        val specs = listOf(
+            ComposerSelectorWidthSpec(100.dp, 80.dp, 32.dp),
+            ComposerSelectorWidthSpec(100.dp, 80.dp, 32.dp),
+            ComposerSelectorWidthSpec(60.dp, 40.dp, 28.dp),
+            ComposerSelectorWidthSpec(60.dp, 40.dp, 28.dp),
+        )
+
         assertEquals(
-            ComposerControlLayoutMode.HORIZONTAL_SCROLL,
-            composerControlLayout(compact = true),
+            listOf(
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 100.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 100.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 60.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.LABEL_ONLY, 40.dp),
+            ),
+            composerSelectorWidthAllocations(specs, availableWidth = 312.dp),
+        )
+        assertEquals(
+            listOf(
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 100.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 100.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 60.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.PREFIX, 32.dp),
+            ),
+            composerSelectorWidthAllocations(specs, availableWidth = 304.dp),
+        )
+    }
+
+    /** 去除箭头后，权限文本按可用字符宽度保留前缀，不显示省略号。 */
+    @Test
+    fun `should shorten permission label from ask to as before hiding it`() {
+        val measureMonospace = { text: String -> text.length * 10 }
+
+        assertEquals("Ask", composerSelectorLabelPrefix("Ask", 30, measureMonospace))
+        assertEquals("As", composerSelectorLabelPrefix("Ask", 20, measureMonospace))
+        assertEquals("", composerSelectorLabelPrefix("Ask", 9, measureMonospace))
+    }
+
+    /** 权限完全隐藏后，才轮到思考等级从右侧开始收窄。 */
+    @Test
+    fun `should collapse reasoning only after permission is hidden`() {
+        val specs = listOf(
+            ComposerSelectorWidthSpec(100.dp, 80.dp, 32.dp),
+            ComposerSelectorWidthSpec(100.dp, 80.dp, 32.dp),
+            ComposerSelectorWidthSpec(60.dp, 40.dp, 28.dp),
+            ComposerSelectorWidthSpec(60.dp, 40.dp, 28.dp),
+        )
+
+        assertEquals(
+            listOf(
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 100.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.FULL, 100.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.LABEL_ONLY, 40.dp),
+                ComposerSelectorWidthAllocation(ComposerSelectorCompressionState.HIDDEN, 0.dp),
+            ),
+            composerSelectorWidthAllocations(specs, availableWidth = 267.dp),
         )
     }
 

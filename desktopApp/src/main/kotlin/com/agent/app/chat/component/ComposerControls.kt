@@ -33,6 +33,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
@@ -63,31 +64,37 @@ import org.jetbrains.jewel.ui.theme.menuStyle
 @Composable
 internal fun ComposerSelectorMenuButton(
     label: String,
+    displayLabel: String = label,
+    showChevron: Boolean = true,
     expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
+    onExpandedChange: (Boolean, Boolean) -> Unit,
     onDismissRequest: () -> Unit,
     menuModifier: Modifier = Modifier,
+    modifier: Modifier = Modifier,
+    keyboardTriggeredPopup: Boolean = false,
     content: MenuScope.() -> Unit,
 ) {
-    var popupFocusable by remember { mutableStateOf(false) }
+    var openedWithKeyboard by remember { mutableStateOf(false) }
 
     Box {
         ComposerMenuTrigger(
-            label = label,
-            onClick = { onExpandedChange(!expanded) },
-            onKeyboardActivation = { popupFocusable = true },
-            onPointerActivation = { popupFocusable = false },
+            label = displayLabel,
+            showChevron = showChevron,
+            onClick = { onExpandedChange(!expanded, openedWithKeyboard) },
+            onKeyboardActivation = { openedWithKeyboard = true },
+            onPointerActivation = { openedWithKeyboard = false },
+            modifier = modifier,
         )
         if (expanded) {
             PopupMenu(
                 onDismissRequest = {
-                    popupFocusable = false
+                    openedWithKeyboard = false
                     onDismissRequest()
                     true
                 },
                 horizontalAlignment = androidx.compose.ui.Alignment.Start,
                 modifier = menuModifier,
-                popupProperties = PopupProperties(focusable = popupFocusable),
+                popupProperties = PopupProperties(focusable = keyboardTriggeredPopup || openedWithKeyboard),
                 content = content,
             )
         }
@@ -100,35 +107,41 @@ internal fun ComposerSelectorMenuButton(
 @Composable
 internal fun ComposerPermissionMenuButton(
     label: String,
+    displayLabel: String = label,
+    showChevron: Boolean = true,
     expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
+    onExpandedChange: (Boolean, Boolean) -> Unit,
     onDismissRequest: () -> Unit,
     selectedPreset: PermissionPreset,
     onPresetSelected: (PermissionPreset) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardTriggeredPopup: Boolean = false,
 ) {
     val baseMenuStyle = JewelTheme.menuStyle
     val menuStyle = remember(baseMenuStyle) {
         composerPermissionMenuStyle(baseMenuStyle)
     }
-    var popupFocusable by remember { mutableStateOf(false) }
+    var openedWithKeyboard by remember { mutableStateOf(false) }
 
     Box {
         ComposerMenuTrigger(
-            label = label,
-            onClick = { onExpandedChange(!expanded) },
-            onKeyboardActivation = { popupFocusable = true },
-            onPointerActivation = { popupFocusable = false },
+            label = displayLabel,
+            showChevron = showChevron,
+            onClick = { onExpandedChange(!expanded, openedWithKeyboard) },
+            onKeyboardActivation = { openedWithKeyboard = true },
+            onPointerActivation = { openedWithKeyboard = false },
+            modifier = modifier,
         )
         if (expanded) {
             PopupMenu(
                 onDismissRequest = {
-                    popupFocusable = false
+                    openedWithKeyboard = false
                     onDismissRequest()
                     true
                 },
                 horizontalAlignment = androidx.compose.ui.Alignment.End,
                 style = menuStyle,
-                popupProperties = PopupProperties(focusable = popupFocusable),
+                popupProperties = PopupProperties(focusable = keyboardTriggeredPopup || openedWithKeyboard),
             ) {
                 PermissionPreset.entries.forEach { preset ->
                     val presentation = permissionPresentation(preset)
@@ -153,9 +166,11 @@ internal fun ComposerPermissionMenuButton(
 @Composable
 private fun ComposerMenuTrigger(
     label: String,
+    showChevron: Boolean,
     onClick: () -> Unit,
     onKeyboardActivation: () -> Unit,
     onPointerActivation: () -> Unit,
+    modifier: Modifier,
 ) {
     val palette = LocalDesktopPalette.current
     val triggerContentColor = palette.text.copy(alpha = 0.82f)
@@ -168,7 +183,7 @@ private fun ComposerMenuTrigger(
         focusable = true,
         style = style,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-        modifier = Modifier
+        modifier = modifier
             .hoverable(hoverInteractionSource)
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.Spacebar)) {
@@ -185,13 +200,17 @@ private fun ComposerMenuTrigger(
             Text(
                 text = label,
                 style = JewelTheme.defaultTextStyle.copy(color = triggerContentColor),
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
             )
-            Icon(
-                key = AllIconsKeys.General.ChevronDown,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = triggerContentColor,
-            )
+            if (showChevron) {
+                Icon(
+                    key = AllIconsKeys.General.ChevronDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = triggerContentColor,
+                )
+            }
         }
     }
 }

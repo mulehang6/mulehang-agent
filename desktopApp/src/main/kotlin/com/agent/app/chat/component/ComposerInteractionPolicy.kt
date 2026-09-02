@@ -119,6 +119,34 @@ internal fun shouldSubmitComposerKey(
     isShiftPressed: Boolean,
 ): Boolean = key == Key.Enter && eventType == KeyEventType.KeyUp && !isShiftPressed
 
+/**
+ * 提取当前光标处可用于 `/` 浏览器筛选的命令片段。命令仅在消息开头、且尚未输入参数时显示，避免
+ * 正常正文中的斜杠触发菜单。
+ */
+internal fun activeSlashCommandQuery(
+    draft: String,
+    selectionStart: Int,
+): String? {
+    val cursor = selectionStart.coerceIn(0, draft.length)
+    val prefix = draft.substring(0, cursor)
+    if (!prefix.startsWith('/')) return null
+    val query = prefix.drop(1)
+    return query.takeUnless { value -> value.any(Char::isWhitespace) }
+}
+
+/** 从当前光标处提取未完成的 `@` 工作区文件查询；邮件地址等普通文本不会触发。 */
+internal fun activeWorkspaceReferenceQuery(
+    draft: String,
+    selectionStart: Int,
+): String? {
+    val cursor = selectionStart.coerceIn(0, draft.length)
+    if (cursor == 0) return null
+    val atIndex = draft.lastIndexOf('@', startIndex = cursor - 1)
+    if (atIndex < 0 || (atIndex > 0 && !draft[atIndex - 1].isWhitespace())) return null
+    val query = draft.substring(atIndex + 1, cursor)
+    return query.takeUnless { value -> value.any(Char::isWhitespace) }
+}
+
 /** 权限模式在选择器及菜单中共用的文案与风险色。 */
 internal data class PermissionPresentation(
     val label: String,

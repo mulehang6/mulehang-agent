@@ -20,9 +20,8 @@
 
 配置采用双层 JSON：
 
-1. 用户级配置：`~/.mulehang/settings.json`
-2. 项目级配置：`./.mulehang/settings.json`
-3. 示例文件：`./.mulehang/settings.json.example`
+1. AI配置：`~/.mulehang/settings.json`
+2. 示例文件：`./.mulehang/settings.json.example`
 
 优先级固定为：`环境变量 > 项目级配置 > 用户级配置 > 默认值`
 

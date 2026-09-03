@@ -61,6 +61,6 @@ internal val RightRailGlyph.tooltip: String
         RightRailGlyph.HISTORY -> "历史"
         RightRailGlyph.COPY -> "复制"
         RightRailGlyph.FILTER -> "筛选"
-        RightRailGlyph.NOTIFICATIONS -> "设置变更通知"
+        RightRailGlyph.NOTIFICATIONS -> "通知"
         RightRailGlyph.SETTINGS -> "设置"
     }

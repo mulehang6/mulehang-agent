@@ -185,7 +185,7 @@ private fun SettingsNotificationHistoryCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "设置变更历史",
+                    text = "通知历史",
                     modifier = Modifier.weight(1f),
                     style = JewelTheme.defaultTextStyle.copy(color = AppText),
                     fontWeight = FontWeight.SemiBold,
@@ -195,7 +195,7 @@ private fun SettingsNotificationHistoryCard(
                 }
             }
             if (entries.isEmpty()) {
-                Text("本次会话尚无设置变更。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+                Text("本次会话尚无新的通知。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
             } else {
                 Column(
                     modifier = Modifier.heightIn(max = (maxHeight - 64.dp).coerceAtLeast(1.dp))

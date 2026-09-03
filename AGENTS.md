@@ -38,7 +38,7 @@ Kotlin 使用 4 空格、尾随逗号、无制表符；类型为 `PascalCase`，
 
 ## 配置、文档与交付
 
-配置优先级为环境变量、`.mulehang/settings.json`、`~/.mulehang/settings.json`、默认值。禁止提交密钥、Token、用户配置、日志或真实路径；新增配置项同步更新示例文件并只使用占位值。
+AI配置优先级为环境变量、`~/.mulehang/settings.json`、默认值。禁止提交密钥、Token、用户配置、日志或真实路径；新增配置项同步更新示例文件并只使用占位值。
 
 设计、实施与总结等计划文档统一置于 `docs/plans/`，不再使用 `docs/superpowers/specs/` 或 `docs/superpowers/plans/`
 （历史文档位于 `backup/superpower-docs`）。未经明确授权不得提交。提交采用 `feat(agent): 添加流式回退指导` 格式；PR

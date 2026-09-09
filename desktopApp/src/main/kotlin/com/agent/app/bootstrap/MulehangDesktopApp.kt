@@ -27,6 +27,7 @@ import com.agent.app.design.adjustedDesktopUiScalePercent
 import com.agent.app.design.desktopPalette
 import com.agent.app.design.ideaFrameAmbientBackground
 import com.agent.app.design.ideaTitleBarContentOriginPx
+import com.agent.app.design.JewelDialog
 import com.agent.app.design.loadDesktopFontCatalog
 import com.agent.app.design.scaledFrameAmbientDensityScale
 import com.agent.app.platform.BridgeWindowsTitleBarInputToCompose
@@ -58,6 +59,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.window.DecoratedWindow
+import org.jetbrains.jewel.ui.component.Text
 
 /**
  * 根 composable，负责加载桌面会话快照并装配窗口状态。
@@ -114,6 +116,8 @@ internal fun MulehangDesktopApp(
     }
     var sidebarVisible by remember { mutableStateOf(false) }
     var settingsVisible by remember { mutableStateOf(false) }
+    var projectTrustPrompt by remember { mutableStateOf<Path?>(null) }
+    var projectTrustFeedback by remember { mutableStateOf<String?>(null) }
     var frameGradientAnchorPx by remember { mutableStateOf<Float?>(null) }
     val toolInteractionCoordinator = remember {
         DesktopToolInteractionCoordinator()
@@ -127,11 +131,14 @@ internal fun MulehangDesktopApp(
         scope = appScope,
         reportError = { message -> stateHolder.value?.setPersistenceError(message) },
     )
+    val koogGateway = remember(toolInteractionCoordinator) {
+        KoogAgentGateway(interactionBridge = toolInteractionCoordinator)
+    }
     val windowState = remember {
         ChatWindowState(
             sendMessageUseCase = SendMessageUseCase(
                 RecordingAgentGateway(
-                    delegate = KoogAgentGateway(interactionBridge = toolInteractionCoordinator),
+                    delegate = koogGateway,
                     recorder = JsonLinesAgentRunRecorder(),
                 ),
             ),
@@ -156,8 +163,13 @@ internal fun MulehangDesktopApp(
         )
     }
     stateHolder.value = windowState
-    val requestClose = remember(windowState, onCloseRequest) {
-        { windowState.flushPersistence(onCloseRequest) }
+    val requestClose = remember(windowState, koogGateway, onCloseRequest) {
+        {
+            windowState.ui.tasks.forEach { conversation ->
+                koogGateway.endSession(conversation.id, conversation.workspacePath)
+            }
+            windowState.flushPersistence(onCloseRequest)
+        }
     }
 
     LaunchedEffect(projectRootState.value) {
@@ -165,6 +177,11 @@ internal fun MulehangDesktopApp(
             uiStateStore.saveRecentWorkspace(projectRoot.toString())
             val repository = DesktopAppSessionRepository(projectRoot = projectRoot, userHome = userHome)
             windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
+            projectTrustPrompt = projectRoot.takeIf {
+                shouldPromptForProjectTrust(projectRoot = it, projectTrusted = projectResourcesAreTrusted(userHome, it))
+            }
+        } ?: run {
+            projectTrustPrompt = null
         }
         windowState.refreshActiveResourceSnapshot()
     }
@@ -271,14 +288,87 @@ internal fun MulehangDesktopApp(
                                 }
                             }
                         },
+                        globalFeedbackMessage = projectTrustFeedback,
+                        onGlobalFeedbackConsumed = { projectTrustFeedback = null },
                         settingsVisible = settingsVisible,
                         onSettingsVisibilityChange = { visible -> settingsVisible = visible },
                     )
+                    projectTrustPrompt?.let { projectRoot ->
+                        JewelDialog(
+                            title = "信任项目资源？",
+                            confirmLabel = "信任并加载",
+                            dismissLabel = "保持不信任",
+                            onConfirm = {
+                                val result = trustProjectResources(userHome, projectRoot)
+                                projectTrustPrompt = null
+                                projectTrustFeedback = result.fold(
+                                    onSuccess = {
+                                        windowState.refreshActiveResourceSnapshot()
+                                        "已信任 ${projectTrustDisplayName(projectRoot)}，项目资源将在后续任务中生效。"
+                                    },
+                                    onFailure = { error ->
+                                        "无法信任 ${projectTrustDisplayName(projectRoot)}：${error.message ?: "未知错误"}"
+                                    },
+                                )
+                            },
+                            onDismiss = {
+                                projectTrustPrompt = null
+                                projectTrustFeedback = "${projectTrustDisplayName(projectRoot)} 尚未信任，项目资源未加载。"
+                            },
+                        ) {
+                            Text("此项目可包含 AGENTS/CLAUDE 指令、Skills、prompts、扩展包和 MCP 服务。信任后才会读取并加载这些项目资源。")
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+/** 判断当前用户级设置是否已显式信任目标工作区。 */
+internal fun projectResourcesAreTrusted(
+    userHome: Path,
+    projectRoot: Path,
+): Boolean = runCatching {
+    val repository = DesktopSettingsRepository(
+        pathResolver = DesktopPathResolver(userHome, projectRoot),
+        environmentOverrides = DesktopEnvironmentOverrides(),
+    )
+    DesktopAgentResourceRequestFactory(userHome).create(
+        workspacePath = projectRoot,
+        userDocument = repository.loadDocument(ConfigLayer.USER),
+        projectDocument = repository.loadDocument(ConfigLayer.PROJECT),
+    ).projectTrusted
+}.getOrDefault(false)
+
+/** 仅在存在尚未信任的工作区时显示一次资源信任确认。 */
+internal fun shouldPromptForProjectTrust(
+    projectRoot: Path?,
+    projectTrusted: Boolean,
+): Boolean = projectRoot != null && !projectTrusted
+
+/** 仅将项目路径写入用户级信任清单，项目自己的 settings 不能自行授权。 */
+private fun trustProjectResources(
+    userHome: Path,
+    projectRoot: Path,
+): Result<Unit> = runCatching {
+    val repository = DesktopSettingsRepository(
+        pathResolver = DesktopPathResolver(userHome, projectRoot),
+        environmentOverrides = DesktopEnvironmentOverrides(),
+    )
+    val factory = DesktopAgentResourceRequestFactory(userHome)
+    repository.saveDocument(
+        ConfigLayer.USER,
+        factory.withProjectTrust(
+            userDocument = repository.loadDocument(ConfigLayer.USER),
+            workspacePath = projectRoot,
+            trusted = true,
+        ),
+    )
+}
+
+/** 为信任反馈生成紧凑且可识别的工作区名称。 */
+private fun projectTrustDisplayName(projectRoot: Path): String = projectRoot.fileName?.toString() ?: projectRoot.toString()
 
 /** 读取原始用户/项目 settings 后构造资源加载请求；仅显式 reload 才重新读取并发布新快照。 */
 private fun resourceLoadRequest(

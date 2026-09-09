@@ -1,7 +1,4 @@
-@file:OptIn(
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
-    androidx.compose.ui.ExperimentalComposeUiApi::class,
-)
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package com.agent.app.chat.component
 
@@ -55,9 +52,12 @@ import com.agent.app.design.AppText
 import com.agent.app.design.ProviderCardBackground
 import com.agent.app.design.ProviderCardHoverBackground
 import com.agent.app.design.selectMenuItemBackground
+import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.settings.model.AgentIterationLimit
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.model.RequestOverrides
 import com.agent.shared.settings.model.SettingsDocument
 import java.net.URI
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -79,7 +79,19 @@ internal fun ProviderSettingsContent(
     onDocumentChange: (SettingsDocument) -> Unit,
     onChangeNotification: (String) -> Unit,
     onProviderFieldsChanged: () -> Unit,
+    onValidationErrorChange: (String, String?) -> Unit,
+    onValidationErrorsCleared: (String) -> Unit,
+    onValidationErrorsRenamed: (String, String) -> Unit,
 ) {
+    GroupHeader("Agent 运行")
+    AgentRunSettingsContent(
+        document = document,
+        onDocumentChange = { updated ->
+            onDocumentChange(updated)
+            onProviderFieldsChanged()
+        },
+        onValidationErrorChange = onValidationErrorChange,
+    )
     GroupHeader("AI 服务")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SettingsActionButton("新增", emphasized = true) {
@@ -154,10 +166,14 @@ internal fun ProviderSettingsContent(
                             onProviderFieldsChanged()
                         },
                         onDelete = {
+                            onValidationErrorsCleared(provider.id)
                             onDocumentChange(document.copy(providers = document.providers - provider))
                             onExpandedProviderChange(null)
                             onChangeNotification("已删除 AI 服务：${provider.label ?: provider.id}")
                         },
+                        onValidationErrorChange = onValidationErrorChange,
+                        onValidationErrorsCleared = onValidationErrorsCleared,
+                        onValidationErrorsRenamed = onValidationErrorsRenamed,
                     )
                 }
             }
@@ -335,6 +351,15 @@ private fun newProvider(id: String): ProviderProfile = ProviderProfile(
 
 /** 返回表单可直接修复的首个设置错误。 */
 internal fun validateSettingsDocument(document: SettingsDocument): String? {
+    runCatching { AgentIterationLimit.resolve(document.maxIterations) }
+        .exceptionOrNull()
+        ?.let { return it.message ?: "最大迭代次数无效。" }
+    document.fasterModel?.let { fastModel ->
+        if (fastModel.isEnabled() && !fastModel.isComplete()) {
+            return "快速模型启用时必须填写 Base URL、API Key 和模型 ID。"
+        }
+        validateModelLimit("快速模型", fastModel.limit)?.let { return it }
+    }
     val ids = document.providers.map(ProviderProfile::id)
     if (ids.any(String::isBlank)) return "服务 ID 不能为空。"
     if (ids.distinct().size != ids.size) return "服务 ID 不能重复。"
@@ -343,6 +368,46 @@ internal fun validateSettingsDocument(document: SettingsDocument): String? {
         if (provider.apiKey.isBlank()) return "${provider.id} 的 API Key 不能为空。"
         if (provider.models.isEmpty()) return "${provider.id} 至少需要一个模型。"
         if (provider.models.any { it.id.isBlank() }) return "${provider.id} 存在空的模型 ID。"
+        validateRequestOverrides("${provider.id} 的服务级请求覆盖", provider.request)?.let { return it }
+        provider.models.forEach { model ->
+            validateModelLimit("${provider.id}/${model.id}", model.limit)?.let { return it }
+            validateReasoningConfiguration(provider.id, model)?.let { return it }
+            validateRequestOverrides("${provider.id}/${model.id} 的模型级请求覆盖", model.request)?.let { return it }
+        }
+    }
+    return null
+}
+
+/** 验证模型 token 限制均为正整数，避免把 UI 的半成品写入 settings.json。 */
+private fun validateModelLimit(label: String, limit: com.agent.shared.settings.model.ModelLimit?): String? {
+    val invalid = listOf("上下文窗口" to limit?.context, "最大输入" to limit?.input, "最大输出" to limit?.output)
+        .firstOrNull { (_, value) -> value != null && value <= 0 }
+    return invalid?.let { (field, _) -> "$label 的${field}必须是正整数。" }
+}
+
+/** 验证模型声明的思考档位和默认档位处于公共 wire-value 集合中。 */
+private fun validateReasoningConfiguration(providerId: String, model: ModelProfile): String? {
+    val supported = ReasoningEffort.entries.map(ReasoningEffort::wireValue).toSet()
+    val efforts = model.reasoningEfforts
+    val invalid = efforts?.firstOrNull { it !in supported }
+    if (invalid != null) return "$providerId/${model.id} 存在不支持的思考等级：$invalid。"
+    val default = model.defaultReasoningEffort
+    if (default != null && default !in supported) return "$providerId/${model.id} 的默认思考等级无效：$default。"
+    if (default != null && efforts != null && default !in efforts) {
+        return "$providerId/${model.id} 的默认思考等级必须包含在可用思考等级中。"
+    }
+    return null
+}
+
+/** 验证请求头不会形成空键或换行注入，并限制思考映射到公共档位。 */
+private fun validateRequestOverrides(label: String, overrides: RequestOverrides): String? {
+    overrides.headers.entries.firstOrNull { (name, value) ->
+        name.isBlank() || name.any { character -> character <= ' ' || character == ':' } ||
+                value.any { character -> character == '\r' || character == '\n' }
+    }?.let { return "$label 中存在无效请求头：${it.key.ifBlank { "<空>" }}。" }
+    val supported = ReasoningEffort.entries.map(ReasoningEffort::wireValue).toSet()
+    overrides.reasoningBodyByEffort.keys.firstOrNull { it !in supported }?.let { invalid ->
+        return "$label 中存在不支持的思考映射：$invalid。"
     }
     return null
 }

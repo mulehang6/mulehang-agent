@@ -31,6 +31,19 @@ class SettingsChangeNotificationsTest {
         assertEquals(listOf(entry), notifications.entries)
     }
 
+    /** 历史浮层关闭仅改变可见性，即使当前没有记录也不需要清空操作。 */
+    @Test
+    fun `should dismiss notification history without clearing entries`() {
+        val notifications = SettingsChangeNotifications()
+        val entry = notifications.record(SettingsChangeNotificationCategory.EXTENSIONS, "全局设置：已添加 MCP 服务：filesystem")
+
+        notifications.toggleHistory()
+        notifications.dismissHistory()
+
+        assertFalse(notifications.historyVisible)
+        assertEquals(listOf(entry), notifications.entries)
+    }
+
     /** 单条删除和清空全部都必须同步清理当前展示状态。 */
     @Test
     fun `should remove individual entries and clear all history`() {

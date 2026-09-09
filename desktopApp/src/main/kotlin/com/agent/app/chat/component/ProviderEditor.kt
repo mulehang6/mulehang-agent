@@ -46,7 +46,14 @@ import org.jetbrains.jewel.ui.theme.textFieldStyle
 
 /** 渲染展开后的 Provider 紧凑字段。 */
 @Composable
-internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfile) -> Unit, onDelete: () -> Unit) {
+internal fun ProviderEditor(
+    provider: ProviderProfile,
+    onChange: (ProviderProfile) -> Unit,
+    onDelete: () -> Unit,
+    onValidationErrorChange: (String, String?) -> Unit,
+    onValidationErrorsCleared: (String) -> Unit,
+    onValidationErrorsRenamed: (String, String) -> Unit,
+) {
     var apiKeyVisible by remember(provider.id) { mutableStateOf(false) }
     val protocolComboBoxStyle = rememberProviderProtocolComboBoxStyle()
     ProviderEditorSection("基本信息") {
@@ -88,33 +95,43 @@ internal fun ProviderEditor(provider: ProviderProfile, onChange: (ProviderProfil
             onChange(provider.copy(apiKey = it))
         }
     }
-    ProviderEditorSection("模型") {
-        SettingsField("辅助模型", provider.defaultModel.orEmpty(), placeholder = auxiliaryModelPlaceholder(provider)) {
+    ProviderEditorSection("默认模型") {
+        SettingsField("默认模型", provider.defaultModel.orEmpty(), placeholder = auxiliaryModelPlaceholder(provider)) {
             onChange(provider.copy(defaultModel = it.ifBlank { null }))
         }
-        provider.models.forEach { model ->
-            SettingsField(
-                label = "模型 ID",
-                value = model.id,
-                trailingAction = SettingsFieldAction(
-                    label = "删除",
-                    destructive = true,
-                    onClick = { onChange(provider.copy(models = provider.models - model)) },
-                ),
-            ) { updatedValue ->
-                onChange(provider.copy(models = provider.models.map { if (it.id == model.id) model.copy(id = updatedValue) else it }))
-            }
-        }
-        SettingsActionButton("新增", emphasized = true) {
-            onChange(provider.copy(models = provider.models + ModelProfile(id = "model-${provider.models.size + 1}")))
-        }
     }
-    SettingsActionButton("删除", destructive = true, onClick = onDelete)
+    RequestOverridesEditor(
+        title = "服务级请求覆盖",
+        overrides = provider.request,
+        validationKeyPrefix = "${provider.id}:provider-request",
+        onChange = { request -> onChange(provider.copy(request = request)) },
+        onValidationErrorChange = onValidationErrorChange,
+    )
+    provider.models.forEach { model ->
+        ModelEditor(
+            providerId = provider.id,
+            model = model,
+            onChange = { updated ->
+                onChange(provider.copy(models = provider.models.map { existing -> if (existing.id == model.id) updated else existing }))
+            },
+            onDelete = { onChange(provider.copy(models = provider.models - model)) },
+            onValidationErrorChange = onValidationErrorChange,
+            onValidationErrorsCleared = onValidationErrorsCleared,
+            onValidationErrorsRenamed = onValidationErrorsRenamed,
+        )
+    }
+    SettingsActionButton("新增模型", emphasized = true) {
+        onChange(provider.copy(models = provider.models + ModelProfile(id = "model-${provider.models.size + 1}")))
+    }
+    SettingsActionButton("删除", destructive = true) {
+        onValidationErrorsCleared(provider.id)
+        onDelete()
+    }
 }
 
 /** 绘制 Provider 连接页的分组标题和清晰内容层。 */
 @Composable
-private fun ProviderEditorSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+internal fun ProviderEditorSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
             .background(AppPanelBackground.copy(alpha = 0.54f)).padding(12.dp),
@@ -127,7 +144,7 @@ private fun ProviderEditorSection(title: String, content: @Composable ColumnScop
 
 /** 绘制左标签右控件的统一设置行。 */
 @Composable
-private fun SettingsRow(label: String, content: @Composable () -> Unit) {
+internal fun SettingsRow(label: String, content: @Composable () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.width(132.dp), style = JewelTheme.defaultTextStyle.copy(color = AppText))
         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { content() }
@@ -135,7 +152,7 @@ private fun SettingsRow(label: String, content: @Composable () -> Unit) {
 }
 
 /** 描述设置字段的末尾动作，标签、语义色和回调不可拆分。 */
-private data class SettingsFieldAction(
+internal data class SettingsFieldAction(
     val label: String,
     val destructive: Boolean = false,
     val onClick: () -> Unit,
@@ -143,7 +160,7 @@ private data class SettingsFieldAction(
 
 /** 绘制无浮动标签的紧凑文本字段，并将末尾动作与文本更新分离。 */
 @Composable
-private fun SettingsField(
+internal fun SettingsField(
     label: String,
     value: String,
     placeholder: String? = null,
@@ -182,7 +199,7 @@ private fun SettingsField(
 
 /** 让只读协议下拉框沿用同组文本字段的默认底色。 */
 @Composable
-private fun rememberProviderProtocolComboBoxStyle(): ComboBoxStyle {
+internal fun rememberProviderProtocolComboBoxStyle(): ComboBoxStyle {
     val baseStyle = JewelTheme.comboBoxStyle
     val textFieldStyle = JewelTheme.textFieldStyle
     return remember(baseStyle, textFieldStyle) {

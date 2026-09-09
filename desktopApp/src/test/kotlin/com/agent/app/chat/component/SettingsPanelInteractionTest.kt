@@ -9,6 +9,9 @@ import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.model.RequestOverrides
+import androidx.compose.ui.text.input.TextFieldValue
+import kotlinx.serialization.json.JsonObject
 import androidx.compose.ui.graphics.Color
 import java.nio.file.Files
 import kotlin.test.Test
@@ -19,7 +22,7 @@ import kotlin.test.assertNotEquals
 /** 设置 Island 的交互色与稳定状态回归测试。 */
 class SettingsPanelInteractionTest {
 
-    /** 外观和工具只属于用户级全局设置；扩展可按用户或项目范围管理，环境层保持只读配置范围。 */
+    /** AI 服务只属于用户级全局设置；扩展仍可按用户或项目范围管理。 */
     @Test
     fun `should show appearance only for global settings scope`() {
         assertEquals(
@@ -33,7 +36,7 @@ class SettingsPanelInteractionTest {
             settingsSectionsFor(ConfigLayer.USER),
         )
         assertEquals(
-            listOf(SettingsSection.THEME, SettingsSection.PROVIDERS, SettingsSection.EXTENSIONS),
+            listOf(SettingsSection.THEME, SettingsSection.EXTENSIONS),
             settingsSectionsFor(ConfigLayer.PROJECT),
         )
         assertEquals(
@@ -83,6 +86,36 @@ class SettingsPanelInteractionTest {
 
         assertEquals("first-model", auxiliaryModelPlaceholder(provider))
         assertNull(auxiliaryModelPlaceholder(provider.copy(models = emptyList())))
+    }
+
+    /** JSON 覆盖只接受对象，格式化后仍必须可稳定还原为原始对象。 */
+    @Test
+    fun `should parse request override JSON objects only`() {
+        val objectValue = parseRequestJsonObject(TextFieldValue("{\"thinking\":{\"type\":\"enabled\"}}"))
+
+        assertEquals("{\"thinking\":{\"type\":\"enabled\"}}", objectValue.toString())
+        assertNull(parseRequestJsonObject(TextFieldValue("[1,2,3]")))
+        assertNull(parseRequestJsonObject(TextFieldValue("not-json")))
+        assertEquals("{\n    \"thinking\": {\n        \"type\": \"enabled\"\n    }\n}", formatRequestJson(objectValue!!))
+    }
+
+    /** 思考映射始终先列出全部公共档位，再保留旧配置中的未知键供用户移除。 */
+    @Test
+    fun `should retain unknown reasoning body mapping keys for repair`() {
+        val options = reasoningBodyOptions(
+            RequestOverrides(reasoningBodyByEffort = mapOf("experimental" to JsonObject(emptyMap()))),
+        )
+
+        assertEquals(listOf("none", "low", "medium", "high", "xhigh", "max", "experimental"), options)
+    }
+
+    /** 逗号分隔的思考档位输入需要去除空白并消除重复项。 */
+    @Test
+    fun `should normalize configured reasoning effort input`() {
+        assertEquals(
+            listOf("none", "medium", "max"),
+            configuredReasoningEfforts(" none, medium,none, max "),
+        )
     }
 
     /** Provider 外层卡片稳定不变，交互色只应用到内层可点击摘要。 */

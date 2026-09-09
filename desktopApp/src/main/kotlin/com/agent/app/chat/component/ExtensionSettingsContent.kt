@@ -1,7 +1,4 @@
-@file:OptIn(
-    androidx.compose.ui.ExperimentalComposeUiApi::class,
-    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
-)
+@file:OptIn(org.jetbrains.jewel.foundation.ExperimentalJewelApi::class)
 
 package com.agent.app.chat.component
 
@@ -237,18 +234,18 @@ internal fun ExtensionSettingsContent(
         }
     }
 
-    GroupHeader("MCP 服务")
-    if (mcpServers.isEmpty()) {
-        Text("当前没有可用 MCP 声明。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
-    } else {
-        mcpServers.forEach { server ->
-            Text(
-                text = "${server.id}  ·  ${server.transport.name.lowercase().replace('_', '-')}  ·  ${server.packageId}",
-                style = JewelTheme.defaultTextStyle.copy(color = AppText),
-                modifier = Modifier.padding(horizontal = 8.dp),
-            )
-        }
-    }
+    McpSettingsContent(
+        document = document,
+        discoveredServers = mcpServers,
+        onDocumentChange = onDocumentChange,
+        onChangeNotification = onChangeNotification,
+    )
+    AgentHookSettingsContent(
+        document = document,
+        layer = layer,
+        onDocumentChange = onDocumentChange,
+        onChangeNotification = onChangeNotification,
+    )
 
     GroupHeader("资源诊断")
     if (resourceDiagnostics.isEmpty()) {

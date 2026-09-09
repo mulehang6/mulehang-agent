@@ -27,6 +27,7 @@ internal fun JewelDialog(
     confirmLabel: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    dismissLabel: String = "取消",
     modifier: Modifier = Modifier,
     confirmEnabled: Boolean = true,
     width: Dp = 440.dp,
@@ -59,7 +60,7 @@ internal fun JewelDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedButton(onClick = onDismiss) { Text("取消") }
+                    OutlinedButton(onClick = onDismiss) { Text(dismissLabel) }
                     DefaultButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmLabel) }
                 }
             }

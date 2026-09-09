@@ -12,6 +12,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -22,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -58,17 +58,10 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import com.agent.app.chat.presentation.buildComposerPrimaryActionVisual
-import com.agent.app.chat.presentation.buildContextTooltip
-import com.agent.app.chat.presentation.contextRingSweepAngle
-import com.agent.app.chat.presentation.groupProfilesByProvider
-import com.agent.app.chat.presentation.modelVariantsFor
-import com.agent.app.chat.presentation.reasoningControlLabel
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.chat.state.WorkspaceFileReference
 import com.agent.app.chat.state.discoverWorkspaceFileReferences
 import com.agent.app.chat.state.isStoppable
-import com.agent.app.chat.state.resolveContextWindow
 import com.agent.app.design.AppChipBackground
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
@@ -76,11 +69,9 @@ import com.agent.app.design.AppText
 import com.agent.app.design.ComposerBackground
 import com.agent.app.design.ComposerInputBackground
 import com.agent.app.design.DesktopPalette
-import com.agent.app.design.HeaderGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
-import com.agent.app.design.iconKey
-import com.agent.app.platform.pickFiles
+import com.agent.app.platform.openFileWithWindowsDefaultApplication
 import com.agent.app.platform.readClipboardImageAsPng
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
@@ -122,8 +113,6 @@ internal fun ComposerPanel(
     modifier: Modifier = Modifier,
 ) {
     val activeConversation = state.ui.activeConversationOrNull
-    val profiles = state.availableProfiles
-    val selectedProfile = state.activeProfile
     val executionState = activeConversation?.executionState ?: ExecutionState.Idle
     val composerBorderTransition = rememberInfiniteTransition(label = "composer-border-flow")
     val composerBorderProgress by composerBorderTransition.animateFloat(
@@ -136,41 +125,6 @@ internal fun ComposerPanel(
     )
     val permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT
     val composerBorderColor = composerBorderTone(permissionPreset)
-    val primaryActionVisual = buildComposerPrimaryActionVisual(executionState)
-    val providerProfiles = groupProfilesByProvider(profiles)
-    val currentProvider = selectedProfile?.providerId ?: profiles.firstOrNull()?.providerId
-    val currentProviderProfiles = providerProfiles[currentProvider].orEmpty()
-    val selectedVariants = selectedProfile?.let(::modelVariantsFor).orEmpty()
-    val selectorSlots = buildList {
-        add(
-            ComposerSelectorSlot(
-                menu = ComposerMenu.PROVIDER,
-                label = selectedProfile?.providerLabel ?: currentProvider ?: "服务商",
-            ),
-        )
-        add(
-            ComposerSelectorSlot(
-                menu = ComposerMenu.MODEL,
-                label = selectedProfile?.modelLabel ?: selectedProfile?.model ?: "模型",
-            ),
-        )
-        if (selectedVariants.isNotEmpty()) {
-            add(
-                ComposerSelectorSlot(
-                    menu = ComposerMenu.REASONING,
-                    label = reasoningControlLabel(activeConversation?.reasoningEffort),
-                ),
-            )
-        }
-        add(
-            ComposerSelectorSlot(
-                menu = ComposerMenu.PERMISSION,
-                label = permissionPresentation(permissionPreset).label,
-            ),
-        )
-    }
-    var expandedMenu by remember { mutableStateOf<ComposerMenu?>(null) }
-    var expandedMenuOpenedWithKeyboard by remember { mutableStateOf(false) }
     var draftFieldValue by remember { mutableStateOf(TextFieldValue(state.ui.draft)) }
     var commandSelectionIndex by remember { mutableIntStateOf(0) }
     var referenceSelectionIndex by remember { mutableIntStateOf(0) }
@@ -281,12 +235,13 @@ internal fun ComposerPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     activeConversation.attachments.forEach { attachment ->
-                        Tooltip(tooltip = { Text(attachment.path) }) {
+                        Tooltip(tooltip = { Text("单击使用 Windows 默认程序打开\n${attachment.path}") }) {
                             JewelSurface(
                                 role = JewelSurfaceRole.CHROME,
                                 radius = 999.dp,
                                 solidColor = AppChipBackground,
                                 borderColor = AppLine,
+                                modifier = Modifier.clickable { openFileWithWindowsDefaultApplication(attachment.path) },
                             ) {
                                 Row(
                                     modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
@@ -512,154 +467,7 @@ internal fun ComposerPanel(
                 }
             }
 
-            ComposerControlBar(
-                attachment = {
-                    ActionButton(
-                        onClick = { state.attachFiles(pickFiles()) },
-                        tooltip = { Text("添加附件") },
-                        style = iconActionButtonStyle,
-                        modifier = Modifier.size(36.dp),
-                    ) { Icon(HeaderGlyph.ADD.iconKey, "添加附件") }
-                },
-                selectorGroup = {
-                    ComposerSelectorStrip(
-                        slots = selectorSlots,
-                        keepCardVisible = expandedMenu != null,
-                        control = { slot, displayLabel, showChevron, selectorModifier, compactPreview ->
-                            val expanded = !compactPreview && expandedMenu == slot.menu
-                            when (slot.menu) {
-                                ComposerMenu.PROVIDER -> ComposerSelectorMenuButton(
-                                    label = slot.label,
-                                    displayLabel = displayLabel,
-                                    showChevron = showChevron,
-                                    expanded = expanded,
-                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                        expandedMenu = ComposerMenu.PROVIDER.takeIf { shouldExpand }
-                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
-                                    },
-                                    onDismissRequest = {
-                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
-                                        expandedMenuOpenedWithKeyboard = false
-                                    },
-                                    modifier = selectorModifier,
-                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
-                                ) {
-                                    providerProfiles.entries.forEach { (_, providerModels) ->
-                                        val first = providerModels.firstOrNull() ?: return@forEach
-                                        selectableItem(
-                                            selected = first.providerId == currentProvider,
-                                            onClick = {
-                                                expandedMenu = null
-                                                state.selectProfile(first.id)
-                                            },
-                                        ) { Text(first.providerLabel) }
-                                    }
-                                }
-
-                                ComposerMenu.MODEL -> ComposerSelectorMenuButton(
-                                    label = slot.label,
-                                    displayLabel = displayLabel,
-                                    showChevron = showChevron,
-                                    expanded = expanded,
-                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                        expandedMenu = ComposerMenu.MODEL.takeIf { shouldExpand }
-                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
-                                    },
-                                    onDismissRequest = {
-                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
-                                        expandedMenuOpenedWithKeyboard = false
-                                    },
-                                    modifier = selectorModifier,
-                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
-                                ) {
-                                    currentProviderProfiles.forEach { profile ->
-                                        selectableItem(
-                                            selected = profile.id == selectedProfile?.id,
-                                            onClick = {
-                                                expandedMenu = null
-                                                state.selectProfile(profile.id)
-                                            },
-                                        ) { Text(profile.modelLabel ?: profile.model) }
-                                    }
-                                }
-
-                                ComposerMenu.REASONING -> ComposerSelectorMenuButton(
-                                    label = slot.label,
-                                    displayLabel = displayLabel,
-                                    showChevron = showChevron,
-                                    expanded = expanded,
-                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                        expandedMenu = ComposerMenu.REASONING.takeIf { shouldExpand }
-                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
-                                    },
-                                    onDismissRequest = {
-                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
-                                        expandedMenuOpenedWithKeyboard = false
-                                    },
-                                    modifier = selectorModifier,
-                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
-                                ) {
-                                    selectedVariants.forEach { variant ->
-                                        val effort = variant.reasoningEffort ?: return@forEach
-                                        selectableItem(
-                                            selected = effort == activeConversation?.reasoningEffort,
-                                            onClick = {
-                                                expandedMenu = null
-                                                state.updateReasoningEffort(effort)
-                                            },
-                                        ) { Text(reasoningControlLabel(effort)) }
-                                    }
-                                }
-
-                                ComposerMenu.PERMISSION -> ComposerPermissionMenuButton(
-                                    label = slot.label,
-                                    displayLabel = displayLabel,
-                                    showChevron = showChevron,
-                                    expanded = expanded,
-                                    onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                        expandedMenu = ComposerMenu.PERMISSION.takeIf { shouldExpand }
-                                        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
-                                    },
-                                    onDismissRequest = {
-                                        expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)
-                                        expandedMenuOpenedWithKeyboard = false
-                                    },
-                                    selectedPreset = permissionPreset,
-                                    onPresetSelected = { preset ->
-                                        expandedMenu = null
-                                        state.updatePermission(preset)
-                                    },
-                                    modifier = selectorModifier,
-                                    keyboardTriggeredPopup = expandedMenuOpenedWithKeyboard,
-                                )
-                            }
-                        },
-                    )
-                },
-                contextIndicator = {
-                    ComposerContextIndicator(
-                        sweepAngle = contextRingSweepAngle(activeConversation?.contextUsageFraction ?: 0f),
-                        tooltip = buildContextTooltip(
-                            usageFraction = activeConversation?.contextUsageFraction ?: 0f,
-                            contextWindow = selectedProfile?.let(::resolveContextWindow),
-                        ),
-                    )
-                },
-                primaryAction = {
-                    ComposerPrimaryActionButton(
-                        danger = primaryActionVisual.danger,
-                        onClick = {
-                            if (executionState.isStoppable()) {
-                                state.cancelActiveRun()
-                            } else {
-                                onSendDraft()
-                            }
-                        },
-                        iconKey = composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
-                        contentDescription = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
-                    )
-                },
-            )
+            ComposerActions(state, onSendDraft)
         }
     }
 }

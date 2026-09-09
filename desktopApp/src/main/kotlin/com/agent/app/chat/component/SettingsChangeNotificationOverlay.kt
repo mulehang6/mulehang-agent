@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.clickable
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
@@ -120,6 +116,7 @@ internal fun BoxScope.SettingsChangeNotificationOverlay(
                     maxHeight = maxCardHeight,
                     onRemove = notifications::remove,
                     onClear = notifications::clear,
+                    onDismiss = notifications::dismissHistory,
                 )
             } else {
                 transientEntry?.let { entry ->
@@ -173,6 +170,7 @@ private fun SettingsNotificationHistoryCard(
     maxHeight: Dp,
     onRemove: (Long) -> Unit,
     onClear: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
@@ -190,8 +188,11 @@ private fun SettingsNotificationHistoryCard(
                     style = JewelTheme.defaultTextStyle.copy(color = AppText),
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (hovered && entries.isNotEmpty()) {
-                    NotificationTextAction(text = "清空全部", onClick = onClear)
+                if (hovered) {
+                    if (entries.isNotEmpty()) {
+                        NotificationTextAction(text = "清空全部", onClick = onClear)
+                    }
+                    NotificationTextAction(text = "关闭", onClick = onDismiss)
                 }
             }
             if (entries.isEmpty()) {

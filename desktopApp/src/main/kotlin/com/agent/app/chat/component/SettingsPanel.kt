@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,12 +70,12 @@ internal enum class SettingsSection(val label: String) {
 }
 
 /**
- * 返回指定配置范围可见的设置分类；外观和工具只属于用户级全局偏好。
+ * 返回指定配置范围可见的设置分类；AI 服务和运行参数只属于用户级全局配置。
  */
 internal fun settingsSectionsFor(layer: ConfigLayer): List<SettingsSection> = when (layer) {
     ConfigLayer.USER -> SettingsSection.entries
-    ConfigLayer.PROJECT -> listOf(SettingsSection.THEME, SettingsSection.PROVIDERS, SettingsSection.EXTENSIONS)
-    ConfigLayer.ENVIRONMENT -> listOf(SettingsSection.THEME, SettingsSection.PROVIDERS)
+    ConfigLayer.PROJECT -> listOf(SettingsSection.THEME, SettingsSection.EXTENSIONS)
+    ConfigLayer.ENVIRONMENT -> listOf(SettingsSection.THEME)
 }
 
 /**
@@ -110,6 +111,8 @@ internal class SettingsPanelUiState {
     val changeNotifications = SettingsChangeNotifications()
     /** Provider 编辑器输入只在成功保存后汇总为一条通知。 */
     var providerFieldsChangedSinceLastSave by mutableStateOf(false)
+    /** 未写回文档的表单错误按稳定字段键保存，防止 JSON 半成品被误保存。 */
+    val providerValidationErrors = mutableStateMapOf<String, String>()
     val contentScrollState = ScrollState(initial = 0)
 }
 
@@ -148,6 +151,7 @@ internal fun SettingsPanel(
         uiState.expandedProviderId = null
         uiState.feedback = null
         uiState.providerFieldsChangedSinceLastSave = false
+        uiState.providerValidationErrors.clear()
     }
     LaunchedEffect(uiState.section, uiState.layer) {
         uiState.contentScrollState.scrollTo(0)
@@ -323,6 +327,19 @@ private fun SettingsPanelContent(
                             )
                         },
                         onProviderFieldsChanged = { uiState.providerFieldsChangedSinceLastSave = true },
+                        onValidationErrorChange = { key, error ->
+                            if (error == null) uiState.providerValidationErrors.remove(key)
+                            else uiState.providerValidationErrors[key] = error
+                        },
+                        onValidationErrorsRenamed = { oldPrefix, newPrefix ->
+                            renameSettingsValidationErrors(uiState.providerValidationErrors, oldPrefix, newPrefix)
+                        },
+                        onValidationErrorsCleared = { prefix ->
+                            uiState.providerValidationErrors.keys
+                                .filter { key -> key == prefix || key.startsWith("$prefix:") }
+                                .toList()
+                                .forEach(uiState.providerValidationErrors::remove)
+                        },
                     )
 
                     SettingsSection.EXTENSIONS -> ExtensionSettingsContent(
@@ -362,7 +379,7 @@ private fun SettingsPanelContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SettingsActionButton("保存", emphasized = true) {
-                    val validation = validateSettingsDocument(uiState.document)
+                    val validation = validateSettingsForSave(uiState.document, uiState.providerValidationErrors)
                     if (validation == null) {
                         runCatching { repository.saveDocument(uiState.layer, uiState.document) }
                             .onSuccess {

@@ -2,6 +2,9 @@ package com.agent.app.bootstrap
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import java.nio.file.Paths
 
 /**
  * 验证桌面窗口初始尺寸换算规则。
@@ -37,5 +40,15 @@ class MainTest {
         assertEquals(1228.8f, calculateWindowSizeDp(screenPixels = 1920, uiScale = 1.25f), 0.001f)
         assertEquals(864f, calculateWindowSizeDp(screenPixels = 1620, uiScale = 1.5f), 0.001f)
         assertEquals(1536f, calculateWindowSizeDp(screenPixels = 1920, uiScale = 1f), 0.001f)
+    }
+
+    /** 新项目未列入用户级信任清单时应出现一次资源信任确认。 */
+    @Test
+    fun `should prompt only for an untrusted project`() {
+        val project = Paths.get("C:/workspace/demo")
+
+        assertTrue(shouldPromptForProjectTrust(project, projectTrusted = false))
+        assertFalse(shouldPromptForProjectTrust(project, projectTrusted = true))
+        assertFalse(shouldPromptForProjectTrust(projectRoot = null, projectTrusted = false))
     }
 }

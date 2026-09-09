@@ -81,6 +81,11 @@ internal class SettingsChangeNotifications {
         if (historyVisible) transientEntryId = null
     }
 
+    /** 收起历史浮层但保留全部会话内记录，供卡片的悬停关闭动作使用。 */
+    fun dismissHistory() {
+        historyVisible = false
+    }
+
     /** 从总历史中彻底移除一条消息。 */
     fun remove(id: Long) {
         mutableEntries.removeAll { entry -> entry.id == id }

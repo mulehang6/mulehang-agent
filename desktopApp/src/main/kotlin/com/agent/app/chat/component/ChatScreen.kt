@@ -75,6 +75,8 @@ internal fun ChatScreen(
     terminalShellCatalog: TerminalShellCatalog,
     onTerminalPreferencesChanged: (DesktopTerminalPreferences) -> Unit,
     onSettingsChanged: () -> Unit,
+    globalFeedbackMessage: String? = null,
+    onGlobalFeedbackConsumed: () -> Unit = {},
     settingsVisible: Boolean = false,
     onSettingsVisibilityChange: (Boolean) -> Unit = {},
 ) {
@@ -109,6 +111,13 @@ internal fun ChatScreen(
         if (appFeedback != null) {
             delay(2.4.seconds)
             appFeedback = null
+        }
+    }
+
+    LaunchedEffect(globalFeedbackMessage) {
+        globalFeedbackMessage?.takeIf(String::isNotBlank)?.let { message ->
+            showAppFeedback(AppFeedbackState(message = message, anchor = null))
+            onGlobalFeedbackConsumed()
         }
     }
 

@@ -8,6 +8,7 @@ import com.sun.jna.platform.win32.COM.Unknown
 import com.sun.jna.platform.win32.Guid.CLSID
 import com.sun.jna.platform.win32.Guid.IID
 import com.sun.jna.platform.win32.Ole32
+import com.sun.jna.platform.win32.Shell32
 import com.sun.jna.platform.win32.User32
 import com.sun.jna.platform.win32.WinDef
 import com.sun.jna.platform.win32.WinNT
@@ -18,6 +19,8 @@ import java.awt.EventQueue
 import java.awt.Frame
 import java.awt.KeyboardFocusManager
 import java.awt.Window
+import java.nio.file.Files
+import java.nio.file.Paths
 
 private const val COM_INITIALIZATION_SUCCEEDED = 0
 private const val COM_ALREADY_INITIALIZED = 1
@@ -63,6 +66,28 @@ internal fun pickWorkspaceDirectory(): String? =
         allowMultiple = false,
         pickFolders = true,
     ).singleOrNull()
+
+/**
+ * 通过 Windows Shell 打开一个本地文件。
+ *
+ * ShellExecute 使用系统为该扩展名维护的既有默认关联，因此不会强制以本应用或某个硬编码程序打开。
+ */
+internal fun openFileWithWindowsDefaultApplication(path: String): Boolean {
+    val file = runCatching { Paths.get(path).toRealPath() }.getOrNull() ?: return false
+    if (!Files.isRegularFile(file)) return false
+    val result = Shell32.INSTANCE.ShellExecute(
+        activeFrame()?.let(::toNativeWindowHandle),
+        "open",
+        file.toString(),
+        null,
+        null,
+        WinUser.SW_SHOWNORMAL,
+    )
+    return shellExecuteSucceeded(result.toLong())
+}
+
+/** ShellExecute 仅以大于 32 的返回值表示 Windows 已接受本次打开请求。 */
+internal fun shellExecuteSucceeded(resultCode: Long): Boolean = resultCode > 32L
 
 /**
  * 通过同一 Windows IFileOpenDialog 实现文件和目录选择，并在对话框显示后相对于所有者窗口居中。

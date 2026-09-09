@@ -31,6 +31,8 @@ class DesktopAgentResourceRequestFactory(
             projectSkillDirectories = projectDocument.agentResources.skillDirectories.toPaths(),
             userPromptDirectories = userDocument.agentResources.promptDirectories.toPaths(),
             projectPromptDirectories = projectDocument.agentResources.promptDirectories.toPaths(),
+            userMcpServers = userDocument.agentResources.mcpServers,
+            projectMcpServers = projectDocument.agentResources.mcpServers,
             packages = buildList {
                 addAll(userDocument.agentResources.toInstalledPackages(userHome, AgentResourceOrigin.USER_CONFIGURATION))
                 addAll(projectDocument.agentResources.toInstalledPackages(workspace, AgentResourceOrigin.PROJECT_CONFIGURATION))
@@ -39,6 +41,7 @@ class DesktopAgentResourceRequestFactory(
     }
 
     /** 返回用户级 setting 中添加某工作区信任后的新文档，不改变其他资源配置。 */
+    @Suppress("unused") // 供桌面首次信任确认流程与独立资源设置入口复用。
     fun withProjectTrust(
         userDocument: SettingsDocument,
         workspacePath: Path,

@@ -70,6 +70,8 @@ data class ApprovalRequest(
     val diff: FileDiffPreview? = null,
     /** 一次补丁包含的全部文件 Diff；单文件调用继续使用 [diff] 兼容既有界面与历史。 */
     val diffs: List<FileDiffPreview> = diff?.let(::listOf).orEmpty(),
+    /** Hook 明确要求人工确认时，不复用已记忆的工具授权。 */
+    val forceManual: Boolean = false,
 )
 
 /** 描述工具调用的安全敏感度，供审批器与界面共同使用。 */

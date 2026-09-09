@@ -3,6 +3,9 @@
 package com.agent.shared.agent.koog
 
 import com.agent.shared.agent.provider.deepseek.DeepSeekKoogTransportAdapter
+import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.ProviderType
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -25,6 +28,29 @@ class SseTerminatorFilteringKoogHttpClientTest {
         assertFalse(shouldDecodeSseData("[DONE]"))
         assertFalse(shouldDecodeSseData("  [DONE]  "))
         assertTrue(shouldDecodeSseData("{\"type\":\"response.completed\"}"))
+    }
+
+    /**
+     * reasoning_content 的读取路径由协议而非服务商名称决定，自定义 OpenAI-compatible 端点也必须生效。
+     */
+    @Test
+    fun `should select reasoning streaming by chat completions protocol only`() {
+        val customChatProfile = ConfigProfile(
+            id = "gateway:reasoning-model",
+            providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+            baseUrl = "https://gateway.example/v1",
+            apiKey = "key",
+            model = "reasoning-model",
+            enabled = true,
+            layer = ConfigLayer.USER,
+        )
+
+        assertTrue(DeepSeekKoogTransportAdapter.supports(customChatProfile))
+        assertFalse(
+            DeepSeekKoogTransportAdapter.supports(
+                customChatProfile.copy(providerType = ProviderType.OPENAI_RESPONSES),
+            ),
+        )
     }
 
     /**

@@ -1,5 +1,8 @@
 package com.agent.shared.agent.resource
 
+import com.agent.shared.settings.model.McpServerSettings
+import com.agent.shared.settings.model.McpServerTransport
+import com.agent.shared.settings.model.AgentHookEvent
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -9,6 +12,60 @@ import kotlin.test.assertTrue
 
 /** 验证 Pi 语义资源加载器的优先级、信任门控与快照生命周期。 */
 class AgentResourceLoaderTest {
+    /** 用户在设置页直接添加的 stdio MCP 必须进入之后新建任务的资源快照。 */
+    @Test
+    fun `should load user configured direct mcp server`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                userMcpServers = listOf(
+                    McpServerSettings(
+                        id = "filesystem",
+                        transport = McpServerTransport.STDIO,
+                        command = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem"),
+                        environment = mapOf("ROOT" to "C:/workspace"),
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        val server = snapshot.mcpServers.single()
+        assertEquals("filesystem", server.id)
+        assertEquals(AgentMcpTransport.STDIO, server.transport)
+        assertEquals(listOf("npx", "-y", "@modelcontextprotocol/server-filesystem"), server.command)
+        assertEquals(mapOf("ROOT" to "C:/workspace"), server.environment)
+        assertEquals("settings", server.packageId)
+    }
+
+    /** 未信任项目的直接 MCP 配置必须与项目扩展包一样保持隔离。 */
+    @Test
+    fun `should not load project configured direct mcp server before trust`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val workspace = Files.createTempDirectory("mulehang-resource-workspace")
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                workspacePath = workspace,
+                projectTrusted = false,
+                projectMcpServers = listOf(
+                    McpServerSettings(
+                        id = "project-http",
+                        transport = McpServerTransport.STREAMABLE_HTTP,
+                        url = "https://mcp.example/mcp",
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        assertTrue(snapshot.mcpServers.isEmpty())
+        assertTrue(snapshot.diagnostics.any { it.message.contains("跳过直接 MCP") })
+    }
+
     /** 全局指令在最外层，项目根到当前目录按外层到内层，且每层只取候选顺序中的首项。 */
     @Test
     fun `should load agent instructions from global outer to inner using candidate precedence`() {
@@ -54,9 +111,9 @@ class AgentResourceLoaderTest {
         assertEquals(listOf("linked worktree"), snapshot.contextDocuments.map(AgentContextDocument::content))
     }
 
-    /** Pi 语义下 AGENTS/CLAUDE 是上下文而非可执行资源，未信任项目也必须加载。 */
+    /** 未信任项目的 AGENTS/CLAUDE 不能在打开目录时自动进入会话上下文。 */
     @Test
-    fun `should load project instructions even before project trust`() {
+    fun `should not load project instructions before project trust`() {
         val home = Files.createTempDirectory("mulehang-resource-home")
         val workspace = Files.createTempDirectory("mulehang-resource-workspace")
         Files.createDirectory(workspace.resolve(".git"))
@@ -67,7 +124,8 @@ class AgentResourceLoaderTest {
             version = 1,
         )
 
-        assertEquals(listOf("always visible convention"), snapshot.contextDocuments.map(AgentContextDocument::content))
+        assertEquals(emptyList(), snapshot.contextDocuments.map(AgentContextDocument::content))
+        assertTrue(snapshot.diagnostics.any { it.message == "项目尚未信任，跳过 Agent 指令。" })
     }
 
     /** `~/.agents/skills` 是用户级默认根，不需要附加目录配置或项目资源信任。 */
@@ -356,6 +414,45 @@ class AgentResourceLoaderTest {
         assertEquals("https://example.test/sse", server.url)
         assertTrue(server.command.isEmpty())
         assertTrue(server.environment.isEmpty())
+    }
+
+    /** 扩展的 hooks/hooks.json 仅在包已启用且项目已信任时加载，并展开包根目录变量。 */
+    @Test
+    fun `should load trusted extension hooks and expand extension root`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val userPackage = Files.createTempDirectory("mulehang-user-extension")
+        val projectPackage = Files.createTempDirectory("mulehang-project-extension")
+        val extensionRootVariable = "$" + "{CLAUDE_PLUGIN_ROOT}"
+        Files.createDirectories(userPackage.resolve("hooks"))
+        Files.createDirectories(projectPackage.resolve("hooks"))
+        Files.writeString(
+            userPackage.resolve("hooks/hooks.json"),
+            """{"PreToolUse":[{"matcher":"apply_patch","hooks":[{"type":"command","command":"echo $extensionRootVariable"}]}]}""",
+        )
+        Files.writeString(
+            projectPackage.resolve("hooks/hooks.json"),
+            """{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"echo project"}]}]}""",
+        )
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                projectTrusted = false,
+                packages = listOf(
+                    InstalledAgentExtensionPackage(id = "user", root = userPackage),
+                    InstalledAgentExtensionPackage(
+                        id = "project",
+                        root = projectPackage,
+                        origin = AgentResourceOrigin.PROJECT_CONFIGURATION,
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        val command = snapshot.hookSettings.hooks.getValue(AgentHookEvent.PRE_TOOL_USE).single().hooks.single().command
+        assertEquals("echo $userPackage", command)
+        assertFalse(AgentHookEvent.USER_PROMPT_SUBMIT in snapshot.hookSettings.hooks)
     }
 
     /** 禁用包仍应在扩展中心可见，但它不能注册任何 Skill、prompt 或 MCP 能力。 */

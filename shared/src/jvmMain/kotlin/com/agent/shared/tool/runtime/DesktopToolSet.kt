@@ -4,6 +4,9 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool
 import ai.koog.agents.core.tools.reflect.ToolSet
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.agent.hook.AgentHookDispatcher
+import com.agent.shared.agent.hook.AgentHookDecision
+import com.agent.shared.agent.hook.NoAgentHookDispatcher
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.ToolRisk
@@ -14,10 +17,17 @@ import com.agent.shared.tool.policy.DesktopToolPolicy
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * 桌面首批本地工具集合。
  */
+@Suppress("FunctionName", "LocalVariableName", "unused")
 @LLMDescription("Mulehang local workspace tools. First discover with list_dir/glob_files/grep_code, then read_file before Update/Delete patches. File creation uses apply_patch directly with *** Add File. Never edit files through Shell. Every mutating tool is previewed and may require approval; external absolute paths are deliberate, not a fallback for workspace paths.")
 class DesktopToolSet(
     private val workspacePath: String,
@@ -26,6 +36,8 @@ class DesktopToolSet(
     private val isCancelled: () -> Boolean = { false },
     private val powerShellTool: DesktopPowerShellTool = DesktopPowerShellTool(),
     private val approvalAgent: ToolApprovalAgent = ManualFallbackToolApprovalAgent,
+    hookDispatcher: AgentHookDispatcher = NoAgentHookDispatcher,
+    sessionId: String = "",
 ) : ToolSet {
     private val fileSupport = DesktopFileToolSupport(workspacePath)
     private val readWriteTools = DesktopReadWriteTools(fileSupport)
@@ -33,6 +45,7 @@ class DesktopToolSet(
     private val grepTool = DesktopGrepTool()
     private val auditLog = DesktopToolAuditLog(workspacePath)
     private val shellTool = DesktopShellTool()
+    private val hookInterceptor = AgentHookToolInterceptor(hookDispatcher, interactionBridge, sessionId, workspacePath)
 
     /**
      * 读取文件内容。
@@ -44,8 +57,16 @@ class DesktopToolSet(
         @LLMDescription("First line to read, 1-based. Read the target context before apply_patch.") offset: Int = 1,
         @LLMDescription("Maximum lines to return, 1 to 5000. Use another read_file page instead of requesting the entire large file.") limit: Int = 2_000,
     ): String {
-        ensureExternalReadApproval(path)
-        return readWriteTools.readFile(path, offset, limit)
+        val hookInput = hookInterceptor.intercept("read_file", buildJsonObject {
+            put("path", path)
+            put("offset", offset)
+            put("limit", limit)
+        })
+        val effectivePath = hookInput.string("path", path)
+        ensureExternalReadApproval(effectivePath)
+        return hookInput.attachContext(
+            readWriteTools.readFile(effectivePath, hookInput.int("offset", offset), hookInput.int("limit", limit)),
+        )
     }
 
     /**
@@ -55,7 +76,10 @@ class DesktopToolSet(
     @LLMDescription("List direct entries only, not recursive contents. Example: list_dir(path=\"src\"). Use glob_files for recursive filename discovery and read_file after selecting a file.")
     fun list_dir(
         @LLMDescription("Workspace-relative directory, or an intentionally selected absolute directory. Lists one level only, sorted and capped; use glob_files for recursive discovery.") path: String,
-    ): String = readWriteTools.listDir(path)
+    ): String {
+        val hookInput = hookInterceptor.intercept("list_dir", buildJsonObject { put("path", path) })
+        return hookInput.attachContext(readWriteTools.listDir(hookInput.string("path", path)))
+    }
 
     /**
      * 按 glob 查找文件。
@@ -66,13 +90,22 @@ class DesktopToolSet(
         @LLMDescription("Glob such as **/*.kt, src/**/Test*.kt, or *.json. A bare filename pattern is searched recursively.") pattern: String,
         @LLMDescription("Workspace-relative search root. Keep it as narrow as possible; default is the workspace root.") path: String = ".",
         @LLMDescription("Maximum returned paths, 1 to 200. Narrow path or pattern rather than requesting a very large list.") max_results: Int = 50,
-    ): String = globTool.execute(
-        DesktopGlobTool.Args(
-            pattern = pattern,
-            path = path,
-            maxResults = max_results,
-        ),
-    )
+    ): String {
+        val hookInput = hookInterceptor.intercept("glob_files", buildJsonObject {
+            put("pattern", pattern)
+            put("path", path)
+            put("max_results", max_results)
+        })
+        return hookInput.attachContext(
+            globTool.execute(
+                DesktopGlobTool.Args(
+                    pattern = hookInput.string("pattern", pattern),
+                    path = hookInput.string("path", path),
+                    maxResults = hookInput.int("max_results", max_results),
+                ),
+            ),
+        )
+    }
 
     /**
      * 按关键字或正则搜索代码。
@@ -89,19 +122,34 @@ class DesktopToolSet(
         @LLMDescription("Maximum matches, 1 to 200. A partial result means narrow the query.") max_results: Int = 50,
         @LLMDescription("Maximum result blocks retained in output, 1 to 200. This is separate from max_results.") head_limit: Int = 20,
         @LLMDescription("Maximum output characters, 200 to 100000. Prefer narrowing path/pattern over increasing it.") max_chars: Int = 24_000,
-    ): String = grepTool.execute(
-        DesktopGrepTool.Args(
-            pattern = pattern,
-            path = path,
-            glob = glob,
-            regex = regex,
-            caseSensitive = case_sensitive,
-            contextLines = context_lines,
-            maxResults = max_results,
-            headLimit = head_limit,
-            maxChars = max_chars,
-        ),
-    )
+    ): String {
+        val hookInput = hookInterceptor.intercept("grep_code", buildJsonObject {
+            put("pattern", pattern)
+            put("path", path)
+            glob?.let { value -> put("glob", value) }
+            put("regex", regex)
+            put("case_sensitive", case_sensitive)
+            put("context_lines", context_lines)
+            put("max_results", max_results)
+            put("head_limit", head_limit)
+            put("max_chars", max_chars)
+        })
+        return hookInput.attachContext(
+            grepTool.execute(
+                DesktopGrepTool.Args(
+                    pattern = hookInput.string("pattern", pattern),
+                    path = hookInput.string("path", path),
+                    glob = hookInput.input["glob"]?.jsonPrimitive?.contentOrNull ?: glob,
+                    regex = hookInput.boolean("regex", regex),
+                    caseSensitive = hookInput.boolean("case_sensitive", case_sensitive),
+                    contextLines = hookInput.int("context_lines", context_lines),
+                    maxResults = hookInput.int("max_results", max_results),
+                    headLimit = hookInput.int("head_limit", head_limit),
+                    maxChars = hookInput.int("max_chars", max_chars),
+                ),
+            ),
+        )
+    }
 
     /** 应用一个 Kilo 兼容、可包含多个文件操作的受审批补丁。 */
     @Tool
@@ -109,7 +157,8 @@ class DesktopToolSet(
     fun apply_patch(
         @LLMDescription("Complete Kilo patch text, for example: *** Begin Patch\\n*** Add File: notes.txt\\n+hello\\n*** End Patch. Update File must include one or more @@ blocks with exact unnumbered context.") patch_text: String,
     ): String {
-        val pending = readWriteTools.previewPatch(patch_text)
+        val hookInput = hookInterceptor.intercept("apply_patch", buildJsonObject { put("patch_text", patch_text) })
+        val pending = readWriteTools.previewPatch(hookInput.string("patch_text", patch_text))
         interactionBridge.onFileDiffPreview("apply_patch", pending.previews)
         val risk = if (pending.containsExternalWrite) ToolRisk.EXTERNAL_WRITE else ToolRisk.WORKSPACE_WRITE
         if (!ensureWriteApproval(
@@ -121,7 +170,7 @@ class DesktopToolSet(
                 diffs = pending.previews,
             )
         ) return USER_DECLINED_TOOL_MESSAGE
-        return readWriteTools.applyPatch(pending)
+        return hookInput.attachContext(readWriteTools.applyPatch(pending))
     }
 
     /**
@@ -136,30 +185,38 @@ class DesktopToolSet(
         @LLMDescription("Timeout in milliseconds, 1 to 600000. Default 120000; use the smallest realistic duration.")
         timeout_ms: Long = DesktopPowerShellTool.DEFAULT_TIMEOUT_MILLIS,
     ): String {
-        val operationIntent = operation_intent.trim()
+        val hookInput = hookInterceptor.intercept("run_powershell", buildJsonObject {
+            put("script", script)
+            put("operation_intent", operation_intent)
+            put("timeout_ms", timeout_ms)
+        })
+        val effectiveScript = hookInput.string("script", script)
+        val operationIntent = hookInput.string("operation_intent", operation_intent).trim()
+        val effectiveTimeout = hookInput.long("timeout_ms", timeout_ms)
         check(operationIntent.isNotBlank()) { "执行 PowerShell 时必须说明操作意图。" }
-        check(timeout_ms in 1..DesktopPowerShellTool.MAX_TIMEOUT_MILLIS) {
+        check(effectiveTimeout in 1..DesktopPowerShellTool.MAX_TIMEOUT_MILLIS) {
             "PowerShell 超时必须在 1 到 ${DesktopPowerShellTool.MAX_TIMEOUT_MILLIS} 毫秒之间。"
         }
         if (!ensureExecuteApproval(
             toolName = "run_powershell",
             summary = operationIntent,
-            payloadPreview = script,
-            risk = ToolRisk.COMMAND,
+            payloadPreview = effectiveScript,
         )) return USER_DECLINED_TOOL_MESSAGE
-        return powerShellTool.execute(
-            DesktopPowerShellTool.Args(
-                script = script,
-                workingDirectory = workspacePath,
-                timeoutMillis = timeout_ms,
-                isCancelled = isCancelled,
-                onOutput = { text, isErrorStream ->
-                    interactionBridge.onToolOutputChunk(
-                        toolName = "run_powershell",
-                        text = text,
-                        isErrorStream = isErrorStream,
-                    )
-                },
+        return hookInput.attachContext(
+            powerShellTool.execute(
+                DesktopPowerShellTool.Args(
+                    script = effectiveScript,
+                    workingDirectory = workspacePath,
+                    timeoutMillis = effectiveTimeout,
+                    isCancelled = isCancelled,
+                    onOutput = { text, isErrorStream ->
+                        interactionBridge.onToolOutputChunk(
+                            toolName = "run_powershell",
+                            text = text,
+                            isErrorStream = isErrorStream,
+                        )
+                    },
+                ),
             ),
         )
     }
@@ -173,20 +230,28 @@ class DesktopToolSet(
         @LLMDescription("Legacy single question. Use only when questions_json is blank; provide a concise decision, not an open-ended status update.") question: String = "",
         @LLMDescription("Legacy choices for question. Use only with legacy question; duplicates and entries beyond five are discarded.") options: List<String> = emptyList(),
         @LLMDescription("Preferred JSON array only, for example [{\"question\":\"选择保存位置\",\"options\":[\"项目内\",\"用户目录\"]}]. Do not wrap it in Markdown or add commentary.") questions_json: String = "",
-    ): String = runBlocking {
-        val questions = questionPromptsForToolCall(
-            question = question,
-            options = options,
-            questionsJson = questions_json,
-        )
-        interactionBridge.requestQuestion(
-            QuestionRequest(
-                requestId = UUID.randomUUID().toString(),
-                toolCallId = "ask_user",
-                questions = questions,
-                allowFreeText = true,
-            ),
-        )
+    ): String {
+        val hookInput = hookInterceptor.intercept("ask_user", buildJsonObject {
+            put("question", question)
+            put("options", JsonArray(options.map(::JsonPrimitive)))
+            put("questions_json", questions_json)
+        })
+        val answer = runBlocking {
+            val questions = questionPromptsForToolCall(
+                question = hookInput.string("question", question),
+                options = hookInput.strings("options", options),
+                questionsJson = hookInput.string("questions_json", questions_json),
+            )
+            interactionBridge.requestQuestion(
+                QuestionRequest(
+                    requestId = UUID.randomUUID().toString(),
+                    toolCallId = "ask_user",
+                    questions = questions,
+                    allowFreeText = true,
+                ),
+            )
+        }
+        return hookInput.attachContext(answer)
     }
 
     /**
@@ -227,7 +292,15 @@ class DesktopToolSet(
         check(!DesktopToolPolicy.isWriteDenied(permissionPreset)) {
             "当前 permission preset=$permissionPreset，禁止修改工作区文件。"
         }
-        if (permissionPreset == PermissionPreset.AUTO) {
+        val hookDecision = hookInterceptor.inspectPermission("apply_patch", summary, targetPath, payloadPreview)
+        when (hookDecision) {
+            AgentHookDecision.ALLOW -> return true
+            AgentHookDecision.BLOCK -> return false
+            AgentHookDecision.ASK,
+            AgentHookDecision.CONTINUE,
+                -> Unit
+        }
+        if (hookDecision != AgentHookDecision.ASK && permissionPreset == PermissionPreset.AUTO) {
             val review = reviewAutoApproval(
                 ApprovalRequest(UUID.randomUUID().toString(), "apply_patch", summary, targetPath, payloadPreview, risk, diff, diffs),
             )
@@ -236,7 +309,7 @@ class DesktopToolSet(
                 ApprovalDecision.DENY -> return false
                 ApprovalDecision.ASK -> Unit
             }
-        } else if (DesktopToolPolicy.canAutoApproveWrite(permissionPreset) && risk == ToolRisk.WORKSPACE_WRITE) {
+        } else if (hookDecision != AgentHookDecision.ASK && DesktopToolPolicy.canAutoApproveWrite(permissionPreset) && risk == ToolRisk.WORKSPACE_WRITE) {
             return true
         }
         val request = ApprovalRequest(
@@ -251,7 +324,7 @@ class DesktopToolSet(
         )
         val approved = runBlocking {
             interactionBridge.requestApproval(
-                request,
+                request.copy(forceManual = hookDecision == AgentHookDecision.ASK),
             )
         }
         auditLog.record(request, if (approved) "allow" else "deny")
@@ -265,21 +338,28 @@ class DesktopToolSet(
         toolName: String,
         summary: String,
         payloadPreview: String?,
-        risk: ToolRisk,
     ): Boolean {
         check(!DesktopToolPolicy.isExecuteDenied(permissionPreset)) {
             "当前 permission preset=$permissionPreset，禁止执行命令。"
         }
-        if (permissionPreset == PermissionPreset.AUTO) {
+        val hookDecision = hookInterceptor.inspectPermission(toolName, summary, payloadPreview = payloadPreview)
+        when (hookDecision) {
+            AgentHookDecision.ALLOW -> return true
+            AgentHookDecision.BLOCK -> return false
+            AgentHookDecision.ASK,
+            AgentHookDecision.CONTINUE,
+                -> Unit
+        }
+        if (hookDecision != AgentHookDecision.ASK && permissionPreset == PermissionPreset.AUTO) {
             val review = reviewAutoApproval(
-                ApprovalRequest(UUID.randomUUID().toString(), toolName, summary, payloadPreview = payloadPreview, risk = risk),
+                ApprovalRequest(UUID.randomUUID().toString(), toolName, summary, payloadPreview = payloadPreview, risk = ToolRisk.COMMAND),
             )
             when (review.decision) {
                 ApprovalDecision.ALLOW -> return true
                 ApprovalDecision.DENY -> return false
                 ApprovalDecision.ASK -> Unit
             }
-        } else if (DesktopToolPolicy.canAutoApproveExecute(permissionPreset)) {
+        } else if (hookDecision != AgentHookDecision.ASK && DesktopToolPolicy.canAutoApproveExecute(permissionPreset)) {
             return true
         }
         val request = ApprovalRequest(
@@ -287,11 +367,11 @@ class DesktopToolSet(
             toolName = toolName,
             summary = summary,
             payloadPreview = payloadPreview,
-            risk = risk,
+            risk = ToolRisk.COMMAND,
         )
         val approved = runBlocking {
             interactionBridge.requestApproval(
-                request,
+                request.copy(forceManual = hookDecision == AgentHookDecision.ASK),
             )
         }
         auditLog.record(request, if (approved) "allow" else "deny")
@@ -311,15 +391,25 @@ class DesktopToolSet(
         @LLMDescription("Required concise Chinese description of target and expected effect; this is shown for approval and is not a shell command.") operation_intent: String,
         @LLMDescription("Timeout in milliseconds, 1 to 600000. Default 120000; use the smallest realistic duration.") timeout_ms: Long = DesktopPowerShellTool.DEFAULT_TIMEOUT_MILLIS,
     ): String {
-        require(operation_intent.isNotBlank()) { "执行 Shell 时必须说明操作意图。" }
-        require(timeout_ms in 1..DesktopShellTool.MAX_TIMEOUT_MILLIS) { "Shell 超时必须在允许范围内。" }
-        if (shellTool.isObviouslyDangerous(command)) {
+        val hookInput = hookInterceptor.intercept("run_shell", buildJsonObject {
+            put("shell", shell)
+            put("command", command)
+            put("operation_intent", operation_intent)
+            put("timeout_ms", timeout_ms)
+        })
+        val effectiveShell = hookInput.string("shell", shell)
+        val effectiveCommand = hookInput.string("command", command)
+        val effectiveOperationIntent = hookInput.string("operation_intent", operation_intent)
+        val effectiveTimeout = hookInput.long("timeout_ms", timeout_ms)
+        require(effectiveOperationIntent.isNotBlank()) { "执行 Shell 时必须说明操作意图。" }
+        require(effectiveTimeout in 1..DesktopShellTool.MAX_TIMEOUT_MILLIS) { "Shell 超时必须在允许范围内。" }
+        if (shellTool.isObviouslyDangerous(effectiveCommand)) {
             auditLog.record(
                 request = ApprovalRequest(
                     requestId = UUID.randomUUID().toString(),
                     toolName = "run_shell",
-                    summary = operation_intent,
-                    payloadPreview = command,
+                    summary = effectiveOperationIntent,
+                    payloadPreview = effectiveCommand,
                     risk = ToolRisk.DANGEROUS,
                 ),
                 decision = "deny",
@@ -328,15 +418,17 @@ class DesktopToolSet(
             )
             return "命令已被安全策略拒绝。"
         }
-        if (!ensureExecuteApproval("run_shell", operation_intent, command, ToolRisk.COMMAND)) return USER_DECLINED_TOOL_MESSAGE
-        return shellTool.execute(
-            DesktopShellTool.Args(
-                shell = shell,
-                command = command,
-                workingDirectory = workspacePath,
-                timeoutMillis = timeout_ms,
-                isCancelled = isCancelled,
-                onOutput = { text, isErrorStream -> interactionBridge.onToolOutputChunk("run_shell", text, isErrorStream) },
+        if (!ensureExecuteApproval("run_shell", effectiveOperationIntent, effectiveCommand)) return USER_DECLINED_TOOL_MESSAGE
+        return hookInput.attachContext(
+            shellTool.execute(
+                DesktopShellTool.Args(
+                    shell = effectiveShell,
+                    command = effectiveCommand,
+                    workingDirectory = workspacePath,
+                    timeoutMillis = effectiveTimeout,
+                    isCancelled = isCancelled,
+                    onOutput = { text, isErrorStream -> interactionBridge.onToolOutputChunk("run_shell", text, isErrorStream) },
+                ),
             ),
         )
     }
@@ -352,7 +444,15 @@ class DesktopToolSet(
             targetPath = resolved.path.toString(),
             risk = ToolRisk.UNKNOWN,
         )
-        if (permissionPreset == PermissionPreset.AUTO) {
+        val hookDecision = hookInterceptor.inspectPermission("read_file", request.summary, request.targetPath.orEmpty(), request.payloadPreview)
+        when (hookDecision) {
+            AgentHookDecision.ALLOW -> return
+            AgentHookDecision.BLOCK -> error(USER_DECLINED_TOOL_MESSAGE)
+            AgentHookDecision.ASK,
+            AgentHookDecision.CONTINUE,
+                -> Unit
+        }
+        if (hookDecision != AgentHookDecision.ASK && permissionPreset == PermissionPreset.AUTO) {
             when (reviewAutoApproval(request).decision) {
                 ApprovalDecision.ALLOW -> return
                 ApprovalDecision.DENY -> {
@@ -363,7 +463,7 @@ class DesktopToolSet(
             }
         }
         val approved = runBlocking {
-            interactionBridge.requestApproval(request)
+            interactionBridge.requestApproval(request.copy(forceManual = hookDecision == AgentHookDecision.ASK))
         }
         auditLog.record(request, if (approved) "allow" else "deny")
         check(approved) { USER_DECLINED_TOOL_MESSAGE }

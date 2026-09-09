@@ -31,6 +31,7 @@ class DesktopProcessRunner(
         val workingDirectory: File,
         val timeoutMillis: Long,
         val isCancelled: () -> Boolean = { false },
+        val standardInput: String? = null,
         val onStdoutChunk: (String) -> Unit = {},
         val onStderrChunk: (String) -> Unit = {},
     ) {
@@ -71,13 +72,15 @@ class DesktopProcessRunner(
         val process = processStarter(
             ProcessBuilder(args.command).directory(args.workingDirectory),
         )
-        val readers = Executors.newFixedThreadPool(2) { runnable ->
+        val readers = Executors.newFixedThreadPool(3) { runnable ->
             Thread(runnable, "mulehang-process-output").apply { isDaemon = true }
         }
         try {
             val stdout = readers.submit<CapturedOutput> { readLimited(process.inputStream, args.onStdoutChunk) }
             val stderr = readers.submit<CapturedOutput> { readLimited(process.errorStream, args.onStderrChunk) }
+            val input = readers.submit { writeStandardInput(process, args.standardInput) }
             val outcome = waitForProcess(process, args)
+            awaitInput(input)
             val capturedStdout = awaitOutput(stdout)
             val capturedStderr = awaitOutput(stderr)
             return Result(
@@ -181,6 +184,24 @@ class DesktopProcessRunner(
         output.get()
     } catch (error: ExecutionException) {
         throw IllegalStateException("读取子进程输出失败。", error.cause)
+    }
+
+    /** 将调用方提供的 UTF-8 文本写入子进程 stdin，并始终关闭输入流。 */
+    private fun writeStandardInput(process: Process, input: String?) {
+        process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
+            input?.let(writer::write)
+        }
+    }
+
+    /** stdin 在子进程提前退出时可安全忽略 broken pipe，其余失败需要向调用方暴露。 */
+    private fun awaitInput(input: Future<*>) {
+        try {
+            input.get()
+        } catch (error: ExecutionException) {
+            if (error.cause !is java.io.IOException) {
+                throw IllegalStateException("写入子进程输入失败。", error.cause)
+            }
+        }
     }
 
     /**

@@ -13,6 +13,24 @@ import kotlin.test.assertTrue
  */
 class DesktopToolInteractionCoordinatorTest {
 
+    /** Hook 强制确认不能被先前的持续授权跳过。 */
+    @Test
+    fun `should require a fresh answer when hook forces manual approval`() = runBlocking {
+        val coordinator = DesktopToolInteractionCoordinator()
+        val request = ApprovalRequest("first", "read_file", "读取")
+        val first = async { coordinator.requestApproval(request) }
+        yield()
+        coordinator.submitApproval(ApprovalResponse.APPROVE_TOOL_TYPE)
+        assertTrue(first.await())
+        val forced = request.copy(requestId = "forced", forceManual = true)
+        assertFalse(coordinator.isApprovalAutoApproved(forced))
+        val next = async { coordinator.requestApproval(forced) }
+        yield()
+        assertFalse(next.isCompleted)
+        coordinator.submitApproval(ApprovalResponse.REJECT_AND_STOP)
+        assertFalse(next.await())
+    }
+
     /**
      * 用户选择始终允许后，同一工具类型的后续请求不应再次阻塞等待 UI。
      */

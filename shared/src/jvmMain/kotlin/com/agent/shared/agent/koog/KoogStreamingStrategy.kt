@@ -11,7 +11,6 @@ import ai.koog.agents.core.dsl.extension.onToolCalls
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.prompt.message.Message
-import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.serialization.JSONObject
 import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentRunRequest
@@ -45,7 +44,7 @@ internal suspend fun runWithKoogAgent(
                 runtimeResources = request.runtimeResources,
             ),
         )
-        .maxIterations(50)
+        .maxIterations(request.profile.maxIterations)
         .graphStrategy(buildStreamingSingleRunStrategy(request, emitEvent))
         .install {
             handleEvents {

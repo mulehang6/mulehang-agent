@@ -1,12 +1,13 @@
 package com.agent.shared.agent.resource
 
+import com.agent.shared.settings.model.AgentHookSettings
+import com.agent.shared.settings.model.append
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.nio.charset.StandardCharsets
@@ -19,6 +20,7 @@ internal data class DiscoveredExtensionPackageResources(
     val skillRoots: List<SkillSearchRoot>,
     val promptRoots: List<PromptSearchRoot>,
     val mcpServers: List<DeclaredMcpServer>,
+    val hookSettings: AgentHookSettings,
 )
 
 /** MCP 合并前保留字段是否声明，供后续按 Kilo 规则处理分层覆盖。 */
@@ -47,6 +49,7 @@ internal fun discoverExtensionPackages(
     val skillRoots = mutableListOf<SkillSearchRoot>()
     val promptRoots = mutableListOf<PromptSearchRoot>()
     val mcpServers = mutableListOf<DeclaredMcpServer>()
+    val hookSettings = mutableListOf<AgentHookSettings>()
     val seenPackageIds = mutableSetOf<String>()
     val seenPackageRoots = mutableSetOf<String>()
 
@@ -121,14 +124,55 @@ internal fun discoverExtensionPackages(
             manifest = manifest,
             diagnostics = diagnostics,
         )
+        hookSettings += parseExtensionHooks(root, diagnostics)
     }
     return DiscoveredExtensionPackageResources(
         packages = packages.toList(),
         skillRoots = skillRoots.toList(),
         promptRoots = promptRoots.toList(),
         mcpServers = mcpServers.toList(),
+        hookSettings = hookSettings.fold(AgentHookSettings(), AgentHookSettings::append),
     )
 }
+
+/**
+ * 读取 Junie 风格 `hooks/hooks.json`，并将扩展根目录变量替换为受信任的实际包路径。
+ *
+ * 仅在已安装、启用且通过项目资源信任门的扩展上调用本函数，文件中的命令不会在发现阶段执行。
+ */
+private fun parseExtensionHooks(
+    root: Path,
+    diagnostics: MutableList<AgentResourceDiagnostic>,
+): AgentHookSettings {
+    val file = root.resolve(HOOKS_DIRECTORY).resolve(HOOKS_FILE)
+    if (!Files.isRegularFile(file)) return AgentHookSettings()
+    return runCatching {
+        val parsed = packageJson.parseToJsonElement(Files.readString(file, StandardCharsets.UTF_8)).jsonObject
+        val envelope = if (parsed["hooks"] is JsonObject) parsed else JsonObject(mapOf("hooks" to parsed))
+        packageJson.decodeFromJsonElement(AgentHookSettings.serializer(), envelope)
+            .replaceExtensionRoot(root)
+    }.getOrElse { error ->
+        diagnostics += AgentResourceDiagnostic(
+            severity = AgentResourceDiagnosticSeverity.WARNING,
+            message = "hooks/hooks.json 无法解析：${error.message ?: "未知错误"}",
+            path = file,
+        )
+        AgentHookSettings()
+    }
+}
+
+/** 将 `${CLAUDE_PLUGIN_ROOT}` 解析为当前包的标准绝对路径，不允许包自行选择工作区外目录。 */
+private fun AgentHookSettings.replaceExtensionRoot(root: Path): AgentHookSettings = copy(
+    hooks = hooks.mapValues { (_, matchers) ->
+        matchers.map { matcher ->
+            matcher.copy(
+                hooks = matcher.hooks.map { command ->
+                    command.copy(command = command.command.replace(EXTENSION_ROOT_VARIABLE, root.toString()))
+                },
+            )
+        }
+    },
+)
 
 /** 读取可选 package.json；无文件仍按常规目录支持本地包。 */
 private fun readPackageManifest(
@@ -280,4 +324,7 @@ private fun JsonElement?.hasDeclaration(): Boolean = when (this) {
 
 private const val PACKAGE_JSON_FILE = "package.json"
 private const val MCP_DECLARATION_FILE = "mulehang.mcp.json"
+private const val HOOKS_DIRECTORY = "hooks"
+private const val HOOKS_FILE = "hooks.json"
+private const val EXTENSION_ROOT_VARIABLE = "$" + "{CLAUDE_PLUGIN_ROOT}"
 private val packageJson = Json { ignoreUnknownKeys = true }

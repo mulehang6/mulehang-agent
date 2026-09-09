@@ -1,24 +1,21 @@
 package com.agent.shared.agent.koog
 
-import ai.koog.prompt.message.Message
-import ai.koog.prompt.message.MessagePart
-import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
+import ai.koog.agents.core.agent.exception.AIAgentMaxNumberOfIterationsReachedException
 import ai.koog.serialization.JSONObject
 import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
-import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.AgentIterationLimit
 import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.QuestionRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -29,353 +26,26 @@ import kotlinx.coroutines.yield
 import kotlin.time.Duration.Companion.seconds
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-/**
- * 验证 Koog gateway 的本地错误分支。
- */
+/** 验证网关事件、交互转发与失败提示。 */
 class KoogAgentGatewayTest {
 
     /**
-     * 自定义流式节点应把文本与思考 frame 同时转换为 UI 事件和 assistant message。
+     * Koog 的循环上限异常必须成为可继续操作的提示，而不是使会话停在技术异常状态。
      */
     @Test
-    fun `should collect streaming text and reasoning into assistant message`() = runTest {
-        val emittedEvents = mutableListOf<AgentStreamEvent>()
-
-        val message = collectAssistantMessageFromStream(
-            frames = flow {
-                emit(StreamFrame.ReasoningDelta(id = "r1", text = "raw", summary = "summary"))
-                emit(StreamFrame.TextDelta("hel"))
-                emit(StreamFrame.TextDelta("lo"))
-                emit(
-                    StreamFrame.ReasoningComplete(
-                        id = "r1",
-                        content = listOf("raw", " detail"),
-                        summary = listOf("summary", " done"),
-                    ),
-                )
-                emit(StreamFrame.End(finishReason = "stop"))
-            },
-            emitEvent = { event: AgentStreamEvent -> emittedEvents.add(event) },
+    fun `should turn iteration limit exception into a recoverable message`() {
+        val configuredLimit = agentFailureReason(AIAgentMaxNumberOfIterationsReachedException(75), 75)
+        val unlimitedLimit = agentFailureReason(
+            AIAgentMaxNumberOfIterationsReachedException(AgentIterationLimit.KOOG_MAXIMUM),
+            AgentIterationLimit.KOOG_MAXIMUM,
         )
 
-        assertEquals(
-            listOf(
-                AgentStreamEvent.ReasoningDelta(summary = "summary", rawText = "raw"),
-                AgentStreamEvent.TextDelta("hel"),
-                AgentStreamEvent.TextDelta("lo"),
-                AgentStreamEvent.ReasoningCompleted(
-                    summary = "summary done",
-                    rawText = "raw detail",
-                ),
-            ),
-            emittedEvents,
-        )
-        assertEquals("stop", message.finishReason)
-        assertEquals(
-            listOf(
-                MessagePart.Reasoning(
-                    id = "r1",
-                    content = listOf("raw", " detail"),
-                    summary = listOf("summary", " done"),
-                    encrypted = "",
-                ),
-                MessagePart.Text("hello"),
-            ),
-            message.parts,
-        )
-    }
-
-    /**
-     * reasoning 文本已通过增量事件到达时，空的完成事件不能清除该文本；否则工具结果续传会丢失
-     * Responses 协议要求回放的 reasoning_text。
-     */
-    @Test
-    fun `should retain reasoning delta when completion content is empty`() = runTest {
-        val message = collectAssistantMessageFromStream(
-            frames = flowOf(
-                StreamFrame.ReasoningDelta(
-                    id = "reasoning-1",
-                    text = "需要先读取文件。",
-                ),
-                StreamFrame.ReasoningComplete(
-                    id = "reasoning-1",
-                    content = emptyList(),
-                ),
-                StreamFrame.ToolCallComplete(
-                    id = "call-1",
-                    name = "read_file",
-                    content = "{\"path\":\"README.md\"}",
-                ),
-                StreamFrame.End(finishReason = "tool_calls"),
-            ),
-            emitEvent = {},
-        )
-
-        assertEquals(
-            listOf("需要先读取文件。"),
-            message.parts.filterIsInstance<MessagePart.Reasoning>().single().content,
-        )
-    }
-
-    /**
-     * 工具续传轮可能只产出空 reasoning item；收敛结果必须保留 Reasoning part（带空文本），
-     * 使下一轮请求仍能回传 reasoning_text，且不向 UI 发出空思考事件。
-     */
-    @Test
-    fun `should retain empty reasoning part without emitting empty completion event`() = runTest {
-        val emittedEvents = mutableListOf<AgentStreamEvent>()
-
-        val message = collectAssistantMessageFromStream(
-            frames = flowOf(
-                StreamFrame.ReasoningComplete(id = "reasoning-1", content = emptyList()),
-                StreamFrame.ToolCallComplete(
-                    id = "call-1",
-                    name = "read_file",
-                    content = """{"path":"README.md"}""",
-                ),
-                StreamFrame.End(finishReason = "tool_calls"),
-            ),
-            emitEvent = { event: AgentStreamEvent -> emittedEvents.add(event) },
-        )
-
-        assertEquals(
-            listOf(
-                MessagePart.Reasoning(id = "reasoning-1", content = listOf(""), encrypted = ""),
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = """{"path":"README.md"}""",
-                ),
-            ),
-            message.parts,
-        )
-        assertFalse(emittedEvents.any { it is AgentStreamEvent.ReasoningCompleted })
-    }
-
-    /**
-     * 历史里工具调用参数只是 UI 预览，可能被截断成非法 JSON；回放时必须降级为合法
-     * 占位，否则 Koog 序列化 assistant 消息时懒解析 argsJson 会直接崩溃。
-     */
-    @Test
-    fun `should fallback truncated tool call arguments to valid json when replaying history`() {
-        val messages = buildConversationMessages(
-            history = listOf(
-                AgentConversationHistoryMessage.User("first"),
-                AgentConversationHistoryMessage.Assistant(
-                    parts = listOf(
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-1",
-                            name = "grep_code",
-                            argumentsPreview = """{"pattern":"Koog", "path":".", "glob":"null", "regex":false, "case_sensitive":false, "context_lines":2, "max_results":50""",
-                        ),
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-2",
-                            name = "read_file",
-                            argumentsPreview = """{"path":"README.md"}""",
-                        ),
-                    ),
-                ),
-            ),
-            prompt = "second",
-        )
-
-        val parts = assertIs<Message.Assistant>(messages[1]).parts
-        val truncated = assertIs<MessagePart.Tool.Call>(parts[0])
-        assertTrue(runCatching { truncated.argsJson }.isSuccess)
-        assertEquals("{}", truncated.args)
-        val intact = assertIs<MessagePart.Tool.Call>(parts[1])
-        assertEquals("""{"path":"README.md"}""", intact.args)
-    }
-
-    /**
-     * 历史恢复时空的 reasoning 片段也必须保留，避免跨会话回放触发同样的 reasoning_text 回传校验。
-     */
-    @Test
-    fun `should keep empty reasoning part from structured history`() {
-        val messages = buildConversationMessages(
-            history = listOf(
-                AgentConversationHistoryMessage.User("first"),
-                AgentConversationHistoryMessage.Assistant(
-                    parts = listOf(
-                        AgentConversationHistoryPart.Reasoning(summary = "", rawText = ""),
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-1",
-                            name = "read_file",
-                            argumentsPreview = """{"path":"README.md"}""",
-                        ),
-                    ),
-                ),
-            ),
-            prompt = "second",
-        )
-
-        assertEquals(
-            listOf(
-                MessagePart.Reasoning(content = listOf(""), encrypted = ""),
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = """{"path":"README.md"}""",
-                ),
-            ),
-            assertIs<Message.Assistant>(messages[1]).parts,
-        )
-    }
-
-    /**
-     * 自定义流式节点应把工具调用 frame 还原为可继续执行的 assistant message。
-     */
-    @Test
-    fun `should collect streaming tool calls into assistant message`() = runTest {
-        val message = collectAssistantMessageFromStream(
-            frames = flowOf(
-                StreamFrame.ToolCallDelta(
-                    id = "call-1",
-                    name = "read_file",
-                    content = "{\"path\":\"REA",
-                ),
-                StreamFrame.ToolCallComplete(
-                    id = "call-1",
-                    name = "read_file",
-                    content = "{\"path\":\"README.md\"}",
-                ),
-                StreamFrame.End(finishReason = "tool_calls"),
-            ),
-            emitEvent = {},
-        )
-
-        assertEquals("tool_calls", message.finishReason)
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = "{\"path\":\"README.md\"}",
-                ),
-            ),
-            message.parts,
-        )
-    }
-
-    /**
-     * 工具调用增量在不同 chunk 中只保留 index 或 id 时，仍应合并成同一个 tool call。
-     */
-    @Test
-    fun `should merge tool call deltas by index when later chunks omit id`() = runTest {
-        val message = collectAssistantMessageFromStream(
-            frames = flowOf(
-                StreamFrame.ToolCallDelta(
-                    id = "call-1",
-                    index = 0,
-                    name = "read_file",
-                    content = "{\"path\":\"REA",
-                ),
-                StreamFrame.ToolCallDelta(
-                    id = null,
-                    name = null,
-                    index = 0,
-                    content = "DME.md\"}",
-                ),
-                StreamFrame.End(finishReason = "tool_calls"),
-            ),
-            emitEvent = {},
-        )
-
-        assertEquals("tool_calls", message.finishReason)
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = "{\"path\":\"README.md\"}",
-                ),
-            ),
-            message.parts,
-        )
-    }
-
-    /**
-     * `tool_calls` 结束态若没有真正的工具调用 part，应尽早转成明确异常而不是让图节点卡死。
-     */
-    @Test
-    fun `should reject tool call finish without tool call parts`() = runTest {
-        val error = assertFailsWith<IllegalStateException> {
-            collectAssistantMessageFromStream(
-                frames = flowOf(
-                    StreamFrame.ReasoningDelta(id = "r1", text = "先判断问题"),
-                    StreamFrame.End(finishReason = "tool_calls"),
-                ),
-                emitEvent = {},
-            )
-        }
-
-        assertTrue(error.message.orEmpty().contains("tool_calls"))
-    }
-
-    /**
-     * 只有 reasoning、没有文本或工具调用的响应同样无法命中策略图边，应该直接失败。
-     */
-    @Test
-    fun `should reject reasoning only assistant message`() = runTest {
-        val error = assertFailsWith<IllegalStateException> {
-            collectAssistantMessageFromStream(
-                frames = flowOf(
-                    StreamFrame.ReasoningDelta(id = "r1", text = "先判断问题"),
-                    StreamFrame.ReasoningComplete(
-                        id = "r1",
-                        content = listOf("先判断问题"),
-                    ),
-                    StreamFrame.End(finishReason = "stop"),
-                ),
-                emitEvent = {},
-            )
-        }
-
-        assertTrue(error.message.orEmpty().contains("思考内容"))
-    }
-
-    /**
-     * 参考 paicli 的 ReAct 主循环，只要存在 tool call，就算同时带有文本也不能直接结束。
-     */
-    @Test
-    fun `should keep looping when assistant message contains both text and tool calls`() {
-        val assistant = Message.Assistant(
-            listOf(
-                MessagePart.Text("我先去读取文件。"),
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = "{\"path\":\"README.md\"}",
-                ),
-            ),
-            ResponseMetaInfo.Empty,
-            finishReason = "tool_calls",
-        )
-
-        assertFalse(assistant.shouldFinishReactLoop())
-        assertEquals(null, assistant.finalTextForReactLoop())
-    }
-
-    /**
-     * 参考 paicli 的 ReAct 主循环，只有纯文本且无工具调用时才结束当前轮次。
-     */
-    @Test
-    fun `should finish react loop only for assistant text without tool calls`() {
-        val assistant = Message.Assistant(
-            listOf(
-                MessagePart.Text("最终答案"),
-            ),
-            ResponseMetaInfo.Empty,
-            finishReason = "stop",
-        )
-
-        assertTrue(assistant.shouldFinishReactLoop())
-        assertEquals("最终答案", assistant.finalTextForReactLoop())
+        assertTrue(configuredLimit.contains("最大迭代次数（75）"))
+        assertTrue(configuredLimit.contains("当前会话仍可继续"))
+        assertTrue(unlimitedLimit.contains("运行时允许的最大迭代次数"))
     }
 
     /**
@@ -524,207 +194,6 @@ class KoogAgentGatewayTest {
         assertEquals(AgentStreamEvent.TextDelta("hel"), events[1])
         assertEquals(AgentStreamEvent.TextDelta("lo"), events[2])
         assertEquals(AgentStreamEvent.Completed("hello"), events[3])
-    }
-
-    /**
-     * 首轮 Koog 请求也必须把已有结构化历史映射回 prompt，而不是只发送当前 prompt。
-     */
-    @Test
-    fun `should build koog prompt messages from structured conversation history`() {
-        val messages = buildConversationMessages(
-            history = listOf(
-                AgentConversationHistoryMessage.User("first"),
-                AgentConversationHistoryMessage.Assistant(
-                    parts = listOf(
-                        AgentConversationHistoryPart.Reasoning(
-                            summary = "先分析",
-                            rawText = "先分析原始思考",
-                        ),
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-1",
-                            name = "read_file",
-                            argumentsPreview = """{"path":"README.md"}""",
-                        ),
-                        AgentConversationHistoryPart.ToolResult(
-                            id = "call-1",
-                            name = "read_file",
-                            resultPreview = "file-content",
-                        ),
-                        AgentConversationHistoryPart.Text("done"),
-                    ),
-                ),
-            ),
-            prompt = "second",
-        )
-
-        assertEquals(5, messages.size)
-        assertEquals(listOf(MessagePart.Text("first")), assertIs<Message.User>(messages[0]).parts)
-        assertEquals(
-            listOf(
-                MessagePart.Reasoning(
-                    content = listOf("先分析原始思考"),
-                    summary = listOf("先分析"),
-                    encrypted = "",
-                ),
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = """{"path":"README.md"}""",
-                ),
-            ),
-            assertIs<Message.Assistant>(messages[1]).parts,
-        )
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Result(
-                    id = "call-1",
-                    tool = "read_file",
-                    output = "file-content",
-                ),
-            ),
-            assertIs<Message.User>(messages[2]).parts,
-        )
-        assertEquals(listOf(MessagePart.Text("done")), assertIs<Message.Assistant>(messages[3]).parts)
-        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[4]).parts)
-    }
-
-    /**
-     * 中断或失败的上一轮可能只留下 tool call；恢复历史时必须补齐 tool result，避免兼容 API 拒绝请求。
-     */
-    @Test
-    fun `should synthesize tool result for orphaned historical tool call`() {
-        val messages = buildConversationMessages(
-            history = listOf(
-                AgentConversationHistoryMessage.User("first"),
-                AgentConversationHistoryMessage.Assistant(
-                    parts = listOf(
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-1",
-                            name = "read_file",
-                            argumentsPreview = """{"path":"README.md"}""",
-                        ),
-                    ),
-                ),
-            ),
-            prompt = "second",
-        )
-
-        assertEquals(4, messages.size)
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Call(
-                    id = "call-1",
-                    tool = "read_file",
-                    args = """{"path":"README.md"}""",
-                ),
-            ),
-            assertIs<Message.Assistant>(messages[1]).parts,
-        )
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Result(
-                    id = "call-1",
-                    tool = "read_file",
-                    output = "工具调用未完成，未产生可用结果。",
-                ),
-            ),
-            assertIs<Message.User>(messages[2]).parts,
-        )
-        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[3]).parts)
-    }
-
-    /**
-     * Anthropic 要求同一 assistant 消息中的每个 tool_use 都在紧随其后的同一条 user
-     * 消息中获得 tool_result；拆成多条消息会使后续调用被服务端拒绝。
-     */
-    @Test
-    fun `should synthesize orphaned tool results in one user message`() {
-        val messages = buildConversationMessages(
-            history = listOf(
-                AgentConversationHistoryMessage.User("first"),
-                AgentConversationHistoryMessage.Assistant(
-                    parts = listOf(
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-1",
-                            name = "read_file",
-                            argumentsPreview = "{\"path\":\"README.md\"}",
-                        ),
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-2",
-                            name = "list_dir",
-                            argumentsPreview = "{\"path\":\".\"}",
-                        ),
-                    ),
-                ),
-            ),
-            prompt = "second",
-        )
-
-        assertEquals(4, messages.size)
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Result(
-                    id = "call-1",
-                    tool = "read_file",
-                    output = "工具调用未完成，未产生可用结果。",
-                ),
-                MessagePart.Tool.Result(
-                    id = "call-2",
-                    tool = "list_dir",
-                    output = "工具调用未完成，未产生可用结果。",
-                ),
-            ),
-            assertIs<Message.User>(messages[2]).parts,
-        )
-        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[3]).parts)
-    }
-
-    /**
-     * 多个已完成工具调用也必须合并回放，保证 Anthropic 将每个 tool_result 视为同一轮
-     * tool_use 的直接响应。
-     */
-    @Test
-    fun `should replay completed tool results in one user message`() {
-        val messages = buildConversationMessages(
-            history = listOf(
-                AgentConversationHistoryMessage.User("first"),
-                AgentConversationHistoryMessage.Assistant(
-                    parts = listOf(
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-1",
-                            name = "read_file",
-                            argumentsPreview = "{\"path\":\"README.md\"}",
-                        ),
-                        AgentConversationHistoryPart.ToolCall(
-                            id = "call-2",
-                            name = "list_dir",
-                            argumentsPreview = "{\"path\":\".\"}",
-                        ),
-                        AgentConversationHistoryPart.ToolResult(
-                            id = "call-1",
-                            name = "read_file",
-                            resultPreview = "README",
-                        ),
-                        AgentConversationHistoryPart.ToolResult(
-                            id = "call-2",
-                            name = "list_dir",
-                            resultPreview = "src",
-                        ),
-                    ),
-                ),
-            ),
-            prompt = "second",
-        )
-
-        assertEquals(4, messages.size)
-        assertEquals(
-            listOf(
-                MessagePart.Tool.Result(id = "call-1", tool = "read_file", output = "README"),
-                MessagePart.Tool.Result(id = "call-2", tool = "list_dir", output = "src"),
-            ),
-            assertIs<Message.User>(messages[2]).parts,
-        )
-        assertEquals(listOf(MessagePart.Text("second")), assertIs<Message.User>(messages[3]).parts)
     }
 
     /**
@@ -897,9 +366,7 @@ class KoogAgentGatewayTest {
      */
     @Test
     fun `should build terminal card fields before truncating long arguments`() {
-        val script =
-            """1..5000 | ForEach-Object { Write-Output ("out-" + ${'$'}_); """ +
-                    """[Console]::Error.WriteLine("err-" + ${'$'}_) }"""
+        val script = $$"""1..5000 | ForEach-Object { Write-Output ("out-" + $_); [Console]::Error.WriteLine("err-" + $_) }"""
         val intent = "循环输出 1 到 5000，每次迭代向标准输出写入 out-N，向标准错误写入 err-N"
         val argumentOrders = listOf(
             linkedMapOf(

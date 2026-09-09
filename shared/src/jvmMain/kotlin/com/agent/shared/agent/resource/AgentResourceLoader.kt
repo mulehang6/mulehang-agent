@@ -1,5 +1,6 @@
 package com.agent.shared.agent.resource
 
+import com.agent.shared.settings.model.McpServerSettings
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -29,7 +30,10 @@ class AgentResourceLoader {
             skills = skills,
             diagnostics = diagnostics,
         )
-        val mcpServers = mergeMcpServers(packageResources.mcpServers, diagnostics)
+        val mcpServers = mergeMcpServers(
+            packageResources.mcpServers + directMcpDeclarations(request, diagnostics),
+            diagnostics,
+        )
         return AgentResourceSnapshot(
             version = version,
             workspacePath = request.workspacePath?.normalizedExistingOrAbsolute(),
@@ -39,6 +43,7 @@ class AgentResourceLoader {
             packages = packageResources.packages,
             mcpServers = mcpServers,
             diagnostics = diagnostics.toList(),
+            hookSettings = packageResources.hookSettings,
         )
     }
 
@@ -145,6 +150,66 @@ class AgentResourceLoader {
         }
     }
 
+    /**
+     * 把设置页直接声明的 MCP 服务转为与包声明相同的合并输入；项目级记录必须先通过信任门槛。
+     */
+    private fun directMcpDeclarations(
+        request: AgentResourceLoadRequest,
+        diagnostics: MutableList<AgentResourceDiagnostic>,
+    ): List<DeclaredMcpServer> = buildList {
+        addAll(
+            request.userMcpServers.toDeclaredMcpServers(
+                origin = AgentResourceOrigin.USER_CONFIGURATION,
+                source = request.userHome.resolve(".mulehang/settings.json"),
+                diagnostics = diagnostics,
+            ),
+        )
+        val workspace = request.workspacePath?.normalizedExistingOrAbsolute()
+        if (request.projectTrusted && workspace != null) {
+            addAll(
+                request.projectMcpServers.toDeclaredMcpServers(
+                    origin = AgentResourceOrigin.PROJECT_CONFIGURATION,
+                    source = workspace.resolve(".mulehang/settings.json"),
+                    diagnostics = diagnostics,
+                ),
+            )
+        } else if (request.projectMcpServers.any(McpServerSettings::enabled)) {
+            diagnostics += AgentResourceDiagnostic(
+                severity = AgentResourceDiagnosticSeverity.INFO,
+                message = "项目尚未信任，跳过直接 MCP 服务配置。",
+                path = workspace,
+            )
+        }
+    }
+
+    /** 将启用的 GUI MCP 记录转为可与包声明按同一规则合并的部分声明。 */
+    private fun List<McpServerSettings>.toDeclaredMcpServers(
+        origin: AgentResourceOrigin,
+        source: Path,
+        diagnostics: MutableList<AgentResourceDiagnostic>,
+    ): List<DeclaredMcpServer> = mapNotNull { setting ->
+        if (!setting.enabled) return@mapNotNull null
+        val id = setting.id.trim()
+        if (id.isBlank()) {
+            diagnostics += AgentResourceDiagnostic(
+                severity = AgentResourceDiagnosticSeverity.WARNING,
+                message = "直接 MCP 服务缺少 id，已跳过。",
+                path = source,
+            )
+            return@mapNotNull null
+        }
+        DeclaredMcpServer(
+            id = id,
+            transport = setting.transport.toAgentMcpTransport(),
+            command = setting.command.map(String::trim).filter(String::isNotBlank),
+            url = setting.url?.trim()?.takeIf(String::isNotBlank),
+            environment = setting.environment,
+            packageId = DIRECT_SETTINGS_MCP_PACKAGE_ID,
+            origin = origin,
+            source = source,
+        )
+    }
+
     /** 按 Kilo 规则合并同名 MCP 声明，并在合并完成后验证可连接性。 */
     private fun mergeMcpServers(
         servers: List<DeclaredMcpServer>,
@@ -228,3 +293,12 @@ class AgentResourceLoader {
         )
     }
 }
+
+/** 保持设置模型与资源模型的三种 MCP 传输一一对应。 */
+private fun com.agent.shared.settings.model.McpServerTransport.toAgentMcpTransport(): AgentMcpTransport = when (this) {
+    com.agent.shared.settings.model.McpServerTransport.STDIO -> AgentMcpTransport.STDIO
+    com.agent.shared.settings.model.McpServerTransport.SSE -> AgentMcpTransport.SSE
+    com.agent.shared.settings.model.McpServerTransport.STREAMABLE_HTTP -> AgentMcpTransport.STREAMABLE_HTTP
+}
+
+private const val DIRECT_SETTINGS_MCP_PACKAGE_ID = "settings"

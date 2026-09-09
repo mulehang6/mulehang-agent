@@ -3,6 +3,8 @@ package com.agent.shared.agent.resource
 import com.agent.shared.agent.api.AgentRuntimeResources
 import com.agent.shared.agent.api.AgentRuntimeMcpServer
 import com.agent.shared.agent.api.AgentRuntimeMcpTransport
+import com.agent.shared.settings.model.McpServerSettings
+import com.agent.shared.settings.model.AgentHookSettings
 import java.nio.file.Path
 
 /** 资源诊断的严重等级，供桌面扩展中心按颜色和筛选展示。 */
@@ -113,6 +115,8 @@ data class AgentResourceLoadRequest(
     val projectSkillDirectories: List<Path> = emptyList(),
     val userPromptDirectories: List<Path> = emptyList(),
     val projectPromptDirectories: List<Path> = emptyList(),
+    val userMcpServers: List<McpServerSettings> = emptyList(),
+    val projectMcpServers: List<McpServerSettings> = emptyList(),
     val packages: List<InstalledAgentExtensionPackage> = emptyList(),
 )
 
@@ -130,6 +134,8 @@ data class AgentResourceSnapshot(
     val packages: List<AgentExtensionPackageResource>,
     val mcpServers: List<AgentMcpServerResource>,
     val diagnostics: List<AgentResourceDiagnostic>,
+    /** 由受信任扩展包声明、需要附加到全局 Hook 的规则。 */
+    val hookSettings: AgentHookSettings = AgentHookSettings(),
 ) {
     /** 将可注入内容折叠为跨平台 Agent 请求可携带的不可变系统提示词附录。 */
     fun toRuntimeResources(): AgentRuntimeResources = AgentRuntimeResources(

@@ -64,6 +64,23 @@ class DesktopProcessRunnerTest {
         assertTrue(result.stderr.contains("stderr-2000"))
     }
 
+    /** Hook 依赖的 stdin 必须在输出管道并发排空期间完整写入并关闭。 */
+    @Test
+    fun `should write standard input to child process`() {
+        val result = DesktopProcessRunner().run(
+            DesktopProcessRunner.Args(
+                command = listOf("cmd.exe", "/v:on", "/c", "set /p line= & echo !line!"),
+                workingDirectory = temporaryDirectory(),
+                timeoutMillis = 5_000,
+                standardInput = "hook-json\n",
+            ),
+        )
+
+        assertEquals(DesktopProcessRunner.Outcome.COMPLETED, result.outcome)
+        assertEquals(0, result.exitCode)
+        assertTrue(result.stdout.contains("hook-json"))
+    }
+
     /**
      * 输出达到内存边界后仍要继续排空进程管道，并向调用方报告截断。
      */

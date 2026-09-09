@@ -36,7 +36,7 @@ class DesktopToolInteractionCoordinator : DesktopToolInteractionBridge {
      * 返回当前会话中已被持续允许的工具类型。
      */
     override fun isApprovalAutoApproved(request: ApprovalRequest): Boolean = synchronized(lock) {
-        request.toolName in autoApprovedToolNames
+        !request.forceManual && request.toolName in autoApprovedToolNames
     }
 
     /**
@@ -65,7 +65,7 @@ class DesktopToolInteractionCoordinator : DesktopToolInteractionBridge {
     override suspend fun requestApproval(request: ApprovalRequest): Boolean {
         val deferred = CompletableDeferred<Boolean>()
         synchronized(lock) {
-            if (request.toolName in autoApprovedToolNames) {
+            if (!request.forceManual && request.toolName in autoApprovedToolNames) {
                 return true
             } else {
                 check(pendingApproval == null) { "已有未完成的审批请求: ${request.requestId}" }

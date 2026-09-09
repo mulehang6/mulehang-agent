@@ -16,9 +16,9 @@ internal val agentInstructionCandidateNames = listOf(
 /**
  * 发现全局与工作区层级的 Agent 指令。
  *
- * 全局 `~/.mulehang` 位于最外层，工作区则从 Git 根到当前目录按外层到内层注入。与 Pi 一致，
- * 上下文文件不是可执行扩展，不受项目资源信任开关影响。linked worktree 的 `.git` 文件被视为
- * 当前 worktree 的根边界，绝不跳到共享主工作区继续扫描。
+ * 全局 `~/.mulehang` 位于最外层，工作区则从 Git 根到当前目录按外层到内层注入。用户级指令始终
+ * 可用；项目指令与项目扩展一样必须先获信任，避免打开陌生仓库便将其文本注入会话。linked worktree
+ * 的 `.git` 文件被视为当前 worktree 的根边界，绝不跳到共享主工作区继续扫描。
  */
 internal fun discoverAgentInstructionResources(
     request: AgentResourceLoadRequest,
@@ -35,6 +35,20 @@ internal fun discoverAgentInstructionResources(
     )?.let(documents::add)
 
     val workspace = request.workspacePath?.normalizedExistingOrAbsolute() ?: return documents.toList()
+    if (!request.projectTrusted) {
+        val candidate = agentInstructionDirectories(workspace)
+            .asSequence()
+            .flatMap { directory -> agentInstructionCandidateNames.asSequence().map(directory::resolve) }
+            .firstOrNull(Files::isRegularFile)
+        if (candidate != null) {
+            diagnostics += AgentResourceDiagnostic(
+                severity = AgentResourceDiagnosticSeverity.INFO,
+                message = "项目尚未信任，跳过 Agent 指令。",
+                path = candidate,
+            )
+        }
+        return documents.toList()
+    }
     val directories = agentInstructionDirectories(workspace)
     directories.forEach { directory ->
         loadFirstInstructionCandidate(

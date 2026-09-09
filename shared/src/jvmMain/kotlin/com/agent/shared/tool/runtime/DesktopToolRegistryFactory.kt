@@ -1,6 +1,8 @@
 package com.agent.shared.tool.runtime
 
 import ai.koog.agents.core.tools.ToolRegistry
+import com.agent.shared.agent.hook.AgentHookDispatcher
+import com.agent.shared.agent.hook.NoAgentHookDispatcher
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.model.PermissionPreset
 
@@ -13,6 +15,8 @@ class DesktopToolRegistryFactory(
     private val interactionBridge: DesktopToolInteractionBridge,
     private val approvalAgent: ToolApprovalAgent = ManualFallbackToolApprovalAgent,
     private val isCancelled: () -> Boolean = { false },
+    private val hookDispatcher: AgentHookDispatcher = NoAgentHookDispatcher,
+    private val sessionId: String = "",
 ) {
     /**
      * 生成首批桌面工具注册表。
@@ -25,6 +29,8 @@ class DesktopToolRegistryFactory(
                 interactionBridge = interactionBridge,
                 isCancelled = isCancelled,
                 approvalAgent = approvalAgent,
+                hookDispatcher = hookDispatcher,
+                sessionId = sessionId,
             ),
         )
     }

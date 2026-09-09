@@ -9,12 +9,20 @@ import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.agents.mcp.fromProcess
 import com.agent.shared.agent.api.AgentRuntimeMcpServer
 import com.agent.shared.agent.api.AgentRuntimeMcpTransport
+import com.agent.shared.agent.hook.AgentHookDecision
+import com.agent.shared.agent.hook.AgentHookDispatchRequest
+import com.agent.shared.agent.hook.AgentHookDispatcher
+import com.agent.shared.agent.hook.NoAgentHookDispatcher
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.ToolRisk
 import com.agent.shared.tool.policy.DesktopToolPolicy
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** MCP 连接和工具冲突在启动一轮 Agent 时产生的可见诊断。 */
 data class McpToolRegistryDiagnostic(
@@ -49,6 +57,9 @@ class McpToolRegistryBridge {
         servers: List<AgentRuntimeMcpServer>,
         permissionPreset: PermissionPreset,
         interactionBridge: DesktopToolInteractionBridge,
+        hookDispatcher: AgentHookDispatcher = NoAgentHookDispatcher,
+        sessionId: String = "",
+        workspacePath: String = "",
     ): McpToolRegistryLease {
         if (servers.isEmpty()) {
             return McpToolRegistryLease(baseRegistry, emptyList(), emptyList())
@@ -79,6 +90,9 @@ class McpToolRegistryBridge {
                     server = server,
                     permissionPreset = permissionPreset,
                     interactionBridge = interactionBridge,
+                    hookDispatcher = hookDispatcher,
+                    sessionId = sessionId,
+                    workspacePath = workspacePath,
                 )
             }
         }
@@ -95,9 +109,11 @@ class McpToolRegistryBridge {
         processes: MutableList<Process>,
     ): ToolRegistry = when (server.transport) {
         AgentRuntimeMcpTransport.STDIO -> {
-            val process = ProcessBuilder(server.command)
-                .apply { environment().putAll(server.environment) }
-                .start()
+            val process = withContext(Dispatchers.IO) {
+                ProcessBuilder(server.command)
+                    .apply { environment().putAll(server.environment) }
+                    .start()
+            }
             try {
                 val registry = McpToolRegistryProvider.fromProcess(process)
                 processes += process
@@ -129,6 +145,9 @@ private class ApprovalGatedMcpTool(
     private val server: AgentRuntimeMcpServer,
     private val permissionPreset: PermissionPreset,
     private val interactionBridge: DesktopToolInteractionBridge,
+    private val hookDispatcher: AgentHookDispatcher,
+    private val sessionId: String,
+    private val workspacePath: String,
 ) : ToolBase<Any?, Any?>(
     argsType = delegate.argsType,
     resultType = delegate.resultType,
@@ -137,12 +156,29 @@ private class ApprovalGatedMcpTool(
 ) {
     /** 在调用远程 MCP 前执行执行型权限检查和显式审批。 */
     override suspend fun execute(args: Any?, metadata: ToolCallMetadata): Any? {
-        ensureApproved()
+        when (
+            hookDispatcher.dispatch(
+                AgentHookDispatchRequest(
+                    event = com.agent.shared.settings.model.AgentHookEvent.PRE_TOOL_USE,
+                    sessionId = sessionId,
+                    workspacePath = workspacePath,
+                    matcherValue = name,
+                    payload = buildJsonObject { args?.let { value -> put("arguments", value.toString()) } },
+                ),
+            ).decision
+        ) {
+            AgentHookDecision.BLOCK -> error("Hook 已阻止 MCP 工具 '$name'。")
+            AgentHookDecision.ASK -> ensureApproved(forceManual = true)
+            AgentHookDecision.ALLOW,
+            AgentHookDecision.CONTINUE,
+                -> ensureApproved()
+        }
         return delegate.executeUnsafe(args, metadata)
     }
 
     /** 远程工具无法安全静态分类为只读，因此默认以危险外部调用请求确认。 */
-    private suspend fun ensureApproved() {
+    private suspend fun ensureApproved(forceManual: Boolean = false) {
+        var requireManual = forceManual
         check(!DesktopToolPolicy.isExecuteDenied(permissionPreset)) {
             "当前 permission preset=$permissionPreset，禁止调用 MCP 工具。"
         }
@@ -153,12 +189,33 @@ private class ApprovalGatedMcpTool(
             payloadPreview = "transport=${server.transport}",
             risk = ToolRisk.DANGEROUS,
         )
-        if (
-            DesktopToolPolicy.canAutoApproveExecute(permissionPreset) ||
-            interactionBridge.isApprovalAutoApproved(request)
+        when (
+            hookDispatcher.dispatch(
+                AgentHookDispatchRequest(
+                    event = com.agent.shared.settings.model.AgentHookEvent.PERMISSION_REQUEST,
+                    sessionId = sessionId,
+                    workspacePath = workspacePath,
+                    matcherValue = name,
+                    payload = buildJsonObject {
+                        put("tool_name", name)
+                        put("summary", request.summary)
+                        put("server", "${server.packageId}/${server.id}")
+                    },
+                ),
+            ).decision
+        ) {
+            AgentHookDecision.ALLOW -> if (!requireManual) return
+            AgentHookDecision.BLOCK -> error("Hook 已拒绝 MCP 工具 '$name'。")
+            AgentHookDecision.ASK -> requireManual = true
+            AgentHookDecision.CONTINUE -> Unit
+        }
+        if (!requireManual && (
+                DesktopToolPolicy.canAutoApproveExecute(permissionPreset) ||
+                        interactionBridge.isApprovalAutoApproved(request)
+            )
         ) {
             return
         }
-        check(interactionBridge.requestApproval(request)) { "用户拒绝调用 MCP 工具 '$name'。" }
+        check(interactionBridge.requestApproval(request.copy(forceManual = requireManual))) { "用户拒绝调用 MCP 工具 '$name'。" }
     }
 }

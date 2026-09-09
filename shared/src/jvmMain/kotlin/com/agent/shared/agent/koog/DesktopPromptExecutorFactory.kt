@@ -46,11 +46,15 @@ internal object DesktopKoogHttpClientFactoryProvider {
      * 为单个 profile 创建 HTTP client factory，仅注入该 profile 命中的 wire-format 适配器。
      */
     fun factoryFor(config: ConfigProfile): KoogHttpClient.Factory =
-        createFactory(ProviderKoogTransportAdapters.forProfile(config))
+        createFactory(
+            transportAdapter = ProviderKoogTransportAdapters.forProfile(config),
+            requestHeaders = config.requestHeaders,
+        )
 
     /** 在创建 client 时捕获已解析的适配器，保证同一轮请求的传输规则稳定。 */
     private fun createFactory(
         transportAdapter: KoogProviderTransportAdapter?,
+        requestHeaders: Map<String, String> = emptyMap(),
     ): KoogHttpClient.Factory {
         return object : KoogHttpClient.Factory {
             override fun create(
@@ -66,7 +70,7 @@ internal object DesktopKoogHttpClientFactoryProvider {
                 delegate = baseFactory.create(
                     clientName = clientName,
                     baseUrl = baseUrl,
-                    headers = headers,
+                    headers = headers + requestHeaders,
                     queryParameters = queryParameters,
                     requestTimeoutMillis = requestTimeoutMillis,
                     connectTimeoutMillis = connectTimeoutMillis,

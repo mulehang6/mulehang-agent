@@ -1,6 +1,7 @@
 package com.agent.shared.session
 
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.AgentHookSettings
 
 /**
  * 屏蔽配置与 UI 状态持久化实现细节的仓库接口。
@@ -11,8 +12,12 @@ interface AppSessionRepository {
      */
     suspend fun loadProfiles(): List<ConfigProfile>
 
-    /** 返回按 provider 分组的独立 AUTO 审批模型；缺失时调用方应人工确认。 */
-    suspend fun loadApprovalProfiles(): Map<String, ConfigProfile> = emptyMap()
+    /** 加载按主 Provider 解析的快速模型，未配置时返回空映射。 */
+    suspend fun loadFasterProfiles(): Map<String, ConfigProfile> = emptyMap()
+
+    /** 加载仅用户级生效的 Hook 设置。 */
+    @Suppress("unused")
+    suspend fun loadHookSettings(): AgentHookSettings = AgentHookSettings()
 
     /**
      * 加载当前项目上次记忆的 profile id。

@@ -10,6 +10,24 @@
       "output": 4096
     }
   },
+  "maxIterations": -1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo {\"decision\":\"ask\"}",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "agentResources": {
+    "mcpServers": []
+  },
   "providers": [
     {
       "id": "openai",
@@ -119,10 +137,33 @@
     },
     {
       "id": "custom-openai-compatible",
-      "label": "Custom OpenAI Compatible (Legacy Reasoning)",
+      "label": "Custom OpenAI Compatible",
       "providerType": "openai-chat-completions",
       "baseUrl": "https://gateway.example/v1",
       "apiKey": "your-api-key",
+      "request": {
+        "headers": {
+          "X-Client": "mulehang-agent"
+        },
+        "body": {
+          "stream_options": {
+            "include_usage": true
+          }
+        },
+        "reasoningBodyByEffort": {
+          "none": {
+            "thinking": {
+              "type": "disabled"
+            }
+          },
+          "medium": {
+            "thinking": {
+              "type": "enabled",
+              "budget_tokens": 2048
+            }
+          }
+        }
+      },
       "models": [
         {
           "id": "custom-reasoning-model",

@@ -9,7 +9,6 @@ import ai.koog.prompt.streaming.StreamFrame
 import ai.koog.utils.time.KoogClock
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.ReasoningEffort
-import com.agent.shared.agent.prompt.buildOpenAIClientSettings
 import com.agent.shared.settings.model.ConfigProfile
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
@@ -30,8 +29,7 @@ internal class DeepSeekChatCompletionsStreamer(
         { request, config ->
             openDeepSeekSseChunks(
                 request = request,
-                settings = buildOpenAIClientSettings(config),
-                apiKey = config.apiKey,
+                config = config,
             )
         },
 ) {

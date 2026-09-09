@@ -2,12 +2,20 @@ package com.agent.shared.agent.provider.deepseek
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.jsonObject
+import com.agent.shared.settings.model.deepMerge
 
 /**
  * DeepSeek chat-completions 的最小请求体。
  */
-@Serializable
+@Serializable(with = DeepSeekChatCompletionRequestSerializer::class)
 internal data class DeepSeekChatCompletionRequest(
     val model: String,
     val messages: List<DeepSeekChatMessage>,
@@ -15,10 +23,53 @@ internal data class DeepSeekChatCompletionRequest(
     val stream: Boolean,
     @SerialName("stream_options")
     val streamOptions: DeepSeekStreamOptions,
-    val thinking: DeepSeekThinking,
+    val thinking: DeepSeekThinking? = null,
+    @SerialName("reasoning_effort")
+    val reasoningEffort: String?,
+    /** 由通用 Provider/模型设置生成，并在序列化时覆盖同名协议字段。 */
+    val extraBody: JsonObject = JsonObject(emptyMap()),
+)
+
+/** 用于将固定协议字段和通用 JSON 覆盖扁平化到同一请求体的中间模型。 */
+@Serializable
+private data class DeepSeekChatCompletionRequestWire(
+    val model: String,
+    val messages: List<DeepSeekChatMessage>,
+    val tools: List<DeepSeekToolDefinition>? = null,
+    val stream: Boolean,
+    @SerialName("stream_options")
+    val streamOptions: DeepSeekStreamOptions,
+    val thinking: DeepSeekThinking? = null,
     @SerialName("reasoning_effort")
     val reasoningEffort: String?,
 )
+
+/** 将 [DeepSeekChatCompletionRequest.extraBody] 深度合并为协议顶层字段的 JSON 序列化器。 */
+internal object DeepSeekChatCompletionRequestSerializer : kotlinx.serialization.KSerializer<DeepSeekChatCompletionRequest> {
+    override val descriptor: SerialDescriptor = DeepSeekChatCompletionRequestWire.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: DeepSeekChatCompletionRequest) {
+        val wire = DeepSeekChatCompletionRequestWire(
+            model = value.model,
+            messages = value.messages,
+            tools = value.tools,
+            stream = value.stream,
+            streamOptions = value.streamOptions,
+            thinking = value.thinking,
+            reasoningEffort = value.reasoningEffort,
+        )
+        val json = Json((encoder as JsonEncoder).json) {
+            encodeDefaults = true
+            explicitNulls = false
+        }
+        val base = json.encodeToJsonElement(DeepSeekChatCompletionRequestWire.serializer(), wire).jsonObject
+        encoder.encodeSerializableValue(JsonObject.serializer(), base.deepMerge(value.extraBody))
+    }
+
+    override fun deserialize(decoder: Decoder): DeepSeekChatCompletionRequest = throw SerializationException(
+        "DeepSeek chat completion requests are outbound-only",
+    )
+}
 
 /**
  * DeepSeek/OpenAI 兼容消息体。

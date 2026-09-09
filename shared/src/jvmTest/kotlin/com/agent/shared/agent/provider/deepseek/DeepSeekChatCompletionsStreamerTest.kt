@@ -19,6 +19,8 @@ import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -34,11 +36,11 @@ import kotlin.test.assertTrue
  */
 class DeepSeekChatCompletionsStreamerTest {
 
-    /** DeepSeek wire-format 适配必须只匹配 DeepSeek profile，普通 OpenAI 服务不能继承该补丁。 */
+    /** 原始 SSE 适配按协议而非服务商品牌启用，所有 Chat Completions 自定义服务都可解析 reasoning_content。 */
     @Test
-    fun `should enable transport adapter only for deepseek profiles`() {
+    fun `should enable transport adapter for every chat completions profile`() {
         assertTrue(DeepSeekKoogTransportAdapter.supports(deepSeekProfile()))
-        assertFalse(
+        assertTrue(
             DeepSeekKoogTransportAdapter.supports(
                 deepSeekProfile().copy(
                     id = "openai",
@@ -717,6 +719,26 @@ ok
         model = "deepseek-v4-flash",
         enabled = true,
         layer = ConfigLayer.PROJECT,
+        reasoningBodyByEffort = mapOf(
+            "none" to buildJsonObject {
+                put("thinking", buildJsonObject { put("type", "disabled") })
+            },
+            "low" to buildJsonObject {
+                put("thinking", buildJsonObject { put("type", "enabled") })
+            },
+            "medium" to buildJsonObject {
+                put("thinking", buildJsonObject { put("type", "enabled") })
+            },
+            "high" to buildJsonObject {
+                put("thinking", buildJsonObject { put("type", "enabled") })
+            },
+            "xhigh" to buildJsonObject {
+                put("thinking", buildJsonObject { put("type", "enabled") })
+            },
+            "max" to buildJsonObject {
+                put("thinking", buildJsonObject { put("type", "enabled") })
+            },
+        ),
     )
 
     /** 创建只承载单个 DeepSeek 流分片的测试数据。 */

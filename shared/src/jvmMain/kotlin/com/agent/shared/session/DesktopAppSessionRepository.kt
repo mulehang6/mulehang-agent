@@ -3,6 +3,8 @@ package com.agent.shared.session
 import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
 import com.agent.shared.settings.persistence.DesktopPathResolver
 import com.agent.shared.settings.persistence.DesktopSettingsRepository
+import com.agent.shared.settings.model.AgentHookSettings
+import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -29,8 +31,12 @@ class DesktopAppSessionRepository(
      */
     override suspend fun loadProfiles(): List<ConfigProfile> = settingsRepository.loadResolvedProfiles()
 
-    /** 从同一份 settings 文档加载 AUTO 审批模型。 */
-    override suspend fun loadApprovalProfiles(): Map<String, ConfigProfile> = settingsRepository.loadResolvedFasterProfiles()
+    /** 从同一份 settings 文档加载低延迟内部任务共用的快速模型。 */
+    override suspend fun loadFasterProfiles(): Map<String, ConfigProfile> = settingsRepository.loadResolvedFasterProfiles()
+
+    /** Hook 仅从用户层加载，项目 settings 永远不会参与命令执行。 */
+    override suspend fun loadHookSettings(): AgentHookSettings =
+        settingsRepository.loadDocument(ConfigLayer.USER).hooks
 
     /**
      * 读取当前项目上次选择的 profile id。

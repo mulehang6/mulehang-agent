@@ -19,24 +19,28 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * DeepSeek 的 Koog 传输适配器。
+ * OpenAI Chat Completions 的 reasoning-content 传输适配器。
  *
- * 该对象是 DeepSeek SSE、Responses replay 和请求补丁的唯一接入点。通用 Koog 图只向
- * provider 注册表询问是否有适配器，因而其他 OpenAI-compatible 服务不会得到这些修补。
+ * 不依据服务商域名或模型名前缀选择实现：任何采用 OpenAI Chat Completions 的自定义服务都通过
+ * 同一流读取路径解析可选的 `reasoning_content`，而没有该字段的标准流保持原样。
  */
 internal object DeepSeekKoogTransportAdapter : KoogProviderTransportAdapter {
-    /** DeepSeek 使用 OpenAI 兼容的 chat-completions 或 Responses wire-format。 */
-    override fun supports(profile: ConfigProfile): Boolean = profile.isDeepSeekOpenAiProfile()
+    /** Chat Completions 共用增量解析；DeepSeek Responses 仍需要回放兼容修正。 */
+    override fun supports(profile: ConfigProfile): Boolean =
+        profile.providerType == ProviderType.OPENAI_CHAT_COMPLETIONS ||
+            (profile.providerType == ProviderType.OPENAI_RESPONSES &&
+                (profile.baseUrl.contains("deepseek.com", ignoreCase = true) ||
+                    profile.model.startsWith("deepseek", ignoreCase = true)))
 
     /**
-     * 仅 chat-completions 需要自行读取 reasoning_content；Responses 继续使用 Koog 默认流。
+     * Chat Completions 需要自行读取可选 reasoning_content；Responses 继续使用 Koog 默认流。
      */
     override suspend fun streamFrames(
         session: AIAgentLLMWriteSessionCommon,
         request: AgentRunRequest,
     ): Flow<StreamFrame>? {
-        if (!request.profile.isDeepSeekChatCompletionsProfile()) return null
-        // 专用 DeepSeek SSE 协议仅建模文本和工具调用。含图片时退回 Koog 标准 OpenAI
+        if (request.profile.providerType != ProviderType.OPENAI_CHAT_COMPLETIONS) return null
+        // 原始 SSE 路径仅建模文本和工具调用。含图片时退回 Koog 标准 OpenAI
         // serializer，由其将 Attachment 编码为 provider 支持的多模态 content part。
         if (session.prompt.messages.any { message ->
                 message.parts.any { part -> part is MessagePart.Attachment }
@@ -156,18 +160,3 @@ internal object DeepSeekKoogTransportAdapter : KoogProviderTransportAdapter {
     }
 
 }
-
-/** 判断是否使用 DeepSeek 的 OpenAI 兼容端点；仅传输适配器需要了解此 wire-format 边界。 */
-private fun ConfigProfile.isDeepSeekOpenAiProfile(): Boolean =
-    providerType in DEEPSEEK_OPENAI_PROVIDER_TYPES &&
-        (baseUrl.contains("deepseek.com", ignoreCase = true) || model.startsWith("deepseek", ignoreCase = true))
-
-/** DeepSeek chat-completions 的 reasoning 流式帧需要专用解析器。 */
-private fun ConfigProfile.isDeepSeekChatCompletionsProfile(): Boolean =
-    providerType == ProviderType.OPENAI_CHAT_COMPLETIONS && isDeepSeekOpenAiProfile()
-
-/** DeepSeek 适配的 OpenAI endpoint 类型。 */
-private val DEEPSEEK_OPENAI_PROVIDER_TYPES = setOf(
-    ProviderType.OPENAI_CHAT_COMPLETIONS,
-    ProviderType.OPENAI_RESPONSES,
-)

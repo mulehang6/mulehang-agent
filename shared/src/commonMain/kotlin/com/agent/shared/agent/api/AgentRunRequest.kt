@@ -1,6 +1,7 @@
 package com.agent.shared.agent.api
 
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.AgentHookSettings
 import com.agent.shared.tool.model.PermissionPreset
 
 /**
@@ -13,8 +14,12 @@ data class AgentRunRequest(
     val history: List<AgentConversationHistoryMessage> = emptyList(),
     val workspacePath: String = "",
     val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
-    /** AUTO 模式独立审批模型；为空时必须回退到人工审批。 */
-    val approvalProfile: ConfigProfile? = null,
+    /** 低延迟内部任务共用的快速模型；为空时审批必须回退到人工确认。 */
+    val fasterProfile: ConfigProfile? = null,
+    /** 会话稳定标识，用于 Hook 的 SessionStart 与 SessionEnd 生命周期。 */
+    val sessionId: String = "",
+    /** 本次运行冻结的全局 Hook 设置。 */
+    val hookSettings: AgentHookSettings = AgentHookSettings(),
     /** 当前用户消息的有序输入片段；未指定时兼容旧的纯文本调用。 */
     val inputParts: List<UserInputPart> = listOf(UserInputPart.Text(prompt)),
     /** 本轮固定使用的资源快照投影，重载只影响之后新建的请求。 */

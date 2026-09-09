@@ -2,6 +2,7 @@ package com.agent.shared.settings.persistence
 
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.AgentHookSettings
 import com.agent.shared.settings.model.SettingsDocument
 import com.agent.shared.settings.resolver.SettingsMerger
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -61,7 +62,7 @@ class DesktopSettingsRepository(
      * 此方法不会合并环境变量，避免将高优先级覆盖值误写回 JSON 文件。
      */
     fun loadDocument(layer: ConfigLayer): SettingsDocument =
-        readDocument(pathFor(layer)) ?: SettingsDocument()
+        (readDocument(pathFor(layer)) ?: SettingsDocument()).withoutProjectAiConfiguration(layer)
 
     /**
      * 原子写入指定层级的原始设置文档。
@@ -72,10 +73,11 @@ class DesktopSettingsRepository(
     ) {
         require(layer != ConfigLayer.ENVIRONMENT) { "环境变量层不可写入 settings.json" }
         val target = pathFor(layer)
+        val persistedDocument = document.withoutProjectAiConfiguration(layer)
         target.parent.createDirectories()
         val temporary = Files.createTempFile(target.parent, "settings-", ".json")
         try {
-            Files.writeString(temporary, json.encodeToString(SettingsDocument.serializer(), document))
+            Files.writeString(temporary, json.encodeToString(SettingsDocument.serializer(), persistedDocument))
             runCatching {
                 Files.move(
                     temporary,
@@ -114,6 +116,21 @@ class DesktopSettingsRepository(
         ConfigLayer.PROJECT -> pathResolver.projectSettingsPath()
         ConfigLayer.ENVIRONMENT -> error("环境变量层没有 settings.json 文件")
     }
+
+    /**
+     * 项目级设置只保留资源类字段；AI 服务、快速模型与循环上限必须始终来自全局配置。
+     */
+    private fun SettingsDocument.withoutProjectAiConfiguration(layer: ConfigLayer): SettingsDocument =
+        if (layer == ConfigLayer.PROJECT) {
+            copy(
+                providers = emptyList(),
+                fasterModel = null,
+                maxIterations = null,
+                hooks = AgentHookSettings(),
+            )
+        } else {
+            this
+        }
 
     private companion object {
         val log = KotlinLogging.logger { }

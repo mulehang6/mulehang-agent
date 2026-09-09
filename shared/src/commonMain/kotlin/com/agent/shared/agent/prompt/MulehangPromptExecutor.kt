@@ -12,8 +12,10 @@ import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.model.deepMerge
 import com.agent.shared.settings.resolver.supportsImageInput
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -61,23 +63,26 @@ internal fun buildPromptParams(
     reasoningEffort: ReasoningEffort?,
 ): LLMParams = when (config.providerType) {
     ProviderType.OPENAI_CHAT_COMPLETIONS -> {
-        val additionalProperties = config.reasoningAdditionalProperties(reasoningEffort)
+        val additionalProperties = buildRequestAdditionalProperties(config, reasoningEffort)
         OpenAIChatParams(
+            maxTokens = config.limit?.output,
             reasoningEffort = null,
             additionalProperties = additionalProperties,
         )
     }
 
     ProviderType.OPENAI_RESPONSES -> {
-        val additionalProperties = config.reasoningAdditionalProperties(reasoningEffort)
+        val additionalProperties = buildRequestAdditionalProperties(config, reasoningEffort)
         OpenAIResponsesParams(
+            maxTokens = config.limit?.output,
             reasoning = null,
             additionalProperties = additionalProperties,
         )
     }
 
     ProviderType.ANTHROPIC -> AnthropicParams(
-        additionalProperties = config.reasoningAdditionalProperties(reasoningEffort),
+        maxTokens = config.limit?.output,
+        additionalProperties = buildRequestAdditionalProperties(config, reasoningEffort),
     )
     else -> throw IllegalConfigExceptions { "暂不支持的 providerType: ${config.providerType}" }
 }
@@ -116,27 +121,34 @@ private fun ConfigProfile.toLlmProvider(): LLMProvider = when (providerType) {
  * Chat Completions 使用 legacy `reasoning_effort`，直连 Anthropic 使用
  * `output_config.effort`。因此无需在模型配置中重复声明协议。
  */
-private fun ConfigProfile.reasoningAdditionalProperties(
+internal fun buildRequestAdditionalProperties(
+    config: ConfigProfile,
     reasoningEffort: ReasoningEffort?,
 ): Map<String, JsonElement>? {
-    val effort = reasoningEffort ?: return null
-    return when (providerType) {
+    val protocolProperties = when (config.providerType) {
         ProviderType.OPENAI_RESPONSES -> mapOf(
             "reasoning" to buildJsonObject {
-                put("effort", effort.wireValue)
+                reasoningEffort?.let { effort -> put("effort", effort.wireValue) }
             },
         )
 
         ProviderType.OPENAI_CHAT_COMPLETIONS -> mapOf(
-            "reasoning_effort" to JsonPrimitive(effort.wireValue),
+            "reasoning_effort" to JsonPrimitive(reasoningEffort?.wireValue.orEmpty()),
         )
 
         ProviderType.ANTHROPIC -> mapOf(
             "output_config" to buildJsonObject {
-                put("effort", effort.wireValue)
+                reasoningEffort?.let { effort -> put("effort", effort.wireValue) }
             },
         )
 
         else -> null
-    }
+    }.takeIf { reasoningEffort != null } ?: emptyMap()
+    val reasoningOverride = reasoningEffort
+        ?.let { effort -> config.reasoningBodyByEffort[effort.wireValue] }
+        ?: JsonObject(emptyMap())
+    return JsonObject(protocolProperties)
+        .deepMerge(config.requestBody)
+        .deepMerge(reasoningOverride)
+        .takeIf { properties -> properties.isNotEmpty() }
 }

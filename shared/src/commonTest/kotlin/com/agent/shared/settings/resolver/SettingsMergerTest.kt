@@ -2,12 +2,16 @@ package com.agent.shared.settings.resolver
 
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.AgentIterationLimit
 import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.model.RequestOverrides
 import com.agent.shared.settings.model.SettingsDocument
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -39,10 +43,10 @@ class SettingsMergerTest {
     }
 
     /**
-     * 项目级配置应按 profile id 覆盖用户级配置。
+     * 项目级文档不得覆盖用户级 AI 配置。
      */
     @Test
-    fun `should let project layer override user layer`() {
+    fun `should ignore project layer AI configuration`() {
         val userSettings = SettingsDocument(
             providers = listOf(
                 ProviderProfile(
@@ -72,12 +76,125 @@ class SettingsMergerTest {
             environment = emptyMap(),
         )
 
-        assertEquals("https://custom.example/v1", merged.single().baseUrl)
-        assertEquals("project-key", merged.single().apiKey)
-        assertEquals("gpt-4.1-mini", merged.single().model)
-        assertEquals("openai:gpt-4.1-mini", merged.single().id)
+        assertEquals("https://api.openai.com/v1", merged.single().baseUrl)
+        assertEquals("user-key", merged.single().apiKey)
+        assertEquals("gpt-4.1", merged.single().model)
+        assertEquals("openai:gpt-4.1", merged.single().id)
         assertEquals("openai", merged.single().providerId)
-        assertEquals(ConfigLayer.PROJECT, merged.single().layer)
+        assertEquals(ConfigLayer.USER, merged.single().layer)
+    }
+
+    /**
+     * Provider 与模型的任意请求字段应按层级深度合并，思考映射保留给运行时最终覆盖。
+     */
+    @Test
+    fun `should merge generic request overrides without provider semantics`() {
+        val merged = SettingsMerger.merge(
+            user = SettingsDocument(
+                providers = listOf(
+                    ProviderProfile(
+                        id = "custom",
+                        providerType = ProviderType.OPENAI_CHAT_COMPLETIONS,
+                        baseUrl = "https://gateway.example/v1",
+                        apiKey = "key",
+                        request = RequestOverrides(
+                            headers = mapOf("X-Provider" to "base", "X-Shared" to "provider"),
+                            body = buildJsonObject {
+                                put("routing", buildJsonObject { put("region", "cn") })
+                            },
+                            reasoningBodyByEffort = mapOf(
+                                "none" to buildJsonObject {
+                                    put("thinking", buildJsonObject { put("type", "disabled") })
+                                },
+                            ),
+                        ),
+                        models = listOf(
+                            ModelProfile(
+                                id = "custom-model",
+                                request = RequestOverrides(
+                                    headers = mapOf("X-Shared" to "model"),
+                                    body = buildJsonObject {
+                                        put("routing", buildJsonObject { put("tier", "fast") })
+                                    },
+                                    reasoningBodyByEffort = mapOf(
+                                        "none" to buildJsonObject {
+                                            put("thinking", buildJsonObject { put("source", "settings") })
+                                        },
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            environment = emptyMap(),
+        ).single()
+
+        assertEquals(mapOf("X-Provider" to "base", "X-Shared" to "model"), merged.requestHeaders)
+        assertEquals("{\"region\":\"cn\",\"tier\":\"fast\"}", merged.requestBody["routing"].toString())
+        assertEquals(
+            "{\"type\":\"disabled\",\"source\":\"settings\"}",
+            merged.reasoningBodyByEffort.getValue("none")["thinking"].toString(),
+        )
+    }
+
+    /**
+     * 循环上限只读取用户级和环境变量；项目级数值不可影响运行时。
+     */
+    @Test
+    fun `should resolve global iteration limit without project override`() {
+        val user = customModelSettings(reasoningEfforts = emptyList()).copy(maxIterations = 73)
+        val project = customModelSettings(reasoningEfforts = emptyList()).copy(maxIterations = 99)
+
+        val fromUser = SettingsMerger.merge(user = user, project = project, environment = emptyMap()).single()
+        val fromEnvironment = SettingsMerger.merge(
+            user = user,
+            project = project,
+            environment = mapOf("MULEHANG_MAX_ITERATIONS" to "-1"),
+        ).single()
+
+        assertEquals(73, fromUser.maxIterations)
+        assertEquals(AgentIterationLimit.KOOG_MAXIMUM, fromEnvironment.maxIterations)
+    }
+
+    /**
+     * 思考请求映射的键同样属于公共档位协议，不能把拼写错误延迟到真正发起请求时才暴露。
+     */
+    @Test
+    fun `should reject an invalid reasoning request mapping key`() {
+        val configured = customModelSettings(reasoningEfforts = emptyList()).let { settings ->
+            settings.copy(
+                providers = settings.providers.map { provider ->
+                    provider.copy(
+                        request = RequestOverrides(
+                            reasoningBodyByEffort = mapOf("turbo" to buildJsonObject {}),
+                        ),
+                    )
+                },
+            )
+        }
+
+        val exception = assertFailsWith<IllegalConfigExceptions> {
+            SettingsMerger.merge(user = configured, environment = emptyMap())
+        }
+
+        assertContains(exception.message.orEmpty(), "custom:custom-reasoning-model")
+        assertContains(exception.message.orEmpty(), "turbo")
+    }
+
+    /**
+     * 循环上限的非法值必须在配置解析期被拒绝，避免运行中才因 Koog 参数失效而中断会话。
+     */
+    @Test
+    fun `should reject a global iteration limit below the minimum`() {
+        val exception = assertFailsWith<IllegalConfigExceptions> {
+            SettingsMerger.merge(
+                user = customModelSettings(reasoningEfforts = emptyList()).copy(maxIterations = 49),
+                environment = emptyMap(),
+            )
+        }
+
+        assertContains(exception.message.orEmpty(), "maxIterations")
     }
 
     /**
@@ -102,8 +219,8 @@ class SettingsMergerTest {
         )
 
         val merged = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = emptyMap(),
         )
 
@@ -119,8 +236,7 @@ class SettingsMergerTest {
     @Test
     fun `should use first model when default model is omitted`() {
         val merged = SettingsMerger.merge(
-            user = null,
-            project = SettingsDocument(
+            user = SettingsDocument(
                 providers = listOf(
                     ProviderProfile(
                         id = "custom",
@@ -134,6 +250,7 @@ class SettingsMergerTest {
                     ),
                 ),
             ),
+            project = null,
             environment = emptyMap(),
         )
 
@@ -158,8 +275,8 @@ class SettingsMergerTest {
         )
 
         val merged = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = mapOf(
                 "MULEHANG_BASE_URL" to "https://env.example/v1",
                 "MULEHANG_API_KEY" to "env-key",
@@ -197,8 +314,8 @@ class SettingsMergerTest {
         )
 
         val merged = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = emptyMap(),
         )
 
@@ -206,10 +323,10 @@ class SettingsMergerTest {
     }
 
     /**
-     * 上下文窗口和最大输出未显式填写时，应默认按 256K/384K 能力处理。
+     * 上下文预算保留默认值，未显式配置的输出上限不能发送给服务端。
      */
     @Test
-    fun `should default omitted context and output limits to 256k and max output`() {
+    fun `should leave omitted output limit unset`() {
         val projectSettings = SettingsDocument(
             providers = listOf(
                 ProviderProfile(
@@ -223,12 +340,12 @@ class SettingsMergerTest {
         )
 
         val merged = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = emptyMap(),
         )
 
-        assertEquals(ModelLimit(context = 256_000, output = 384_000), merged.single().limit)
+        assertEquals(ModelLimit(context = 256_000), merged.single().limit)
     }
 
     /**
@@ -258,8 +375,8 @@ class SettingsMergerTest {
         )
 
         val merged = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = emptyMap(),
         )
 
@@ -290,8 +407,8 @@ class SettingsMergerTest {
         )
 
         val merged = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = mapOf("MULEHANG_CONTEXT_WINDOW" to "1000000"),
         )
 
@@ -317,13 +434,13 @@ class SettingsMergerTest {
         )
 
         val fromProject = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = emptyMap(),
         )
         val fromEnvironment = SettingsMerger.merge(
-            user = null,
-            project = projectSettings,
+            user = projectSettings,
+            project = null,
             environment = mapOf("MULEHANG_MODEL" to "deepseek-v4-flash[1m"),
         )
 
@@ -354,8 +471,7 @@ class SettingsMergerTest {
     @Test
     fun `should merge configured reasoning efforts into runtime profile`() {
         val merged = SettingsMerger.merge(
-            user = null,
-            project = customModelSettings(
+            user = customModelSettings(
                 reasoningEfforts = listOf("low", "medium", "high"),
                 defaultReasoningEffort = "medium",
             ),
@@ -375,8 +491,7 @@ class SettingsMergerTest {
     @Test
     fun `should merge xhigh configured reasoning effort into runtime profile`() {
         val merged = SettingsMerger.merge(
-            user = null,
-            project = customModelSettings(
+            user = customModelSettings(
                 reasoningEfforts = listOf("low", "medium", "high", "xhigh", "max"),
                 defaultReasoningEffort = "medium",
             ),
@@ -401,8 +516,7 @@ class SettingsMergerTest {
     @Test
     fun `should merge none configured reasoning effort into runtime profile`() {
         val merged = SettingsMerger.merge(
-            user = null,
-            project = customModelSettings(
+            user = customModelSettings(
                 reasoningEfforts = listOf("none", "low", "high", "max"),
             ),
             environment = emptyMap(),
@@ -425,8 +539,8 @@ class SettingsMergerTest {
     @Test
     fun `should preserve an explicitly empty reasoning effort list`() {
         val merged = SettingsMerger.merge(
-            user = null,
-            project = customModelSettings(reasoningEfforts = emptyList()),
+            user = customModelSettings(reasoningEfforts = emptyList()),
+            project = null,
             environment = emptyMap(),
         )
 
@@ -441,8 +555,8 @@ class SettingsMergerTest {
     fun `should reject invalid configured reasoning effort`() {
         val exception = assertFailsWith<IllegalConfigExceptions> {
             SettingsMerger.merge(
-                user = null,
-                project = customModelSettings(reasoningEfforts = listOf("deep")),
+                    user = customModelSettings(reasoningEfforts = listOf("deep")),
+                    project = null,
                 environment = emptyMap(),
             )
         }
@@ -458,8 +572,7 @@ class SettingsMergerTest {
     fun `should reject configured default reasoning effort outside supported efforts`() {
         val exception = assertFailsWith<IllegalConfigExceptions> {
             SettingsMerger.merge(
-                user = null,
-                project = customModelSettings(
+                    user = customModelSettings(
                     reasoningEfforts = listOf("low"),
                     defaultReasoningEffort = "high",
                 ),

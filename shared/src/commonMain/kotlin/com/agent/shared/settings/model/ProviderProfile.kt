@@ -15,6 +15,8 @@ data class ProviderProfile(
     val models: List<ModelProfile> = emptyList(),
     val defaultModel: String? = null,
     val fasterModel: FasterModelProfile? = null,
+    /** Provider 级的通用请求覆盖，模型级配置可进一步覆盖它。 */
+    val request: RequestOverrides = RequestOverrides(),
     val enabled: Boolean? = null,
 ) {
     /**

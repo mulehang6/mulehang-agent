@@ -3,6 +3,10 @@ package com.agent.shared.session
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
 import com.agent.shared.settings.model.ProviderType
+import com.agent.shared.settings.model.AgentHookCommand
+import com.agent.shared.settings.model.AgentHookEvent
+import com.agent.shared.settings.model.AgentHookMatcher
+import com.agent.shared.settings.model.AgentHookSettings
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -47,13 +51,37 @@ class LoadAppSessionUseCaseTest {
         assertEquals("openai-main", repository.savedProfileId)
     }
 
+    /** 用户级 Hook 必须进入后续每条 Agent 请求所使用的会话快照。 */
+    @Test
+    fun `should load global hook settings into session snapshot`() = runTest {
+        val hooks = AgentHookSettings(
+            hooks = mapOf(
+                AgentHookEvent.USER_PROMPT_SUBMIT to listOf(
+                    AgentHookMatcher(hooks = listOf(AgentHookCommand(command = "echo hook"))),
+                ),
+            ),
+        )
+        val repository = FakeAppSessionRepository(
+            profiles = listOf(configProfile("openai-main")),
+            rememberedProfileId = null,
+            hookSettings = hooks,
+        )
+
+        val snapshot = LoadAppSessionUseCase(repository).invoke()
+
+        assertEquals(hooks, snapshot.hookSettings)
+    }
+
     private class FakeAppSessionRepository(
         private val profiles: List<ConfigProfile>,
         private val rememberedProfileId: String?,
+        private val hookSettings: AgentHookSettings = AgentHookSettings(),
     ) : AppSessionRepository {
         var savedProfileId: String? = null
 
         override suspend fun loadProfiles(): List<ConfigProfile> = profiles
+
+        override suspend fun loadHookSettings(): AgentHookSettings = hookSettings
 
         override suspend fun loadRememberedProfileId(): String? = rememberedProfileId
 

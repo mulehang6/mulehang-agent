@@ -15,6 +15,8 @@ data class ModelProfile(
     val defaultReasoningEffort: String? = null,
     /** 显式声明模型能否接收图片；未声明时由内建已知模型规则保守推断。 */
     val supportsVision: Boolean? = null,
+    /** 模型级的通用请求覆盖，优先于所属 Provider。 */
+    val request: RequestOverrides = RequestOverrides(),
 ) {
     /**
      * 配置未显式关闭时默认启用。

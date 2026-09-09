@@ -3,18 +3,20 @@ package com.agent.shared.settings.resolver
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.AgentIterationLimit
 import com.agent.shared.settings.model.IllegalConfigExceptions
 import com.agent.shared.settings.model.ModelLimit
 import com.agent.shared.settings.model.ModelProfile
 import com.agent.shared.settings.model.ProviderProfile
 import com.agent.shared.settings.model.ProviderType
 import com.agent.shared.settings.model.SettingsDocument
+import com.agent.shared.settings.model.deepMerge
 
 /**
  * 负责把用户级、项目级与环境变量覆盖合并为最终 profile 列表。
  */
 object SettingsMerger {
-    private val environmentKeys = setOf(
+    private val profileEnvironmentKeys = setOf(
         "MULEHANG_PROFILE_ID",
         "MULEHANG_PROVIDER_ID",
         "MULEHANG_PROVIDER_TYPE",
@@ -26,53 +28,46 @@ object SettingsMerger {
         "MULEHANG_INPUT_TOKEN_LIMIT",
         "MULEHANG_OUTPUT_TOKEN_LIMIT",
     )
+    private const val MAX_ITERATIONS_ENVIRONMENT_KEY = "MULEHANG_MAX_ITERATIONS"
 
     /**
      * 生成最终 profile 列表。
      */
     fun merge(
         user: SettingsDocument?,
-        project: SettingsDocument?,
+        @Suppress("UNUSED_PARAMETER")
+        project: SettingsDocument? = null,
         environment: Map<String, String>,
     ): List<ConfigProfile> {
         val providers = linkedMapOf<String, LayeredProvider>()
         user?.providers.orEmpty().forEach { provider ->
             providers[provider.id] = LayeredProvider(provider, ConfigLayer.USER)
         }
-        project?.providers.orEmpty().forEach { provider ->
-            providers[provider.id] = LayeredProvider(provider, ConfigLayer.PROJECT)
-        }
 
         if (providers.isEmpty()) {
-            return environmentProfile(environment)?.let(::listOf).orEmpty()
+            return environmentProfile(environment, user)?.let(::listOf).orEmpty()
         }
 
-        val hasEnvironmentOverride = environmentKeys.any(environment::containsKey)
+        val hasEnvironmentOverride = profileEnvironmentKeys.any(environment::containsKey)
+        val maxIterations = resolveMaxIterations(user, environment)
         return providers.values.flatMap { layered ->
             layered.provider.toConfigProfiles(
                 environment = environment,
                 layer = if (hasEnvironmentOverride) ConfigLayer.ENVIRONMENT else layered.layer,
+                maxIterations = maxIterations,
             )
         }
     }
 
-    /** 解析每个活动 provider 的 AUTO 审批模型，保留 models 的 JSON 原始首项语义。 */
-    fun mergeFasterProfiles(
-        user: SettingsDocument?,
-        project: SettingsDocument?,
-    ): Map<String, ConfigProfile> = mergeFasterProfileResolutions(user, project)
-        .mapNotNull { (providerId, resolution) -> resolution.profile?.let { providerId to it } }
-        .toMap()
-
     /** 保留每个 Provider 的来源和人工回退原因，供桌面层写脱敏诊断日志。 */
     fun mergeFasterProfileResolutions(
         user: SettingsDocument?,
-        project: SettingsDocument?,
+        @Suppress("UNUSED_PARAMETER")
+        project: SettingsDocument? = null,
     ): Map<String, FasterModelResolution> {
         val providers = linkedMapOf<String, LayeredProvider>()
         user?.providers.orEmpty().forEach { providers[it.id] = LayeredProvider(it, ConfigLayer.USER) }
-        project?.providers.orEmpty().forEach { providers[it.id] = LayeredProvider(it, ConfigLayer.PROJECT) }
-        val global = project?.fasterModel ?: user?.fasterModel
+        val global = user?.fasterModel
         return providers.mapValues { (_, layered) ->
             FasterModelResolver.resolveDetailed(
                 activeProvider = layered.provider,
@@ -85,8 +80,11 @@ object SettingsMerger {
     /**
      * 从环境变量构造无 JSON 配置时可用的最小 profile。
      */
-    private fun environmentProfile(environment: Map<String, String>): ConfigProfile? {
-        if (!environmentKeys.any(environment::containsKey)) return null
+    private fun environmentProfile(
+        environment: Map<String, String>,
+        user: SettingsDocument?,
+    ): ConfigProfile? {
+        if (!profileEnvironmentKeys.any(environment::containsKey)) return null
 
         return ConfigProfile(
             id = buildProfileId(
@@ -102,6 +100,7 @@ object SettingsMerger {
             enabled = environment["MULEHANG_ENABLED"]?.toBooleanStrictOrNull() ?: true,
             layer = ConfigLayer.ENVIRONMENT,
             limit = environment.toModelLimit(default = null),
+            maxIterations = resolveMaxIterations(user, environment),
         )
     }
 
@@ -111,6 +110,7 @@ object SettingsMerger {
     private fun ProviderProfile.toConfigProfiles(
         environment: Map<String, String>,
         layer: ConfigLayer,
+        maxIterations: Int,
     ): List<ConfigProfile> {
         val providerId = environment["MULEHANG_PROVIDER_ID"] ?: id
         val providerEnabled = environment["MULEHANG_ENABLED"]?.toBooleanStrictOrNull() ?: isEnabled()
@@ -125,6 +125,8 @@ object SettingsMerger {
                 val modelId = model.id.sanitizeModelName()
                 val profileId = environment["MULEHANG_PROFILE_ID"] ?: buildProfileId(providerId, modelId)
                 val (reasoningEfforts, defaultReasoningEffort) = model.toReasoningConfiguration(profileId)
+                val reasoningBodyByEffort = request.reasoningBodyByEffort.deepMerge(model.request.reasoningBodyByEffort)
+                reasoningBodyByEffort.keys.forEach { effort -> effort.toReasoningEffort(profileId) }
                 ConfigProfile(
                     id = profileId,
                     providerId = providerId,
@@ -140,6 +142,10 @@ object SettingsMerger {
                     reasoningEfforts = reasoningEfforts,
                     defaultReasoningEffort = defaultReasoningEffort,
                     supportsVision = model.supportsVision,
+                    requestHeaders = request.headers + model.request.headers,
+                    requestBody = request.body.deepMerge(model.request.body),
+                    reasoningBodyByEffort = reasoningBodyByEffort,
+                    maxIterations = maxIterations,
                 )
             }
     }
@@ -150,7 +156,7 @@ object SettingsMerger {
     private fun Map<String, String>.toModelLimit(default: ModelLimit?): ModelLimit {
         val context = this["MULEHANG_CONTEXT_WINDOW"]?.toPositiveIntOrNull() ?: default?.context ?: DEFAULT_CONTEXT_WINDOW
         val input = this["MULEHANG_INPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.input
-        val output = this["MULEHANG_OUTPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.output ?: DEFAULT_OUTPUT_TOKEN_LIMIT
+        val output = this["MULEHANG_OUTPUT_TOKEN_LIMIT"]?.toPositiveIntOrNull() ?: default?.output
         return ModelLimit(context = context, input = input, output = output)
     }
 
@@ -172,6 +178,17 @@ object SettingsMerger {
 
     private fun String.toPositiveIntOrNull(): Int? =
         trim().toIntOrNull()?.takeIf { it > 0 }
+
+    /** 仅用户级 JSON 和环境变量能够控制全局循环上限。 */
+    private fun resolveMaxIterations(
+        user: SettingsDocument?,
+        environment: Map<String, String>,
+    ): Int {
+        val environmentValue = environment[MAX_ITERATIONS_ENVIRONMENT_KEY]?.trim()?.takeIf(String::isNotBlank)
+            ?.toIntOrNull()
+            ?: user?.maxIterations
+        return AgentIterationLimit.resolve(environmentValue)
+    }
 
     /**
      * 将显式默认模型置于列表首位；未声明时保留 models 的原始顺序，使第一个模型成为默认项。
@@ -221,5 +238,4 @@ object SettingsMerger {
 
     private const val DEFAULT_CONTEXT_WINDOW = 256_000
 
-    private const val DEFAULT_OUTPUT_TOKEN_LIMIT = 384_000
 }

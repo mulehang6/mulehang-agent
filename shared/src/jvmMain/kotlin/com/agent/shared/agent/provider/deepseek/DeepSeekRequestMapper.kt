@@ -12,7 +12,9 @@ import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.prompt.buildRequestAdditionalProperties
 import com.agent.shared.settings.model.ConfigProfile
+import com.agent.shared.settings.model.deepMerge
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
@@ -20,20 +22,45 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * 将应用运行请求映射为 DeepSeek chat-completions 请求。
  */
 internal fun buildDeepSeekRequest(request: AgentRunRequest): DeepSeekChatCompletionRequest =
-    DeepSeekChatCompletionRequest(
-        model = request.profile.model,
+    request.profile.toDeepSeekRequestOverrides(request.reasoningEffort).let { (thinking, effort, extraBody) ->
+        DeepSeekChatCompletionRequest(
+            model = request.profile.model,
         messages = request.history.map(::toDeepSeekHistoryMessage) +
                 DeepSeekChatMessage(role = "user", content = request.prompt),
-        stream = true,
-        streamOptions = DeepSeekStreamOptions(includeUsage = true),
-        thinking = DeepSeekThinking(type = "enabled"),
-        reasoningEffort = request.reasoningEffort?.wireValue,
-    )
+            stream = true,
+            streamOptions = DeepSeekStreamOptions(includeUsage = true),
+            thinking = thinking,
+            reasoningEffort = effort,
+            extraBody = extraBody,
+        )
+    }
+
+/**
+ * 从通用请求属性提取 DeepSeek 兼容流式请求的诊断字段，同时把完整 JSON 覆盖保留给序列化器。
+ */
+private fun ConfigProfile.toDeepSeekRequestOverrides(
+    reasoningEffort: ReasoningEffort?,
+): Triple<DeepSeekThinking?, String?, JsonObject> {
+    val extraBody = buildJsonObject {
+        limit?.output?.let { put("max_completion_tokens", it) }
+    }.deepMerge(JsonObject(buildRequestAdditionalProperties(this, reasoningEffort).orEmpty()))
+    val thinking = (extraBody["thinking"] as? JsonObject)
+        ?.get("type")
+        ?.jsonPrimitive
+        ?.contentOrNull
+        ?.let(::DeepSeekThinking)
+    val effort = extraBody["reasoning_effort"]
+        ?.jsonPrimitive
+        ?.contentOrNull
+    return Triple(thinking, effort, extraBody)
+}
 
 /**
  * 将 Koog prompt、配置与工具描述映射为 DeepSeek chat-completions 请求。
@@ -43,23 +70,25 @@ internal fun buildDeepSeekRequest(
     config: ConfigProfile,
     reasoningEffort: ReasoningEffort?,
     tools: List<ToolDescriptor> = emptyList(),
-): DeepSeekChatCompletionRequest =
+): DeepSeekChatCompletionRequest = config.toDeepSeekRequestOverrides(reasoningEffort).let { (thinking, effort, extraBody) ->
     DeepSeekChatCompletionRequest(
         model = config.model,
         messages = prompt.messages.flatMap(::toDeepSeekPromptMessages),
         tools = tools.takeIf { it.isNotEmpty() }?.map(::toDeepSeekToolDefinition),
         stream = true,
         streamOptions = DeepSeekStreamOptions(includeUsage = true),
-        thinking = DeepSeekThinking(type = "enabled"),
-        reasoningEffort = reasoningEffort?.wireValue,
+        thinking = thinking,
+        reasoningEffort = effort,
+        extraBody = extraBody,
     )
+}
 
 /**
  * 构造不包含 prompt、messages、apiKey 的 DeepSeek 请求诊断摘要。
  */
 internal fun buildDeepSeekRequestDiagnostic(request: DeepSeekChatCompletionRequest): String =
     "DeepSeek request: model=${request.model} " +
-            "thinking=${request.thinking.type} " +
+    "thinking=${request.thinking?.type ?: "unset"} " +
             "reasoning_effort=${request.reasoningEffort ?: "null"} " +
             "tools=${request.tools?.size ?: 0} " +
             "stream=${request.stream}"

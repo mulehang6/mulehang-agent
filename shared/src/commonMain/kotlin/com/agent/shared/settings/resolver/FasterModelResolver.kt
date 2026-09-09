@@ -50,18 +50,12 @@ object FasterModelResolver {
             return FasterModelResolution(null, reason = "provider_first_model_disabled")
         }
         return resolved(
-            ConfigProfile(
+            SettingsMerger.merge(
+                user = settings.copy(providers = listOf(activeProvider.copy(models = listOf(first)))),
+                environment = emptyMap(),
+            ).single().copy(
                 id = "${activeProvider.id}:auto-review:${first.id}",
-                providerId = activeProvider.id,
-                providerLabel = activeProvider.label ?: activeProvider.id,
-                modelLabel = first.label,
-                providerType = activeProvider.providerType,
-                baseUrl = activeProvider.baseUrl,
-                apiKey = activeProvider.apiKey,
-                model = first.id,
-                enabled = true,
                 layer = layer,
-                limit = first.limit ?: com.agent.shared.settings.model.ModelLimit(context = 256_000),
             ),
             FasterModelSource.PROVIDER_FIRST,
         )

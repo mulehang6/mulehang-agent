@@ -31,4 +31,6 @@ data class AgentResourceSettings(
     val trustedProjectPaths: List<String> = emptyList(),
     val skillDirectories: List<String> = emptyList(),
     val promptDirectories: List<String> = emptyList(),
+    /** 由用户显式添加的 MCP 服务；项目级记录在未信任前不会参与运行时资源快照。 */
+    val mcpServers: List<McpServerSettings> = emptyList(),
 )

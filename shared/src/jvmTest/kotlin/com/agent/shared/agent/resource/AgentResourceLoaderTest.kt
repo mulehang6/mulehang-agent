@@ -451,7 +451,7 @@ class AgentResourceLoaderTest {
         )
 
         val command = snapshot.hookSettings.hooks.getValue(AgentHookEvent.PRE_TOOL_USE).single().hooks.single().command
-        assertEquals("echo $userPackage", command)
+        assertEquals("echo ${userPackage.toRealPath()}", command)
         assertFalse(AgentHookEvent.USER_PROMPT_SUBMIT in snapshot.hookSettings.hooks)
     }
 

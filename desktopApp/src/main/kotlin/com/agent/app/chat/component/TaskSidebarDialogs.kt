@@ -247,7 +247,7 @@ internal fun TaskStatusIndicator(status: ChatTaskStatus) {
                 startAngle = -72f,
                 sweepAngle = 246f,
                 useCenter = false,
-                topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                topLeft = Offset(inset, inset),
                 size = androidx.compose.ui.geometry.Size(size.width - inset * 2f, size.height - inset * 2f),
                 style = stroke,
             )
@@ -255,15 +255,15 @@ internal fun TaskStatusIndicator(status: ChatTaskStatus) {
             ChatTaskStatus.DONE -> {
                 drawLine(
                     color = AppSuccess,
-                    start = androidx.compose.ui.geometry.Offset(size.width * 0.24f, size.height * 0.53f),
-                    end = androidx.compose.ui.geometry.Offset(size.width * 0.44f, size.height * 0.73f),
+                    start = Offset(size.width * 0.24f, size.height * 0.53f),
+                    end = Offset(size.width * 0.44f, size.height * 0.73f),
                     strokeWidth = 1.9.dp.toPx(),
                     cap = StrokeCap.Round,
                 )
                 drawLine(
                     color = AppSuccess,
-                    start = androidx.compose.ui.geometry.Offset(size.width * 0.44f, size.height * 0.73f),
-                    end = androidx.compose.ui.geometry.Offset(size.width * 0.78f, size.height * 0.3f),
+                    start = Offset(size.width * 0.44f, size.height * 0.73f),
+                    end = Offset(size.width * 0.78f, size.height * 0.3f),
                     strokeWidth = 1.9.dp.toPx(),
                     cap = StrokeCap.Round,
                 )

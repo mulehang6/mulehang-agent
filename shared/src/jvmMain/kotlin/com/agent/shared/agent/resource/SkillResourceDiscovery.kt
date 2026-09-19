@@ -152,8 +152,7 @@ private fun shouldSkipSkillDirectory(
     ignoreRules: MutableIgnoreRules,
 ): Boolean {
     val name = directory.fileName?.toString().orEmpty()
-    if (name == ".git" || name == "node_modules" || name.startsWith('.')) return true
-    return directory != root && ignoreRules.ignores(directory)
+    return name == ".git" || name == "node_modules" || name.startsWith('.') || directory != root && ignoreRules.ignores(directory)
 }
 
 /**

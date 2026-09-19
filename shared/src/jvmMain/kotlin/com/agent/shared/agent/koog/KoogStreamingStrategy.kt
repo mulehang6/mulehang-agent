@@ -15,6 +15,11 @@ import ai.koog.serialization.JSONObject
 import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
+import com.agent.shared.agent.api.AgentRunTiming
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.agent.shared.agent.prompt.buildLlmModel
 import com.agent.shared.agent.provider.ProviderKoogTransportAdapters
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
@@ -206,12 +211,27 @@ private fun buildStreamingSingleRunStrategy(
 private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingAssistantMessage(
     request: AgentRunRequest,
     emitEvent: suspend (AgentStreamEvent) -> Unit,
-): Message.Assistant {
-    val response = collectAssistantMessageFromStream(
-        frames = ProviderKoogTransportAdapters.streamFramesOrNull(this, request)
-            ?: requestLLMStreaming(),
+): Message.Assistant = coroutineScope {
+    val timing = AgentRunTiming(request.traceId)
+    timing.mark("model_request")
+    var firstFrame = true
+    val hint = launch {
+        delay(300)
+        emitEvent(AgentStreamEvent.Status("正在等待模型响应…"))
+    }
+    val response = try { collectAssistantMessageFromStream(
+        frames = (ProviderKoogTransportAdapters.streamFramesOrNull(this@requestStreamingAssistantMessage, request)
+            ?: requestLLMStreaming()).onEach {
+            if (firstFrame) {
+                firstFrame = false
+                hint.cancel()
+                timing.mark("first_model_frame")
+            }
+        },
         emitEvent = emitEvent,
-    )
+    ) } finally {
+        hint.cancel()
+    }
     rewritePrompt { currentPrompt ->
         appendAssistantMessageToPrompt(
             currentPrompt = currentPrompt,
@@ -219,5 +239,5 @@ private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingAssistantMessag
             clock = clock,
         )
     }
-    return response
+    response
 }

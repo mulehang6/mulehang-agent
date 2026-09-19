@@ -14,7 +14,7 @@ enum class McpServerTransport {
  * 单个直接 MCP 服务设置。
  *
  * stdio 使用 [command] 的首项作为可执行文件、其余项作为参数；SSE 与 streamable HTTP 使用 [url]。
- * [environment] 仅注入启动的 stdio 进程，展示层不得回显其值。
+ * [environment] 仅注入启动的 stdio 进程，[headers] 仅随远程请求发送；展示层不得回显两者的值。
  */
 @Serializable
 data class McpServerSettings(
@@ -23,5 +23,6 @@ data class McpServerSettings(
     val command: List<String> = emptyList(),
     val url: String? = null,
     val environment: Map<String, String> = emptyMap(),
+    val headers: Map<String, String> = emptyMap(),
     val enabled: Boolean = true,
 )

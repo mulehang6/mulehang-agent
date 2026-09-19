@@ -1,6 +1,7 @@
 package com.agent.shared.agent.resource
 
 import com.agent.shared.settings.model.McpServerSettings
+import com.agent.shared.settings.model.append
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -43,7 +44,7 @@ class AgentResourceLoader {
             packages = packageResources.packages,
             mcpServers = mcpServers,
             diagnostics = diagnostics.toList(),
-            hookSettings = packageResources.hookSettings,
+            hookSettings = request.userHookSettings.append(packageResources.hookSettings),
         )
     }
 
@@ -204,6 +205,7 @@ class AgentResourceLoader {
             command = setting.command.map(String::trim).filter(String::isNotBlank),
             url = setting.url?.trim()?.takeIf(String::isNotBlank),
             environment = setting.environment,
+            headers = setting.headers,
             packageId = DIRECT_SETTINGS_MCP_PACKAGE_ID,
             origin = origin,
             source = source,
@@ -247,6 +249,10 @@ class AgentResourceLoader {
                 null -> current.environment
                 else -> current.environment.orEmpty() + overrideEnvironment
             },
+            headers = when (val overrideHeaders = override.headers) {
+                null -> current.headers
+                else -> current.headers.orEmpty() + overrideHeaders
+            },
             packageId = override.packageId,
             origin = override.origin,
             source = override.source,
@@ -282,12 +288,29 @@ class AgentResourceLoader {
             )
             return null
         }
+        if (resolvedTransport == AgentMcpTransport.STDIO && !headers.isNullOrEmpty()) {
+            diagnostics += AgentResourceDiagnostic(
+                severity = AgentResourceDiagnosticSeverity.WARNING,
+                message = "stdio MCP '$id' 不支持 headers，已跳过。",
+                path = source,
+            )
+            return null
+        }
+        if (resolvedTransport != AgentMcpTransport.STDIO && !environment.isNullOrEmpty()) {
+            diagnostics += AgentResourceDiagnostic(
+                severity = AgentResourceDiagnosticSeverity.WARNING,
+                message = "远程 MCP '$id' 不支持 env，已跳过。",
+                path = source,
+            )
+            return null
+        }
         return AgentMcpServerResource(
             id = id,
             transport = resolvedTransport,
             command = command.orEmpty(),
             url = url,
             environment = environment.orEmpty(),
+            headers = headers.orEmpty(),
             packageId = packageId,
             origin = origin,
         )

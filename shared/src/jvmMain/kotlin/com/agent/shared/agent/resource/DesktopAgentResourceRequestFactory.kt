@@ -33,6 +33,7 @@ class DesktopAgentResourceRequestFactory(
             projectPromptDirectories = projectDocument.agentResources.promptDirectories.toPaths(),
             userMcpServers = userDocument.agentResources.mcpServers,
             projectMcpServers = projectDocument.agentResources.mcpServers,
+            userHookSettings = userDocument.hooks,
             packages = buildList {
                 addAll(userDocument.agentResources.toInstalledPackages(userHome, AgentResourceOrigin.USER_CONFIGURATION))
                 addAll(projectDocument.agentResources.toInstalledPackages(workspace, AgentResourceOrigin.PROJECT_CONFIGURATION))

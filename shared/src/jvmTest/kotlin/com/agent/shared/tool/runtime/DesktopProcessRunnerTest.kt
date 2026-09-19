@@ -13,6 +13,38 @@ import kotlin.test.assertTrue
  * 验证受控子进程运行器的输出和生命周期边界。
  */
 class DesktopProcessRunnerTest {
+    /** 取消已开始的 cmd/ping 进程树时，输出回收也必须在有界时间内返回。 */
+    @Test
+    fun `should cancel running descendants without waiting for pipe eof`() {
+        val cancelled = AtomicBoolean(false)
+        val process = java.util.concurrent.atomic.AtomicReference<Process>()
+        val executor = Executors.newSingleThreadExecutor()
+        var children = emptyList<ProcessHandle>()
+        try {
+            val future = executor.submit<DesktopProcessRunner.Result> {
+                DesktopProcessRunner(processStarter = { it.start().also(process::set) }).run(
+                    DesktopProcessRunner.Args(
+                        command = cmd("ping 127.0.0.1 -n 30 > nul"), workingDirectory = temporaryDirectory(),
+                        timeoutMillis = 10_000, isCancelled = cancelled::get,
+                    ),
+                )
+            }
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (children.isEmpty() && System.nanoTime() < deadline) {
+                children = process.get()?.descendants()?.use { it.toList() }.orEmpty()
+                Thread.sleep(10)
+            }
+            assertTrue(children.isNotEmpty())
+            cancelled.set(true)
+            assertEquals(DesktopProcessRunner.Outcome.CANCELLED, future.get(5, TimeUnit.SECONDS).outcome)
+            assertTrue(children.none { it.isAlive })
+        } finally {
+            cancelled.set(true)
+            children.forEach { if (it.isAlive) it.destroyForcibly() }
+            process.get()?.destroyForcibly()
+            executor.shutdownNow()
+        }
+    }
     /**
      * 进程尚未退出时，已读取的 stdout 必须立即回调给调用方。
      */

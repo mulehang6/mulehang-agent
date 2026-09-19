@@ -24,6 +24,8 @@ data class AgentRunRequest(
     val inputParts: List<UserInputPart> = listOf(UserInputPart.Text(prompt)),
     /** 本轮固定使用的资源快照投影，重载只影响之后新建的请求。 */
     val runtimeResources: AgentRuntimeResources = AgentRuntimeResources(),
+    /** 关联本地准备与模型请求的匿名诊断标识。 */
+    val traceId: String = "",
 )
 
 /**

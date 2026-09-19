@@ -101,6 +101,8 @@ data class ChatConversationUiState(
     val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
     /** 此会话独立保存的工具执行权限。 */
     val permissionPreset: PermissionPreset = PermissionPreset.DEFAULT,
+    /** 当前等待阶段，仅用于实时展示，不写入会话历史。 */
+    val progressMessage: String? = null,
     val executionState: ExecutionState = ExecutionState.Idle,
     val streamingAssistantItemIndex: Int? = null,
     val streamingReasoningItemIndex: Int? = null,

@@ -27,6 +27,7 @@ class ChatWindowInteractionTest : ChatWindowTestFixture() {
         val gateway = object : AgentGateway {
             override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
                 try {
+                    emit(AgentStreamEvent.Status("正在等待模型响应…"))
                     awaitCancellation()
                 } finally {
                     cancelled.complete(Unit)
@@ -47,10 +48,12 @@ class ChatWindowInteractionTest : ChatWindowTestFixture() {
         advanceUntilIdle()
         assertEquals(ExecutionState.Running, state.ui.activeConversation.executionState)
 
+        assertEquals("正在等待模型响应…", state.ui.activeConversation.progressMessage)
         state.cancelActiveRun()
         advanceUntilIdle()
 
         assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertNull(state.ui.activeConversation.progressMessage)
         assertTrue(cancelled.isCompleted)
     }
 

@@ -46,6 +46,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             mutateActiveConversation { conversation ->
                 if (conversation.executionState.isStoppable()) {
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Idle,
                         pendingQuestion = null,
                         pendingApproval = null,
@@ -99,6 +100,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 conversation.copy(
                     items = conversation.items + AnsweredQuestionsItem(answers = answers),
                     pendingQuestion = null,
+                    progressMessage = null,
                     executionState = ExecutionState.Running,
                 )
             }
@@ -140,6 +142,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             mutateConversation(targetConversationId) { conversation ->
                 conversation.copy(
                     pendingApproval = null,
+                    progressMessage = null,
                     executionState = ExecutionState.Running,
                 )
             }
@@ -174,6 +177,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             if (activeRunConversationId != null) {
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "已有任务在执行",
@@ -189,6 +193,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             workspaceIssue(sourceConversation)?.let { message ->
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "工作目录不可用",
@@ -203,6 +208,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             if (profile == null) {
                 mutateActiveConversation { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "缺少可用配置",
@@ -221,6 +227,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             if (inputParts.any { part -> part is UserInputPart.Image } && !profile.supportsImageInput()) {
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "当前模型不支持图片输入",
@@ -275,6 +282,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                         content = prompt,
                         inputParts = inputParts,
                     ),
+                    progressMessage = null,
                     executionState = ExecutionState.Running,
                     streamingAssistantItemIndex = null,
                     streamingReasoningItemIndex = null,
@@ -327,6 +335,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                     mutateConversation(targetConversationId) { conversation ->
                         if (conversation.executionState.isStoppable()) {
                             conversation.copy(
+                                progressMessage = null,
                                 executionState = ExecutionState.Idle,
                                 pendingQuestion = null,
                                 pendingApproval = null,
@@ -344,6 +353,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                             contextWindow = contextWindowForConversation(conversation),
                         )
                         withToolFailure.copy(
+                            progressMessage = null,
                             executionState = ExecutionState.Failed(
                                 AppError(
                                     title = "发送失败",

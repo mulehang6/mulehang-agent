@@ -12,6 +12,7 @@ import com.agent.shared.chat.model.ToolEventStatus
 internal fun buildSecondaryStatus(conversation: ChatConversationUiState): String? = when {
     conversation.pendingApproval != null -> conversation.pendingApproval.summary
     conversation.pendingQuestion != null -> conversation.pendingQuestion.question
+    conversation.executionState == com.agent.shared.chat.model.ExecutionState.Running -> conversation.progressMessage
     else -> null
 }
 

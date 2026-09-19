@@ -70,7 +70,13 @@ internal fun ConversationTimeline(
 
                 is ReasoningItem -> TimelineReasoningItem(item)
                 is AnsweredQuestionsItem -> TimelineAnswersItem(item)
-                is ToolEventItem -> TimelineToolTextRow(
+                // 兼容旧版本保存的阶段记录，避免再显示不可点击的工具外观。
+                is ToolEventItem -> if (item.status == ToolEventStatus.Status) {
+                    Text(
+                        text = item.preview.orEmpty(),
+                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+                    )
+                } else TimelineToolTextRow(
                     item = rememberTimelineToolDisplayItem(item),
                     isFailure = item.status == ToolEventStatus.Failed,
                 )

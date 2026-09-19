@@ -59,9 +59,9 @@ class DiagramSvgPreviewTest {
         assertTrue(bounds.vertical > 0f)
     }
 
-    /** 全局倍率只参与最终绘制计算，不会改写图表自行保存的缩放值。 */
+    /** 全局倍率已经包含在视口尺寸内，不能让 100% 再次溢出。 */
     @Test
-    fun combinesGlobalScaleWithLocalZoomWithoutChangingLocalZoom() {
+    fun keepsFitScaleIndependentOfGlobalUiScale() {
         val localZoomPercent = 150
 
         assertEquals(
@@ -73,14 +73,14 @@ class DiagramSvgPreviewTest {
             ),
         )
         assertEquals(
-            3f,
+            1.5f,
             diagramSvgRenderScale(
                 fitScale = 1f,
                 zoomPercent = localZoomPercent,
                 globalScalePercent = 200,
             ),
         )
-        assertTrue(
+        assertFalse(
             diagramSvgPanBounds(
                 intrinsicSize = DiagramSvgIntrinsicSize(400f, 200f),
                 fitScale = 1f,

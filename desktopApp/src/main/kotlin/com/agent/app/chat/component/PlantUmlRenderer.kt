@@ -59,6 +59,24 @@ skinparam ActivityBarColor #B6C2DA
 skinparam NoteBackgroundColor #31343C
 skinparam NoteBorderColor #6E7A92
 skinparam NoteFontColor #E7EAF0
+skinparam ComponentBackgroundColor #31343C
+skinparam ComponentBorderColor #B6C2DA
+skinparam ComponentFontColor #E7EAF0
+skinparam PackageBackgroundColor #252830
+skinparam PackageBorderColor #6E7A92
+skinparam PackageFontColor #E7EAF0
+skinparam ClassBackgroundColor #31343C
+skinparam ClassBorderColor #B6C2DA
+skinparam ClassFontColor #E7EAF0
+skinparam ClassAttributeFontColor #E7EAF0
+skinparam ParticipantBackgroundColor #31343C
+skinparam ParticipantBorderColor #B6C2DA
+skinparam ParticipantFontColor #E7EAF0
+skinparam SequenceLifeLineBorderColor #B6C2DA
+skinparam SequenceLifeLineBackgroundColor #31343C
+skinparam ActorBackgroundColor #31343C
+skinparam ActorBorderColor #B6C2DA
+skinparam ActorFontColor #E7EAF0
 <style>
 document {
   BackgroundColor transparent
@@ -112,6 +130,24 @@ skinparam ActivityBarColor #596273
 skinparam NoteBackgroundColor #FFFFFF
 skinparam NoteBorderColor #6B7180
 skinparam NoteFontColor #1F2329
+skinparam ComponentBackgroundColor #FFFFFF
+skinparam ComponentBorderColor #596273
+skinparam ComponentFontColor #1F2329
+skinparam PackageBackgroundColor #F4F5F7
+skinparam PackageBorderColor #6B7180
+skinparam PackageFontColor #1F2329
+skinparam ClassBackgroundColor #FFFFFF
+skinparam ClassBorderColor #596273
+skinparam ClassFontColor #1F2329
+skinparam ClassAttributeFontColor #1F2329
+skinparam ParticipantBackgroundColor #FFFFFF
+skinparam ParticipantBorderColor #596273
+skinparam ParticipantFontColor #1F2329
+skinparam SequenceLifeLineBorderColor #596273
+skinparam SequenceLifeLineBackgroundColor #FFFFFF
+skinparam ActorBackgroundColor #FFFFFF
+skinparam ActorBorderColor #596273
+skinparam ActorFontColor #1F2329
 <style>
 document {
   BackgroundColor transparent

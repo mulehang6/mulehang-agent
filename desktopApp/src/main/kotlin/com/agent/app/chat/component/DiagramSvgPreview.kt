@@ -86,15 +86,15 @@ internal fun diagramSvgFitScale(
     )
 }
 
-/** 将图表自身缩放与全局界面倍率组合为最终的 SVG 绘制倍率。 */
+/** 100% 始终适配已包含界面密度的视口，不重复叠加全局倍率。 */
+@Suppress("UNUSED_PARAMETER")
 internal fun diagramSvgRenderScale(
     fitScale: Float,
     zoomPercent: Int,
     globalScalePercent: Int,
 ): Float {
     val diagramScale = normalizeDiagramZoomPercent(zoomPercent) / DIAGRAM_DEFAULT_ZOOM_PERCENT.toFloat()
-    val globalScale = normalizeDesktopUiScalePercent(globalScalePercent) / 100f
-    return fitScale * diagramScale * globalScale
+    return fitScale * diagramScale
 }
 
 /** 计算矢量图在当前缩放值下允许的平移边界。 */

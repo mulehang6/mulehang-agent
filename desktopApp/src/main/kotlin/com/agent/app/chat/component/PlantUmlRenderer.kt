@@ -33,9 +33,26 @@ internal fun applyPlantUmlTheme(
     return source.replaceRange(
         startMatch.range.last + 1,
         startMatch.range.last + 1,
-        "\n$configuration",
+        "\n$configuration\n${plantUmlDeploymentTheme(isDark)}",
     )
 }
+
+/** 部署图的节点各有独立 skinparam，不能用 Component 配色替代 Rectangle 等节点。 */
+private fun plantUmlDeploymentTheme(isDark: Boolean): String {
+    val background = if (isDark) "#31343C" else "#FFFFFF"
+    val border = if (isDark) "#B6C2DA" else "#596273"
+    val foreground = if (isDark) "#E7EAF0" else "#1F2329"
+    return PLANT_UML_DEPLOYMENT_ELEMENTS.joinToString("\n") { element ->
+        "skinparam ${element}BackgroundColor $background\n" +
+            "skinparam ${element}BorderColor $border\n" +
+            "skinparam ${element}FontColor $foreground"
+    }
+}
+
+private val PLANT_UML_DEPLOYMENT_ELEMENTS = listOf(
+    "Rectangle", "Node", "Database", "Cloud", "Artifact", "Card", "File", "Folder",
+    "Frame", "Hexagon", "Queue", "Stack", "Storage", "Usecase", "State", "Object",
+)
 
 private val PLANT_UML_START = Regex("(?im)^\\s*@start[A-Za-z0-9_]*[^\\r\\n]*$")
 private val USER_THEME_DIRECTIVE = Regex("(?im)^\\s*!theme\\b")

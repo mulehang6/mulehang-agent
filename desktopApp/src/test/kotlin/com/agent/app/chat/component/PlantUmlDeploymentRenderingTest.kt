@@ -1,5 +1,3 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-
 package com.agent.app.chat.component
 
 import androidx.compose.ui.ImageComposeScene

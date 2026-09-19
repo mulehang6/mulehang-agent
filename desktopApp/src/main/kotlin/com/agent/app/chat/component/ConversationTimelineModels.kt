@@ -2,56 +2,16 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import com.agent.app.chat.presentation.*
-import com.agent.app.chat.state.ChatConversationUiState
+import com.agent.app.chat.presentation.buildToolEventInlineInput
+import com.agent.app.chat.presentation.isTerminalToolEvent
 import com.agent.app.design.*
-import com.agent.app.tool.component.EditorDiffPreview
-import com.agent.shared.chat.model.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.svg.SVGDOM
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.math.roundToInt
-import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.foundation.ExperimentalJewelApi
-import org.jetbrains.jewel.markdown.Markdown
-import org.jetbrains.jewel.ui.component.Icon
-import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
+import com.agent.shared.chat.model.ConversationItem
+import com.agent.shared.chat.model.ReasoningItem
+import com.agent.shared.chat.model.ToolEventItem
+import com.agent.shared.chat.model.ToolEventStatus
+
 /**
  * 时间线在渲染前使用的展示段，不改变底层会话事件。
  */

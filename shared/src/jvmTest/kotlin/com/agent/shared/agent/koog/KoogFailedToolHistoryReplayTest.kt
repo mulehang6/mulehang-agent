@@ -4,10 +4,6 @@ import ai.koog.http.client.KoogHttpClient
 import ai.koog.prompt.Prompt
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
-import ai.koog.prompt.message.Message
-import ai.koog.prompt.message.MessagePart
-import ai.koog.prompt.message.RequestMetaInfo
-import ai.koog.utils.time.KoogClock
 import com.agent.shared.agent.api.AgentConversationHistoryMessage
 import com.agent.shared.agent.api.AgentConversationHistoryPart
 import com.agent.shared.agent.api.ReasoningEffort

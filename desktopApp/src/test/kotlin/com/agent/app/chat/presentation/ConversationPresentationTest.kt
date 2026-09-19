@@ -252,12 +252,12 @@ class ConversationPresentationTest {
         val item = ToolEventItem(
             toolName = "tool",
             status = ToolEventStatus.Started,
-            preview = """{"operation_intent":"循环输出 1 到 5000","script":"1..5000 | ForEach-Object { Write-Output ${'$'}_ }"}""",
+            preview = $$"""{"operation_intent":"循环输出 1 到 5000","script":"1..5000 | ForEach-Object { Write-Output $_ }"}""",
         )
 
         assertEquals(false, shouldShowToolEventHeadline(item))
         assertEquals(
-            "1..5000 | ForEach-Object { Write-Output ${'$'}_ }",
+            $$"1..5000 | ForEach-Object { Write-Output $_ }",
             buildToolEventInlineInput(item),
         )
     }
@@ -270,10 +270,10 @@ class ConversationPresentationTest {
         val item = ToolEventItem(
             toolName = "run_powershell",
             status = ToolEventStatus.Finished,
-            preview = "{operation_intent=执行脚本, script=& \"${'$'}PWD/script.ps1\", timeout_ms=120000}",
+            preview = $$"{operation_intent=执行脚本, script=& \"$PWD/script.ps1\", timeout_ms=120000}",
         )
 
-        assertEquals("& \"${'$'}PWD/script.ps1\"", buildToolEventInlineInput(item))
+        assertEquals($$"& \"$PWD/script.ps1\"", buildToolEventInlineInput(item))
     }
 
     /**

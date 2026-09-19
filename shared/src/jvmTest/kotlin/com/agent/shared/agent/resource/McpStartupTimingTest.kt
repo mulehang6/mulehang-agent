@@ -7,6 +7,7 @@ import java.nio.file.Path
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.measureTime
 
 /** 使用本机 JDK 启动最小 stdio MCP 服务，测量真实连接建立和连接复用。 */
@@ -24,7 +25,7 @@ class McpStartupTimingTest {
         )
         McpConnectionManager().use { manager ->
             val cold = measureTime {
-                withTimeout(20_000) { assertEquals(1, manager.registriesFor(listOf(server)).connections.size) }
+                withTimeout(20_000.milliseconds) { assertEquals(1, manager.registriesFor(listOf(server)).connections.size) }
             }
             val warm = measureTime {
                 assertEquals(1, manager.registriesFor(listOf(server)).connections.size)

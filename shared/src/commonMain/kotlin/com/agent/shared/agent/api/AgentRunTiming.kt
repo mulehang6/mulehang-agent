@@ -4,6 +4,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
 /** 为一次请求记录不包含正文和凭据的阶段耗时。 */
@@ -23,7 +24,7 @@ class AgentRunTiming(private val traceId: String) {
         block: suspend () -> T,
     ): T = coroutineScope {
         val phaseStart = TimeSource.Monotonic.markNow()
-        val hint = launch { delay(300); emit(AgentStreamEvent.Status(message)) }
+        val hint = launch { delay(300.milliseconds); emit(AgentStreamEvent.Status(message)) }
         try {
             block()
         } finally {

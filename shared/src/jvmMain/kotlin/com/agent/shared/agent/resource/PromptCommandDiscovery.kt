@@ -3,7 +3,6 @@ package com.agent.shared.agent.resource
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.streams.toList
 
 /** 一个 Pi prompts 语义目录及其优先级来源。 */
 internal data class PromptSearchRoot(

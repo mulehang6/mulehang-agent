@@ -190,7 +190,7 @@ internal fun AssistantMathFormula(
         else -> result.getOrNull()?.let { formula ->
             RenderedLatexFormulaView(formula, display)
         } ?: Text(
-            text = if (display) "${'$'}${'$'}$source${'$'}${'$'}" else "${'$'}$source${'$'}",
+            text = if (display) "$$$source$$" else "$$source$",
             style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
     }

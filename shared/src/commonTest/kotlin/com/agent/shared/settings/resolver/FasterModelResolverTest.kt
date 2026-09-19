@@ -1,15 +1,9 @@
 package com.agent.shared.settings.resolver
 
-import com.agent.shared.settings.model.ConfigLayer
-import com.agent.shared.settings.model.FasterModelProfile
-import com.agent.shared.settings.model.ModelProfile
-import com.agent.shared.settings.model.ProviderProfile
-import com.agent.shared.settings.model.ProviderType
-import com.agent.shared.settings.model.SettingsDocument
+import com.agent.shared.settings.model.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertEquals
 
 /** 验证 AUTO 审批模型的固定回退顺序。 */
 class FasterModelResolverTest {

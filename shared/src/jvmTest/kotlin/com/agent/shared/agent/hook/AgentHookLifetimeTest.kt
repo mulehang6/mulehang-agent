@@ -5,6 +5,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 用受控阻塞命令验证后台所有权，避免依赖模型或外部索引器。 */
 class AgentHookLifetimeTest {
@@ -23,7 +24,7 @@ class AgentHookLifetimeTest {
                 val started = System.nanoTime()
                 dispatcher.dispatch(request())
                 samples[mode] = (System.nanoTime() - started) / 1_000_000
-                withTimeout(2_000) { owner.awaitPending() }
+                withTimeout(2_000.milliseconds) { owner.awaitPending() }
             } finally { owner.close() }
         }
         assertTrue(samples.getValue("synchronous") >= 200)
@@ -45,7 +46,7 @@ class AgentHookLifetimeTest {
         })
         dispatcher.bindLifetime(owner)
         try {
-            val result = withTimeout(1_000) { dispatcher.dispatch(request()) }
+            val result = withTimeout(1_000.milliseconds) { dispatcher.dispatch(request()) }
             assertEquals(AgentHookDispatchResult(), result)
             assertTrue(started.await(2, TimeUnit.SECONDS))
             val replacement = WindowsAgentHookDispatcher(AgentHookSettings())
@@ -90,7 +91,7 @@ class AgentHookLifetimeTest {
         dispatcher.bindLifetime(owner)
         try {
             assertEquals(AgentHookDispatchResult(), dispatcher.dispatch(request()))
-            withTimeout(2_000) { owner.awaitPending() }
+            withTimeout(2_000.milliseconds) { owner.awaitPending() }
         } finally { owner.close() }
     }
 

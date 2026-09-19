@@ -34,11 +34,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Koog 1.0.0 接入点，负责执行单轮消息并转换为应用事件。
@@ -189,7 +191,7 @@ class KoogAgentGateway(
                         payload = buildJsonObject { put("reason", "session_closed") },
                     ),
                 )
-                withTimeoutOrNull(10_000) { lifetime?.awaitPending() }
+                withTimeoutOrNull(10_000.milliseconds) { lifetime?.awaitPending() }
             } finally {
                 lifetime?.close()
             }
@@ -199,8 +201,8 @@ class KoogAgentGateway(
     /** 应用退出时等待受限的结束事件，再取消全部后台任务；可重复调用。 */
     suspend fun shutdown() {
         try {
-            withTimeoutOrNull(10_000) {
-                lifecycleScope.coroutineContext[Job]?.children?.toList()?.forEach { it.join() }
+            withTimeoutOrNull(10_000.milliseconds) {
+                lifecycleScope.coroutineContext[Job]?.children?.toList()?.joinAll()
             }
         } finally {
             hookLifetimes.values.forEach(AgentHookLifetime::close)

@@ -3,6 +3,7 @@ package com.agent.shared.agent.api
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import kotlin.test.*
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 验证阶段提示的边界与取消，不依赖机器速度。 */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -14,10 +15,10 @@ class AgentRunTimingTest {
         val release = CompletableDeferred<Unit>()
         val job = launch { AgentRunTiming("test").phase("prepare", "准备", events::add) { release.await() } }
         runCurrent()
-        advanceTimeBy(299)
+        advanceTimeBy(299.milliseconds)
         runCurrent()
         assertTrue(events.isEmpty())
-        advanceTimeBy(1)
+        advanceTimeBy(1.milliseconds)
         runCurrent()
         assertEquals(listOf<AgentStreamEvent>(AgentStreamEvent.Status("准备")), events)
         release.complete(Unit)
@@ -30,7 +31,7 @@ class AgentRunTimingTest {
     @Test
     fun fastAndCancelledStagesNeverEmitLateHints() = runTest {
         val events = mutableListOf<AgentStreamEvent>()
-        AgentRunTiming("fast").phase("prepare", "准备", events::add) { delay(100) }
+        AgentRunTiming("fast").phase("prepare", "准备", events::add) { delay(100.milliseconds) }
         val job = launch { AgentRunTiming("cancel").phase("prepare", "准备", events::add) { awaitCancellation() } }
         runCurrent()
         job.cancelAndJoin()

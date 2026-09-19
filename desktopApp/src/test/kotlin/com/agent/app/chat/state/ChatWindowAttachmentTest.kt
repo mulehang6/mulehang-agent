@@ -1,0 +1,141 @@
+package com.agent.app.chat.state
+
+import com.agent.shared.agent.api.*
+import com.agent.shared.agent.resource.AgentPromptCommand
+import com.agent.shared.agent.resource.AgentPromptCommandKind
+import com.agent.shared.agent.resource.AgentResourceOrigin
+import com.agent.shared.agent.resource.AgentResourceSnapshot
+import com.agent.shared.chat.model.*
+import com.agent.shared.chat.usecase.SendMessageUseCase
+import com.agent.shared.session.AppSessionSnapshot
+import com.agent.shared.tool.model.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.*
+import kotlin.test.*
+
+/** 验证ChatWindowAttachmentTest的状态转换。 */
+@OptIn(ExperimentalCoroutinesApi::class)
+class ChatWindowAttachmentTest : ChatWindowTestFixture() {
+    /**
+     * 附件选择结果应挂到当前活动会话的输入区，而不是进入消息正文。
+     */
+    @Test
+    fun `should attach selected files to active conversation draft`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.attachFiles(listOf("D:\\tmp\\ChatScreen.kt", "D:\\tmp\\design.png"))
+
+        assertEquals(
+            listOf("ChatScreen.kt", "design.png"),
+            state.ui.activeConversation.attachments.map { it.name },
+        )
+    }
+
+    /**
+     * 用户应能从当前输入区移除误选附件。
+     */
+    @Test
+    fun `should remove attachment from active conversation draft`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(
+                profiles = listOf(profile()),
+                activeProfile = profile(),
+            ),
+            projectPath = "E:\\abc\\def",
+        )
+        state.attachFiles(listOf("D:\\tmp\\ChatScreen.kt", "D:\\tmp\\design.png"))
+
+        state.removeAttachment("D:\\tmp\\ChatScreen.kt")
+
+        assertEquals(listOf("design.png"), state.ui.activeConversation.attachments.map { it.name })
+    }
+
+    /** prompt 命令先插入编辑器，用户再次发送才运行；`/reload` 则直接执行资源重载控制动作。 */
+    @Test
+    fun `should insert prompt command before send and reload resources without creating history`() = runTest(dispatcher) {
+        val profile = profile()
+        val commands = listOf(
+            AgentPromptCommand(
+                name = "review",
+                description = "review",
+                template = $$"请审查 $1",
+                kind = AgentPromptCommandKind.PROMPT,
+                origin = AgentResourceOrigin.USER_AUTO_DISCOVERY,
+            ),
+            AgentPromptCommand(
+                name = "reload",
+                description = "reload",
+                kind = AgentPromptCommandKind.BUILTIN,
+                origin = AgentResourceOrigin.BUILTIN,
+            ),
+        )
+        val resourceSnapshot = AgentResourceSnapshot.empty().copy(version = 1, commands = commands)
+        var reloadCount = 0
+        var capturedPrompt: String? = null
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                capturedPrompt = request.prompt
+                return flowOf(AgentStreamEvent.Started, AgentStreamEvent.Completed(""))
+            }
+        }
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile), activeProfile = profile),
+            projectPath = "E:\\commands",
+            resourceSnapshotProvider = { resourceSnapshot },
+            resourceReloader = {
+                reloadCount += 1
+                resourceSnapshot.copy(version = 2)
+            },
+        )
+
+        state.refreshActiveResourceSnapshot()
+        state.updateDraft("/review src/App.kt")
+        state.sendDraft()
+        assertEquals("请审查 src/App.kt", state.ui.draft)
+        assertTrue(state.ui.activeConversation.history.isEmpty())
+
+        state.sendDraft()
+        advanceUntilIdle()
+        assertEquals("请审查 src/App.kt", capturedPrompt)
+
+        state.updateDraft("/reload")
+        state.sendDraft()
+        advanceUntilIdle()
+        assertEquals(1, reloadCount)
+        assertEquals("", state.ui.draft)
+        assertEquals(1, state.ui.activeConversation.history.count { it is AgentConversationHistoryMessage.User })
+    }
+
+    /** 未选择工作区时也应重载用户级资源，保证 `~/.agents/skills` 无需先打开项目。 */
+    @Test
+    fun `should reload user resources without an active workspace`() = runTest(dispatcher) {
+        var reloadedWorkspace: String? = null
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = emptyList(), activeProfile = null),
+            resourceReloader = { workspacePath ->
+                reloadedWorkspace = workspacePath
+                AgentResourceSnapshot.empty()
+            },
+        )
+
+        assertTrue(state.reloadAgentResources())
+        assertEquals("", reloadedWorkspace)
+    }
+
+}

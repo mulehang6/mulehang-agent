@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -35,6 +36,7 @@ import com.agent.app.design.AppSidebarBackground
 import com.agent.app.design.AppText
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
@@ -83,6 +85,11 @@ internal fun BoxScope.SettingsChangeNotificationOverlay(
     modifier: Modifier = Modifier,
 ) {
     val transientEntry = notifications.transientEntry
+    LaunchedEffect(transientEntry?.id) {
+        val entryId = transientEntry?.id ?: return@LaunchedEffect
+        delay(SETTINGS_NOTIFICATION_AUTO_DISMISS_DURATION)
+        notifications.dismissTransient(entryId)
+    }
     if (anchor == null || (!notifications.historyVisible && transientEntry == null)) return
 
     BoxWithConstraints(

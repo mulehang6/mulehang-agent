@@ -259,6 +259,7 @@ internal fun SettingsActionButton(
     emphasized: Boolean = false,
     destructive: Boolean = false,
     compact: Boolean = false,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -269,6 +270,7 @@ internal fun SettingsActionButton(
     val horizontalPadding = if (compact) 6.dp else 10.dp
     val verticalPadding = if (compact) 2.dp else 7.dp
     val color = when {
+        !enabled -> settingsItemBackground(selected = false, hovered = false).copy(alpha = 0.55f)
         emphasized -> emphasizedSettingsActionBackground(hovered = hovered, pressed = pressed)
         destructive -> AppDanger.copy(alpha = if (hovered) 0.9f else 0.62f)
         else -> settingsItemBackground(selected = false, hovered = hovered)
@@ -290,9 +292,9 @@ internal fun SettingsActionButton(
             .onPointerEvent(PointerEventType.Enter) { hovered = true }
             .onPointerEvent(PointerEventType.Exit) { hovered = false }
             .hoverable(interactionSource)
-            .clickable(interactionSource = interactionSource, onClick = onClick)
+            .clickable(interactionSource = interactionSource, enabled = enabled, onClick = onClick)
             .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        style = JewelTheme.defaultTextStyle.copy(color = AppText),
+        style = JewelTheme.defaultTextStyle.copy(color = if (enabled) AppText else AppMuted),
     )
 }
 

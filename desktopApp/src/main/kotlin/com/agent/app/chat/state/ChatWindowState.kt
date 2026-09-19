@@ -40,8 +40,10 @@ class ChatWindowState(
     internal val clock: () -> Long = System::currentTimeMillis,
     internal val workspaceDirectoryExists: (String) -> Boolean = { path -> path.isNotBlank() },
     private val resourceSnapshotProvider: (String) -> AgentResourceSnapshot? = { null },
-    private val resourceReloader: (String) -> AgentResourceSnapshot? = { null },
+    private val resourceReloader: suspend (String) -> AgentResourceSnapshot? = { null },
     internal val sessionMediaStore: SessionMediaStore? = null,
+    internal val onSessionClosed: (String, String) -> Unit = { _, _ -> },
+    private val resourceDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) {
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     internal var activeRunJob: Job? = null
@@ -51,7 +53,7 @@ class ChatWindowState(
     internal val conversationTitleJobs = mutableMapOf<String, Job>()
     internal val conversationTitleGenerationVersions = mutableMapOf<String, Int>()
     internal var snapshot by mutableStateOf(snapshot)
-    private var resourceSnapshot by mutableStateOf(AgentResourceSnapshot.empty())
+    internal var resourceSnapshot by mutableStateOf(AgentResourceSnapshot.empty())
     internal var runtimeResourceDiagnostics by mutableStateOf(emptyList<AgentResourceDiagnostic>())
 
     /** 当前窗口可选的全部 profile。 */
@@ -175,8 +177,13 @@ class ChatWindowState(
         updateDraft(nextDraft, slashStart + replacement.length)
     }
 
-    /** 手动重载当前工作区或仅用户级资源。正在运行中的请求已经携带旧快照，因此不会受影响。 */
-    fun reloadAgentResources(): Boolean {
+    /** 当前没有 Agent 任务占用 MCP 连接时才允许重载资源。 */
+    val canReloadAgentResources: Boolean
+        get() = activeRunJob == null
+
+    /** 手动重载当前工作区或仅用户级资源；运行期间拒绝重载，避免中途断开 MCP 工具。 */
+    suspend fun reloadAgentResources(): Boolean {
+        if (!canReloadAgentResources) return false
         val workspacePath = ui.activeConversationOrNull?.workspacePath.orEmpty()
         val next = resourceReloader(workspacePath) ?: return false
         resourceSnapshot = next
@@ -200,6 +207,15 @@ class ChatWindowState(
             }
             resourceSnapshot = next
         } ?: AgentResourceSnapshot.empty()
+    }
+
+    /** 发送后的资源读取离开 UI 线程，读取完成后才发布到当前界面。 */
+    internal suspend fun loadRunResourceSnapshot(workspacePath: String): AgentResourceSnapshot {
+        val next = kotlinx.coroutines.withContext(resourceDispatcher) {
+            resourceSnapshotProvider(workspacePath) ?: AgentResourceSnapshot.empty()
+        }
+        if (ui.activeConversationOrNull?.workspacePath == workspacePath) resourceSnapshot = next
+        return next
     }
 
     /** 调整当前会话的权限档位。 */

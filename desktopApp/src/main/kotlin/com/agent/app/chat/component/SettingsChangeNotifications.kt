@@ -7,9 +7,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.agent.shared.settings.model.ConfigLayer
+import com.agent.shared.settings.model.SettingsDocument
+import kotlin.time.Duration.Companion.seconds
 
 /** 本次应用会话内设置变更通知的最大保留数量。 */
 internal const val SETTINGS_CHANGE_NOTIFICATION_LIMIT = 100
+
+/** 普通浮动通知的固定展示时长；历史记录和重载横幅不受此值影响。 */
+internal val SETTINGS_NOTIFICATION_AUTO_DISMISS_DURATION = 10.seconds
 
 /** 设置变更的可见分类，仅覆盖扩展和 AI 服务。 */
 internal enum class SettingsChangeNotificationCategory {
@@ -22,6 +27,21 @@ internal fun settingsChangeScopeLabel(layer: ConfigLayer): String = when (layer)
     ConfigLayer.USER -> "全局设置"
     ConfigLayer.PROJECT -> "项目设置"
     ConfigLayer.ENVIRONMENT -> "环境设置"
+}
+
+/** 比较两次成功保存的文档，并按 MCP、Hooks 的固定顺序生成通知。 */
+internal fun savedExtensionChangeMessages(
+    previous: SettingsDocument,
+    current: SettingsDocument,
+    saveSucceeded: Boolean,
+): List<String> = buildList {
+    if (!saveSucceeded) return@buildList
+    if (previous.agentResources.mcpServers != current.agentResources.mcpServers) {
+        add("已保存 MCP 服务修改。")
+    }
+    if (previous.hooks != current.hooks) {
+        add("已保存 Agent Hooks 修改。")
+    }
 }
 
 /** 一条不含敏感配置内容的设置变更记录。 */
@@ -73,6 +93,11 @@ internal class SettingsChangeNotifications {
     /** 隐藏单条提示，不删除其历史。 */
     fun dismissTransient() {
         transientEntryId = null
+    }
+
+    /** 仅在倒计时仍对应当前通知时收起，避免旧计时器误关后来的通知。 */
+    fun dismissTransient(id: Long) {
+        if (transientEntryId == id) transientEntryId = null
     }
 
     /** 切换总历史，并避免和单条提示重叠显示。 */

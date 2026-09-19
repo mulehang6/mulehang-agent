@@ -15,12 +15,13 @@ import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ExecutionState
-import com.agent.shared.settings.model.append
 import com.agent.shared.settings.resolver.supportsImageInput
 import com.agent.shared.tool.model.QuestionAnswer
 import com.agent.shared.tool.model.QuestionPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.agent.shared.agent.api.AgentRunTiming
+import java.util.UUID
 
 /** 管理消息执行、流式事件及挂起交互的状态转换。 */
 internal class ChatRunController(private val window: ChatWindowState) {
@@ -231,11 +232,13 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 return
             }
 
-            val runResources = refreshResourceSnapshotFor(sourceConversation.workspacePath)
+            val runResources = resourceSnapshot
             when (val expansion = runResources.expandSlashCommand(prompt)) {
                 AgentCommandExpansion.ReloadResources -> {
-                    if (reloadAgentResources()) {
-                        ui = ui.copy(draft = "")
+                    scope.launch {
+                        if (reloadAgentResources()) {
+                            ui = ui.copy(draft = "")
+                        }
                     }
                     return
                 }
@@ -293,10 +296,17 @@ internal class ChatRunController(private val window: ChatWindowState) {
             }
 
             activeRunConversationId = targetConversationId
+            val traceId = UUID.randomUUID().toString()
+            val timing = AgentRunTiming(traceId)
+            timing.mark("message_accepted")
             activeRunJob = scope.launch {
                 try {
+                    val runResources = timing.phase("resource_prepare", "正在准备资源…", { event ->
+                        applyAgentEvent(targetConversationId, event)
+                    }) { loadRunResourceSnapshot(sourceConversation.workspacePath) }
                     sendMessageUseCase(
                         AgentRunRequest(
+                            traceId = traceId,
                             prompt = prompt,
                             profile = profile,
                             history = requestHistory,
@@ -307,7 +317,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                             permissionPreset = sourceConversation.permissionPreset,
                             fasterProfile = snapshot.fasterProfiles[profile.providerId],
                             sessionId = targetConversationId,
-                            hookSettings = snapshot.hookSettings.append(runResources.hookSettings),
+                            hookSettings = runResources.hookSettings,
                         ),
                     ).collect { event ->
                         applyAgentEvent(targetConversationId, event)

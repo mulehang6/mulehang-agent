@@ -1,6 +1,5 @@
 @file:OptIn(
     androidx.compose.ui.ExperimentalComposeUiApi::class,
-    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
 )
 
 package com.agent.app.chat.component
@@ -13,11 +12,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,9 +39,7 @@ import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
-import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.iconKey
-import com.agent.app.design.rememberExternalTextFieldValue
+import com.agent.app.design.JewelDialog
 import com.agent.app.platform.TerminalShellCatalog
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.SettingsDocument
@@ -47,18 +47,17 @@ import com.agent.shared.agent.resource.AgentExtensionPackageResource
 import com.agent.shared.agent.resource.AgentMcpServerResource
 import com.agent.shared.agent.resource.AgentResourceDiagnostic
 import com.agent.shared.agent.resource.AgentSkillResource
+import com.agent.shared.agent.resource.McpServerConnectionStatus
 import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
 import com.agent.shared.settings.persistence.DesktopPathResolver
 import com.agent.shared.settings.persistence.DesktopSettingsRepository
 import com.agent.shared.session.DesktopAppearancePreferences
 import com.agent.shared.session.DesktopTerminalPreferences
 import java.nio.file.Path
+import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.component.TextField
 import org.jetbrains.jewel.ui.component.VerticalScrollbar
-import org.jetbrains.jewel.ui.icons.AllIconsKeys
 
 /** 设置页可选择的主要分区。 */
 internal enum class SettingsSection(val label: String) {
@@ -104,6 +103,8 @@ internal class SettingsPanelUiState {
     var section by mutableStateOf(SettingsSection.THEME)
     var layer by mutableStateOf(ConfigLayer.USER)
     var document by mutableStateOf(SettingsDocument())
+    /** MCP 和 Hooks 保存通知只与最近一次成功载入或保存的文档比较。 */
+    var lastSavedDocument by mutableStateOf(SettingsDocument())
     var search by mutableStateOf("")
     var expandedProviderId by mutableStateOf<String?>(null)
     var feedback by mutableStateOf<String?>(null)
@@ -112,8 +113,17 @@ internal class SettingsPanelUiState {
     /** Provider 编辑器输入只在成功保存后汇总为一条通知。 */
     var providerFieldsChangedSinceLastSave by mutableStateOf(false)
     /** 未写回文档的表单错误按稳定字段键保存，防止 JSON 半成品被误保存。 */
-    val providerValidationErrors = mutableStateMapOf<String, String>()
+    val settingsValidationErrors = mutableStateMapOf<String, String>()
+    /** 设置分类切换时保留、配置层级切换时重置的 MCP JSON 临时输入。 */
+    val mcpJsonEditorState = McpJsonEditorState()
+    /** 任一资源区域保存成功后持续保留，直到运行时重载成功。 */
+    var resourceReloadPending by mutableStateOf(false)
+    /** MCP 配置与当前连接代不一致时，列表必须隐藏旧工具数量。 */
+    var mcpReloadPending by mutableStateOf(false)
+    /** 关闭含草稿的设置页前显示的确认状态。 */
+    var discardConfirmationVisible by mutableStateOf(false)
     val contentScrollState = ScrollState(initial = 0)
+    val anchors = SettingsAnchorState(contentScrollState)
 }
 
 /** 参考 IDE 设置页层级的右侧设置 Island。 */
@@ -132,11 +142,13 @@ internal fun SettingsPanel(
     onFocus: () -> Unit,
     onClose: () -> Unit,
     onSettingsSaved: () -> Unit,
-    onReloadResources: () -> Boolean,
+    onReloadResources: suspend () -> Boolean,
+    canReloadResources: Boolean,
     extensionPackages: List<AgentExtensionPackageResource>,
     loadedSkills: List<AgentSkillResource>,
     resourceDiagnostics: List<AgentResourceDiagnostic>,
     mcpServers: List<AgentMcpServerResource>,
+    mcpConnectionStatuses: List<McpServerConnectionStatus>,
     uiState: SettingsPanelUiState,
     modifier: Modifier = Modifier,
 ) {
@@ -147,11 +159,14 @@ internal fun SettingsPanel(
         )
     }
     LaunchedEffect(uiState.layer, repository) {
-        uiState.document = repository.loadDocument(uiState.layer)
+        val loadedDocument = repository.loadDocument(uiState.layer)
+        uiState.document = loadedDocument
+        uiState.lastSavedDocument = loadedDocument
         uiState.expandedProviderId = null
         uiState.feedback = null
         uiState.providerFieldsChangedSinceLastSave = false
-        uiState.providerValidationErrors.clear()
+        uiState.settingsValidationErrors.clear()
+        uiState.mcpJsonEditorState.reset()
     }
     LaunchedEffect(uiState.section, uiState.layer) {
         uiState.contentScrollState.scrollTo(0)
@@ -168,7 +183,11 @@ internal fun SettingsPanel(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val layout = settingsPanelLayout(maxWidth.value.toInt())
             Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-                SettingsTitleTab(onClose = onClose)
+                SettingsTitleTab(
+                    onClose = {
+                        if (hasUnsavedSettingsChanges(uiState)) uiState.discardConfirmationVisible = true else onClose()
+                    },
+                )
                 SettingsSearchField(value = uiState.search, onValueChange = { uiState.search = it })
                 SettingsScopeBar(
                     layer = uiState.layer,
@@ -179,82 +198,57 @@ internal fun SettingsPanel(
                     },
                 )
                 val visibleSections = settingsSectionsFor(uiState.layer)
-                if (layout == SettingsPanelLayout.COMPACT) {
-                    Column(modifier = Modifier.fillMaxSize().padding(top = 14.dp)) {
-                        SettingsNavigation(
-                            section = uiState.section,
-                            sections = visibleSections,
-                            compact = true,
-                            onSectionChange = { section, _ ->
-                                uiState.section = section
-                            },
-                        )
-                        SettingsPanelContent(
-                            uiState = uiState,
-                            repository = repository,
-                            themeMode = themeMode,
-                            onThemeChanged = onThemeChanged,
-                            appearance = appearance,
-                            onAppearanceChanged = onAppearanceChanged,
-                            onAppearanceChangeFinished = onAppearanceChangeFinished,
-                            terminalPreferences = terminalPreferences,
-                            terminalShellCatalog = terminalShellCatalog,
-                            onTerminalPreferencesChanged = onTerminalPreferencesChanged,
-                            onSettingsSaved = onSettingsSaved,
-                            onReloadResources = onReloadResources,
-                            projectRoot = projectRoot,
-                            userHome = userHome,
-                            extensionPackages = extensionPackages,
-                            loadedSkills = loadedSkills,
-                            resourceDiagnostics = resourceDiagnostics,
-                            mcpServers = mcpServers,
-                            compact = true,
-                            scrollState = uiState.contentScrollState,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(top = 16.dp, bottom = 8.dp),
-                        )
-                    }
-                } else {
-                    Row(modifier = Modifier.fillMaxSize().padding(top = 18.dp)) {
-                        SettingsNavigation(
-                            section = uiState.section,
-                            sections = visibleSections,
-                            onSectionChange = { section, _ ->
-                                uiState.section = section
-                            },
-                        )
-                        SettingsPanelContent(
-                            uiState = uiState,
-                            repository = repository,
-                            themeMode = themeMode,
-                            onThemeChanged = onThemeChanged,
-                            appearance = appearance,
-                            onAppearanceChanged = onAppearanceChanged,
-                            onAppearanceChangeFinished = onAppearanceChangeFinished,
-                            terminalPreferences = terminalPreferences,
-                            terminalShellCatalog = terminalShellCatalog,
-                            onTerminalPreferencesChanged = onTerminalPreferencesChanged,
-                            onSettingsSaved = onSettingsSaved,
-                            onReloadResources = onReloadResources,
-                            projectRoot = projectRoot,
-                            userHome = userHome,
-                            extensionPackages = extensionPackages,
-                            loadedSkills = loadedSkills,
-                            resourceDiagnostics = resourceDiagnostics,
-                            mcpServers = mcpServers,
-                            compact = false,
-                            scrollState = uiState.contentScrollState,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .padding(start = 28.dp, end = 18.dp, bottom = 18.dp)
-                                .widthIn(max = 760.dp),
-                        )
-                    }
+                ResponsiveSettingsLayout(
+                    compact = layout == SettingsPanelLayout.COMPACT,
+                    section = uiState.section,
+                    sections = visibleSections,
+                    anchors = uiState.anchors,
+                    onSectionChange = { section, _ -> uiState.section = section },
+                ) { compact ->
+                    SettingsPanelContent(
+                        uiState = uiState,
+                        repository = repository,
+                        themeMode = themeMode,
+                        onThemeChanged = onThemeChanged,
+                        appearance = appearance,
+                        onAppearanceChanged = onAppearanceChanged,
+                        onAppearanceChangeFinished = onAppearanceChangeFinished,
+                        terminalPreferences = terminalPreferences,
+                        terminalShellCatalog = terminalShellCatalog,
+                        onTerminalPreferencesChanged = onTerminalPreferencesChanged,
+                        onSettingsSaved = onSettingsSaved,
+                        onReloadResources = onReloadResources,
+                        canReloadResources = canReloadResources,
+                        projectRoot = projectRoot,
+                        userHome = userHome,
+                        extensionPackages = extensionPackages,
+                        loadedSkills = loadedSkills,
+                        resourceDiagnostics = resourceDiagnostics,
+                        mcpServers = mcpServers,
+                        mcpConnectionStatuses = mcpConnectionStatuses,
+                        compact = compact,
+                        scrollState = uiState.contentScrollState,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
             }
+        }
+    }
+    if (uiState.discardConfirmationVisible) {
+        JewelDialog(
+            title = "放弃未保存的修改？",
+            confirmLabel = "放弃修改",
+            dismissLabel = "继续编辑",
+            onConfirm = {
+                uiState.document = uiState.lastSavedDocument
+                uiState.settingsValidationErrors.clear()
+                uiState.mcpJsonEditorState.reset()
+                uiState.discardConfirmationVisible = false
+                onClose()
+            },
+            onDismiss = { uiState.discardConfirmationVisible = false },
+        ) {
+            Text("MCP、Hooks、扩展或 AI 服务中仍有未保存内容。")
         }
     }
 }
@@ -273,19 +267,39 @@ private fun SettingsPanelContent(
     terminalShellCatalog: TerminalShellCatalog,
     onTerminalPreferencesChanged: (DesktopTerminalPreferences) -> Unit,
     onSettingsSaved: () -> Unit,
-    onReloadResources: () -> Boolean,
+    onReloadResources: suspend () -> Boolean,
+    canReloadResources: Boolean,
     projectRoot: Path?,
     userHome: Path,
     extensionPackages: List<AgentExtensionPackageResource>,
     loadedSkills: List<AgentSkillResource>,
     resourceDiagnostics: List<AgentResourceDiagnostic>,
     mcpServers: List<AgentMcpServerResource>,
+    mcpConnectionStatuses: List<McpServerConnectionStatus>,
     compact: Boolean,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(uiState.anchors.viewportWidth) {
+        androidx.compose.runtime.withFrameNanos { }
+        uiState.anchors.restoreReading()
+    }
+    val triggerResourceReload: () -> Unit = {
+        scope.launch {
+            if (onReloadResources()) {
+                uiState.resourceReloadPending = false
+                uiState.mcpReloadPending = false
+                uiState.feedback = "资源已重新加载；当前运行不会改变。"
+            } else {
+                uiState.feedback = "资源重新加载失败，当前运行时保持不变。"
+            }
+        }
+    }
     Column(modifier = modifier) {
-        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f).fillMaxSize().onGloballyPositioned {
+            uiState.anchors.updateViewport(it.size.width, it.positionInRoot().y)
+        }) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -293,6 +307,7 @@ private fun SettingsPanelContent(
                     .padding(end = if (shouldShowSettingsContentScrollbar(scrollState.maxValue)) 10.dp else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
+                CompositionLocalProvider(LocalSettingsAnchors provides uiState.anchors, LocalSettingsCompact provides compact) {
                 when (uiState.section) {
                     SettingsSection.APPEARANCE -> AppearanceSettingsContent(
                         appearance = appearance,
@@ -328,17 +343,17 @@ private fun SettingsPanelContent(
                         },
                         onProviderFieldsChanged = { uiState.providerFieldsChangedSinceLastSave = true },
                         onValidationErrorChange = { key, error ->
-                            if (error == null) uiState.providerValidationErrors.remove(key)
-                            else uiState.providerValidationErrors[key] = error
+                            if (error == null) uiState.settingsValidationErrors.remove(key)
+                            else uiState.settingsValidationErrors[key] = error
                         },
                         onValidationErrorsRenamed = { oldPrefix, newPrefix ->
-                            renameSettingsValidationErrors(uiState.providerValidationErrors, oldPrefix, newPrefix)
+                            renameSettingsValidationErrors(uiState.settingsValidationErrors, oldPrefix, newPrefix)
                         },
                         onValidationErrorsCleared = { prefix ->
-                            uiState.providerValidationErrors.keys
+                            uiState.settingsValidationErrors.keys
                                 .filter { key -> key == prefix || key.startsWith("$prefix:") }
                                 .toList()
-                                .forEach(uiState.providerValidationErrors::remove)
+                                .forEach(uiState.settingsValidationErrors::remove)
                         },
                     )
 
@@ -351,6 +366,22 @@ private fun SettingsPanelContent(
                         loadedSkills = loadedSkills,
                         resourceDiagnostics = resourceDiagnostics,
                         mcpServers = mcpServers,
+                        savedMcpServers = uiState.lastSavedDocument.agentResources.mcpServers,
+                        savedHooks = uiState.lastSavedDocument.hooks,
+                        mcpConnectionStatuses = mcpConnectionStatuses,
+                        mcpJsonEditorState = uiState.mcpJsonEditorState,
+                        mcpReloadPending = uiState.mcpReloadPending,
+                        mcpRetryEnabled = canReloadResources,
+                        onRetryMcp = triggerResourceReload,
+                        onSaveMcp = {
+                            persistSettingsArea(uiState, repository, SettingsSaveArea.MCP, onSettingsSaved)
+                        },
+                        onSaveHooks = {
+                            persistSettingsArea(uiState, repository, SettingsSaveArea.HOOKS, onSettingsSaved)
+                        },
+                        onSaveExtensions = {
+                            persistSettingsArea(uiState, repository, SettingsSaveArea.EXTENSIONS, onSettingsSaved)
+                        },
                         onDocumentChange = { uiState.document = it },
                         onChangeNotification = { message ->
                             uiState.changeNotifications.record(
@@ -358,8 +389,13 @@ private fun SettingsPanelContent(
                                 "${settingsChangeScopeLabel(uiState.layer)}：$message",
                             )
                         },
-                        onReloadResources = onReloadResources,
+                        onValidationErrorChange = { key, error ->
+                            if (error == null) uiState.settingsValidationErrors.remove(key)
+                            else uiState.settingsValidationErrors[key] = error
+                        },
+                        onResourceFilesChanged = { uiState.resourceReloadPending = true },
                     )
+                }
                 }
             }
             if (shouldShowSettingsContentScrollbar(scrollState.maxValue)) {
@@ -372,75 +408,33 @@ private fun SettingsPanelContent(
                 )
             }
         }
-        if (uiState.section == SettingsSection.PROVIDERS || uiState.section == SettingsSection.EXTENSIONS) {
+        if (uiState.section == SettingsSection.EXTENSIONS) {
+            uiState.feedback?.let { feedback ->
+                Text(
+                    feedback,
+                    modifier = Modifier.padding(top = 12.dp),
+                    style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+                )
+            }
+        }
+        if (uiState.section == SettingsSection.EXTENSIONS && uiState.resourceReloadPending) {
+            ResourceReloadBanner(
+                reloadEnabled = canReloadResources,
+                onReload = triggerResourceReload,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+        if (uiState.section == SettingsSection.PROVIDERS) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SettingsActionButton("保存", emphasized = true) {
-                    val validation = validateSettingsForSave(uiState.document, uiState.providerValidationErrors)
-                    if (validation == null) {
-                        runCatching { repository.saveDocument(uiState.layer, uiState.document) }
-                            .onSuccess {
-                                uiState.feedback = "已保存，后续任务将使用最新配置。"
-                                if (uiState.section == SettingsSection.PROVIDERS && uiState.providerFieldsChangedSinceLastSave) {
-                                    uiState.changeNotifications.record(
-                                        SettingsChangeNotificationCategory.AI_SERVICES,
-                                        "${settingsChangeScopeLabel(uiState.layer)}：已保存 AI 服务修改。",
-                                    )
-                                    uiState.providerFieldsChangedSinceLastSave = false
-                                }
-                                onSettingsSaved()
-                            }
-                            .onFailure { uiState.feedback = "保存失败：${it.message ?: "未知错误"}" }
-                    } else {
-                        uiState.feedback = validation
-                    }
+                    persistSettingsArea(uiState, repository, SettingsSaveArea.PROVIDERS, onSettingsSaved)
                 }
                 uiState.feedback?.let { Text(it, style = JewelTheme.defaultTextStyle.copy(color = AppMuted)) }
             }
         }
     }
-}
-/** 设置页左上角使用与终端一致的 IDEA Islands 页签。 */
-@Composable
-private fun SettingsTitleTab(
-    onClose: () -> Unit,
-) {
-    IslandsTabStrip(
-        tabs = listOf(
-            IslandsTab(
-                label = "设置",
-                selected = true,
-                iconKey = RightRailGlyph.SETTINGS.iconKey,
-                closable = true,
-                onClick = {},
-                onClose = onClose,
-            ),
-        ),
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-/** 仅在设置内容真实溢出时绘制右侧滚动条。 */
-internal fun shouldShowSettingsContentScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
-
-/** 带焦点边框的紧凑设置搜索框。 */
-@Composable
-private fun SettingsSearchField(value: String, onValueChange: (String) -> Unit) {
-    val editorValue = rememberExternalTextFieldValue(value)
-    TextField(
-        value = editorValue.value,
-        onValueChange = { nextValue ->
-            editorValue.value = nextValue
-            onValueChange(nextValue.text)
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 24.dp)
-            .height(38.dp),
-        placeholder = { Text("搜索") },
-        leadingIcon = { Icon(AllIconsKeys.Actions.Find, "搜索") },
-    )
 }

@@ -148,7 +148,7 @@ class SettingsPanelInteractionTest {
     @Test
     fun `should switch settings content to compact layout below threshold`() {
         assertEquals(600, SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP)
-        assertEquals(96, SETTINGS_NAVIGATION_WIDE_WIDTH_DP)
+        assertEquals(120, SETTINGS_NAVIGATION_WIDE_WIDTH_DP)
         assertEquals(SettingsPanelLayout.COMPACT, settingsPanelLayout(599))
         assertEquals(SettingsPanelLayout.WIDE, settingsPanelLayout(600))
     }

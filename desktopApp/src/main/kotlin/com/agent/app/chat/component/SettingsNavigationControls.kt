@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, org.jetbrains.jewel.foundation.ExperimentalJewelApi::class)
 
 package com.agent.app.chat.component
 
@@ -15,6 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import org.jetbrains.jewel.ui.component.ListComboBox
+import org.jetbrains.jewel.ui.component.SimpleListItem
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,7 +40,7 @@ import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.Tooltip
 
 /** 宽屏设置分类栏的固定列宽，给表单内容保留足够可用空间。 */
-internal const val SETTINGS_NAVIGATION_WIDE_WIDTH_DP = 96
+internal const val SETTINGS_NAVIGATION_WIDE_WIDTH_DP = 120
 
 /** 使用自然宽度的 Islands 页签切换用户级与项目级配置。 */
 @Composable
@@ -83,22 +91,34 @@ internal fun SettingsNavigation(
     sections: List<SettingsSection> = SettingsSection.entries,
     onSectionChange: (SettingsSection, Boolean) -> Unit,
     compact: Boolean = false,
+    anchors: SettingsAnchorState? = null,
 ) {
+    val scope = rememberCoroutineScope()
+    val inputMode = LocalInputModeManager.current
+    val navigate: (ExtensionAnchor) -> Unit = { anchor ->
+        scope.launch { anchors?.navigate(anchor, inputMode.inputMode != InputMode.Keyboard) }
+    }
     if (compact) {
-        IslandsTabStrip(
-            tabs = sections.map { entry ->
-                IslandsTab(
-                    label = entry.label,
-                    selected = entry == section,
-                    onClick = { onSectionChange(entry, false) },
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ListComboBox(
+                items = sections, selectedIndex = sections.indexOf(section),
+                onSelectedItemChange = { sections.getOrNull(it)?.let { entry -> onSectionChange(entry, false) } },
+                itemKeys = { _, entry -> entry.name }, modifier = Modifier.weight(1f),
+                style = rememberProviderProtocolComboBoxStyle(),
+            ) { entry, selected, active -> SimpleListItem(entry.label, selected, active) }
+            if (section == SettingsSection.EXTENSIONS && anchors != null) {
+                ListComboBox(
+                    items = ExtensionAnchor.entries, selectedIndex = ExtensionAnchor.entries.indexOf(anchors.active),
+                    onSelectedItemChange = { ExtensionAnchor.entries.getOrNull(it)?.let(navigate) },
+                    itemKeys = { _, entry -> entry.name }, modifier = Modifier.weight(1f),
+                    style = rememberProviderProtocolComboBoxStyle(),
+                ) { entry, selected, active -> SimpleListItem(entry.label, selected, active) }
+            }
+        }
         return
     }
     Column(
-        modifier = Modifier.width(SETTINGS_NAVIGATION_WIDE_WIDTH_DP.dp),
+        modifier = Modifier.width(SETTINGS_NAVIGATION_WIDE_WIDTH_DP.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         sections.forEach { entry ->
@@ -107,6 +127,13 @@ internal fun SettingsNavigation(
                 selected = entry == section,
                 onClick = { onSectionChange(entry, false) },
             )
+            if (entry == SettingsSection.EXTENSIONS && section == entry && anchors != null) {
+                Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ExtensionAnchor.entries.forEach { anchor ->
+                        SettingsNavigationItem(anchor.label, anchors.active == anchor) { navigate(anchor) }
+                    }
+                }
+            }
         }
     }
 }

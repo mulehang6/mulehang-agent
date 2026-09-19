@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,8 @@ import com.agent.shared.agent.recording.JsonLinesAgentRunRecorder
 import com.agent.shared.agent.recording.RecordingAgentGateway
 import com.agent.shared.agent.resource.AgentResourceRuntime
 import com.agent.shared.agent.resource.DesktopAgentResourceRequestFactory
+import com.agent.shared.agent.resource.McpConnectionManager
+import com.agent.shared.agent.resource.McpToolRegistryBridge
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.session.DesktopAppSessionRepository
@@ -123,6 +126,8 @@ internal fun MulehangDesktopApp(
         DesktopToolInteractionCoordinator()
     }
     val agentResourceRuntime = remember { AgentResourceRuntime() }
+    val mcpConnectionManager = remember { McpConnectionManager() }
+    val mcpConnectionStatuses by mcpConnectionManager.statuses.collectAsState()
     val sessionMediaStore = remember(userHome) { DesktopSessionMediaStore(userHome) }
     val stateHolder = remember { mutableStateOf<ChatWindowState?>(null) }
     val appScope = rememberCoroutineScope()
@@ -131,8 +136,11 @@ internal fun MulehangDesktopApp(
         scope = appScope,
         reportError = { message -> stateHolder.value?.setPersistenceError(message) },
     )
-    val koogGateway = remember(toolInteractionCoordinator) {
-        KoogAgentGateway(interactionBridge = toolInteractionCoordinator)
+    val koogGateway = remember(toolInteractionCoordinator, mcpConnectionManager) {
+        KoogAgentGateway(
+            interactionBridge = toolInteractionCoordinator,
+            mcpToolRegistryBridge = McpToolRegistryBridge(mcpConnectionManager),
+        )
     }
     val windowState = remember {
         ChatWindowState(
@@ -154,21 +162,35 @@ internal fun MulehangDesktopApp(
                 resourceLoadRequest(userHome, workspacePath)?.let(agentResourceRuntime::snapshotFor)
             },
             resourceReloader = { workspacePath ->
-                resourceLoadRequest(userHome, workspacePath)?.let(agentResourceRuntime::reload)
+                resourceLoadRequest(userHome, workspacePath)?.let { request ->
+                    val candidate = agentResourceRuntime.prepareReload(request)
+                    if (mcpConnectionManager.reload(candidate.toRuntimeResources().mcpServers)) {
+                        agentResourceRuntime.publish(candidate)
+                    } else {
+                        null
+                    }
+                }
             },
             workspaceDirectoryExists = { path ->
                 path.isNotBlank() && runCatching { Files.isDirectory(Paths.get(path)) }.getOrDefault(false)
             },
             sessionMediaStore = sessionMediaStore,
+            onSessionClosed = koogGateway::endSession,
         )
     }
     stateHolder.value = windowState
     val requestClose = remember(windowState, koogGateway, onCloseRequest) {
         {
-            windowState.ui.tasks.forEach { conversation ->
-                koogGateway.endSession(conversation.id, conversation.workspacePath)
+            windowState.cancelActiveRun()
+            appScope.launch {
+                windowState.ui.tasks.forEach { conversation ->
+                    koogGateway.endSession(conversation.id, conversation.workspacePath)
+                }
+                koogGateway.shutdown()
+                mcpConnectionManager.close()
+                windowState.flushPersistence(onCloseRequest)
             }
-            windowState.flushPersistence(onCloseRequest)
+            Unit
         }
     }
 
@@ -183,7 +205,7 @@ internal fun MulehangDesktopApp(
         } ?: run {
             projectTrustPrompt = null
         }
-        windowState.refreshActiveResourceSnapshot()
+        windowState.reloadAgentResources()
     }
     LaunchedEffect(Unit) {
         runCatching { taskPersistenceCoordinator.load() }
@@ -265,6 +287,7 @@ internal fun MulehangDesktopApp(
                 Box(modifier = contentModifier) {
                     ChatScreen(
                         state = windowState,
+                        mcpConnectionStatuses = mcpConnectionStatuses,
                         sidebarVisible = sidebarVisible,
                         onSidebarVisibilityChange = { visible -> sidebarVisible = visible },
                         projectRoot = projectRootState.value,

@@ -22,20 +22,52 @@ internal fun ResponsiveSettingsLayout(
     compact: Boolean,
     section: SettingsSection,
     sections: List<SettingsSection>,
-    anchors: SettingsAnchorState,
-    onSectionChange: (SettingsSection, Boolean) -> Unit,
+    expandedSections: Set<SettingsSection>,
+    appearanceSubsections: List<AppearanceSubsection>,
+    appearanceSubsection: AppearanceSubsection,
+    extensionSubsections: List<ExtensionSubsection>,
+    extensionSubsection: ExtensionSubsection,
+    onSectionChange: (SettingsSection) -> Unit,
+    onParentClick: (SettingsSection) -> Unit,
+    onAppearanceSubsectionChange: (AppearanceSubsection) -> Unit,
+    onExtensionSubsectionChange: (ExtensionSubsection) -> Unit,
     content: @Composable (Boolean) -> Unit,
 ) {
     val latestContent by rememberUpdatedState(content)
     val movableContent = remember { movableContentOf<Boolean> { latestContent(it) } }
     if (compact) {
         Column(Modifier.fillMaxSize().padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingsNavigation(section, sections, onSectionChange, compact = true, anchors = anchors)
+            SettingsNavigation(
+                section = section,
+                sections = sections,
+                onSectionChange = onSectionChange,
+                onParentClick = onParentClick,
+                compact = true,
+                expandedSections = expandedSections,
+                appearanceSubsections = appearanceSubsections,
+                appearanceSubsection = appearanceSubsection,
+                extensionSubsections = extensionSubsections,
+                extensionSubsection = extensionSubsection,
+                onAppearanceSubsectionChange = onAppearanceSubsectionChange,
+                onExtensionSubsectionChange = onExtensionSubsectionChange,
+            )
             Box(Modifier.weight(1f).fillMaxWidth()) { movableContent(true) }
         }
     } else {
         Row(Modifier.fillMaxSize().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            SettingsNavigation(section, sections, onSectionChange, anchors = anchors)
+            SettingsNavigation(
+                section = section,
+                sections = sections,
+                onSectionChange = onSectionChange,
+                onParentClick = onParentClick,
+                expandedSections = expandedSections,
+                appearanceSubsections = appearanceSubsections,
+                appearanceSubsection = appearanceSubsection,
+                extensionSubsections = extensionSubsections,
+                extensionSubsection = extensionSubsection,
+                onAppearanceSubsectionChange = onAppearanceSubsectionChange,
+                onExtensionSubsectionChange = onExtensionSubsectionChange,
+            )
             Box(Modifier.weight(1f).fillMaxSize().widthIn(max = 760.dp)) { movableContent(false) }
         }
     }

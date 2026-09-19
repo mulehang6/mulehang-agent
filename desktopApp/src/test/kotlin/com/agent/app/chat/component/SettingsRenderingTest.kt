@@ -9,8 +9,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.semantics.SemanticsNode
@@ -24,7 +22,6 @@ import com.agent.shared.settings.model.*
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.SwingUtilities
-import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 
 /** 使用真实 Compose/Jewel 内容离屏渲染，不启动应用或读取用户设置。 */
@@ -34,7 +31,8 @@ class SettingsRenderingTest {
     fun rendersResponsiveSettingsAndPreservesComposition() {
         SwingUtilities.invokeAndWait {
             val width = mutableStateOf(900)
-            val anchors = SettingsAnchorState(ScrollState(0))
+            val scroll = ScrollState(0)
+            val subsection = mutableStateOf(ExtensionSubsection.PACKAGES)
             var rememberedDraft: MutableState<String>? = null
             var mounts = 0
             val scene = ImageComposeScene(900, 900) {
@@ -45,17 +43,23 @@ class SettingsRenderingTest {
                             compact = width.value < 600,
                             section = SettingsSection.EXTENSIONS,
                             sections = SettingsSection.entries,
-                            anchors = anchors,
-                            onSectionChange = { _, _ -> },
+                            expandedSections = setOf(SettingsSection.EXTENSIONS),
+                            appearanceSubsections = appearanceSubsectionsFor(ConfigLayer.USER),
+                            appearanceSubsection = AppearanceSubsection.THEME,
+                            extensionSubsections = ExtensionSubsection.entries,
+                            extensionSubsection = subsection.value,
+                            onSectionChange = {},
+                            onParentClick = {},
+                            onAppearanceSubsectionChange = {},
+                            onExtensionSubsectionChange = { subsection.value = it },
                         ) { compact ->
                             val draft = remember { mutableStateOf("未保存的 Git 草稿").also { mounts++ } }
                             rememberedDraft = draft
-                            Box(Modifier.fillMaxSize().onGloballyPositioned {
-                                anchors.updateViewport(it.size.width, it.positionInRoot().y)
-                            }) {
-                                Column(Modifier.fillMaxSize().verticalScroll(anchors.scroll), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                                    CompositionLocalProvider(LocalSettingsCompact provides compact, LocalSettingsAnchors provides anchors) {
+                            Box(Modifier.fillMaxSize()) {
+                                Column(Modifier.fillMaxSize().verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                                    CompositionLocalProvider(LocalSettingsCompact provides compact) {
                                         ExtensionSettingsContent(
+                                            subsection = subsection.value,
                                             document = SettingsDocument(hooks = AgentHookSettings(mapOf(
                                                 AgentHookEvent.SESSION_START to listOf(AgentHookMatcher(hooks = listOf(
                                                     AgentHookCommand(command = "jbcontext index --silent", runAsync = true, timeout = 2),
@@ -79,6 +83,14 @@ class SettingsRenderingTest {
             }
             try {
                 repeat(3) { scene.render().close() }
+                assertTrue(
+                    ExtensionSubsection.entries.all { entry -> containsText(scene, entry) },
+                    "宽屏必须显示完整的扩展子菜单",
+                )
+                assertTrue(
+                    nodes(scene).any { it.config.getOrNull(SemanticsProperties.StateDescription) == "已展开" },
+                    "宽屏父项必须暴露展开状态",
+                )
                 val packageField = nodes(scene).first { it.config.contains(SemanticsActions.SetText) }
                 assertTrue(packageField.config[SemanticsActions.SetText].action!!.invoke(AnnotatedString("draft-package")))
                 for (nextWidth in listOf(900, 600, 599, 480, 360, 900)) {
@@ -87,18 +99,19 @@ class SettingsRenderingTest {
                     assertEquals(1, mounts, "切换宽度不得销毁内容")
                     assertEquals("未保存的 Git 草稿", rememberedDraft?.value)
                     assertTrue(nodes(scene).any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "draft-package" })
-                    assertEquals(ExtensionAnchor.entries.toSet(), anchors.positions.keys)
                     save(scene, "settings-${nextWidth}dp", cropWidth = nextWidth)
                 }
-                runBlocking { anchors.navigate(ExtensionAnchor.HOOKS, animate = false) }
+                subsection.value = ExtensionSubsection.HOOKS
                 repeat(2) { scene.render().close() }
-                assertTrue(anchors.scroll.value > 0)
-                save(scene, "settings-hooks-900dp")
+                assertTrue(containsAgentHooksText(scene))
+                save(scene, "settings-hooks-page-900dp")
                 width.value = 360
                 repeat(3) { scene.render().close() }
-                runBlocking { anchors.navigate(ExtensionAnchor.HOOKS, animate = false) }
+                assertTrue(containsAgentHooksText(scene))
+                subsection.value = ExtensionSubsection.PACKAGES
                 repeat(2) { scene.render().close() }
-                save(scene, "settings-hooks-360dp", cropWidth = 360)
+                assertTrue(nodes(scene).any { it.config.getOrNull(SemanticsProperties.EditableText)?.text == "draft-package" })
+                save(scene, "settings-packages-page-360dp", cropWidth = 360)
             } finally { scene.close() }
         }
     }
@@ -146,4 +159,16 @@ class SettingsRenderingTest {
         fun flatten(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::flatten)
         return scene.semanticsOwners.flatMap { flatten(it.rootSemanticsNode) }
     }
+
+    /** 读取真实 Compose 文本语义，验证页面切换没有继续渲染旧子页。 */
+    private fun containsAgentHooksText(scene: ImageComposeScene): Boolean =
+        nodes(scene).any { node ->
+            node.config.getOrNull(SemanticsProperties.Text).orEmpty().any { text -> text.text == "Agent Hooks" }
+        }
+
+    /** 判断导航或内容中是否存在指定的可访问文本。 */
+    private fun containsText(scene: ImageComposeScene, expected: ExtensionSubsection): Boolean =
+        nodes(scene).any { node ->
+            node.config.getOrNull(SemanticsProperties.Text).orEmpty().any { text -> text.text == expected.label }
+        }
 }

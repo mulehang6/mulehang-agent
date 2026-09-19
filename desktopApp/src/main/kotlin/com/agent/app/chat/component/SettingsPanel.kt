@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -61,10 +59,15 @@ import org.jetbrains.jewel.ui.component.VerticalScrollbar
 /** 设置页可选择的主要分区。 */
 internal enum class SettingsSection(val label: String) {
     APPEARANCE("外观"),
-    THEME("主题"),
     TOOLS("工具"),
     PROVIDERS("AI 服务"),
     EXTENSIONS("扩展"),
+}
+
+/** 外观分类下的二级设置；外观编辑器只在用户级范围开放。 */
+internal enum class AppearanceSubsection(val label: String) {
+    OVERVIEW("概览"),
+    THEME("主题"),
 }
 
 /**
@@ -72,17 +75,30 @@ internal enum class SettingsSection(val label: String) {
  */
 internal fun settingsSectionsFor(layer: ConfigLayer): List<SettingsSection> = when (layer) {
     ConfigLayer.USER -> SettingsSection.entries
-    ConfigLayer.PROJECT -> listOf(SettingsSection.THEME, SettingsSection.EXTENSIONS)
-    ConfigLayer.ENVIRONMENT -> listOf(SettingsSection.THEME)
+    ConfigLayer.PROJECT -> listOf(SettingsSection.APPEARANCE, SettingsSection.EXTENSIONS)
+    ConfigLayer.ENVIRONMENT -> listOf(SettingsSection.APPEARANCE)
+}
+
+/** 根据配置范围返回外观下可编辑的二级设置。 */
+internal fun appearanceSubsectionsFor(layer: ConfigLayer): List<AppearanceSubsection> = when (layer) {
+    ConfigLayer.USER -> AppearanceSubsection.entries
+    ConfigLayer.PROJECT, ConfigLayer.ENVIRONMENT -> listOf(AppearanceSubsection.THEME)
 }
 
 /**
- * 切换配置范围后保留仍可用的分类，否则安全回退到主题分类。
+ * 切换配置范围后保留仍可用的分类，否则安全回退到外观分类。
  */
 internal fun settingsSectionAfterScopeChange(
     currentSection: SettingsSection,
     nextLayer: ConfigLayer,
-): SettingsSection = currentSection.takeIf { it in settingsSectionsFor(nextLayer) } ?: SettingsSection.THEME
+): SettingsSection = currentSection.takeIf { it in settingsSectionsFor(nextLayer) } ?: SettingsSection.APPEARANCE
+
+/** 切换配置范围后保留外观二级项，否则回退到该范围的首个可用项。 */
+internal fun appearanceSubsectionAfterScopeChange(
+    currentSubsection: AppearanceSubsection,
+    nextLayer: ConfigLayer,
+): AppearanceSubsection = currentSubsection.takeIf { it in appearanceSubsectionsFor(nextLayer) }
+    ?: appearanceSubsectionsFor(nextLayer).first()
 
 internal const val SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP = 600
 
@@ -99,7 +115,13 @@ internal fun settingsPanelLayout(widthDp: Int): SettingsPanelLayout =
 /** 跨抽屉布局重组保留的设置页交互状态。 */
 @Stable
 internal class SettingsPanelUiState {
-    var section by mutableStateOf(SettingsSection.THEME)
+    var section by mutableStateOf(SettingsSection.APPEARANCE)
+    /** 保留原先打开设置页时直接进入主题的行为，同时让主题归属于外观。 */
+    var appearanceSubsection by mutableStateOf(AppearanceSubsection.THEME)
+    /** 当前扩展页；切换扩展子页不会重建 MCP JSON 编辑状态。 */
+    var extensionSubsection by mutableStateOf(ExtensionSubsection.OVERVIEW)
+    /** 宽屏侧栏允许多个父项同时展开，离开父项后不自动收起；首次打开由用户主动展开。 */
+    var expandedSections by mutableStateOf(emptySet<SettingsSection>())
     var layer by mutableStateOf(ConfigLayer.USER)
     var document by mutableStateOf(SettingsDocument())
     /** MCP 和 Hooks 保存通知只与最近一次成功载入或保存的文档比较。 */
@@ -122,7 +144,37 @@ internal class SettingsPanelUiState {
     /** 关闭含草稿的设置页前显示的确认状态。 */
     var discardConfirmationVisible by mutableStateOf(false)
     val contentScrollState = ScrollState(initial = 0)
-    val anchors = SettingsAnchorState(contentScrollState)
+
+    /** 点击父项时展开并进入第一个子页；再次点击当前已展开父项只收起导航。 */
+    fun selectParent(nextSection: SettingsSection) {
+        if (nextSection in expandedSections && section == nextSection) {
+            expandedSections = expandedSections - nextSection
+            return
+        }
+        expandedSections = expandedSections + nextSection
+        section = nextSection
+        when (nextSection) {
+            SettingsSection.APPEARANCE -> appearanceSubsection = appearanceSubsectionsFor(layer).first()
+            SettingsSection.EXTENSIONS -> extensionSubsection = ExtensionSubsection.OVERVIEW
+            SettingsSection.TOOLS,
+            SettingsSection.PROVIDERS,
+                -> Unit
+        }
+    }
+
+    /** 选择外观子页时同步保持外观父项展开。 */
+    fun selectAppearanceSubsection(subsection: AppearanceSubsection) {
+        section = SettingsSection.APPEARANCE
+        expandedSections = expandedSections + SettingsSection.APPEARANCE
+        appearanceSubsection = subsection
+    }
+
+    /** 选择扩展子页时同步保持扩展父项展开。 */
+    fun selectExtensionSubsection(subsection: ExtensionSubsection) {
+        section = SettingsSection.EXTENSIONS
+        expandedSections = expandedSections + SettingsSection.EXTENSIONS
+        extensionSubsection = subsection
+    }
 }
 
 /** 参考 IDE 设置页层级的右侧设置 Island。 */
@@ -167,7 +219,7 @@ internal fun SettingsPanel(
         uiState.settingsValidationErrors.clear()
         uiState.mcpJsonEditorState.reset()
     }
-    LaunchedEffect(uiState.section, uiState.layer) {
+    LaunchedEffect(uiState.section, uiState.layer, uiState.appearanceSubsection, uiState.extensionSubsection) {
         uiState.contentScrollState.scrollTo(0)
     }
     JewelSurface(
@@ -194,6 +246,10 @@ internal fun SettingsPanel(
                     onLayerChange = { nextLayer ->
                         uiState.layer = nextLayer
                         uiState.section = settingsSectionAfterScopeChange(uiState.section, nextLayer)
+                        uiState.appearanceSubsection = appearanceSubsectionAfterScopeChange(
+                            uiState.appearanceSubsection,
+                            nextLayer,
+                        )
                     },
                 )
                 val visibleSections = settingsSectionsFor(uiState.layer)
@@ -201,8 +257,15 @@ internal fun SettingsPanel(
                     compact = layout == SettingsPanelLayout.COMPACT,
                     section = uiState.section,
                     sections = visibleSections,
-                    anchors = uiState.anchors,
-                    onSectionChange = { section, _ -> uiState.section = section },
+                    expandedSections = uiState.expandedSections,
+                    appearanceSubsections = appearanceSubsectionsFor(uiState.layer),
+                    appearanceSubsection = uiState.appearanceSubsection,
+                    extensionSubsections = ExtensionSubsection.entries,
+                    extensionSubsection = uiState.extensionSubsection,
+                    onSectionChange = { section -> uiState.section = section },
+                    onParentClick = uiState::selectParent,
+                    onAppearanceSubsectionChange = uiState::selectAppearanceSubsection,
+                    onExtensionSubsectionChange = uiState::selectExtensionSubsection,
                 ) { compact ->
                     SettingsPanelContent(
                         uiState = uiState,
@@ -280,10 +343,6 @@ private fun SettingsPanelContent(
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
-    LaunchedEffect(uiState.anchors.viewportWidth) {
-        androidx.compose.runtime.withFrameNanos { }
-        uiState.anchors.restoreReading()
-    }
     val triggerResourceReload: () -> Unit = {
         scope.launch {
             if (onReloadResources()) {
@@ -296,9 +355,7 @@ private fun SettingsPanelContent(
         }
     }
     Column(modifier = modifier) {
-        Box(modifier = Modifier.weight(1f).fillMaxSize().onGloballyPositioned {
-            uiState.anchors.updateViewport(it.size.width, it.positionInRoot().y)
-        }) {
+        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -306,20 +363,22 @@ private fun SettingsPanelContent(
                     .padding(end = if (shouldShowSettingsContentScrollbar(scrollState.maxValue)) 10.dp else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                CompositionLocalProvider(LocalSettingsAnchors provides uiState.anchors, LocalSettingsCompact provides compact) {
+                CompositionLocalProvider(LocalSettingsCompact provides compact) {
                 when (uiState.section) {
-                    SettingsSection.APPEARANCE -> AppearanceSettingsContent(
-                        appearance = appearance,
-                        compact = compact,
-                        onPreferencesChanged = onAppearanceChanged,
-                        onPreferencesChangeFinished = onAppearanceChangeFinished,
-                    )
+                    SettingsSection.APPEARANCE -> when (uiState.appearanceSubsection) {
+                        AppearanceSubsection.OVERVIEW -> AppearanceSettingsContent(
+                            appearance = appearance,
+                            compact = compact,
+                            onPreferencesChanged = onAppearanceChanged,
+                            onPreferencesChangeFinished = onAppearanceChangeFinished,
+                        )
 
-                    SettingsSection.THEME -> ThemeSettingsContent(
-                        themeMode = themeMode,
-                        compact = compact,
-                        onThemeChanged = onThemeChanged,
-                    )
+                        AppearanceSubsection.THEME -> ThemeSettingsContent(
+                            themeMode = themeMode,
+                            compact = compact,
+                            onThemeChanged = onThemeChanged,
+                        )
+                    }
 
                     SettingsSection.TOOLS -> ToolsSettingsContent(
                         preferences = terminalPreferences,
@@ -357,6 +416,7 @@ private fun SettingsPanelContent(
                     )
 
                     SettingsSection.EXTENSIONS -> ExtensionSettingsContent(
+                        subsection = uiState.extensionSubsection,
                         document = uiState.document,
                         layer = uiState.layer,
                         projectRoot = projectRoot,

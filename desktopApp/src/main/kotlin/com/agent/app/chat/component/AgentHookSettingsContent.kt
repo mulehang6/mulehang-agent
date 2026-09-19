@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
@@ -148,6 +149,7 @@ private fun SavedHookRuleCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(SettingsInlineSpacing),
             verticalArrangement = Arrangement.spacedBy(SettingsInlineSpacing),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
             Text(hookEventLabel(rule.event), style = JewelTheme.defaultTextStyle.copy(color = AppText))
             Text("${rule.matcher.hooks.size} 条命令", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))

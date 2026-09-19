@@ -1,5 +1,3 @@
-@file:OptIn(org.jetbrains.jewel.foundation.ExperimentalJewelApi::class)
-
 package com.agent.app.chat.component
 
 import androidx.compose.runtime.Composable

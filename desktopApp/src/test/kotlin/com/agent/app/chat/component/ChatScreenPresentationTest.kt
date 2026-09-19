@@ -407,6 +407,18 @@ class ChatScreenPresentationTest {
             ComposerMenu.MODEL,
             dismissComposerMenu(ComposerMenu.MODEL, ComposerMenu.PROVIDER),
         )
+        assertEquals(
+            ComposerMenu.PERMISSION,
+            composerMenuAfterTriggerChange(null, ComposerMenu.PERMISSION, shouldExpand = true),
+        )
+        assertEquals(
+            null,
+            composerMenuAfterTriggerChange(ComposerMenu.PERMISSION, ComposerMenu.PERMISSION, shouldExpand = false),
+        )
+        assertEquals(
+            ComposerMenu.MODEL,
+            composerMenuAfterTriggerChange(ComposerMenu.PROVIDER, ComposerMenu.MODEL, shouldExpand = true),
+        )
     }
 
     /**

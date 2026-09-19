@@ -75,14 +75,25 @@ internal fun ComposerSelectorMenuButton(
     content: MenuScope.() -> Unit,
 ) {
     var openedWithKeyboard by remember { mutableStateOf(false) }
+    var triggerPressedWhileExpanded by remember { mutableStateOf(false) }
 
     Box {
         ComposerMenuTrigger(
             label = displayLabel,
             showChevron = showChevron,
-            onClick = { onExpandedChange(!expanded, openedWithKeyboard) },
-            onKeyboardActivation = { openedWithKeyboard = true },
-            onPointerActivation = { openedWithKeyboard = false },
+            onClick = {
+                val closePressedMenu = triggerPressedWhileExpanded
+                triggerPressedWhileExpanded = false
+                onExpandedChange(!closePressedMenu && !expanded, openedWithKeyboard)
+            },
+            onKeyboardActivation = {
+                openedWithKeyboard = true
+                triggerPressedWhileExpanded = expanded
+            },
+            onPointerActivation = {
+                openedWithKeyboard = false
+                triggerPressedWhileExpanded = expanded
+            },
             modifier = modifier,
         )
         if (expanded) {
@@ -122,14 +133,25 @@ internal fun ComposerPermissionMenuButton(
         composerPermissionMenuStyle(baseMenuStyle)
     }
     var openedWithKeyboard by remember { mutableStateOf(false) }
+    var triggerPressedWhileExpanded by remember { mutableStateOf(false) }
 
     Box {
         ComposerMenuTrigger(
             label = displayLabel,
             showChevron = showChevron,
-            onClick = { onExpandedChange(!expanded, openedWithKeyboard) },
-            onKeyboardActivation = { openedWithKeyboard = true },
-            onPointerActivation = { openedWithKeyboard = false },
+            onClick = {
+                val closePressedMenu = triggerPressedWhileExpanded
+                triggerPressedWhileExpanded = false
+                onExpandedChange(!closePressedMenu && !expanded, openedWithKeyboard)
+            },
+            onKeyboardActivation = {
+                openedWithKeyboard = true
+                triggerPressedWhileExpanded = expanded
+            },
+            onPointerActivation = {
+                openedWithKeyboard = false
+                triggerPressedWhileExpanded = expanded
+            },
             modifier = modifier,
         )
         if (expanded) {

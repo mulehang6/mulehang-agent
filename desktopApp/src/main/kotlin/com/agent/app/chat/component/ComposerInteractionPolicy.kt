@@ -69,6 +69,17 @@ internal fun dismissComposerMenu(
     dismissed: ComposerMenu,
 ): ComposerMenu? = current.takeUnless { it == dismissed }
 
+/** 统一处理选择器触发器的展开、切换与重复点击收起，避免旧 Popup 回调覆盖新状态。 */
+internal fun composerMenuAfterTriggerChange(
+    current: ComposerMenu?,
+    requested: ComposerMenu,
+    shouldExpand: Boolean,
+): ComposerMenu? = if (shouldExpand) {
+    nextComposerMenu(current, requested)
+} else {
+    dismissComposerMenu(current, requested)
+}
+
 /**
  * 将 Composer 主动作状态映射为矢量图标。
  */

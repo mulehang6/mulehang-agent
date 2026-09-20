@@ -83,4 +83,29 @@ class McpJsonEditorStateTest {
         assertEquals("", state.text)
         assertNull(state.error)
     }
+
+    /** JSON 视图默认隐藏 Header 值，但解析占位符时仍保留原始凭据。 */
+    @Test
+    fun `should mask and restore sensitive headers in JSON editor`() {
+        val server = McpServerSettings(
+            id = "remote",
+            transport = McpServerTransport.SSE,
+            url = "https://example.test/mcp",
+            headers = mapOf("Authorization" to "Bearer secret"),
+        )
+        val state = McpJsonEditorState()
+
+        state.enterJson(listOf(server))
+
+        assertFalse(state.sensitiveValuesVisible)
+        assertContains(state.text, MCP_REDACTED_HEADER_VALUE)
+        assertFalse(state.text.contains("Bearer secret"))
+        val hiddenResult = assertIs<McpJsonParseResult.Success>(state.updateText(state.text))
+        assertEquals("Bearer secret", hiddenResult.servers.single().headers["Authorization"])
+
+        state.toggleSensitiveValues(hiddenResult.servers)
+
+        assertTrue(state.sensitiveValuesVisible)
+        assertContains(state.text, "Bearer secret")
+    }
 }

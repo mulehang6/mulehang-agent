@@ -126,6 +126,7 @@ class McpJsonConfigurationTest {
             """{"mcpServers":{"x":{"type":"sse","url":"https://example.test","headers":{"X-Test":"1","x-test":"2"}}}}""" to "不能仅以大小写区分",
             """{"mcpServers":{"x":{"type":"sse","url":"https://example.test","headers":{"X-Test":7}}}}""" to "必须是字符串",
             """{"mcpServers":{"x":{"type":"sse","url":"https://example.test","headers":{"X-Test":"bad\nvalue"}}}}""" to "无效 Header",
+            """{"mcpServers":{"x":{"type":"sse","url":"https://user:secret@example.test"}}}""" to "有效的 http(s) 服务地址",
             """{"mcpServers":{"x":{"command":"npx","alwaysAllow":[]}}}""" to "不支持字段 'alwaysAllow'",
         )
 

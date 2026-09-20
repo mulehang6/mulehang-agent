@@ -7,9 +7,13 @@ import com.agent.shared.agent.resource.AgentResourceOrigin
 import com.agent.shared.agent.resource.AgentResourceSnapshot
 import com.agent.shared.chat.usecase.SendMessageUseCase
 import com.agent.shared.session.AppSessionSnapshot
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.*
 import kotlin.test.*
 
@@ -101,6 +105,7 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
         )
 
         state.refreshActiveResourceSnapshot()
+        advanceUntilIdle()
         state.updateDraft("/review src/App.kt")
         state.sendDraft()
         assertEquals("请审查 src/App.kt", state.ui.draft)
@@ -116,6 +121,98 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
         assertEquals(1, reloadCount)
         assertEquals("", state.ui.draft)
         assertEquals(1, state.ui.activeConversation.history.count { it is AgentConversationHistoryMessage.User })
+    }
+
+    /** 资源重载占用期间，新的消息不能抢先使用将被替换的 MCP 连接。 */
+    @Test
+    fun `should block a new run while resource reload is pending`() = runTest(dispatcher) {
+        val profile = profile()
+        val reloadGate = CompletableDeferred<Unit>()
+        var runCount = 0
+        val resourceSnapshot = AgentResourceSnapshot.empty().copy(
+            version = 1,
+            commands = listOf(
+                AgentPromptCommand(
+                    name = "reload",
+                    description = "reload",
+                    kind = AgentPromptCommandKind.BUILTIN,
+                    origin = AgentResourceOrigin.BUILTIN,
+                ),
+            ),
+        )
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> {
+                runCount += 1
+                return flowOf(AgentStreamEvent.Completed(""))
+            }
+        }
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile), activeProfile = profile),
+            projectPath = "E:\\reload",
+            resourceSnapshotProvider = { resourceSnapshot },
+            resourceReloader = {
+                reloadGate.await()
+                resourceSnapshot.copy(version = 2)
+            },
+        )
+
+        state.resourceSnapshot = resourceSnapshot
+        state.updateDraft("/reload")
+        state.sendDraft()
+
+        assertFalse(state.canReloadAgentResources)
+        state.updateDraft("next")
+        state.sendDraft()
+        assertEquals(0, runCount)
+
+        reloadGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(state.canReloadAgentResources)
+    }
+
+    /** 取消后的协程尚未完成 finally 清理时，资源重载仍必须被拒绝。 */
+    @Test
+    fun `should wait for cancelled run cleanup before reload`() = runTest(dispatcher) {
+        val profile = profile()
+        val cleanupGate = CompletableDeferred<Unit>()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = kotlinx.coroutines.flow.flow {
+                emit(AgentStreamEvent.Started)
+                try {
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) {
+                        cleanupGate.await()
+                    }
+                }
+            }
+        }
+        var reloadCount = 0
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile), activeProfile = profile),
+            projectPath = "E:\\reload",
+            resourceReloader = {
+                reloadCount += 1
+                AgentResourceSnapshot.empty().copy(version = 1)
+            },
+        )
+
+        state.updateDraft("long")
+        state.sendDraft()
+        advanceUntilIdle()
+        state.cancelActiveRun()
+
+        assertFalse(state.canReloadAgentResources)
+        assertFalse(state.reloadAgentResources())
+        cleanupGate.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(state.reloadAgentResources())
+        assertEquals(1, reloadCount)
     }
 
     /** 未选择工作区时也应重载用户级资源，保证 `~/.agents/skills` 无需先打开项目。 */

@@ -78,6 +78,7 @@ internal fun McpSettingsContent(
 
         McpEditorMode.JSON -> McpJsonEditor(
             editorState = editorState,
+            servers = configuredServers,
             onServersChange = { servers -> onDocumentChange(document.withMcpServers(servers)) },
             onValidationErrorChange = onValidationErrorChange,
             onSave = onSave,
@@ -174,7 +175,7 @@ private fun McpVisualEditor(
                     onEdit = { editingSavedServers = editingSavedServers + (server.id to server) },
                     onToggle = {
                         editingSavedServers = editingSavedServers + (server.id to server)
-                        onDocumentChange(document.withMcpServer(server.copy(enabled = !server.enabled)))
+                        onDocumentChange(document.withUpdatedMcpServer(server.id, server.copy(enabled = !server.enabled)))
                     },
                     onDelete = {
                         editingSavedServers = editingSavedServers - server.id
@@ -211,11 +212,20 @@ private fun McpVisualEditor(
 @Composable
 private fun McpJsonEditor(
     editorState: McpJsonEditorState,
+    servers: List<McpServerSettings>,
     onServersChange: (List<McpServerSettings>) -> Unit,
     onValidationErrorChange: (String, String?) -> Unit,
     onSave: () -> Unit,
 ) {
     ExtensionSettingsCard {
+        Text(
+            if (editorState.sensitiveValuesVisible) {
+                "Header 敏感值当前可见。"
+            } else {
+                "Header 敏感值默认隐藏，点击按钮后才显示。"
+            },
+            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+        )
         JsonCodeEditor(
             text = editorState.text,
             error = editorState.error,
@@ -245,6 +255,13 @@ private fun McpJsonEditor(
             SettingsActionButton("格式化 JSON") {
                 applyMcpJsonFormat(editorState, onServersChange, onValidationErrorChange)
             }
+            SettingsActionButton(
+                if (editorState.sensitiveValuesVisible) "隐藏敏感值" else "显示敏感值",
+                onClick = {
+                    editorState.toggleSensitiveValues(servers)
+                    onValidationErrorChange(MCP_JSON_VALIDATION_KEY, editorState.error)
+                },
+            )
         }
     }
 }
@@ -428,7 +445,7 @@ private fun RowScope.McpEnvironmentTextField(
 
 /** 验证直接 MCP 设置能在资源重载前被明确修复。 */
 internal fun validateMcpServerSettings(document: SettingsDocument): String? {
-    return validateMcpServersForJson(document.agentResources.mcpServers)
+    return validateMcpServersForJson(document.agentResources.mcpServers.filter(McpServerSettings::enabled))
 }
 
 /** 拆分标准 UI 中的逗号参数列表，空段不会进入进程启动参数。 */
@@ -457,7 +474,7 @@ private fun SettingsDocument.withMcpServer(server: McpServerSettings): SettingsD
 )
 
 /** 按编辑前的稳定 ID 替换直接 MCP，允许用户修改服务 ID 而不保留旧记录。 */
-private fun SettingsDocument.withUpdatedMcpServer(existingId: String, server: McpServerSettings): SettingsDocument = copy(
+internal fun SettingsDocument.withUpdatedMcpServer(existingId: String, server: McpServerSettings): SettingsDocument = copy(
     agentResources = agentResources.copy(
         mcpServers = agentResources.mcpServers.map { current -> if (current.id == existingId) server else current },
     ),

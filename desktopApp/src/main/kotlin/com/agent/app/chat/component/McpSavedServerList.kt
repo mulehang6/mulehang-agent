@@ -31,6 +31,7 @@ import com.agent.shared.agent.resource.McpServerConnectionStatus
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.McpServerSettings
 import com.agent.shared.settings.model.McpServerTransport
+import java.net.URI
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 
@@ -130,7 +131,7 @@ private fun McpSavedServerDetails(
         Text(
             when (server.transport) {
                 McpServerTransport.STDIO -> server.command.joinToString(" ")
-                McpServerTransport.SSE, McpServerTransport.STREAMABLE_HTTP -> server.url.orEmpty()
+                McpServerTransport.SSE, McpServerTransport.STREAMABLE_HTTP -> sanitizeMcpUrlForDisplay(server.url)
             },
             style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
@@ -175,6 +176,16 @@ private fun mcpStatusColor(server: McpServerSettings, status: McpServerConnectio
 private fun mcpConnectionLabel(server: McpServerSettings, status: McpServerConnectionStatus?): String {
     val transport = server.transport.name.lowercase().replace('_', '-')
     return "$transport · ${mcpToolCountLabel(server, status)}"
+}
+
+/** 展示远程地址时移除 URI user-info，避免把内嵌凭据带入设置页或截图。 */
+internal fun sanitizeMcpUrlForDisplay(value: String?): String {
+    val raw = value?.trim().orEmpty()
+    val uri = runCatching { URI(raw) }.getOrNull() ?: return "无效服务地址"
+    if (uri.userInfo == null) return raw
+    return runCatching {
+        URI(uri.scheme, null, uri.host, uri.port, uri.path, uri.query, uri.fragment).toString()
+    }.getOrDefault("已隐藏地址凭据")
 }
 
 private const val DIRECT_SETTINGS_PACKAGE_ID = "settings"

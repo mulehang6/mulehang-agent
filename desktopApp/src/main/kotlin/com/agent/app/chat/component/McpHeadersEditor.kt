@@ -38,7 +38,7 @@ internal fun McpHeadersEditor(
                     name = name,
                     value = value,
                     onChange = { nextName, nextValue ->
-                        onChange(headers.toMutableMap().apply { remove(name); put(nextName, nextValue) })
+                        updateMcpHeader(headers, name, nextName, nextValue)?.let(onChange)
                     },
                     onRemove = { onChange(headers - name) },
                 )
@@ -89,6 +89,28 @@ private fun McpHeaderRow(
         )
         SettingsActionButton(if (revealed) "隐藏" else "显示", onClick = { revealed = !revealed })
         SettingsActionButton("删除", destructive = true, onClick = onRemove)
+    }
+}
+
+/** 拒绝把 Header 重命名为另一个大小写不同但语义相同的名称，避免覆盖原值。 */
+internal fun updateMcpHeader(
+    headers: Map<String, String>,
+    currentName: String,
+    nextName: String,
+    nextValue: String,
+): Map<String, String>? {
+    val normalizedName = nextName.trim()
+    if (normalizedName.isBlank()) return headers
+    if (headers.keys.any { existing ->
+            !existing.equals(currentName, ignoreCase = true) &&
+                    existing.equals(normalizedName, ignoreCase = true)
+        }
+    ) {
+        return null
+    }
+    return headers.toMutableMap().apply {
+        remove(currentName)
+        put(normalizedName, nextValue)
     }
 }
 

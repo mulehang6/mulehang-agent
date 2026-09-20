@@ -174,7 +174,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             }
 
             val targetConversationId = ui.activeTaskId
-            if (activeRunConversationId != null) {
+            if (activeRunConversationId != null || resourceReloadInProgress) {
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
                         progressMessage = null,
@@ -242,10 +242,8 @@ internal class ChatRunController(private val window: ChatWindowState) {
             val runResources = resourceSnapshot
             when (val expansion = runResources.expandSlashCommand(prompt)) {
                 AgentCommandExpansion.ReloadResources -> {
-                    scope.launch {
-                        if (reloadAgentResources()) {
-                            ui = ui.copy(draft = "")
-                        }
+                    startResourceReload {
+                        ui = ui.copy(draft = "")
                     }
                     return
                 }

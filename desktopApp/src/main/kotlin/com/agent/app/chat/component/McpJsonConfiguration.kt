@@ -38,12 +38,15 @@ internal fun parseMcpJsonConfiguration(text: String): McpJsonParseResult {
 }
 
 /** 将直接 MCP 服务格式化为稳定、可再次解析的常见配置格式。 */
-internal fun formatMcpJsonConfiguration(servers: List<McpServerSettings>): String {
+internal fun formatMcpJsonConfiguration(
+    servers: List<McpServerSettings>,
+    maskSensitiveHeaders: Boolean = false,
+): String {
     val root = buildJsonObject {
         put(
             "mcpServers",
             buildJsonObject {
-                servers.forEach { server -> put(server.id, server.toMcpJsonObject()) }
+                servers.forEach { server -> put(server.id, server.toMcpJsonObject(maskSensitiveHeaders)) }
             },
         )
     }
@@ -156,7 +159,7 @@ private fun parseRemoteServer(
 }
 
 /** 把应用模型写成兼容常见 MCP 客户端的单服务对象。 */
-private fun McpServerSettings.toMcpJsonObject(): JsonObject = buildJsonObject {
+private fun McpServerSettings.toMcpJsonObject(maskSensitiveHeaders: Boolean): JsonObject = buildJsonObject {
     when (transport) {
         McpServerTransport.STDIO -> {
             put("command", command.firstOrNull().orEmpty())
@@ -169,22 +172,32 @@ private fun McpServerSettings.toMcpJsonObject(): JsonObject = buildJsonObject {
         McpServerTransport.SSE -> {
             put("type", "sse")
             put("url", url.orEmpty())
-            putHeadersIfPresent(headers)
+            putHeadersIfPresent(headers, maskSensitiveHeaders)
         }
 
         McpServerTransport.STREAMABLE_HTTP -> {
             put("type", "streamable-http")
             put("url", url.orEmpty())
-            putHeadersIfPresent(headers)
+            putHeadersIfPresent(headers, maskSensitiveHeaders)
         }
     }
     if (!enabled) put("disabled", true)
 }
 
 /** 仅在远程服务实际配置请求头时写出对象，避免规范文本出现空字段。 */
-private fun kotlinx.serialization.json.JsonObjectBuilder.putHeadersIfPresent(headers: Map<String, String>) {
+private fun kotlinx.serialization.json.JsonObjectBuilder.putHeadersIfPresent(
+    headers: Map<String, String>,
+    maskSensitiveHeaders: Boolean,
+) {
     if (headers.isNotEmpty()) {
-        put("headers", buildJsonObject { headers.forEach { (key, value) -> put(key, value) } })
+        put(
+            "headers",
+            buildJsonObject {
+                headers.forEach { (key, value) ->
+                    put(key, if (maskSensitiveHeaders) MCP_REDACTED_HEADER_VALUE else value)
+                }
+            },
+        )
     }
 }
 
@@ -296,7 +309,8 @@ private fun isInvalidEnvironmentName(name: String): Boolean =
 /** 仅接受运行时 HTTP MCP 客户端可连接的绝对地址。 */
 private fun isSupportedMcpUrl(value: String?): Boolean = runCatching {
     val uri = URI(value?.trim().orEmpty())
-    uri.isAbsolute && uri.scheme.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()
+    uri.isAbsolute && uri.scheme.lowercase() in setOf("http", "https") &&
+            !uri.host.isNullOrBlank() && uri.userInfo == null
 }.getOrDefault(false)
 
 /** 抛出仅在解析边界内捕获的用户输入错误。 */
@@ -308,3 +322,6 @@ private class McpJsonValidationException(message: String) : IllegalArgumentExcep
 private val ROOT_FIELDS = setOf("mcpServers")
 private val SERVER_FIELDS = setOf("command", "args", "env", "headers", "type", "transport", "url", "enabled", "disabled")
 private val MCP_CONFIGURATION_JSON = Json { prettyPrint = true }
+
+/** JSON 编辑器默认显示的 Header 占位符，不会覆盖设置中保存的真实值。 */
+internal const val MCP_REDACTED_HEADER_VALUE = "••••••"

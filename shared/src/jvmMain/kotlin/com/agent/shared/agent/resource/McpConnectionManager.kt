@@ -191,7 +191,7 @@ private suspend fun connectMcpServer(server: AgentRuntimeMcpServer): ActiveMcpCo
     }
 
     AgentRuntimeMcpTransport.SSE -> {
-        val client = remoteMcpHttpClient(server.headers)
+        val client = remoteMcpHttpClient(server.headers, longLivedSse = true)
         try {
             val url = requireNotNull(server.url)
             ActiveMcpConnection(
@@ -230,13 +230,19 @@ private suspend fun connectMcpServer(server: AgentRuntimeMcpServer): ActiveMcpCo
     }
 }
 
-/** 创建为单个远程服务附加受控 Headers 的客户端。 */
-internal fun remoteMcpHttpClient(configuredHeaders: Map<String, String>): HttpClient = HttpClient {
+/**
+ * 创建为单个远程服务附加受控 Headers 的客户端；SSE 长连接关闭请求和 socket 空闲超时，
+ * 其初始化阶段仍由 [MCP_CONNECTION_INITIALIZATION_TIMEOUT_MILLIS] 对应的外层超时保护。
+ */
+internal fun remoteMcpHttpClient(
+    configuredHeaders: Map<String, String>,
+    longLivedSse: Boolean = false,
+): HttpClient = HttpClient {
     install(SSE)
     install(HttpTimeout) {
         connectTimeoutMillis = MCP_CONNECT_TIMEOUT_MILLIS
-        requestTimeoutMillis = MCP_REQUEST_TIMEOUT_MILLIS
-        socketTimeoutMillis = MCP_SOCKET_TIMEOUT_MILLIS
+        requestTimeoutMillis = MCP_REQUEST_TIMEOUT_MILLIS.takeUnless { longLivedSse }
+        socketTimeoutMillis = MCP_SOCKET_TIMEOUT_MILLIS.takeUnless { longLivedSse }
     }
     defaultRequest {
         headers {

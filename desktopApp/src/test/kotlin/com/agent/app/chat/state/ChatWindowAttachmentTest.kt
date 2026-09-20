@@ -173,6 +173,26 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
         assertTrue(state.canReloadAgentResources)
     }
 
+    /** 异步刷新返回旧快照时，不能覆盖已经发布的更新版本。 */
+    @Test
+    fun `should keep newer resource snapshot after stale async refresh`() = runTest(dispatcher) {
+        val stale = AgentResourceSnapshot.empty().copy(version = 1)
+        val current = AgentResourceSnapshot.empty().copy(version = 2)
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\refresh",
+            resourceSnapshotProvider = { stale },
+        )
+        state.resourceSnapshot = current
+
+        state.refreshActiveResourceSnapshot()
+        advanceUntilIdle()
+
+        assertEquals(2, state.resourceVersion)
+    }
+
     /** 取消后的协程尚未完成 finally 清理时，资源重载仍必须被拒绝。 */
     @Test
     fun `should wait for cancelled run cleanup before reload`() = runTest(dispatcher) {

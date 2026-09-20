@@ -103,9 +103,75 @@ class McpJsonEditorStateTest {
         val hiddenResult = assertIs<McpJsonParseResult.Success>(state.updateText(state.text))
         assertEquals("Bearer secret", hiddenResult.servers.single().headers["Authorization"])
 
-        state.toggleSensitiveValues(hiddenResult.servers)
+        state.toggleSensitiveValues()
 
         assertTrue(state.sensitiveValuesVisible)
         assertContains(state.text, "Bearer secret")
+    }
+
+    /** 服务 ID 或 Header 改名时，遮罩占位符仍必须恢复原始凭据。 */
+    @Test
+    fun `should preserve masked headers when server and header names change`() {
+        val server = McpServerSettings(
+            id = "remote",
+            transport = McpServerTransport.SSE,
+            url = "https://example.test/mcp",
+            headers = mapOf("Authorization" to "Bearer secret"),
+        )
+        val state = McpJsonEditorState()
+        state.enterJson(listOf(server))
+
+        val renamed = state.text
+            .replace("\"remote\"", "\"github\"")
+            .replace("\"Authorization\"", "\"X-Auth\"")
+        val result = assertIs<McpJsonParseResult.Success>(state.updateText(renamed))
+
+        assertEquals("Bearer secret", result.servers.single().headers["X-Auth"])
+    }
+
+    /** 格式化后再次编辑其他字段时，用户刚输入的新凭据不能被旧快照覆盖。 */
+    @Test
+    fun `should retain newly entered secret after formatting`() {
+        val server = McpServerSettings(
+            id = "remote",
+            transport = McpServerTransport.SSE,
+            url = "https://example.test/mcp",
+            headers = mapOf("Authorization" to "Bearer old"),
+        )
+        val state = McpJsonEditorState()
+        state.enterJson(listOf(server))
+
+        val replaced = state.text.replace(MCP_REDACTED_HEADER_VALUE, "Bearer new")
+        assertEquals("Bearer new", assertIs<McpJsonParseResult.Success>(state.updateText(replaced)).servers.single().headers["Authorization"])
+        assertIs<McpJsonParseResult.Success>(state.format())
+        assertFalse(state.text.contains("Bearer new"))
+
+        val edited = state.text.replace("example.test/mcp", "example.test/other")
+        val result = assertIs<McpJsonParseResult.Success>(state.updateText(edited))
+        assertEquals("Bearer new", result.servers.single().headers["Authorization"])
+    }
+
+    /** 切换敏感值时若 JSON 尚未合法，必须保留原始草稿和错误状态。 */
+    @Test
+    fun `should retain invalid JSON while toggling sensitive values`() {
+        val state = McpJsonEditorState()
+        state.enterJson(
+            listOf(
+                McpServerSettings(
+                    id = "remote",
+                    transport = McpServerTransport.SSE,
+                    url = "https://example.test/mcp",
+                    headers = mapOf("Authorization" to "Bearer secret"),
+                ),
+            ),
+        )
+        val invalid = state.text.dropLast(1)
+        assertIs<McpJsonParseResult.Failure>(state.updateText(invalid))
+
+        state.toggleSensitiveValues()
+
+        assertEquals(invalid, state.text)
+        assertFalse(state.sensitiveValuesVisible)
+        assertTrue(state.error != null)
     }
 }

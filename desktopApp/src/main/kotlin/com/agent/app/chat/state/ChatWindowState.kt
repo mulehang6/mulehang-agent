@@ -228,10 +228,13 @@ class ChatWindowState(
                 resourceSnapshotProvider(workspacePath)
             } ?: AgentResourceSnapshot.empty()
             if (ui.activeConversationOrNull?.workspacePath == workspacePath) {
-                if (resourceSnapshot.version != next.version || resourceSnapshot.workspacePath != next.workspacePath) {
-                    runtimeResourceDiagnostics = emptyList()
+                val current = resourceSnapshot
+                if (next.version >= current.version) {
+                    if (current.version != next.version || current.workspacePath != next.workspacePath) {
+                        runtimeResourceDiagnostics = emptyList()
+                    }
+                    resourceSnapshot = next
                 }
-                resourceSnapshot = next
             }
         }
     }

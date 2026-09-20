@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.agent.shared.settings.model.McpServerSettings
+import com.agent.shared.settings.model.McpServerTransport
 
 /** MCP 设置区当前显示的编辑方式。 */
 internal enum class McpEditorMode {
@@ -28,7 +29,7 @@ internal class McpJsonEditorState {
     var sensitiveValuesVisible by mutableStateOf(false)
         private set
 
-    private var hiddenHeaderValuesByServerId: Map<String, Map<String, String>> = emptyMap()
+    private var hiddenServerValues: List<HiddenMcpServerValues> = emptyList()
 
     /** 切换配置层级时丢弃旧层级的 JSON 临时输入。 */
     fun reset() {
@@ -36,27 +37,35 @@ internal class McpJsonEditorState {
         text = ""
         error = null
         sensitiveValuesVisible = false
-        hiddenHeaderValuesByServerId = emptyMap()
+        hiddenServerValues = emptyList()
     }
 
     /** 从可视化草稿生成规范 JSON，并带着其校验结果进入 JSON 视图。 */
     fun enterJson(servers: List<McpServerSettings>) {
-        hiddenHeaderValuesByServerId = captureHeaderValues(servers)
+        hiddenServerValues = captureHiddenServerValues(servers)
         sensitiveValuesVisible = false
         text = formatMcpJsonConfiguration(servers, maskSensitiveHeaders = true)
         error = (parseMcpJsonConfiguration(text) as? McpJsonParseResult.Failure)?.message
         mode = McpEditorMode.JSON
     }
 
-    /** 显示或隐藏 JSON 中的 Header 敏感值；隐藏时保留真实值，避免保存占位符。 */
-    fun toggleSensitiveValues(servers: List<McpServerSettings>) {
-        if (sensitiveValuesVisible) hiddenHeaderValuesByServerId = captureHeaderValues(servers)
-        sensitiveValuesVisible = !sensitiveValuesVisible
-        text = formatMcpJsonConfiguration(
-            servers,
-            maskSensitiveHeaders = !sensitiveValuesVisible,
-        )
-        error = (parseMcpJsonConfiguration(text) as? McpJsonParseResult.Failure)?.message
+    /** 显示或隐藏 JSON 中的 Header 敏感值；无效草稿保持原样，不因切换而丢失。 */
+    fun toggleSensitiveValues() {
+        when (val result = restoreHiddenHeaderValues(parseMcpJsonConfiguration(text))) {
+            is McpJsonParseResult.Success -> {
+                hiddenServerValues = captureHiddenServerValues(result.servers)
+                sensitiveValuesVisible = !sensitiveValuesVisible
+                text = formatMcpJsonConfiguration(
+                    result.servers,
+                    maskSensitiveHeaders = !sensitiveValuesVisible,
+                )
+                error = null
+            }
+
+            is McpJsonParseResult.Failure -> {
+                error = result.message
+            }
+        }
     }
 
     /** 仅在 JSON 文本有效时返回可视化视图。 */
@@ -70,6 +79,9 @@ internal class McpJsonEditorState {
     fun updateText(value: String): McpJsonParseResult {
         text = value
         val result = restoreHiddenHeaderValues(parseMcpJsonConfiguration(value))
+        if (result is McpJsonParseResult.Success) {
+            hiddenServerValues = captureHiddenServerValues(result.servers)
+        }
         error = (result as? McpJsonParseResult.Failure)?.message
         return result
     }
@@ -79,6 +91,7 @@ internal class McpJsonEditorState {
         val result = restoreHiddenHeaderValues(parseMcpJsonConfiguration(text))
         when (result) {
             is McpJsonParseResult.Success -> {
+                hiddenServerValues = captureHiddenServerValues(result.servers)
                 text = formatMcpJsonConfiguration(
                     result.servers,
                     maskSensitiveHeaders = !sensitiveValuesVisible,
@@ -91,30 +104,85 @@ internal class McpJsonEditorState {
         return result
     }
 
-    /** 记录进入 JSON 视图时的真实 Header 值，供占位符解析后恢复。 */
-    private fun captureHeaderValues(servers: List<McpServerSettings>): Map<String, Map<String, String>> =
-        servers.filter { server -> server.headers.isNotEmpty() }
-            .associate { server -> server.id to server.headers }
+    /** 记录服务连接特征和真实 Header 值，允许 JSON 编辑器改名后继续恢复凭据。 */
+    private fun captureHiddenServerValues(servers: List<McpServerSettings>): List<HiddenMcpServerValues> =
+        servers.map { server ->
+            HiddenMcpServerValues(
+                id = server.id,
+                transport = server.transport,
+                url = server.url,
+                command = server.command,
+                headers = server.headers,
+            )
+        }
 
     /** 仅恢复未被用户改写的占位符，新的 Header 文本仍按用户输入保存。 */
     private fun restoreHiddenHeaderValues(result: McpJsonParseResult): McpJsonParseResult {
         if (result !is McpJsonParseResult.Success || sensitiveValuesVisible) return result
-        return result.copy(
-            servers = result.servers.map { server ->
-                val hiddenHeaders = hiddenHeaderValuesByServerId[server.id].orEmpty()
-                if (hiddenHeaders.isEmpty()) return@map server
-                server.copy(
-                    headers = server.headers.mapValues { (name, value) ->
-                        if (value != MCP_REDACTED_HEADER_VALUE) {
-                            value
-                        } else {
-                            hiddenHeaders.entries.firstOrNull { entry ->
-                                entry.key.equals(name, ignoreCase = true)
-                            }?.value ?: value
-                        }
-                    },
-                )
-            },
-        )
+        val usedSources = mutableSetOf<String>()
+        val restoredServers = mutableListOf<McpServerSettings>()
+        result.servers.forEachIndexed { index, server ->
+            val hasMaskedHeader = server.headers.values.any { value -> value == MCP_REDACTED_HEADER_VALUE }
+            if (!hasMaskedHeader) {
+                restoredServers += server
+                return@forEachIndexed
+            }
+            val source = findHiddenServerValues(server, index, usedSources)
+                ?: return McpJsonParseResult.Failure("Header 敏感值已失去对应关系，请先显示敏感值后再修改服务。")
+            val restoredHeaders = restoreHiddenHeaders(server.headers, source.headers)
+                ?: return McpJsonParseResult.Failure("Header 敏感值已失去对应关系，请先显示敏感值后再修改 Header。")
+            usedSources += source.id
+            restoredServers += server.copy(headers = restoredHeaders)
+        }
+        return McpJsonParseResult.Success(restoredServers)
     }
+
+    /** 优先按服务 ID 或连接特征匹配，最后才使用原列表位置支持重命名。 */
+    private fun findHiddenServerValues(
+        server: McpServerSettings,
+        index: Int,
+        usedSources: Set<String>,
+    ): HiddenMcpServerValues? = hiddenServerValues.firstOrNull { source ->
+        source.id == server.id && source.id !in usedSources
+    } ?: hiddenServerValues.firstOrNull { source ->
+        source.id !in usedSources &&
+                source.transport == server.transport &&
+                source.url == server.url &&
+                source.command == server.command
+    } ?: hiddenServerValues.getOrNull(index)?.takeIf { source -> source.id !in usedSources }
+
+    /** 按原 Header 名称、位置和剩余唯一值恢复改名后的遮罩项。 */
+    private fun restoreHiddenHeaders(
+        headers: Map<String, String>,
+        hiddenHeaders: Map<String, String>,
+    ): Map<String, String>? {
+        val usedNames = mutableSetOf<String>()
+        val hiddenEntries = hiddenHeaders.entries.toList()
+        val restored = LinkedHashMap<String, String>()
+        headers.entries.forEachIndexed { index, (name, value) ->
+            if (value != MCP_REDACTED_HEADER_VALUE) {
+                restored[name] = value
+                return@forEachIndexed
+            }
+            val source = hiddenEntries.getOrNull(index)
+                ?.takeIf { entry -> entry.key !in usedNames && entry.key.equals(name, ignoreCase = true) }
+                ?: hiddenEntries.firstOrNull { entry ->
+                    entry.key !in usedNames && entry.key.equals(name, ignoreCase = true)
+                }
+                ?: hiddenEntries.firstOrNull { entry -> entry.key !in usedNames }
+                ?: return null
+            usedNames += source.key
+            restored[name] = source.value
+        }
+        return restored
+    }
+
+    /** JSON 编辑器进入隐藏模式时保留的单条服务上下文。 */
+    private data class HiddenMcpServerValues(
+        val id: String,
+        val transport: McpServerTransport,
+        val url: String?,
+        val command: List<String>,
+        val headers: Map<String, String>,
+    )
 }

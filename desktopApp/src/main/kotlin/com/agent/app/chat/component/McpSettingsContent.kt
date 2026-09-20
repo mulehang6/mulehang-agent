@@ -78,7 +78,6 @@ internal fun McpSettingsContent(
 
         McpEditorMode.JSON -> McpJsonEditor(
             editorState = editorState,
-            servers = configuredServers,
             onServersChange = { servers -> onDocumentChange(document.withMcpServers(servers)) },
             onValidationErrorChange = onValidationErrorChange,
             onSave = onSave,
@@ -212,7 +211,6 @@ private fun McpVisualEditor(
 @Composable
 private fun McpJsonEditor(
     editorState: McpJsonEditorState,
-    servers: List<McpServerSettings>,
     onServersChange: (List<McpServerSettings>) -> Unit,
     onValidationErrorChange: (String, String?) -> Unit,
     onSave: () -> Unit,
@@ -258,7 +256,7 @@ private fun McpJsonEditor(
             SettingsActionButton(
                 if (editorState.sensitiveValuesVisible) "隐藏敏感值" else "显示敏感值",
                 onClick = {
-                    editorState.toggleSensitiveValues(servers)
+                    editorState.toggleSensitiveValues()
                     onValidationErrorChange(MCP_JSON_VALIDATION_KEY, editorState.error)
                 },
             )

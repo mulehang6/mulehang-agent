@@ -75,6 +75,12 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
     var expandedMenu by remember { mutableStateOf<ComposerMenu?>(null) }
     var expandedMenuOpenedWithKeyboard by remember { mutableStateOf(false) }
 
+    /** 统一维护四个选择器的互斥展开状态，并保留键盘打开方式。 */
+    fun updateExpandedMenu(menu: ComposerMenu, shouldExpand: Boolean, openedWithKeyboard: Boolean) {
+        expandedMenu = composerMenuAfterTriggerChange(expandedMenu, menu, shouldExpand)
+        expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+    }
+
     ComposerControlBar(
         attachment = {
             ActionButton(
@@ -97,8 +103,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
                             showChevron = showChevron,
                             expanded = expanded,
                             onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                expandedMenu = ComposerMenu.PROVIDER.takeIf { shouldExpand }
-                                expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                updateExpandedMenu(ComposerMenu.PROVIDER, shouldExpand, openedWithKeyboard)
                             },
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PROVIDER)
@@ -125,8 +130,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
                             showChevron = showChevron,
                             expanded = expanded,
                             onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                expandedMenu = ComposerMenu.MODEL.takeIf { shouldExpand }
-                                expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                updateExpandedMenu(ComposerMenu.MODEL, shouldExpand, openedWithKeyboard)
                             },
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.MODEL)
@@ -152,8 +156,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
                             showChevron = showChevron,
                             expanded = expanded,
                             onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                expandedMenu = ComposerMenu.REASONING.takeIf { shouldExpand }
-                                expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                updateExpandedMenu(ComposerMenu.REASONING, shouldExpand, openedWithKeyboard)
                             },
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.REASONING)
@@ -180,8 +183,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
                             showChevron = showChevron,
                             expanded = expanded,
                             onExpandedChange = { shouldExpand, openedWithKeyboard ->
-                                expandedMenu = ComposerMenu.PERMISSION.takeIf { shouldExpand }
-                                expandedMenuOpenedWithKeyboard = shouldExpand && openedWithKeyboard
+                                updateExpandedMenu(ComposerMenu.PERMISSION, shouldExpand, openedWithKeyboard)
                             },
                             onDismissRequest = {
                                 expandedMenu = dismissComposerMenu(expandedMenu, ComposerMenu.PERMISSION)

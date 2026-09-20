@@ -1,29 +1,13 @@
 package com.agent.app.chat.component
 
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.dp
-import com.agent.app.chat.state.buildWorkspaceLabel
-import com.agent.app.chat.state.isStoppable
-import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
-import com.agent.app.design.HeaderGlyph
-import com.agent.app.design.AppHeaderBackground
-import com.agent.app.design.AppAccent
-import com.agent.app.design.AppDanger
-import com.agent.app.design.AppReasoning
-import com.agent.app.design.AppMuted
-import com.agent.app.design.AppText
-import com.agent.app.design.DesktopThemeMode
-import com.agent.app.design.RightRailGlyph
-import com.agent.app.design.buildRightRailGroups
-import com.agent.app.design.desktopPalette
-import com.agent.shared.chat.model.AppError
+import com.agent.app.chat.presentation.shouldExpandToolEventByDefault
+import com.agent.app.design.*
 import com.agent.shared.chat.model.ReasoningItem
-import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
 import com.agent.shared.tool.model.PermissionPreset
@@ -31,8 +15,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import javax.swing.BorderFactory
-import javax.swing.JPanel
 
 /** 验证会话时间线、工具事件与 Markdown Islands 的展示策略。 */
 class ChatTimelinePresentationTest {

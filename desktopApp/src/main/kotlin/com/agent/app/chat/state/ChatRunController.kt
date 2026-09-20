@@ -15,12 +15,13 @@ import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ExecutionState
-import com.agent.shared.settings.model.append
 import com.agent.shared.settings.resolver.supportsImageInput
 import com.agent.shared.tool.model.QuestionAnswer
 import com.agent.shared.tool.model.QuestionPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.agent.shared.agent.api.AgentRunTiming
+import java.util.UUID
 
 /** 管理消息执行、流式事件及挂起交互的状态转换。 */
 internal class ChatRunController(private val window: ChatWindowState) {
@@ -45,6 +46,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             mutateActiveConversation { conversation ->
                 if (conversation.executionState.isStoppable()) {
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Idle,
                         pendingQuestion = null,
                         pendingApproval = null,
@@ -98,6 +100,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 conversation.copy(
                     items = conversation.items + AnsweredQuestionsItem(answers = answers),
                     pendingQuestion = null,
+                    progressMessage = null,
                     executionState = ExecutionState.Running,
                 )
             }
@@ -139,6 +142,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             mutateConversation(targetConversationId) { conversation ->
                 conversation.copy(
                     pendingApproval = null,
+                    progressMessage = null,
                     executionState = ExecutionState.Running,
                 )
             }
@@ -170,9 +174,10 @@ internal class ChatRunController(private val window: ChatWindowState) {
             }
 
             val targetConversationId = ui.activeTaskId
-            if (activeRunConversationId != null) {
+            if (activeRunConversationId != null || resourceReloadInProgress) {
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "已有任务在执行",
@@ -188,6 +193,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             workspaceIssue(sourceConversation)?.let { message ->
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "工作目录不可用",
@@ -202,6 +208,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             if (profile == null) {
                 mutateActiveConversation { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "缺少可用配置",
@@ -220,6 +227,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             if (inputParts.any { part -> part is UserInputPart.Image } && !profile.supportsImageInput()) {
                 mutateConversation(targetConversationId) { conversation ->
                     conversation.copy(
+                        progressMessage = null,
                         executionState = ExecutionState.Failed(
                             AppError(
                                 title = "当前模型不支持图片输入",
@@ -231,10 +239,10 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 return
             }
 
-            val runResources = refreshResourceSnapshotFor(sourceConversation.workspacePath)
+            val runResources = resourceSnapshot
             when (val expansion = runResources.expandSlashCommand(prompt)) {
                 AgentCommandExpansion.ReloadResources -> {
-                    if (reloadAgentResources()) {
+                    startResourceReload {
                         ui = ui.copy(draft = "")
                     }
                     return
@@ -272,6 +280,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                         content = prompt,
                         inputParts = inputParts,
                     ),
+                    progressMessage = null,
                     executionState = ExecutionState.Running,
                     streamingAssistantItemIndex = null,
                     streamingReasoningItemIndex = null,
@@ -293,10 +302,17 @@ internal class ChatRunController(private val window: ChatWindowState) {
             }
 
             activeRunConversationId = targetConversationId
+            val traceId = UUID.randomUUID().toString()
+            val timing = AgentRunTiming(traceId)
+            timing.mark("message_accepted")
             activeRunJob = scope.launch {
                 try {
+                    val runResources = timing.phase("resource_prepare", "正在准备资源…", { event ->
+                        applyAgentEvent(targetConversationId, event)
+                    }) { loadRunResourceSnapshot(sourceConversation.workspacePath) }
                     sendMessageUseCase(
                         AgentRunRequest(
+                            traceId = traceId,
                             prompt = prompt,
                             profile = profile,
                             history = requestHistory,
@@ -307,7 +323,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                             permissionPreset = sourceConversation.permissionPreset,
                             fasterProfile = snapshot.fasterProfiles[profile.providerId],
                             sessionId = targetConversationId,
-                            hookSettings = snapshot.hookSettings.append(runResources.hookSettings),
+                            hookSettings = runResources.hookSettings,
                         ),
                     ).collect { event ->
                         applyAgentEvent(targetConversationId, event)
@@ -317,6 +333,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                     mutateConversation(targetConversationId) { conversation ->
                         if (conversation.executionState.isStoppable()) {
                             conversation.copy(
+                                progressMessage = null,
                                 executionState = ExecutionState.Idle,
                                 pendingQuestion = null,
                                 pendingApproval = null,
@@ -334,6 +351,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                             contextWindow = contextWindowForConversation(conversation),
                         )
                         withToolFailure.copy(
+                            progressMessage = null,
                             executionState = ExecutionState.Failed(
                                 AppError(
                                     title = "发送失败",

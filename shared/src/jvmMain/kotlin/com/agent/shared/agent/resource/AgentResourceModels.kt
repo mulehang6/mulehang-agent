@@ -82,6 +82,7 @@ data class AgentMcpServerResource(
     val command: List<String> = emptyList(),
     val url: String? = null,
     val environment: Map<String, String> = emptyMap(),
+    val headers: Map<String, String> = emptyMap(),
     val packageId: String,
     val origin: AgentResourceOrigin = AgentResourceOrigin.PACKAGE,
 )
@@ -117,6 +118,8 @@ data class AgentResourceLoadRequest(
     val projectPromptDirectories: List<Path> = emptyList(),
     val userMcpServers: List<McpServerSettings> = emptyList(),
     val projectMcpServers: List<McpServerSettings> = emptyList(),
+    /** 已持久化的用户 Hooks；只在资源重载时进入新快照。 */
+    val userHookSettings: AgentHookSettings = AgentHookSettings(),
     val packages: List<InstalledAgentExtensionPackage> = emptyList(),
 )
 
@@ -175,6 +178,7 @@ data class AgentResourceSnapshot(
                 command = server.command,
                 url = server.url,
                 environment = server.environment,
+                headers = server.headers,
                 packageId = server.packageId,
             )
         },

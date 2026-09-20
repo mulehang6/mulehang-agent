@@ -12,7 +12,7 @@ class PromptCommandTemplateTest {
     /** 带引号参数、默认值与切片替换必须按同一解析顺序展开。 */
     @Test
     fun `should expand quoted prompt arguments defaults and slices`() {
-        val template = "first=${'$'}1 all=${'$'}@ named=${'$'}ARGUMENTS second=${'$'}{2:-fallback} slice=${'$'}{@:2:2}"
+        val template = $$"first=$1 all=$@ named=$ARGUMENTS second=${2:-fallback} slice=${@:2:2}"
 
         val expanded = expandPromptTemplate(template, "one \"two words\" three four")
 
@@ -21,7 +21,7 @@ class PromptCommandTemplateTest {
             expanded,
         )
         assertEquals(listOf("one", "two words", "three"), parsePromptCommandArguments("one 'two words' three"))
-        assertEquals("fallback", expandPromptTemplate("${'$'}{2:-fallback}", "one"))
+        assertEquals("fallback", expandPromptTemplate($$"${2:-fallback}", "one"))
     }
 
     /** `/skill:name` 插入完整 Skill 内容和用户参数，而 `/reload` 保持控制动作。 */

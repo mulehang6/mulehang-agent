@@ -23,6 +23,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.shared.agent.resource.McpServerConnectionStatus
 import com.agent.app.design.DesktopAppearance
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.LocalDesktopPalette
@@ -62,6 +63,7 @@ internal fun workspaceFocusAfterPanelClosed(
 @Composable
 internal fun ChatScreen(
     state: ChatWindowState,
+    mcpConnectionStatuses: List<McpServerConnectionStatus>,
     sidebarVisible: Boolean,
     onSidebarVisibilityChange: (Boolean) -> Unit,
     projectRoot: Path?,
@@ -216,10 +218,12 @@ internal fun ChatScreen(
                                             },
                                             onSettingsSaved = onSettingsChanged,
                                             onReloadResources = state::reloadAgentResources,
+                                            canReloadResources = state.canReloadAgentResources,
                                             extensionPackages = state.extensionPackages,
                                             loadedSkills = state.loadedSkills,
                                             resourceDiagnostics = state.resourceDiagnostics,
                                             mcpServers = state.mcpServers,
+                                            mcpConnectionStatuses = mcpConnectionStatuses,
                                             uiState = settingsUiState,
                                             modifier = settingsModifier,
                                         )

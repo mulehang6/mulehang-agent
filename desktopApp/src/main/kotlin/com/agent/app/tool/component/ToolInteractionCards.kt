@@ -318,7 +318,7 @@ fun ApprovalCard(
     JewelSurface(
         role = JewelSurfaceRole.PANEL,
         radius = 12.dp,
-        solidColor = AppToolInteraction,
+        solidColor = AppPanelBackground,
         borderColor = AppDanger.copy(alpha = 0.45f),
         modifier = modifier.fillMaxWidth(),
     ) {
@@ -371,6 +371,7 @@ fun ApprovalCard(
  * 呈现桌面风格的自由回答输入区，将输入和提交动作组织为同一个操作表面。
  */
 @Composable
+@Suppress("unused")
 private fun QuestionFreeTextInput(
     value: String,
     onValueChange: (String) -> Unit,
@@ -417,6 +418,7 @@ private fun QuestionFreeTextInput(
  * 直接嵌入工具调用卡片的审批动作区，不再生成独立审批浮层。
  */
 @Composable
+@Suppress("unused")
 fun InlineToolApprovalActions(
     onResponse: (ApprovalResponse) -> Unit,
     modifier: Modifier = Modifier,

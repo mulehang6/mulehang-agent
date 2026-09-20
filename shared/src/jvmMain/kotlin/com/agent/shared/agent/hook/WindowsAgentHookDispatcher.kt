@@ -4,12 +4,15 @@ import com.agent.shared.settings.model.AgentHookCommand
 import com.agent.shared.settings.model.AgentHookEvent
 import com.agent.shared.settings.model.AgentHookMatcher
 import com.agent.shared.settings.model.AgentHookSettings
-import com.agent.shared.tool.runtime.DesktopProcessRunner
 import java.io.File
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.runInterruptible
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -18,92 +21,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-
-/** Hook 可以要求调用方继续、自动放行、转人工确认或阻断本次动作。 */
-enum class AgentHookDecision {
-    CONTINUE,
-    ALLOW,
-    ASK,
-    BLOCK,
-}
-
-/** 一次 Hook 调用的上下文；payload 会以 JSON 通过 stdin 传给命令。 */
-data class AgentHookDispatchRequest(
-    val event: AgentHookEvent,
-    val sessionId: String,
-    val workspacePath: String,
-    val matcherValue: String? = null,
-    val payload: JsonObject = buildJsonObject { },
-)
-
-/** Hook 命令返回给运行时的可执行结果。 */
-data class AgentHookDispatchResult(
-    val decision: AgentHookDecision = AgentHookDecision.CONTINUE,
-    val additionalContext: String? = null,
-    val updatedInput: JsonObject? = null,
-)
-
-/** 隔离 Hook 运行时，便于本地工具与 Agent 生命周期共享同一套策略。 */
-interface AgentHookDispatcher {
-    /** 按配置顺序运行匹配的 Hook，并返回合并后的执行结果。 */
-    suspend fun dispatch(request: AgentHookDispatchRequest): AgentHookDispatchResult
-}
-
-/** 未配置 Hook 时的零开销实现。 */
-object NoAgentHookDispatcher : AgentHookDispatcher {
-    override suspend fun dispatch(request: AgentHookDispatchRequest): AgentHookDispatchResult = AgentHookDispatchResult()
-}
-
-/** 子进程执行结果，供 Hook 解析逻辑和单元测试共用。 */
-data class AgentHookCommandResult(
-    val stdout: String,
-    val stderr: String,
-    val exitCode: Int?,
-    val timedOut: Boolean,
-)
-
-/** 执行 Hook 命令的窄接口，避免测试依赖真实 Windows Shell。 */
-fun interface AgentHookCommandExecutor {
-    /** 在给定工作目录执行一条 `cmd.exe` 命令，并把 input 写入 stdin。 */
-    fun execute(
-        command: String,
-        workingDirectory: File,
-        input: String,
-        timeoutMillis: Long,
-    ): AgentHookCommandResult
-}
-
-/** 用 Windows cmd 执行用户全局设置中的 Hook 命令。 */
-class WindowsAgentHookCommandExecutor(
-    private val processRunner: DesktopProcessRunner = DesktopProcessRunner(HOOK_OUTPUT_LIMIT_BYTES),
-) : AgentHookCommandExecutor {
-    /** 执行一条 Hook 命令并保留 stdout 与 stderr，以供事件语义判定。 */
-    override fun execute(
-        command: String,
-        workingDirectory: File,
-        input: String,
-        timeoutMillis: Long,
-    ): AgentHookCommandResult {
-        val result = processRunner.run(
-            DesktopProcessRunner.Args(
-                command = listOf("cmd.exe", "/d", "/s", "/c", command),
-                workingDirectory = workingDirectory,
-                timeoutMillis = timeoutMillis,
-                standardInput = input,
-            ),
-        )
-        return AgentHookCommandResult(
-            stdout = result.stdout,
-            stderr = result.stderr,
-            exitCode = result.exitCode,
-            timedOut = result.outcome == DesktopProcessRunner.Outcome.TIMED_OUT,
-        )
-    }
-
-    private companion object {
-        const val HOOK_OUTPUT_LIMIT_BYTES = 64 * 1024
-    }
-}
 
 /**
  * 执行 Junie 事件兼容的命令 Hook。
@@ -116,7 +33,16 @@ class WindowsAgentHookDispatcher(
     private val commandExecutor: AgentHookCommandExecutor = WindowsAgentHookCommandExecutor(),
     private val onDiagnostic: (String) -> Unit = {},
 ) : AgentHookDispatcher {
-    private val asyncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var lifetime = AgentHookLifetime()
+
+    /** Gateway 在命令运行前绑定会话所有权，配置更新不丢失旧任务。 */
+    override fun bindLifetime(lifetime: AgentHookLifetime) {
+        if (this.lifetime !== lifetime) this.lifetime.close()
+        this.lifetime = lifetime
+    }
+
+    /** 独立调用方关闭 dispatcher 时取消其后台任务。 */
+    override fun close() { lifetime.close() }
 
     /** 运行当前事件全部匹配项，并将 JSON 输出转换为可执行结果。 */
     override suspend fun dispatch(request: AgentHookDispatchRequest): AgentHookDispatchResult {
@@ -130,7 +56,7 @@ class WindowsAgentHookDispatcher(
             .orEmpty()
             .filter { matcher -> matcherMatches(matcher, request.matcherValue) }
             .flatMap(AgentHookMatcher::hooks)
-        for (command in commands) {
+        for ((commandIndex, command) in commands.withIndex()) {
             if (decision == AgentHookDecision.BLOCK) break
             if (command.type != COMMAND_TYPE) {
                 onDiagnostic("Hook 已忽略：不支持 type=${command.type}。")
@@ -150,15 +76,20 @@ class WindowsAgentHookDispatcher(
                 continue
             }
             if (command.runAsync) {
-                asyncScope.launch {
-                    runCatching { execute(command, request, input, timeoutMillis) }
-                        .onFailure { error -> onDiagnostic("异步 Hook 执行失败：${error.message ?: "未知错误"}") }
+                val owner = lifetime
+                owner.scope.launch {
+                    runCatching { execute(command, request, input, timeoutMillis, commandIndex) }
+                        .onFailure { error ->
+                            if (error is CancellationException) throw error
+                            onDiagnostic("异步 Hook 执行失败。")
+                        }
                 }
                 continue
             }
             val startedAt = System.nanoTime()
-            val result = runCatching { execute(command, request, input, timeoutMillis) }
+            val result = runCatching { execute(command, request, input, timeoutMillis, commandIndex) }
                 .getOrElse { error ->
+                    if (error is CancellationException) throw error
                     onDiagnostic("Hook 命令执行失败：${error.message ?: "未知错误"}")
                     executionFailureResult(request.event, command)
                 }
@@ -177,38 +108,60 @@ class WindowsAgentHookDispatcher(
     }
 
     /** 执行单条命令，并根据事件与退出码解析 Junie 兼容的阻断语义。 */
-    private fun execute(
+    private suspend fun execute(
         command: AgentHookCommand,
         request: AgentHookDispatchRequest,
         input: String,
         timeoutMillis: Long,
+        commandIndex: Int,
     ): AgentHookDispatchResult {
-        val result = commandExecutor.execute(
-            command = command.command,
-            workingDirectory = workspaceDirectory(request.workspacePath),
-            input = input,
-            timeoutMillis = timeoutMillis,
-        )
-        if (result.timedOut) {
-            return timeoutResult(request.event, command)
+        val context = currentCoroutineContext()
+        val startedAt = System.nanoTime()
+        var outcome = "失败"
+        try {
+            val result = runInterruptible(Dispatchers.IO) { commandExecutor.executeCancellable(
+                command = command.command,
+                workingDirectory = workspaceDirectory(request.workspacePath),
+                input = input,
+                timeoutMillis = timeoutMillis,
+                isCancelled = { !context.isActive },
+            ) }
+            context.ensureActive()
+            outcome = when {
+                result.timedOut -> "超时"
+                result.exitCode == 0 -> "完成"
+                else -> "退出码 ${result.exitCode}"
+            }
+            if (result.timedOut) {
+                return timeoutResult(request.event, command)
+            }
+            val output = parseOutput(result.stdout)
+            val exitDecision = exitDecision(request.event, command, result.exitCode)
+            val outputDecision = output.decision
+            val decision = when {
+                exitDecision == AgentHookDecision.BLOCK -> AgentHookDecision.BLOCK
+                outputDecision == AgentHookDecision.BLOCK -> AgentHookDecision.BLOCK
+                outputDecision != AgentHookDecision.CONTINUE -> outputDecision
+                else -> exitDecision
+            }
+            if (result.exitCode != null && result.exitCode != 0 && decision == AgentHookDecision.CONTINUE) {
+                onDiagnostic("Hook 命令以退出码 ${result.exitCode} 结束：${result.stderr.ifBlank { result.stdout }.trim().take(DIAGNOSTIC_TEXT_LIMIT)}")
+            }
+            return AgentHookDispatchResult(
+                decision = decision,
+                additionalContext = output.additionalContext,
+                updatedInput = output.updatedInput,
+            )
+        } catch (cancelled: CancellationException) {
+            outcome = "取消"
+            throw cancelled
+        } finally {
+            val duration = elapsedMillis(startedAt)
+            AgentHookExecutionHistory.record(AgentHookExecutionSummary(
+                request.sessionId, request.event, command.runAsync, duration, outcome, commandIndex,
+            ))
+            hookLog.info { "event=hook_execution trace=${request.traceId} session=${request.sessionId} hook=${request.event} command_index=$commandIndex async=${command.runAsync} duration_ms=$duration outcome=$outcome" }
         }
-        val output = parseOutput(result.stdout)
-        val exitDecision = exitDecision(request.event, command, result.exitCode)
-        val outputDecision = output.decision
-        val decision = when {
-            exitDecision == AgentHookDecision.BLOCK -> AgentHookDecision.BLOCK
-            outputDecision == AgentHookDecision.BLOCK -> AgentHookDecision.BLOCK
-            outputDecision != AgentHookDecision.CONTINUE -> outputDecision
-            else -> exitDecision
-        }
-        if (result.exitCode != null && result.exitCode != 0 && decision == AgentHookDecision.CONTINUE) {
-            onDiagnostic("Hook 命令以退出码 ${result.exitCode} 结束：${result.stderr.ifBlank { result.stdout }.trim().take(DIAGNOSTIC_TEXT_LIMIT)}")
-        }
-        return AgentHookDispatchResult(
-            decision = decision,
-            additionalContext = output.additionalContext,
-            updatedInput = output.updatedInput,
-        )
     }
 
     /** 命令超时时，Stop 可由 blockOnError 阻断；其他事件保留默认继续或人工确认语义。 */
@@ -327,6 +280,7 @@ class WindowsAgentHookDispatcher(
         const val ADDITIONAL_CONTEXT_LIMIT = 16_000
         const val DIAGNOSTIC_TEXT_LIMIT = 500
         val HOOK_JSON = Json { ignoreUnknownKeys = true }
+        val hookLog = KotlinLogging.logger { }
     }
 }
 

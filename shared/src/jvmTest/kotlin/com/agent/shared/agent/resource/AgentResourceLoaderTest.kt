@@ -3,6 +3,9 @@ package com.agent.shared.agent.resource
 import com.agent.shared.settings.model.McpServerSettings
 import com.agent.shared.settings.model.McpServerTransport
 import com.agent.shared.settings.model.AgentHookEvent
+import com.agent.shared.settings.model.AgentHookCommand
+import com.agent.shared.settings.model.AgentHookMatcher
+import com.agent.shared.settings.model.AgentHookSettings
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -38,6 +41,50 @@ class AgentResourceLoaderTest {
         assertEquals(listOf("npx", "-y", "@modelcontextprotocol/server-filesystem"), server.command)
         assertEquals(mapOf("ROOT" to "C:/workspace"), server.environment)
         assertEquals("settings", server.packageId)
+    }
+
+    /** 远程 MCP 的 Headers 必须无损进入运行时资源模型。 */
+    @Test
+    fun `should load remote mcp headers`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                userMcpServers = listOf(
+                    McpServerSettings(
+                        id = "remote",
+                        transport = McpServerTransport.STREAMABLE_HTTP,
+                        url = "https://example.test/mcp",
+                        headers = mapOf("Authorization" to "Bearer placeholder"),
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        assertEquals(mapOf("Authorization" to "Bearer placeholder"), snapshot.mcpServers.single().headers)
+        assertEquals(snapshot.mcpServers.single().headers, snapshot.toRuntimeResources().mcpServers.single().headers)
+    }
+
+    /** 已保存用户 Hooks 只在资源加载时进入新快照，并与包 Hooks 采用附加语义。 */
+    @Test
+    fun `should include saved user hooks in resource snapshot`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val hooks = AgentHookSettings(
+            mapOf(
+                AgentHookEvent.USER_PROMPT_SUBMIT to listOf(
+                    AgentHookMatcher(hooks = listOf(AgentHookCommand(command = "echo user"))),
+                ),
+            ),
+        )
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(userHome = home, userHookSettings = hooks),
+            version = 1,
+        )
+
+        assertEquals(hooks, snapshot.hookSettings)
     }
 
     /** 未信任项目的直接 MCP 配置必须与项目扩展包一样保持隔离。 */
@@ -372,6 +419,65 @@ class AgentResourceLoaderTest {
         assertEquals("same-extension", server.packageId)
         assertEquals(AgentResourceOrigin.PROJECT_CONFIGURATION, server.origin)
         assertTrue(snapshot.diagnostics.any { it.message.contains("按 Kilo 规则合并") })
+    }
+
+    /** 远程 MCP Header 合并必须忽略名称大小写，并让后加载的值覆盖旧值。 */
+    @Test
+    fun `should merge remote mcp headers case insensitively`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val userPackage = Files.createTempDirectory("mulehang-user-extension")
+        val projectPackage = Files.createTempDirectory("mulehang-project-extension")
+        Files.writeString(
+            userPackage.resolve("package.json"),
+            """{"name":"user-extension","mulehang.mcp":{"remote":{"transport":"sse","url":"https://example.test/sse","headers":{"Authorization":"user","X-Tenant":"user"}}}}""",
+        )
+        Files.writeString(
+            projectPackage.resolve("package.json"),
+            """{"name":"project-extension","mulehang.mcp":{"remote":{"headers":{"authorization":"project","X-Trace":"project"}}}}""",
+        )
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                projectTrusted = true,
+                packages = listOf(
+                    InstalledAgentExtensionPackage(id = "user", root = userPackage),
+                    InstalledAgentExtensionPackage(
+                        id = "project",
+                        root = projectPackage,
+                        origin = AgentResourceOrigin.PROJECT_CONFIGURATION,
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        assertEquals(
+            mapOf("authorization" to "project", "X-Tenant" to "user", "X-Trace" to "project"),
+            snapshot.mcpServers.single().headers,
+        )
+    }
+
+    /** 含 URI user-info 的远程 MCP 地址不得进入可连接资源。 */
+    @Test
+    fun `should reject remote mcp url with embedded credentials`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                userMcpServers = listOf(
+                    McpServerSettings(
+                        id = "remote",
+                        transport = McpServerTransport.SSE,
+                        url = "https://user:secret@example.test/sse",
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        assertTrue(snapshot.mcpServers.isEmpty())
+        assertTrue(snapshot.diagnostics.any { it.message.contains("有效的 http(s)") })
     }
 
     /** 改变 MCP 传输类型时不能把旧协议的命令和环境变量带入新声明。 */

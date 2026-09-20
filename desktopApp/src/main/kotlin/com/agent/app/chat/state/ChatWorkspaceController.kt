@@ -41,6 +41,7 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
     fun deleteConversation(conversationId: String) {
         with(window) {
             val deletedConversation = findConversationOrNull(conversationId) ?: return
+            onSessionClosed(conversationId, deletedConversation.workspacePath)
             invalidateConversationTitleGeneration(conversationId)
             if (activeRunConversationId == conversationId) {
                 activeRunJob?.cancel()

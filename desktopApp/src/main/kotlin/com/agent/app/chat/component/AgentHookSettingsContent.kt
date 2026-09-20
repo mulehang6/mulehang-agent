@@ -4,9 +4,14 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.agent.app.design.AppMuted
@@ -28,9 +33,10 @@ import org.jetbrains.jewel.ui.component.Text
 @Composable
 internal fun AgentHookSettingsContent(
     document: SettingsDocument,
+    savedHooks: AgentHookSettings,
     layer: ConfigLayer,
+    onSave: () -> Unit,
     onDocumentChange: (SettingsDocument) -> Unit,
-    onChangeNotification: (String) -> Unit,
 ) {
     GroupHeader("Agent Hooks")
     if (layer != ConfigLayer.USER) {
@@ -44,30 +50,85 @@ internal fun AgentHookSettingsContent(
         "命令通过 cmd.exe 执行，并从 stdin 接收 JSON。支持 SessionStart、UserPromptSubmit、PreToolUse、Stop、StopFailure、PermissionRequest 与 SessionEnd。",
         style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
     )
+    HookExecutionResults()
     SettingsActionButton("添加 Hook 规则", emphasized = true) {
         onDocumentChange(document.withAddedHookRule())
-        onChangeNotification("已添加 Agent Hook 规则")
     }
     val rules = document.hooks.hooks.flatMap { (event, matchers) ->
         matchers.mapIndexed { index, matcher -> HookRuleReference(event, index, matcher) }
     }
+    var editingRuleOrigins by remember(layer) { mutableStateOf(emptyMap<HookRuleKey, HookRuleReference>()) }
+    LaunchedEffect(savedHooks) {
+        editingRuleOrigins = editingRuleOrigins.filterKeys { key ->
+            document.hooks.hooks[key.event]?.getOrNull(key.index) != savedHooks.hooks[key.event]?.getOrNull(key.index)
+        }
+    }
     if (rules.isEmpty()) {
         Text("尚未配置 Hook。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+        if (document.hooks != savedHooks) {
+            ExtensionSettingsCard {
+                Text("已移除全部 Hook 规则，保存后写入配置。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+                SettingsActionButton("保存", emphasized = true, onClick = onSave)
+            }
+        }
     } else {
         rules.forEach { rule ->
-            HookRuleEditor(
-                rule = rule,
-                onChange = { updatedEvent, updatedMatcher ->
-                    onDocumentChange(document.withUpdatedHookRule(rule.event, rule.index, updatedEvent, updatedMatcher))
-                },
-                onRemove = {
-                    onDocumentChange(document.withoutHookRule(rule.event, rule.index))
-                    onChangeNotification("已移除 ${hookEventLabel(rule.event)} Hook 规则")
-                },
-            )
+            val key = HookRuleKey(rule.event, rule.index)
+            val editingOrigin = editingRuleOrigins[key]
+            val savedMatcher = editingOrigin?.matcher ?: savedHooks.hooks[rule.event]?.getOrNull(rule.index)
+            if (savedMatcher == rule.matcher && key !in editingRuleOrigins) {
+                SavedHookRuleCard(
+                    rule = rule,
+                    onEdit = { editingRuleOrigins = editingRuleOrigins + (key to rule) },
+                    onRemove = { onDocumentChange(document.withoutHookRule(rule.event, rule.index)) },
+                )
+            } else {
+                HookRuleEditor(
+                    rule = rule,
+                    saveEnabled = editingOrigin?.let { origin ->
+                        origin.event != rule.event || origin.matcher != rule.matcher
+                    } ?: (savedMatcher == null || savedMatcher != rule.matcher),
+                    onChange = { updatedEvent, updatedMatcher ->
+                        if (editingOrigin != null && updatedEvent != rule.event) {
+                            val updatedKey = HookRuleKey(
+                                event = updatedEvent,
+                                index = document.hooks.hooks[updatedEvent].orEmpty().size,
+                            )
+                            editingRuleOrigins = editingRuleOrigins - key + (updatedKey to editingOrigin)
+                        }
+                        onDocumentChange(document.withUpdatedHookRule(rule.event, rule.index, updatedEvent, updatedMatcher))
+                    },
+                    onRemove = {
+                        editingRuleOrigins = editingRuleOrigins - key
+                        onDocumentChange(document.withoutHookRule(rule.event, rule.index))
+                    },
+                    onCancel = {
+                        editingRuleOrigins = editingRuleOrigins - key
+                        onDocumentChange(
+                            when {
+                                editingOrigin != null -> document.withRestoredHookRule(rule.event, rule.index, editingOrigin)
+                                savedMatcher != null -> document.withUpdatedHookRule(
+                                    rule.event,
+                                    rule.index,
+                                    rule.event,
+                                    savedMatcher,
+                                )
+                                else -> document.withoutHookRule(rule.event, rule.index)
+                            },
+                        )
+                    },
+                    onSave = onSave,
+                )
+            }
         }
     }
 }
+
+/** 已保存 Hook 规则在当前事件列表中的稳定位置。 */
+private data class HookRuleKey(
+    val event: AgentHookEvent,
+    val index: Int,
+)
 
 /** 当前文档中单条 Hook 规则的稳定位置。 */
 private data class HookRuleReference(
@@ -76,12 +137,37 @@ private data class HookRuleReference(
     val matcher: AgentHookMatcher,
 )
 
+/** 用摘要卡片替代已保存规则的编辑表单，编辑动作会在原位置恢复表单。 */
+@Composable
+private fun SavedHookRuleCard(
+    rule: HookRuleReference,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    ExtensionSettingsCard {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(SettingsInlineSpacing),
+            verticalArrangement = Arrangement.spacedBy(SettingsInlineSpacing),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(hookEventLabel(rule.event), style = JewelTheme.defaultTextStyle.copy(color = AppText))
+            Text("${rule.matcher.hooks.size} 条命令", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+            SettingsActionButton("编辑", onClick = onEdit)
+            SettingsActionButton("删除", destructive = true, onClick = onRemove)
+        }
+    }
+}
+
 /** 编辑一个事件、匹配器和其顺序命令列表。 */
 @Composable
 private fun HookRuleEditor(
     rule: HookRuleReference,
+    saveEnabled: Boolean,
     onChange: (AgentHookEvent, AgentHookMatcher) -> Unit,
     onRemove: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
 ) {
     val comboBoxStyle = rememberProviderProtocolComboBoxStyle()
     ExtensionSettingsCard {
@@ -129,14 +215,17 @@ private fun HookRuleEditor(
                 },
             )
         }
-        Row(
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(SettingsInlineSpacing),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(SettingsInlineSpacing),
         ) {
-            SettingsActionButton("添加命令", compact = true) {
+            SettingsActionButton("保存", emphasized = true, enabled = saveEnabled, onClick = onSave)
+            SettingsActionButton("添加命令", emphasized = true) {
                 onChange(rule.event, rule.matcher.copy(hooks = rule.matcher.hooks + AgentHookCommand(command = "")))
             }
-            SettingsActionButton("移除规则", destructive = true, compact = true, onClick = onRemove)
+            SettingsActionButton("移除规则", destructive = true, onClick = onRemove)
+            SettingsActionButton("取消", onClick = onCancel)
         }
     }
 }
@@ -161,15 +250,20 @@ private fun HookCommandEditor(
             value = command.timeout?.toString().orEmpty(),
             placeholder = "留空使用 ${hookDefaultTimeoutSeconds(event)} 秒",
         ) { value -> onChange(command.copy(timeout = value.trim().toIntOrNull())) }
-        SettingsRow("异步执行") {
+        SettingsRow("后台执行") {
             Checkbox(checked = command.runAsync, onCheckedChange = { enabled -> onChange(command.copy(runAsync = enabled)) })
         }
+        Text(
+            if (command.runAsync) "不等待命令完成；结果不改变当前请求或审批决策。会话结束时取消。"
+            else "等待命令完成后继续；可修改输入、附加上下文或阻止当前操作。",
+            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+        )
         if (event == AgentHookEvent.STOP) {
             SettingsRow("出错时阻止结束") {
                 Checkbox(checked = command.blockOnError, onCheckedChange = { enabled -> onChange(command.copy(blockOnError = enabled)) })
             }
         }
-        SettingsActionButton("删除命令", destructive = true, compact = true, onClick = onRemove)
+        SettingsActionButton("删除命令", destructive = true, onClick = onRemove)
     }
 }
 
@@ -222,6 +316,19 @@ private fun SettingsDocument.withUpdatedHookRule(
     return copy(hooks = AgentHookSettings(byEvent))
 }
 
+/** 取消跨事件编辑时把规则恢复到保存前的事件和列表位置。 */
+private fun SettingsDocument.withRestoredHookRule(
+    currentEvent: AgentHookEvent,
+    currentIndex: Int,
+    original: HookRuleReference,
+): SettingsDocument {
+    val byEvent = hooks.withoutRule(currentEvent, currentIndex) ?: return this
+    val originalRules = byEvent[original.event].orEmpty().toMutableList()
+    originalRules.add(original.index.coerceIn(0, originalRules.size), original.matcher)
+    byEvent[original.event] = originalRules
+    return copy(hooks = AgentHookSettings(byEvent))
+}
+
 /** 移除指定规则，空事件列表不会写入 settings.json。 */
 private fun SettingsDocument.withoutHookRule(
     event: AgentHookEvent,
@@ -245,7 +352,7 @@ private fun AgentHookSettings.withoutRule(
 }
 
 /** UI 采用事件的 Junie 名称，配置写入同名 JSON key。 */
-private fun hookEventLabel(event: AgentHookEvent): String = when (event) {
+internal fun hookEventLabel(event: AgentHookEvent): String = when (event) {
     AgentHookEvent.SESSION_START -> "SessionStart"
     AgentHookEvent.USER_PROMPT_SUBMIT -> "UserPromptSubmit"
     AgentHookEvent.PRE_TOOL_USE -> "PreToolUse"

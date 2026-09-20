@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * 在受限时间和内存范围内执行一次短生命周期的本地子进程。
@@ -66,6 +67,7 @@ class DesktopProcessRunner(
      * 启动进程，并在进程存活期间并发排空 stdout 与 stderr。
      */
     fun run(args: Args): Result {
+        if (args.isCancelled()) return Result(null, "", "", false, false, Outcome.CANCELLED)
         require(args.workingDirectory.isDirectory) {
             "工作目录不存在或不是目录: ${args.workingDirectory.absolutePath}"
         }
@@ -101,16 +103,18 @@ class DesktopProcessRunner(
      */
     private fun waitForProcess(process: Process, args: Args): Outcome {
         val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(args.timeoutMillis)
+        val descendants = linkedMapOf<Long, ProcessHandle>()
         var restoreInterrupted = false
         try {
             while (true) {
+                process.descendants().use { children -> children.forEach { descendants[it.pid()] = it } }
                 if (args.isCancelled()) {
-                    terminate(process)
+                    terminate(process, descendants.values.toList())
                     return Outcome.CANCELLED
                 }
                 val remainingNanos = deadlineNanos - System.nanoTime()
                 if (remainingNanos <= 0) {
-                    terminate(process)
+                    terminate(process, descendants.values.toList())
                     return Outcome.TIMED_OUT
                 }
                 val waitMillis = minOf(
@@ -123,7 +127,7 @@ class DesktopProcessRunner(
             }
         } catch (_: InterruptedException) {
             restoreInterrupted = true
-            terminate(process)
+            terminate(process, descendants.values.toList())
             return Outcome.CANCELLED
         } finally {
             if (restoreInterrupted) Thread.currentThread().interrupt()
@@ -133,7 +137,11 @@ class DesktopProcessRunner(
     /**
      * 先尝试正常结束进程，再在宽限期后强制终止。
      */
-    private fun terminate(process: Process) {
+    private fun terminate(process: Process, observedDescendants: List<ProcessHandle> = emptyList()) {
+        // 先取得后代，再结束 cmd 包装器，避免后代继续持有输出管道。
+        val descendants = (observedDescendants + runCatching { process.descendants().use { it.toList() } }
+            .getOrDefault(emptyList())).distinctBy { it.pid() }
+        descendants.asReversed().forEach { child -> runCatching { child.destroy() } }
         process.destroy()
         try {
             if (!process.waitFor(TERMINATION_GRACE_PERIOD_MILLIS, TimeUnit.MILLISECONDS)) {
@@ -143,6 +151,10 @@ class DesktopProcessRunner(
         } catch (_: InterruptedException) {
             process.destroyForcibly()
             Thread.currentThread().interrupt()
+        } finally {
+            descendants.asReversed().forEach { child ->
+                runCatching { if (child.isAlive) child.destroyForcibly() }
+            }
         }
     }
 
@@ -181,7 +193,11 @@ class DesktopProcessRunner(
      * 等待输出读取任务完成，并将读取异常作为执行失败抛出。
      */
     private fun awaitOutput(output: Future<CapturedOutput>): CapturedOutput = try {
-        output.get()
+        output.get(OUTPUT_DRAIN_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+    } catch (_: TimeoutException) {
+        // Windows 的被终止包装进程可能留下尚未关闭的继承管道，不能无限等 EOF。
+        output.cancel(true)
+        CapturedOutput(text = "", truncated = true)
     } catch (error: ExecutionException) {
         throw IllegalStateException("读取子进程输出失败。", error.cause)
     }
@@ -196,7 +212,9 @@ class DesktopProcessRunner(
     /** stdin 在子进程提前退出时可安全忽略 broken pipe，其余失败需要向调用方暴露。 */
     private fun awaitInput(input: Future<*>) {
         try {
-            input.get()
+            input.get(OUTPUT_DRAIN_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            input.cancel(true)
         } catch (error: ExecutionException) {
             if (error.cause !is java.io.IOException) {
                 throw IllegalStateException("写入子进程输入失败。", error.cause)
@@ -286,5 +304,6 @@ class DesktopProcessRunner(
         const val TERMINATION_GRACE_PERIOD_MILLIS = 500L
         const val FORCED_TERMINATION_WAIT_MILLIS = 500L
         const val STREAM_BUFFER_SIZE = 8_192
+        const val OUTPUT_DRAIN_TIMEOUT_MILLIS = 1_000L
     }
 }

@@ -7,6 +7,7 @@ import com.agent.shared.settings.model.SettingsDocument
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** MCP 设置页的输入规范化与保存前校验回归测试。 */
 class McpSettingsContentTest {
@@ -62,5 +63,57 @@ class McpSettingsContentTest {
         )
 
         assertEquals("stdio MCP 'broken' 必须填写命令。", validateMcpServerSettings(document))
+    }
+
+    /** 停用的 MCP 即使尚未填完，也不应阻塞保存其他设置。 */
+    @Test
+    fun `should ignore disabled MCP validation`() {
+        val document = SettingsDocument(
+            agentResources = AgentResourceSettings(
+                mcpServers = listOf(
+                    McpServerSettings(
+                        id = "disabled",
+                        transport = McpServerTransport.STDIO,
+                        enabled = false,
+                    ),
+                ),
+            ),
+        )
+
+        assertNull(validateMcpServerSettings(document))
+    }
+
+    /** 修改启用状态只能替换原位置的记录，不能改变设置列表顺序。 */
+    @Test
+    fun `should preserve MCP order when updating a server`() {
+        val first = McpServerSettings(id = "first", transport = McpServerTransport.STDIO, command = listOf("first"))
+        val second = McpServerSettings(id = "second", transport = McpServerTransport.STDIO, command = listOf("second"))
+        val document = SettingsDocument(agentResources = AgentResourceSettings(mcpServers = listOf(first, second)))
+
+        val updated = document.withUpdatedMcpServer("first", first.copy(enabled = false))
+
+        assertEquals(listOf("first", "second"), updated.agentResources.mcpServers.map(McpServerSettings::id))
+        assertTrue(!updated.agentResources.mcpServers.first().enabled)
+    }
+
+    /** Header 重命名为已有名称时必须保留两个原值，避免凭据被静默覆盖。 */
+    @Test
+    fun `should reject case insensitive MCP header collision`() {
+        val headers = mapOf("Authorization" to "old", "X-Trace" to "trace")
+
+        assertNull(updateMcpHeader(headers, "X-Trace", "authorization", "new"))
+        assertEquals(
+            mapOf("Authorization" to "old", "X-Trace" to "new"),
+            updateMcpHeader(headers, "X-Trace", "X-Trace", "new"),
+        )
+    }
+
+    /** 设置卡片展示远程地址时必须移除 URI user-info。 */
+    @Test
+    fun `should redact credentials from MCP url display`() {
+        val displayed = sanitizeMcpUrlForDisplay("https://user:secret@example.test/mcp")
+
+        assertEquals("https://example.test/mcp", displayed)
+        assertTrue("secret" !in displayed)
     }
 }

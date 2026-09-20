@@ -22,13 +22,12 @@ import kotlin.test.assertNotEquals
 /** 设置 Island 的交互色与稳定状态回归测试。 */
 class SettingsPanelInteractionTest {
 
-    /** AI 服务只属于用户级全局设置；扩展仍可按用户或项目范围管理。 */
+    /** 外观是一级分类，主题位于其下；外观编辑器只属于用户级全局设置。 */
     @Test
-    fun `should show appearance only for global settings scope`() {
+    fun `should nest theme under appearance settings`() {
         assertEquals(
             listOf(
                 SettingsSection.APPEARANCE,
-                SettingsSection.THEME,
                 SettingsSection.TOOLS,
                 SettingsSection.PROVIDERS,
                 SettingsSection.EXTENSIONS,
@@ -36,15 +35,31 @@ class SettingsPanelInteractionTest {
             settingsSectionsFor(ConfigLayer.USER),
         )
         assertEquals(
-            listOf(SettingsSection.THEME, SettingsSection.EXTENSIONS),
+            listOf(SettingsSection.APPEARANCE, SettingsSection.EXTENSIONS),
             settingsSectionsFor(ConfigLayer.PROJECT),
         )
         assertEquals(
-            SettingsSection.THEME,
+            listOf(SettingsSection.APPEARANCE),
+            settingsSectionsFor(ConfigLayer.ENVIRONMENT),
+        )
+        assertEquals(
+            listOf(AppearanceSubsection.OVERVIEW, AppearanceSubsection.THEME),
+            appearanceSubsectionsFor(ConfigLayer.USER),
+        )
+        assertEquals(
+            listOf(AppearanceSubsection.THEME),
+            appearanceSubsectionsFor(ConfigLayer.PROJECT),
+        )
+        assertEquals(
+            AppearanceSubsection.THEME,
+            appearanceSubsectionAfterScopeChange(AppearanceSubsection.OVERVIEW, ConfigLayer.PROJECT),
+        )
+        assertEquals(
+            SettingsSection.APPEARANCE,
             settingsSectionAfterScopeChange(SettingsSection.APPEARANCE, ConfigLayer.ENVIRONMENT),
         )
         assertEquals(
-            SettingsSection.THEME,
+            SettingsSection.APPEARANCE,
             settingsSectionAfterScopeChange(SettingsSection.TOOLS, ConfigLayer.PROJECT),
         )
     }
@@ -130,7 +145,7 @@ class SettingsPanelInteractionTest {
         )
     }
 
-    /** 终端开关导致设置重新布局时，提升的状态不得重置到主题分区。 */
+    /** 设置重新布局时，当前分区、搜索词和展开 Provider 状态不得被重置。 */
     @Test
     fun `should retain settings navigation state across layout changes`() {
         val state = SettingsPanelUiState()
@@ -148,7 +163,7 @@ class SettingsPanelInteractionTest {
     @Test
     fun `should switch settings content to compact layout below threshold`() {
         assertEquals(600, SETTINGS_COMPACT_LAYOUT_THRESHOLD_DP)
-        assertEquals(96, SETTINGS_NAVIGATION_WIDE_WIDTH_DP)
+        assertEquals(120, SETTINGS_NAVIGATION_WIDE_WIDTH_DP)
         assertEquals(SettingsPanelLayout.COMPACT, settingsPanelLayout(599))
         assertEquals(SettingsPanelLayout.WIDE, settingsPanelLayout(600))
     }
@@ -185,6 +200,13 @@ class SettingsPanelInteractionTest {
     fun `should use asymmetric provider editor transition durations`() {
         assertEquals(180, PROVIDER_EDITOR_EXPAND_DURATION_MILLIS)
         assertEquals(140, PROVIDER_EDITOR_COLLAPSE_DURATION_MILLIS)
+    }
+
+    /** 宽屏父项展开略慢、收起更快，且保持在紧凑导航可接受的响应范围内。 */
+    @Test
+    fun `should use responsive settings submenu transition durations`() {
+        assertEquals(180, SETTINGS_SUBMENU_EXPAND_DURATION_MILLIS)
+        assertEquals(140, SETTINGS_SUBMENU_COLLAPSE_DURATION_MILLIS)
     }
 
     /** 任意 Island 外点击都应清除设置和终端的强调状态。 */

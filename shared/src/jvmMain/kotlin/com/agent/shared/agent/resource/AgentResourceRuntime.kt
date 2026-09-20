@@ -30,11 +30,27 @@ class AgentResourceRuntime(
     /** 显式重新发现资源并发布下一个版本，不主动拉取 Git 或启动 MCP 服务。 */
     @Synchronized
     fun reload(request: AgentResourceLoadRequest): AgentResourceSnapshot {
-        val next = loader.load(request, version.incrementAndGet())
-        current.set(next)
-        return next
+        return publish(prepareReload(request))
+    }
+
+    /** 构造尚未发布的下一版快照，供 MCP 连接准备成功后再原子提交。 */
+    @Synchronized
+    fun prepareReload(request: AgentResourceLoadRequest): AgentResourceSnapshot {
+        val nextVersion = version.incrementAndGet()
+        return loader.load(request, nextVersion)
+    }
+
+    /** 发布已经完成外部资源准备的快照；旧运行时在此之前始终可用。 */
+    @Synchronized
+    fun publish(snapshot: AgentResourceSnapshot): AgentResourceSnapshot {
+        val currentSnapshot = current.get()
+        if (snapshot.version <= currentSnapshot.version) return currentSnapshot
+        current.set(snapshot)
+        version.updateAndGet { currentVersion -> maxOf(currentVersion, snapshot.version) }
+        return snapshot
     }
 
     /** 获取最后一次发布的快照，供扩展中心显示诊断与版本号。 */
+    @Suppress("unused")
     fun currentSnapshot(): AgentResourceSnapshot = current.get()
 }

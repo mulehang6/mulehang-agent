@@ -15,6 +15,8 @@ import ai.koog.serialization.JSONObject
 import ai.koog.serialization.JSONPrimitive
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
+import com.agent.shared.agent.api.AgentRunTiming
+import kotlinx.coroutines.flow.onEach
 import com.agent.shared.agent.prompt.buildLlmModel
 import com.agent.shared.agent.provider.ProviderKoogTransportAdapters
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
@@ -207,9 +209,17 @@ private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingAssistantMessag
     request: AgentRunRequest,
     emitEvent: suspend (AgentStreamEvent) -> Unit,
 ): Message.Assistant {
+    val timing = AgentRunTiming(request.traceId)
+    timing.mark("model_request")
+    var firstFrame = true
     val response = collectAssistantMessageFromStream(
-        frames = ProviderKoogTransportAdapters.streamFramesOrNull(this, request)
-            ?: requestLLMStreaming(),
+        frames = (ProviderKoogTransportAdapters.streamFramesOrNull(this@requestStreamingAssistantMessage, request)
+            ?: requestLLMStreaming()).onEach {
+            if (firstFrame) {
+                firstFrame = false
+                timing.mark("first_model_frame")
+            }
+        },
         emitEvent = emitEvent,
     )
     rewritePrompt { currentPrompt ->

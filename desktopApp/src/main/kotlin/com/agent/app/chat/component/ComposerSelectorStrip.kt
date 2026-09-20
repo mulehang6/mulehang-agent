@@ -1,6 +1,4 @@
 @file:OptIn(
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
-    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
     androidx.compose.ui.ExperimentalComposeUiApi::class,
 )
 
@@ -43,6 +41,7 @@ import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import kotlinx.coroutines.delay
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import kotlin.time.Duration.Companion.milliseconds
 
 internal val COMPOSER_SELECTOR_GROUP_GAP = 4.dp
 private val COMPOSER_SELECTOR_HORIZONTAL_PADDING = 20.dp
@@ -130,7 +129,7 @@ internal fun ComposerSelectorStrip(
             if (shouldKeepComposerSelectorCardVisible(compressed, stripHovered, cardHovered, keepCardVisible)) {
                 cardVisible = true
             } else {
-                delay(COMPOSER_SELECTOR_CARD_CLOSE_DELAY_MILLIS)
+                delay(COMPOSER_SELECTOR_CARD_CLOSE_DELAY_MILLIS.milliseconds)
                 if (!stripHovered && !cardHovered && !keepCardVisible) cardVisible = false
             }
         }

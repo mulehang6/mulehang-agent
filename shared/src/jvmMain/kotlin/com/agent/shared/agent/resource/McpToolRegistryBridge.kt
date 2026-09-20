@@ -5,10 +5,7 @@ package com.agent.shared.agent.resource
 import ai.koog.agents.core.tools.ToolBase
 import ai.koog.agents.core.tools.ToolCallMetadata
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.mcp.McpToolRegistryProvider
-import ai.koog.agents.mcp.fromProcess
 import com.agent.shared.agent.api.AgentRuntimeMcpServer
-import com.agent.shared.agent.api.AgentRuntimeMcpTransport
 import com.agent.shared.agent.hook.AgentHookDecision
 import com.agent.shared.agent.hook.AgentHookDispatchRequest
 import com.agent.shared.agent.hook.AgentHookDispatcher
@@ -19,8 +16,6 @@ import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.ToolRisk
 import com.agent.shared.tool.policy.DesktopToolPolicy
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -34,20 +29,17 @@ data class McpToolRegistryDiagnostic(
 class McpToolRegistryLease internal constructor(
     val registry: ToolRegistry,
     val diagnostics: List<McpToolRegistryDiagnostic>,
-    private val processes: List<Process>,
 ) : AutoCloseable {
-    /** 结束仅销毁本轮启动的 stdio server；HTTP client 生命周期由 Koog transport 管理。 */
-    override fun close() {
-        processes.forEach { process ->
-            if (process.isAlive) process.destroy()
-        }
-    }
+    /** 连接由应用级管理器持有；轮次结束只释放本轮包装视图。 */
+    override fun close() = Unit
 }
 
 /**
  * 将快照中的受控 MCP 声明连接成 Koog ToolRegistry，并把每个远程工具置于既有审批策略之后。
  */
-class McpToolRegistryBridge {
+class McpToolRegistryBridge(
+    private val connectionManager: McpConnectionManager = McpConnectionManager(),
+) {
     /**
      * 连接所有服务并把其工具附加到 [baseRegistry]。内建桌面工具优先，冲突的 MCP 工具不会
      * 静默加入；连接失败也作为诊断返回，调用方可在时间线展示。
@@ -61,22 +53,11 @@ class McpToolRegistryBridge {
         sessionId: String = "",
         workspacePath: String = "",
     ): McpToolRegistryLease {
-        if (servers.isEmpty()) {
-            return McpToolRegistryLease(baseRegistry, emptyList(), emptyList())
-        }
-        val diagnostics = mutableListOf<McpToolRegistryDiagnostic>()
-        val processes = mutableListOf<Process>()
+        val snapshot = connectionManager.registriesFor(servers)
+        val diagnostics = snapshot.diagnostics.toMutableList()
         val mergedTools = baseRegistry.tools.toMutableList()
         val names = mergedTools.mapTo(mutableSetOf(), ToolBase<*, *>::name)
-        servers.forEach { server ->
-            val remoteRegistry = runCatching { connect(server, processes) }
-                .getOrElse { error ->
-                    diagnostics += McpToolRegistryDiagnostic(
-                        serverId = server.id,
-                        message = "MCP 连接失败：${error.message ?: "未知错误"}",
-                    )
-                    return@forEach
-                }
+        snapshot.connections.forEach { (server, remoteRegistry) ->
             remoteRegistry.tools.forEach { tool ->
                 if (!names.add(tool.name)) {
                     diagnostics += McpToolRegistryDiagnostic(
@@ -99,37 +80,7 @@ class McpToolRegistryBridge {
         return McpToolRegistryLease(
             registry = ToolRegistry { tools(mergedTools) },
             diagnostics = diagnostics.toList(),
-            processes = processes.toList(),
         )
-    }
-
-    /** 按声明 transport 建立 Koog MCP registry。 */
-    private suspend fun connect(
-        server: AgentRuntimeMcpServer,
-        processes: MutableList<Process>,
-    ): ToolRegistry = when (server.transport) {
-        AgentRuntimeMcpTransport.STDIO -> {
-            val process = withContext(Dispatchers.IO) {
-                ProcessBuilder(server.command)
-                    .apply { environment().putAll(server.environment) }
-                    .start()
-            }
-            try {
-                val registry = McpToolRegistryProvider.fromProcess(process)
-                processes += process
-                registry
-            } catch (error: Throwable) {
-                process.destroyForcibly()
-                throw error
-            }
-        }
-
-        AgentRuntimeMcpTransport.SSE -> McpToolRegistryProvider.fromSseUrl(requireNotNull(server.url))
-        AgentRuntimeMcpTransport.STREAMABLE_HTTP -> McpToolRegistryProvider.streamableHttp {
-            url = requireNotNull(server.url)
-            name = "mulehang-agent"
-            version = "1"
-        }
     }
 }
 

@@ -145,6 +145,13 @@ internal fun ProviderEditorSection(title: String, content: @Composable ColumnSco
 /** 绘制左标签右控件的统一设置行。 */
 @Composable
 internal fun SettingsRow(label: String, content: @Composable () -> Unit) {
+    if (LocalSettingsCompact.current) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(label, style = JewelTheme.defaultTextStyle.copy(color = AppText))
+            Box(Modifier.fillMaxWidth()) { content() }
+        }
+        return
+    }
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.width(132.dp), style = JewelTheme.defaultTextStyle.copy(color = AppText))
         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { content() }

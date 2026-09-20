@@ -31,10 +31,7 @@ internal fun nextAutoScrollFollowState(
     previousTotalItems: Int,
     trailingThreshold: Int = TIMELINE_AUTO_SCROLL_THRESHOLD_ITEMS,
 ): Boolean {
-    if (shouldAutoScrollToLatest(lastVisibleIndex, totalItems, trailingThreshold)) {
-        return true
-    }
-    return currentFollowLatest && totalItems > previousTotalItems
+    return shouldAutoScrollToLatest(lastVisibleIndex, totalItems, trailingThreshold) || currentFollowLatest && totalItems > previousTotalItems
 }
 
 /**

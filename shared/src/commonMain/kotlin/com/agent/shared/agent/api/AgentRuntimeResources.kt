@@ -22,7 +22,7 @@ enum class AgentRuntimeMcpTransport {
 /**
  * 由受控扩展声明、并固定到单轮运行的 MCP 服务配置。
  *
- * 环境变量值由用户的本地 settings 提供，日志和 UI 诊断不得回显它们。
+ * 环境变量与远程请求头由用户的本地 settings 提供，日志和 UI 诊断不得回显它们。
  */
 data class AgentRuntimeMcpServer(
     val id: String,
@@ -30,5 +30,6 @@ data class AgentRuntimeMcpServer(
     val command: List<String> = emptyList(),
     val url: String? = null,
     val environment: Map<String, String> = emptyMap(),
+    val headers: Map<String, String> = emptyMap(),
     val packageId: String,
 )

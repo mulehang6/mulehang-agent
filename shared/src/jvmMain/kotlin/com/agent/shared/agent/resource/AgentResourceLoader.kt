@@ -2,6 +2,7 @@ package com.agent.shared.agent.resource
 
 import com.agent.shared.settings.model.McpServerSettings
 import com.agent.shared.settings.model.append
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -251,7 +252,7 @@ class AgentResourceLoader {
             },
             headers = when (val overrideHeaders = override.headers) {
                 null -> current.headers
-                else -> current.headers.orEmpty() + overrideHeaders
+                else -> mergeHttpHeaders(current.headers.orEmpty(), overrideHeaders)
             },
             packageId = override.packageId,
             origin = override.origin,
@@ -280,10 +281,10 @@ class AgentResourceLoader {
             )
             return null
         }
-        if (resolvedTransport != AgentMcpTransport.STDIO && url == null) {
+        if (resolvedTransport != AgentMcpTransport.STDIO && !isSupportedMcpUrl(url)) {
             diagnostics += AgentResourceDiagnostic(
                 severity = AgentResourceDiagnosticSeverity.WARNING,
-                message = "HTTP MCP '$id' 缺少 url，已跳过。",
+                message = "HTTP MCP '$id' 缺少有效的 http(s) url，已跳过。",
                 path = source,
             )
             return null
@@ -315,6 +316,28 @@ class AgentResourceLoader {
             origin = origin,
         )
     }
+
+    /** 按 HTTP 的大小写不敏感规则应用覆盖 Header，避免生成重复认证 Header。 */
+    private fun mergeHttpHeaders(
+        current: Map<String, String>,
+        override: Map<String, String>,
+    ): Map<String, String> {
+        val merged = LinkedHashMap(current)
+        override.forEach { (name, value) ->
+            merged.keys.filter { existing -> existing.equals(name, ignoreCase = true) }
+                .toList()
+                .forEach(merged::remove)
+            merged[name] = value
+        }
+        return merged
+    }
+
+    /** 仅接受不含内嵌凭据的绝对 http(s) 地址。 */
+    private fun isSupportedMcpUrl(value: String?): Boolean = runCatching {
+        val uri = URI(value?.trim().orEmpty())
+        uri.isAbsolute && uri.scheme.lowercase() in setOf("http", "https") &&
+                !uri.host.isNullOrBlank() && uri.userInfo == null
+    }.getOrDefault(false)
 }
 
 /** 保持设置模型与资源模型的三种 MCP 传输一一对应。 */

@@ -53,9 +53,6 @@ class McpToolRegistryBridge(
         sessionId: String = "",
         workspacePath: String = "",
     ): McpToolRegistryLease {
-        if (servers.isEmpty()) {
-            return McpToolRegistryLease(baseRegistry, emptyList())
-        }
         val snapshot = connectionManager.registriesFor(servers)
         val diagnostics = snapshot.diagnostics.toMutableList()
         val mergedTools = baseRegistry.tools.toMutableList()

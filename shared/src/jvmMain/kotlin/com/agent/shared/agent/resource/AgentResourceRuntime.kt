@@ -35,14 +35,18 @@ class AgentResourceRuntime(
 
     /** 构造尚未发布的下一版快照，供 MCP 连接准备成功后再原子提交。 */
     @Synchronized
-    fun prepareReload(request: AgentResourceLoadRequest): AgentResourceSnapshot =
-        loader.load(request, version.get() + 1L)
+    fun prepareReload(request: AgentResourceLoadRequest): AgentResourceSnapshot {
+        val nextVersion = version.incrementAndGet()
+        return loader.load(request, nextVersion)
+    }
 
     /** 发布已经完成外部资源准备的快照；旧运行时在此之前始终可用。 */
     @Synchronized
     fun publish(snapshot: AgentResourceSnapshot): AgentResourceSnapshot {
-        version.updateAndGet { currentVersion -> maxOf(currentVersion, snapshot.version) }
+        val currentSnapshot = current.get()
+        if (snapshot.version <= currentSnapshot.version) return currentSnapshot
         current.set(snapshot)
+        version.updateAndGet { currentVersion -> maxOf(currentVersion, snapshot.version) }
         return snapshot
     }
 

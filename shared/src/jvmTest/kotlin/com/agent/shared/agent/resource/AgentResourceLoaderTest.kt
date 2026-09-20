@@ -421,6 +421,65 @@ class AgentResourceLoaderTest {
         assertTrue(snapshot.diagnostics.any { it.message.contains("按 Kilo 规则合并") })
     }
 
+    /** 远程 MCP Header 合并必须忽略名称大小写，并让后加载的值覆盖旧值。 */
+    @Test
+    fun `should merge remote mcp headers case insensitively`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val userPackage = Files.createTempDirectory("mulehang-user-extension")
+        val projectPackage = Files.createTempDirectory("mulehang-project-extension")
+        Files.writeString(
+            userPackage.resolve("package.json"),
+            """{"name":"user-extension","mulehang.mcp":{"remote":{"transport":"sse","url":"https://example.test/sse","headers":{"Authorization":"user","X-Tenant":"user"}}}}""",
+        )
+        Files.writeString(
+            projectPackage.resolve("package.json"),
+            """{"name":"project-extension","mulehang.mcp":{"remote":{"headers":{"authorization":"project","X-Trace":"project"}}}}""",
+        )
+
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                projectTrusted = true,
+                packages = listOf(
+                    InstalledAgentExtensionPackage(id = "user", root = userPackage),
+                    InstalledAgentExtensionPackage(
+                        id = "project",
+                        root = projectPackage,
+                        origin = AgentResourceOrigin.PROJECT_CONFIGURATION,
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        assertEquals(
+            mapOf("authorization" to "project", "X-Tenant" to "user", "X-Trace" to "project"),
+            snapshot.mcpServers.single().headers,
+        )
+    }
+
+    /** 含 URI user-info 的远程 MCP 地址不得进入可连接资源。 */
+    @Test
+    fun `should reject remote mcp url with embedded credentials`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val snapshot = AgentResourceLoader().load(
+            AgentResourceLoadRequest(
+                userHome = home,
+                userMcpServers = listOf(
+                    McpServerSettings(
+                        id = "remote",
+                        transport = McpServerTransport.SSE,
+                        url = "https://user:secret@example.test/sse",
+                    ),
+                ),
+            ),
+            version = 1,
+        )
+
+        assertTrue(snapshot.mcpServers.isEmpty())
+        assertTrue(snapshot.diagnostics.any { it.message.contains("有效的 http(s)") })
+    }
+
     /** 改变 MCP 传输类型时不能把旧协议的命令和环境变量带入新声明。 */
     @Test
     fun `should reset connection fields when mcp transport changes`() {

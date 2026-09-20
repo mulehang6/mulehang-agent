@@ -21,4 +21,21 @@ class AgentResourceRuntimeTest {
         runtime.publish(candidate)
         assertEquals(candidate, runtime.currentSnapshot())
     }
+
+    /** 重叠准备必须拿到不同版本，较旧候选不能覆盖较新的已发布快照。 */
+    @Test
+    fun `should reject stale prepared snapshot`() {
+        val home = Files.createTempDirectory("mulehang-resource-home")
+        val runtime = AgentResourceRuntime()
+        val request = AgentResourceLoadRequest(userHome = home)
+        runtime.reload(request)
+
+        val older = runtime.prepareReload(request)
+        val newer = runtime.prepareReload(request)
+
+        assertEquals(older.version + 1L, newer.version)
+        assertEquals(newer, runtime.publish(newer))
+        assertEquals(newer, runtime.publish(older))
+        assertEquals(newer, runtime.currentSnapshot())
+    }
 }

@@ -7,6 +7,7 @@ import ai.koog.agents.mcp.metadata.McpServerInfo
 import com.agent.shared.agent.api.AgentRuntimeMcpServer
 import com.agent.shared.agent.api.AgentRuntimeMcpTransport
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.request.headers
@@ -19,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 /** MCP 服务在应用级连接生命周期中的公开状态。 */
 enum class McpConnectionPhase {
@@ -47,7 +50,9 @@ data class McpServerConnectionStatus(
  *
  * 重载先完整构造新一代连接，再原子替换并关闭旧一代；取消或整体失败时继续保留旧运行时。
  */
-class McpConnectionManager : AutoCloseable {
+class McpConnectionManager(
+    private val connectionInitializationTimeoutMillis: Long = MCP_CONNECTION_INITIALIZATION_TIMEOUT_MILLIS,
+) : AutoCloseable {
     private val reloadMutex = Mutex()
     private val mutableStatuses = MutableStateFlow<List<McpServerConnectionStatus>>(emptyList())
     private var generation = McpConnectionGeneration.EMPTY
@@ -65,7 +70,11 @@ class McpConnectionManager : AutoCloseable {
         val newStatuses = mutableListOf<McpServerConnectionStatus>()
         try {
             normalizedServers.forEach { server ->
-                runCatching { connectMcpServer(server) }
+                runCatching {
+                    withTimeoutOrNull(connectionInitializationTimeoutMillis.milliseconds) {
+                        connectMcpServer(server)
+                    } ?: throw McpConnectionTimeoutException()
+                }
                     .onSuccess { connection ->
                         newConnections += connection
                         newStatuses += connection.status()
@@ -74,7 +83,7 @@ class McpConnectionManager : AutoCloseable {
                         if (error is CancellationException) throw error
                         newStatuses += server.status(
                             phase = McpConnectionPhase.FAILED,
-                            error = "MCP 连接失败：${error.message ?: "未知错误"}",
+                            error = mcpConnectionFailureMessage(error),
                         )
                     }
                 mutableStatuses.value = newStatuses + normalizedServers
@@ -224,12 +233,31 @@ private suspend fun connectMcpServer(server: AgentRuntimeMcpServer): ActiveMcpCo
 /** 创建为单个远程服务附加受控 Headers 的客户端。 */
 internal fun remoteMcpHttpClient(configuredHeaders: Map<String, String>): HttpClient = HttpClient {
     install(SSE)
+    install(HttpTimeout) {
+        connectTimeoutMillis = MCP_CONNECT_TIMEOUT_MILLIS
+        requestTimeoutMillis = MCP_REQUEST_TIMEOUT_MILLIS
+        socketTimeoutMillis = MCP_SOCKET_TIMEOUT_MILLIS
+    }
     defaultRequest {
         headers {
             configuredHeaders.forEach { (name, value) -> append(name, value) }
         }
     }
 }
+
+/** 连接准备超时，单个服务失败但不应取消整轮重载。 */
+private class McpConnectionTimeoutException : IllegalStateException("MCP 连接准备超时。")
+
+/** 生成不泄露远程地址或认证信息的连接诊断。 */
+private fun mcpConnectionFailureMessage(error: Throwable): String = when (error) {
+    is McpConnectionTimeoutException -> "MCP 连接准备超时。"
+    else -> "MCP 连接失败：${error::class.simpleName ?: "未知错误"}。"
+}
+
+private const val MCP_CONNECTION_INITIALIZATION_TIMEOUT_MILLIS = 30_000L
+private const val MCP_CONNECT_TIMEOUT_MILLIS = 10_000L
+private const val MCP_REQUEST_TIMEOUT_MILLIS = 30_000L
+private const val MCP_SOCKET_TIMEOUT_MILLIS = 30_000L
 
 /** 从声明构造不含敏感内容的状态。 */
 private fun AgentRuntimeMcpServer.status(

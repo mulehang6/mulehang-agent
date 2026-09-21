@@ -92,6 +92,8 @@ internal fun WorkspacePanel(
     val isFollowingLatest = remember(conversationId) { mutableStateOf(true) }
     val submittedMessageScrollRequest = remember(conversationId) { mutableStateOf(0) }
     var messageEntry by remember(conversationId) { mutableStateOf<PendingMessageEntry?>(null) }
+    var returningToHead by remember(conversationId) { mutableStateOf(false) }
+    var returnToHeadError by remember(conversationId) { mutableStateOf<String?>(null) }
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
@@ -183,6 +185,25 @@ internal fun WorkspacePanel(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(18.dp),
                             ) {
+                                if (
+                                    activeConversation != null &&
+                                    state.conversationTreeController.isAwayFromHead(activeConversation.id)
+                                ) {
+                                    HistoricalBranchBanner(
+                                        returning = returningToHead,
+                                        errorMessage = returnToHeadError,
+                                        onReturnToHead = {
+                                            returnToHeadError = null
+                                            returningToHead = true
+                                            scope.launch {
+                                                val result = state.conversationTreeController.returnToHead(activeConversation.id)
+                                                returningToHead = false
+                                                if (!result.succeeded) returnToHeadError = result.message
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp),
+                                    )
+                                }
                                 if (
                                     activeConversation == null ||
                                     (activeConversation.items.isEmpty() && activeConversation.executionState == ExecutionState.Idle)

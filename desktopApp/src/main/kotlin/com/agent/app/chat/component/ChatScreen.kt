@@ -198,6 +198,7 @@ internal fun ChatScreen(
                                 sidePanel = { sideModifier ->
                                     val settings = @Composable { settingsModifier: Modifier ->
                                         SettingsPanel(
+                                            chatState = state,
                                             projectRoot = projectRoot,
                                             userHome = userHome,
                                             themeMode = themeMode,

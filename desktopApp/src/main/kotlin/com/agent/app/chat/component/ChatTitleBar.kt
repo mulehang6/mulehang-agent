@@ -13,11 +13,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +60,7 @@ import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.window.DecoratedWindowScope
 import org.jetbrains.jewel.window.TitleBar
@@ -71,6 +73,7 @@ internal const val TITLE_BAR_APPLICATION_CLIENT_REGION_KEY = "application-menu"
 internal const val TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY = "sidebar-toggle"
 internal const val TITLE_BAR_PROJECT_CLIENT_REGION_KEY = "project-selector"
 internal const val TITLE_BAR_BRANCH_CLIENT_REGION_KEY = "branch-menu"
+internal const val TITLE_BAR_CONVERSATION_TREE_CLIENT_REGION_KEY = "conversation-tree"
 internal const val TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL = "设置"
 internal const val TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL = "退出"
 internal const val TITLE_BAR_PROJECT_SELECT_ACTION_LABEL = "选择工作区…"
@@ -101,6 +104,7 @@ internal fun DecoratedWindowScope.ChatTitleBar(
     var branchName by remember(workspacePath) { mutableStateOf("") }
     var branchRefreshToken by remember(workspacePath) { mutableStateOf(0) }
     var applicationMenuVisible by remember { mutableStateOf(false) }
+    var conversationTreeVisible by remember(activeConversation?.id) { mutableStateOf(false) }
     val projectIconPainter = painterResource(Res.drawable.mulehang_agent)
     val palette = LocalDesktopPalette.current
     val titleBarSeparatorHeightPx = with(LocalDensity.current) {
@@ -127,150 +131,169 @@ internal fun DecoratedWindowScope.ChatTitleBar(
     ) {
         ProvideDesktopAppearance(appearance = appearance) {
             Row(
-            modifier = Modifier
-                .align(Alignment.Start)
-                .fillMaxHeight()
-                .padding(start = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Box {
-                ActionButton(
-                    onClick = { applicationMenuVisible = true },
-                    contentPadding = PaddingValues(0.dp),
+                modifier = Modifier
+                    .align(Alignment.Start)
+                    .padding(start = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Box {
+                    ActionButton(
+                        onClick = { applicationMenuVisible = true },
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier
+                            .size(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                            .clientRegion(TITLE_BAR_APPLICATION_CLIENT_REGION_KEY),
+                    ) {
+                        Image(
+                            painter = projectIconPainter,
+                            contentDescription = "mulehang-agent 菜单",
+                            modifier = Modifier.size(HEADER_PROJECT_ICON_SIZE_DP.dp),
+                        )
+                    }
+                    if (applicationMenuVisible) {
+                        PopupMenu(
+                            onDismissRequest = {
+                                applicationMenuVisible = false
+                                true
+                            },
+                            horizontalAlignment = Alignment.Start,
+                        ) {
+                            selectableItem(
+                                selected = false,
+                                onClick = {
+                                    applicationMenuVisible = false
+                                    onOpenSettings()
+                                },
+                            ) {
+                                Text(TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL)
+                            }
+                            selectableItem(
+                                selected = false,
+                                onClick = {
+                                    applicationMenuVisible = false
+                                    onRequestClose()
+                                },
+                            ) {
+                                Text(TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL)
+                            }
+                        }
+                    }
+                }
+                IconActionButton(
+                    key = AllIconsKeys.General.Menu,
+                    contentDescription = if (sidebarVisible) "隐藏任务侧栏" else "显示任务侧栏",
+                    onClick = { onSidebarVisibilityChange(!sidebarVisible) },
                     modifier = Modifier
                         .size(TITLE_BAR_ACTION_HEIGHT_DP.dp)
-                        .clientRegion(TITLE_BAR_APPLICATION_CLIENT_REGION_KEY),
-                ) {
-                    Image(
-                        painter = projectIconPainter,
-                        contentDescription = "mulehang-agent 菜单",
-                        modifier = Modifier.size(HEADER_PROJECT_ICON_SIZE_DP.dp),
-                    )
-                }
-                if (applicationMenuVisible) {
-                    PopupMenu(
-                        onDismissRequest = {
-                            applicationMenuVisible = false
-                            true
-                        },
-                        horizontalAlignment = Alignment.Start,
-                    ) {
-                        selectableItem(
-                            selected = false,
-                            onClick = {
-                                applicationMenuVisible = false
-                                onOpenSettings()
-                            },
-                        ) {
-                            Text(TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL)
-                        }
-                        selectableItem(
-                            selected = false,
-                            onClick = {
-                                applicationMenuVisible = false
-                                onRequestClose()
-                            },
-                        ) {
-                            Text(TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL)
-                        }
-                    }
-                }
-            }
-            IconActionButton(
-                key = AllIconsKeys.General.Menu,
-                contentDescription = if (sidebarVisible) "隐藏任务侧栏" else "显示任务侧栏",
-                onClick = { onSidebarVisibilityChange(!sidebarVisible) },
-                modifier = Modifier
-                    .size(TITLE_BAR_ACTION_HEIGHT_DP.dp)
-                    .clientRegion(TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY),
-                iconModifier = Modifier.size(20.dp),
-            )
-            Dropdown(
-                modifier = Modifier
-                    .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
-                    .clientRegion(TITLE_BAR_PROJECT_CLIENT_REGION_KEY),
-                menuModifier = Modifier.widthIn(min = HEADER_PROJECT_ICON_MENU_WIDTH_DP.dp),
-                menuContent = {
-                    passiveItem {
-                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            Text(text = projectLabel, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                text = workspacePath ?: "尚未选择工作区",
-                                color = AppMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    selectableItem(
-                        selected = false,
-                        onClick = {
-                            pickWorkspaceDirectory()?.let { selectedPath ->
-                                state.createConversationForWorkspace(selectedPath)
-                                onGlobalFeedback(AppFeedbackState(message = "已切换工作区", anchor = null))
-                            }
-                        },
-                    ) {
-                        Text(TITLE_BAR_PROJECT_SELECT_ACTION_LABEL)
-                    }
-                },
-            ) {
-                ProjectTitleBarChip(
-                    projectLabel = projectLabel,
-                    onProjectIconPositioned = onFrameGradientAnchorChanged,
+                        .clientRegion(TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY),
+                    iconModifier = Modifier.size(20.dp),
                 )
-            }
-            if (shouldShowHeaderBranchChip(branchName)) {
                 Dropdown(
                     modifier = Modifier
                         .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
-                        .clientRegion(TITLE_BAR_BRANCH_CLIENT_REGION_KEY),
+                        .clientRegion(TITLE_BAR_PROJECT_CLIENT_REGION_KEY),
+                    menuModifier = Modifier.widthIn(min = HEADER_PROJECT_ICON_MENU_WIDTH_DP.dp),
                     menuContent = {
                         passiveItem {
-                            Text(
-                                text = branchName,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            )
-                        }
-                        selectableItem(selected = false, onClick = { branchRefreshToken++ }) {
-                            Text(TITLE_BAR_BRANCH_REFRESH_ACTION_LABEL)
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Text(text = projectLabel, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = workspacePath ?: "尚未选择工作区",
+                                    color = AppMuted,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                         selectableItem(
                             selected = false,
                             onClick = {
-                                copyHeaderBranchToClipboard(branchName)
-                                onGlobalFeedback(
-                                    AppFeedbackState(
-                                        message = headerBranchCopiedFeedbackMessage(),
-                                        anchor = null
-                                    )
-                                )
+                                pickWorkspaceDirectory()?.let { selectedPath ->
+                                    state.createConversationForWorkspace(selectedPath)
+                                    onGlobalFeedback(AppFeedbackState(message = "已切换工作区", anchor = null))
+                                }
                             },
                         ) {
-                            Text(TITLE_BAR_BRANCH_COPY_ACTION_LABEL)
+                            Text(TITLE_BAR_PROJECT_SELECT_ACTION_LABEL)
                         }
                     },
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            key = AllIconsKeys.Vcs.Branch,
-                            contentDescription = "当前分支",
-                            modifier = Modifier.size(18.dp),
-                            tint = palette.muted,
-                        )
-                        Text(
-                            text = branchName,
-                            modifier = Modifier.padding(start = 4.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = palette.text,
-                        )
+                    ProjectTitleBarChip(
+                        projectLabel = projectLabel,
+                        onProjectIconPositioned = onFrameGradientAnchorChanged,
+                    )
+                }
+                if (shouldShowHeaderBranchChip(branchName)) {
+                    Dropdown(
+                        modifier = Modifier
+                            .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                            .clientRegion(TITLE_BAR_BRANCH_CLIENT_REGION_KEY),
+                        menuContent = {
+                            passiveItem {
+                                Text(
+                                    text = branchName,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                )
+                            }
+                            selectableItem(selected = false, onClick = { branchRefreshToken++ }) {
+                                Text(TITLE_BAR_BRANCH_REFRESH_ACTION_LABEL)
+                            }
+                            selectableItem(
+                                selected = false,
+                                onClick = {
+                                    copyHeaderBranchToClipboard(branchName)
+                                    onGlobalFeedback(
+                                        AppFeedbackState(
+                                            message = headerBranchCopiedFeedbackMessage(),
+                                            anchor = null,
+                                        )
+                                    )
+                                },
+                            ) {
+                                Text(TITLE_BAR_BRANCH_COPY_ACTION_LABEL)
+                            }
+                        },
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                key = AllIconsKeys.Vcs.Branch,
+                                contentDescription = "当前分支",
+                                modifier = Modifier.size(18.dp),
+                                tint = palette.muted,
+                            )
+                            Text(
+                                text = branchName,
+                                modifier = Modifier.padding(start = 4.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = palette.text,
+                            )
+                        }
+                    }
+                }
+                if (activeConversation?.treeFormatVersion?.let { it > 0 } == true) {
+                    Spacer(Modifier.width(12.dp))
+                    Tooltip(tooltip = { Text("浏览完整会话条目树") }) {
+                        ActionButton(
+                            onClick = { conversationTreeVisible = true },
+                            modifier = Modifier
+                                .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
+                                .clientRegion(TITLE_BAR_CONVERSATION_TREE_CLIENT_REGION_KEY),
+                        ) {
+                            Text("会话树")
+                        }
                     }
                 }
             }
-            }
         }
+    }
+    if (conversationTreeVisible && activeConversation != null) {
+        ConversationEntryTreeDialog(
+            state = state,
+            conversation = activeConversation,
+            onDismiss = { conversationTreeVisible = false },
+        )
     }
 }
 

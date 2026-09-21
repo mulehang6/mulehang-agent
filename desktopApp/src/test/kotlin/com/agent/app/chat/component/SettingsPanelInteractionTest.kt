@@ -31,6 +31,7 @@ class SettingsPanelInteractionTest {
                 SettingsSection.TOOLS,
                 SettingsSection.PROVIDERS,
                 SettingsSection.EXTENSIONS,
+                SettingsSection.SESSIONS,
             ),
             settingsSectionsFor(ConfigLayer.USER),
         )

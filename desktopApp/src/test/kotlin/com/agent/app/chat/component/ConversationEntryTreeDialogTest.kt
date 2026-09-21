@@ -46,6 +46,17 @@ class ConversationEntryTreeDialogTest {
         assertEquals(1, overview.single { it.leafEntryId == "left-tail" }.skippedEntryCount)
         assertTrue(overview.single { it.leafEntryId == "right" }.isActiveLeaf)
         assertTrue(overview.single { it.leafEntryId == "left-tail" }.isHeadLeaf)
+
+        val switchedOverview = buildConversationBranchOverview(
+            entries = listOf(root, left, leftTail, right),
+            activeEntryId = leftTail.id,
+            headEntryId = leftTail.id,
+        )
+        assertEquals(
+            overview.map { it.leafEntryId },
+            switchedOverview.map { it.leafEntryId },
+            "切换活动分支不应把所选分支自动移动到列表顶部",
+        )
     }
 
     /** 普通对话是单子节点链，视觉缩进必须始终为零。 */
@@ -87,10 +98,17 @@ class ConversationEntryTreeDialogTest {
         )
 
         assertEquals(
-            listOf("root", "right", "right-1", "left", "left-1", "left-2"),
+            listOf("root", "left", "left-1", "left-2", "right", "right-1"),
             rows.map { it.entry.id },
         )
-        assertEquals(listOf(0, 1, 2, 1, 2, 2), rows.map(ConversationEntryTreeRow::indent))
+        assertEquals(listOf(0, 1, 2, 2, 1, 2), rows.map(ConversationEntryTreeRow::indent))
+
+        val leftActiveRows = flattenConversationEntryTree(
+            entries = entries,
+            visibleIds = entries.mapTo(mutableSetOf(), ConversationEntry::id),
+            activeEntryId = leftTwo.id,
+        )
+        assertEquals(rows.map { it.entry.id }, leftActiveRows.map { it.entry.id })
     }
 
     /** 极深的真实分支仍会封顶，避免正文区域被无限挤向右侧。 */

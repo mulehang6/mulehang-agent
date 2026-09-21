@@ -64,9 +64,9 @@ internal fun buildConversationBranchOverview(
             isHeadLeaf = leaf.id == headEntryId,
         )
     }.sortedWith(
-        compareByDescending<ConversationBranchOverviewItem> { it.isActiveLeaf }
-            .thenByDescending { it.isHeadLeaf }
-            .thenBy { item -> entries.firstOrNull { it.id == item.leafEntryId }?.createdAt ?: Long.MAX_VALUE },
+        compareBy<ConversationBranchOverviewItem> { item ->
+            entries.firstOrNull { it.id == item.leafEntryId }?.createdAt ?: Long.MAX_VALUE
+        }.thenBy(ConversationBranchOverviewItem::leafEntryId),
     )
 }
 

@@ -2,7 +2,6 @@ package com.agent.app.chat.component
 
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationEntry
-import com.agent.shared.chat.model.conversationEntryPath
 
 /** Pi 会话树提供的五档筛选。 */
 internal enum class ConversationEntryFilter(val label: String, val description: String) {
@@ -43,10 +42,7 @@ internal fun flattenConversationEntryTree(
         entry.id to nearestVisibleParentId(entry, byId, displayIds)
     }
     val children = displayEntries.groupBy { effectiveParents[it.id] }
-    val activePathIds = conversationEntryPath(entries, activeEntryId)
-        .mapTo(mutableSetOf(), ConversationEntry::id)
-    val stableComparator = compareByDescending<ConversationEntry> { it.id in activePathIds }
-        .thenBy(ConversationEntry::createdAt)
+    val stableComparator = compareBy<ConversationEntry>(ConversationEntry::createdAt)
         .thenBy(ConversationEntry::id)
     val result = mutableListOf<ConversationEntryTreeRow>()
     val emitted = mutableSetOf<String>()

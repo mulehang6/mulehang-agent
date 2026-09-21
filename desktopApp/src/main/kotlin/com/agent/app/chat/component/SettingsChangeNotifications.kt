@@ -56,13 +56,10 @@ internal data class SettingsChangeNotification(
 internal class SettingsChangeNotifications {
     private val mutableEntries = mutableStateListOf<SettingsChangeNotification>()
     private var nextId by mutableLongStateOf(0L)
+    private var lastReadEntryId by mutableLongStateOf(0L)
 
     /** 最新操作触发的单条提示；关闭时保留历史，仅隐藏该卡片。 */
     var transientEntryId by mutableStateOf<Long?>(null)
-        private set
-
-    /** 是否显示由通知图标打开的完整历史。 */
-    var historyVisible by mutableStateOf(false)
         private set
 
     /** 按创建顺序保存的会话内通知。 */
@@ -72,6 +69,14 @@ internal class SettingsChangeNotifications {
     /** 当前可作为单条提示展示的通知。 */
     val transientEntry: SettingsChangeNotification?
         get() = transientEntryId?.let { id -> mutableEntries.firstOrNull { entry -> entry.id == id } }
+
+    /** 是否存在尚未在通知页中查看的设置变更。 */
+    val hasUnreadEntries: Boolean
+        get() = mutableEntries.any { it.id > lastReadEntryId }
+
+    /** 尚未在通知页中查看的设置变更数量。 */
+    val unreadCount: Int
+        get() = mutableEntries.count { it.id > lastReadEntryId }
 
     /** 追加变更记录，并展示最新单条提示。 */
     fun record(category: SettingsChangeNotificationCategory, message: String): SettingsChangeNotification {
@@ -86,7 +91,6 @@ internal class SettingsChangeNotifications {
             mutableEntries.removeAt(0)
         }
         transientEntryId = entry.id
-        historyVisible = false
         return entry
     }
 
@@ -100,15 +104,10 @@ internal class SettingsChangeNotifications {
         if (transientEntryId == id) transientEntryId = null
     }
 
-    /** 切换总历史，并避免和单条提示重叠显示。 */
-    fun toggleHistory() {
-        historyVisible = !historyVisible
-        if (historyVisible) transientEntryId = null
-    }
-
-    /** 收起历史浮层但保留全部会话内记录，供卡片的悬停关闭动作使用。 */
-    fun dismissHistory() {
-        historyVisible = false
+    /** 把当前所有记录标记为已读，并收起重复的单条提示。 */
+    fun markAllRead() {
+        lastReadEntryId = mutableEntries.lastOrNull()?.id ?: lastReadEntryId
+        transientEntryId = null
     }
 
     /** 从总历史中彻底移除一条消息。 */
@@ -121,6 +120,6 @@ internal class SettingsChangeNotifications {
     fun clear() {
         mutableEntries.clear()
         transientEntryId = null
-        historyVisible = false
+        lastReadEntryId = nextId
     }
 }

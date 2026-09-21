@@ -105,7 +105,7 @@ internal fun settingsTerminalSettingsShare(
 ): Float = when (mode) {
     SettingsTerminalLayoutMode.HIDDEN,
     SettingsTerminalLayoutMode.TERMINAL,
-    -> 0f
+        -> 0f
 
     SettingsTerminalLayoutMode.SETTINGS -> 1f
     SettingsTerminalLayoutMode.SPLIT -> splitFraction.coerceIn(0f, 1f)
@@ -134,17 +134,20 @@ internal fun clampSettingsTerminalSplitFraction(
 }
 
 /**
- * 使用可中断的空间过渡承载设置与终端，并在双面板状态提供纵向可调整分栏。
+ * 使用可中断的空间过渡承载右侧工具栏的上下两组页面，并在双页状态提供纵向可调整分栏。
+ *
+ * 上组当前承载通知或设置，下组当前承载终端或会话树。只有一组打开时占满整个右侧区域；
+ * 两组同时打开时才显示可拖拽分隔条。
  */
 @Composable
-internal fun SettingsTerminalStackLayout(
-    settingsVisible: Boolean,
-    terminalVisible: Boolean,
+internal fun RightToolStackLayout(
+    upperVisible: Boolean,
+    lowerVisible: Boolean,
     modifier: Modifier = Modifier,
-    settings: @Composable (Modifier) -> Unit,
-    terminal: @Composable (Modifier) -> Unit,
+    upper: @Composable (Modifier) -> Unit,
+    lower: @Composable (Modifier) -> Unit,
 ) {
-    val targetMode = settingsTerminalLayoutMode(settingsVisible, terminalVisible)
+    val targetMode = settingsTerminalLayoutMode(upperVisible, lowerVisible)
     var retainedMode by remember { mutableStateOf(SettingsTerminalLayoutMode.HIDDEN) }
 
     LaunchedEffect(targetMode) {
@@ -211,16 +214,17 @@ internal fun SettingsTerminalStackLayout(
             animatedShare = animatedSettingsShare,
             dividerDragging = dividerInteraction.dragging,
         )
-        val renderedDividerVisibility = if (dividerInteraction.dragging) desiredDividerVisibility else animatedDividerVisibility
+        val renderedDividerVisibility =
+            if (dividerInteraction.dragging) desiredDividerVisibility else animatedDividerVisibility
         val renderedDividerHeightPx = dividerHeightPx * renderedDividerVisibility
         val renderedAvailableHeightPx = (totalHeightPx - renderedDividerHeightPx).coerceAtLeast(0f)
         val settingsHeightPx = renderedAvailableHeightPx * renderedSettingsShare
         val terminalHeightPx = (renderedAvailableHeightPx - settingsHeightPx).coerceAtLeast(0f)
         val terminalY = settingsHeightPx + renderedDividerHeightPx
         val settingsVisibleForAnimation = targetMode.showsSettings() ||
-            (targetMode == SettingsTerminalLayoutMode.HIDDEN && retainedMode.showsSettings())
+                (targetMode == SettingsTerminalLayoutMode.HIDDEN && retainedMode.showsSettings())
         val terminalVisibleForAnimation = targetMode.showsTerminal() ||
-            (targetMode == SettingsTerminalLayoutMode.HIDDEN && retainedMode.showsTerminal())
+                (targetMode == SettingsTerminalLayoutMode.HIDDEN && retainedMode.showsTerminal())
 
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(
@@ -232,7 +236,7 @@ internal fun SettingsTerminalStackLayout(
                     .fillMaxWidth()
                     .height(with(density) { settingsHeightPx.toDp() }),
             ) {
-                settings(Modifier.fillMaxSize())
+                upper(Modifier.fillMaxSize())
             }
             if (renderedDividerHeightPx > 0f) {
                 Box(
@@ -244,15 +248,18 @@ internal fun SettingsTerminalStackLayout(
                         .pointerHoverIcon(PointerIcon(Cursor(Cursor.N_RESIZE_CURSOR)))
                         .onPointerEvent(PointerEventType.Enter) { event ->
                             dividerInteraction.hovered = true
-                            dividerInteraction.pointerX = event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
+                            dividerInteraction.pointerX =
+                                event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
                         }
                         .onPointerEvent(PointerEventType.Move) { event ->
-                            dividerInteraction.pointerX = event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
+                            dividerInteraction.pointerX =
+                                event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
                         }
                         .onPointerEvent(PointerEventType.Exit) { dividerInteraction.hovered = false }
                         .onPointerEvent(PointerEventType.Press) { event ->
                             dividerInteraction.pressed = true
-                            dividerInteraction.pointerX = event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
+                            dividerInteraction.pointerX =
+                                event.changes.firstOrNull()?.position?.x ?: dividerInteraction.pointerX
                         }
                         .onPointerEvent(PointerEventType.Release) { dividerInteraction.pressed = false }
                         .pointerInput(splitAvailableHeightPx, targetMode) {
@@ -303,8 +310,28 @@ internal fun SettingsTerminalStackLayout(
                     .height(with(density) { terminalHeightPx.toDp() })
                     .offset(y = with(density) { terminalY.toDp() }),
             ) {
-                terminal(Modifier.fillMaxSize())
+                lower(Modifier.fillMaxSize())
             }
         }
     }
+}
+
+/**
+ * 兼容既有设置/终端调用与布局测试；新代码应使用 [RightToolStackLayout] 的上下组语义。
+ */
+@Composable
+internal fun SettingsTerminalStackLayout(
+    settingsVisible: Boolean,
+    terminalVisible: Boolean,
+    modifier: Modifier = Modifier,
+    settings: @Composable (Modifier) -> Unit,
+    terminal: @Composable (Modifier) -> Unit,
+) {
+    RightToolStackLayout(
+        upperVisible = settingsVisible,
+        lowerVisible = terminalVisible,
+        modifier = modifier,
+        upper = settings,
+        lower = terminal,
+    )
 }

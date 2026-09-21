@@ -216,11 +216,11 @@ class SettingsPanelInteractionTest {
         assertEquals(WorkspaceIslandFocus.NONE, workspaceFocusAfterExternalPress())
         assertEquals(
             WorkspaceIslandFocus.TERMINAL,
-            workspaceFocusAfterPanelClosed(settingsVisible = false, terminalVisible = true),
+            workspaceFocusAfterPanelClosed(upperTool = null, lowerTool = LowerRightTool.TERMINAL),
         )
         assertEquals(
             WorkspaceIslandFocus.SETTINGS,
-            workspaceFocusAfterPanelClosed(settingsVisible = true, terminalVisible = false),
+            workspaceFocusAfterPanelClosed(upperTool = UpperRightTool.SETTINGS, lowerTool = null),
         )
     }
 

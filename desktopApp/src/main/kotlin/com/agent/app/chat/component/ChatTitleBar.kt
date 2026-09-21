@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -60,7 +59,6 @@ import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.PopupMenu
 import org.jetbrains.jewel.ui.component.Text
-import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.window.DecoratedWindowScope
 import org.jetbrains.jewel.window.TitleBar
@@ -73,7 +71,6 @@ internal const val TITLE_BAR_APPLICATION_CLIENT_REGION_KEY = "application-menu"
 internal const val TITLE_BAR_SIDEBAR_CLIENT_REGION_KEY = "sidebar-toggle"
 internal const val TITLE_BAR_PROJECT_CLIENT_REGION_KEY = "project-selector"
 internal const val TITLE_BAR_BRANCH_CLIENT_REGION_KEY = "branch-menu"
-internal const val TITLE_BAR_CONVERSATION_TREE_CLIENT_REGION_KEY = "conversation-tree"
 internal const val TITLE_BAR_APPLICATION_SETTINGS_ACTION_LABEL = "设置"
 internal const val TITLE_BAR_APPLICATION_EXIT_ACTION_LABEL = "退出"
 internal const val TITLE_BAR_PROJECT_SELECT_ACTION_LABEL = "选择工作区…"
@@ -104,7 +101,6 @@ internal fun DecoratedWindowScope.ChatTitleBar(
     var branchName by remember(workspacePath) { mutableStateOf("") }
     var branchRefreshToken by remember(workspacePath) { mutableStateOf(0) }
     var applicationMenuVisible by remember { mutableStateOf(false) }
-    var conversationTreeVisible by remember(activeConversation?.id) { mutableStateOf(false) }
     val projectIconPainter = painterResource(Res.drawable.mulehang_agent)
     val palette = LocalDesktopPalette.current
     val titleBarSeparatorHeightPx = with(LocalDensity.current) {
@@ -272,28 +268,8 @@ internal fun DecoratedWindowScope.ChatTitleBar(
                         }
                     }
                 }
-                if (activeConversation?.treeFormatVersion?.let { it > 0 } == true) {
-                    Spacer(Modifier.width(12.dp))
-                    Tooltip(tooltip = { Text("浏览完整会话条目树") }) {
-                        ActionButton(
-                            onClick = { conversationTreeVisible = true },
-                            modifier = Modifier
-                                .height(TITLE_BAR_ACTION_HEIGHT_DP.dp)
-                                .clientRegion(TITLE_BAR_CONVERSATION_TREE_CLIENT_REGION_KEY),
-                        ) {
-                            Text("会话树")
-                        }
-                    }
-                }
             }
         }
-    }
-    if (conversationTreeVisible && activeConversation != null) {
-        ConversationEntryTreeDialog(
-            state = state,
-            conversation = activeConversation,
-            onDismiss = { conversationTreeVisible = false },
-        )
     }
 }
 

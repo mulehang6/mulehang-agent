@@ -49,6 +49,7 @@ internal val RightRailGlyph.iconKey: IconKey
         RightRailGlyph.FILTER -> AllIconsKeys.General.Filter
         RightRailGlyph.NOTIFICATIONS -> AllIconsKeys.Toolwindows.Notifications
         RightRailGlyph.SETTINGS -> AllIconsKeys.General.Settings
+        RightRailGlyph.CONVERSATION_TREE -> AllIconsKeys.Vcs.Branch
     }
 
 /** 返回右侧工具栏动作的可访问名称和 Tooltip 文案。 */
@@ -63,4 +64,5 @@ internal val RightRailGlyph.tooltip: String
         RightRailGlyph.FILTER -> "筛选"
         RightRailGlyph.NOTIFICATIONS -> "设置变更通知"
         RightRailGlyph.SETTINGS -> "设置"
+        RightRailGlyph.CONVERSATION_TREE -> "会话树"
     }

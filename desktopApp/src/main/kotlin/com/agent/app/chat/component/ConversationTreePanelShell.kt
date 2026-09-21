@@ -4,6 +4,9 @@ package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatConversationUiState
@@ -120,13 +124,22 @@ private fun ConversationTreeViewSwitcher(
 @Composable
 private fun ConversationTreeViewAction(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalDesktopPalette.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val background = when {
+        selected && hovered -> AppText.copy(alpha = 0.08f).compositeOver(palette.selectedBackground)
+        selected -> palette.selectedBackground
+        hovered -> palette.hoverBackground
+        else -> Color.Transparent
+    }
     Text(
         text = label,
-        color = if (selected) AppText else AppMuted,
+        color = if (selected || hovered) AppText else AppMuted,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(if (selected) palette.selectedBackground else Color.Transparent)
+            .background(background)
+            .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
     )

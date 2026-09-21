@@ -58,9 +58,9 @@ internal fun TaskRenameDialog(
     }
 }
 
-/** 仅列出用户消息，供 Pi 式 fork 选择消息之前的父节点。 */
+/** 仅列出用户消息，供用户从旧路径创建一个独立新会话。 */
 @Composable
-internal fun ConversationForkDialog(
+internal fun ConversationNewSessionDialog(
     taskTitle: String,
     candidates: List<ConversationEntry.Message>,
     onDismiss: () -> Unit,
@@ -68,8 +68,8 @@ internal fun ConversationForkDialog(
 ) {
     var selectedEntryId by remember(candidates) { mutableStateOf(candidates.lastOrNull()?.id) }
     JewelDialog(
-        title = "创建分支 · $taskTitle",
-        confirmLabel = "创建分支",
+        title = "从消息新建会话 · $taskTitle",
+        confirmLabel = "新建会话",
         confirmEnabled = selectedEntryId != null,
         width = 560.dp,
         height = 520.dp,
@@ -77,9 +77,9 @@ internal fun ConversationForkDialog(
         onConfirm = { selectedEntryId?.let(onConfirm) },
     ) {
         Text(
-            "与 Pi /fork 一致，这里只列出可重新编辑的用户输入。" +
+            "这里创建的是独立任务，只列出可恢复的用户输入。" +
                     "新会话会复制到该消息之前，并把原输入与附件放回输入框；" +
-                    "如需导航到任意类型的条目，请使用标题栏的会话树。",
+                    "它不会被计入当前会话的内部条目分支。",
         )
         Column(
             modifier = Modifier
@@ -107,7 +107,7 @@ internal fun ConversationForkDialog(
                 }
             }
             if (candidates.isEmpty()) {
-                Text("此会话还没有可分支的用户消息。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+                Text("此会话还没有可用于新建会话的用户消息。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
             }
         }
     }

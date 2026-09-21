@@ -61,7 +61,7 @@ internal fun TaskSidebar(
     }
     var contextMenuTaskId by remember { mutableStateOf<String?>(null) }
     var renamingTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
-    var forkingTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
+    var newSessionTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
     var deletingTask by remember { mutableStateOf<ChatTaskListItemUiState?>(null) }
     var blockedDeleteMessage by remember { mutableStateOf<String?>(null) }
     var legacyRestoreWorkspacePath by remember { mutableStateOf<String?>(null) }
@@ -183,7 +183,7 @@ internal fun TaskSidebar(
                                 },
                                 onFork = {
                                     contextMenuTaskId = null
-                                    forkingTask = task
+                                    newSessionTask = task
                                 },
                                 onClone = {
                                     contextMenuTaskId = null
@@ -229,14 +229,14 @@ internal fun TaskSidebar(
             },
         )
     }
-    forkingTask?.let { task ->
-        ConversationForkDialog(
+    newSessionTask?.let { task ->
+        ConversationNewSessionDialog(
             taskTitle = task.title,
-            candidates = state.conversationTreeController.forkCandidates(task.id),
-            onDismiss = { forkingTask = null },
+            candidates = state.conversationTreeController.newSessionCandidates(task.id),
+            onDismiss = { newSessionTask = null },
             onConfirm = { entryId ->
-                state.conversationTreeController.forkConversation(task.id, entryId)
-                forkingTask = null
+                state.conversationTreeController.createConversationFromUserEntry(task.id, entryId)
+                newSessionTask = null
             },
         )
     }

@@ -71,7 +71,7 @@ class ChatScreenPresentationTest {
     /** 标题栏和侧栏任务入口必须展示完全相同的操作菜单。 */
     @Test
     fun `should expose the same task context menu actions everywhere`() {
-        assertEquals(listOf("重命名", "创建分支", "归档", "删除"), taskContextMenuLabels())
+        assertEquals(listOf("重命名", "重新生成标题", "创建分支", "克隆", "归档", "删除"), taskContextMenuLabels())
         assertEquals(AppDanger, taskContextMenuTextColor("删除"))
         assertEquals(AppText, taskContextMenuTextColor("重命名"))
         assertEquals(listOf("编辑", "删除"), workspaceContextMenuLabels())

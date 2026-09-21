@@ -7,6 +7,9 @@ package com.agent.app.chat.component
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.*
@@ -21,6 +24,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatTaskStatus
 import com.agent.app.chat.state.WorkspaceTaskSectionUiState
+import com.agent.shared.chat.model.ConversationEntry
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.agent.app.design.*
 import com.agent.app.platform.pickWorkspaceDirectory
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -50,6 +55,61 @@ internal fun TaskRenameDialog(
             onValueChange = { title = it },
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+/** 仅列出用户消息，供 Pi 式 fork 选择消息之前的父节点。 */
+@Composable
+internal fun ConversationForkDialog(
+    taskTitle: String,
+    candidates: List<ConversationEntry.Message>,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var selectedEntryId by remember(candidates) { mutableStateOf(candidates.lastOrNull()?.id) }
+    JewelDialog(
+        title = "创建分支 · $taskTitle",
+        confirmLabel = "创建分支",
+        confirmEnabled = selectedEntryId != null,
+        width = 560.dp,
+        height = 520.dp,
+        onDismiss = onDismiss,
+        onConfirm = { selectedEntryId?.let(onConfirm) },
+    ) {
+        Text(
+            "与 Pi /fork 一致，这里只列出可重新编辑的用户输入。" +
+                    "新会话会复制到该消息之前，并把原输入与附件放回输入框；" +
+                    "如需导航到任意类型的条目，请使用标题栏的会话树。",
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            candidates.forEachIndexed { index, entry ->
+                val selected = selectedEntryId == entry.id
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            color = if (selected) AppSelectedBackground else LocalDesktopPalette.current.panelBackground,
+                            shape = RoundedCornerShape(8.dp),
+                        )
+                        .clickable { selectedEntryId = entry.id }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("${index + 1}", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+                    Text(entry.message.content.lineSequence().firstOrNull().orEmpty().ifBlank { "空消息" })
+                }
+            }
+            if (candidates.isEmpty()) {
+                Text("此会话还没有可分支的用户消息。", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+            }
+        }
     }
 }
 
@@ -148,19 +208,24 @@ internal fun TitleGeneratingIndicator() {
  */
 @Composable
 internal fun TaskStatusIndicator(status: ChatTaskStatus) {
-    val rotationTransition = rememberInfiniteTransition(label = "running-task-indicator")
-    val rotation by rotationTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1_050, easing = LinearEasing),
-        ),
-        label = "running-task-rotation",
-    )
+    val rotation = if (status == ChatTaskStatus.RUNNING) {
+        val rotationTransition = rememberInfiniteTransition(label = "running-task-indicator")
+        val runningRotation by rotationTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1_050, easing = LinearEasing),
+            ),
+            label = "running-task-rotation",
+        )
+        runningRotation
+    } else {
+        0f
+    }
     Canvas(
         modifier = Modifier
             .size(18.dp)
-            .graphicsLayer { rotationZ = if (status == ChatTaskStatus.RUNNING) rotation else 0f },
+            .graphicsLayer { rotationZ = rotation },
     ) {
         val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
         val inset = 2.5.dp.toPx()

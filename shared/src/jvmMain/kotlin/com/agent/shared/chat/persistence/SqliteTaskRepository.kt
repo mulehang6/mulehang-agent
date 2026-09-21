@@ -21,6 +21,7 @@ class SqliteTaskRepository(
             connection.prepareStatement(
                 """
                 SELECT id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
+                    parent_conversation_id, forked_from_entry_id, active_entry_id, head_entry_id, archived_at, tree_format_version,
                     reasoning_effort, profile_id, permission_preset,
                     context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json,
                     updated_at
@@ -40,6 +41,12 @@ class SqliteTaskRepository(
                                     workspaceName = resultSet.getString("workspace_name"),
                                     detachedWorkspacePath = resultSet.getString("detached_workspace_path"),
                                     detachedWorkspaceName = resultSet.getString("detached_workspace_name"),
+                                    parentConversationId = resultSet.getString("parent_conversation_id"),
+                                    forkedFromEntryId = resultSet.getString("forked_from_entry_id"),
+                                    activeEntryId = resultSet.getString("active_entry_id"),
+                                    headEntryId = resultSet.getString("head_entry_id"),
+                                    archivedAt = resultSet.getLongOrNull("archived_at"),
+                                    treeFormatVersion = resultSet.getInt("tree_format_version"),
                                     reasoningEffort = resultSet.getString("reasoning_effort"),
                                     profileId = resultSet.getString("profile_id"),
                                     permissionPreset = resultSet.getString("permission_preset"),
@@ -51,6 +58,7 @@ class SqliteTaskRepository(
                                     updatedAt = resultSet.getLong("updated_at"),
                                     timeline = loadTimeline(connection, taskId),
                                     history = loadHistory(connection, taskId),
+                                    entries = loadEntries(connection, taskId),
                                 ),
                             )
                         }
@@ -73,6 +81,7 @@ class SqliteTaskRepository(
                     insertTask(this, task)
                     insertTimeline(this, task)
                     insertHistory(this, task)
+                    insertEntries(this, task)
                 }
             }
         }
@@ -125,6 +134,8 @@ class SqliteTaskRepository(
             SESSION_PREFERENCES_SCHEMA_VERSION,
             WORKSPACE_NAME_SCHEMA_VERSION,
             DETACHED_WORKSPACE_SCHEMA_VERSION,
+            CONVERSATION_TREE_SCHEMA_VERSION,
+            CONVERSATION_HEAD_SCHEMA_VERSION,
         ).filterNot { version -> isMigrationApplied(connection, version) }
         if (pendingMigrations.isNotEmpty() && hasTaskTable(connection)) {
             backupDatabaseBeforeMigration(connection)
@@ -194,6 +205,41 @@ class SqliteTaskRepository(
                     statement.executeUpdate("ALTER TABLE task ADD COLUMN detached_workspace_name TEXT")
                 }
                 recordMigration(this, DETACHED_WORKSPACE_SCHEMA_VERSION)
+            }
+            if (!isMigrationApplied(this, CONVERSATION_TREE_SCHEMA_VERSION)) {
+                createStatement().use { statement ->
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN parent_conversation_id TEXT")
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN forked_from_entry_id TEXT")
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN active_entry_id TEXT")
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN archived_at INTEGER")
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN tree_format_version INTEGER NOT NULL DEFAULT 0")
+                    statement.executeUpdate(
+                        """
+                        CREATE TABLE task_entry (
+                            task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+                            id TEXT NOT NULL,
+                            parent_id TEXT,
+                            created_at INTEGER NOT NULL,
+                            type TEXT NOT NULL,
+                            payload_json TEXT NOT NULL,
+                            PRIMARY KEY (task_id, id)
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.executeUpdate(
+                        "CREATE INDEX task_entry_parent_idx ON task_entry(task_id, parent_id, created_at)",
+                    )
+                }
+                recordMigration(this, CONVERSATION_TREE_SCHEMA_VERSION)
+            }
+            if (!isMigrationApplied(this, CONVERSATION_HEAD_SCHEMA_VERSION)) {
+                createStatement().use { statement ->
+                    statement.executeUpdate("ALTER TABLE task ADD COLUMN head_entry_id TEXT")
+                    statement.executeUpdate(
+                        "UPDATE task SET head_entry_id = active_entry_id WHERE tree_format_version > 0",
+                    )
+                }
+                recordMigration(this, CONVERSATION_HEAD_SCHEMA_VERSION)
             }
         }
     }
@@ -295,6 +341,29 @@ class SqliteTaskRepository(
             }
         }
 
+    /** 查询单个任务的完整条目图。 */
+    private fun loadEntries(connection: Connection, taskId: String): List<PersistedTaskEntry> =
+        connection.prepareStatement(
+            "SELECT id, parent_id, created_at, type, payload_json FROM task_entry WHERE task_id = ? ORDER BY created_at, id",
+        ).use { statement ->
+            statement.setString(1, taskId)
+            statement.executeQuery().use { resultSet ->
+                buildList {
+                    while (resultSet.next()) {
+                        add(
+                            PersistedTaskEntry(
+                                id = resultSet.getString("id"),
+                                parentId = resultSet.getString("parent_id"),
+                                createdAt = resultSet.getLong("created_at"),
+                                type = resultSet.getString("type"),
+                                payloadJson = resultSet.getString("payload_json"),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
     /**
      * 插入任务的可查询元数据。
      */
@@ -304,10 +373,11 @@ class SqliteTaskRepository(
             """
             INSERT INTO task(
                 id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
+                parent_conversation_id, forked_from_entry_id, active_entry_id, head_entry_id, archived_at, tree_format_version,
                 reasoning_effort, profile_id, permission_preset,
                 context_usage_fraction, execution_state, execution_error_title, execution_error_message,
                 attachments_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, task.id)
@@ -316,16 +386,22 @@ class SqliteTaskRepository(
             statement.setString(4, task.workspaceName)
             statement.setString(5, task.detachedWorkspacePath)
             statement.setString(6, task.detachedWorkspaceName)
-            statement.setString(7, task.reasoningEffort)
-            statement.setString(8, task.profileId)
-            statement.setString(9, task.permissionPreset)
-            statement.setFloat(10, task.contextUsageFraction)
-            statement.setString(11, task.executionState)
-            statement.setString(12, task.executionErrorTitle)
-            statement.setString(13, task.executionErrorMessage)
-            statement.setString(14, task.attachmentsJson)
-            statement.setLong(15, now)
-            statement.setLong(16, task.updatedAt)
+            statement.setString(7, task.parentConversationId)
+            statement.setString(8, task.forkedFromEntryId)
+            statement.setString(9, task.activeEntryId)
+            statement.setString(10, task.headEntryId)
+            if (task.archivedAt == null) statement.setObject(11, null) else statement.setLong(11, task.archivedAt)
+            statement.setInt(12, task.treeFormatVersion)
+            statement.setString(13, task.reasoningEffort)
+            statement.setString(14, task.profileId)
+            statement.setString(15, task.permissionPreset)
+            statement.setFloat(16, task.contextUsageFraction)
+            statement.setString(17, task.executionState)
+            statement.setString(18, task.executionErrorTitle)
+            statement.setString(19, task.executionErrorMessage)
+            statement.setString(20, task.attachmentsJson)
+            statement.setLong(21, now)
+            statement.setLong(22, task.updatedAt)
             statement.executeUpdate()
         }
     }
@@ -366,6 +442,30 @@ class SqliteTaskRepository(
         }
     }
 
+    /** 插入任务条目图的全部节点。 */
+    private fun insertEntries(connection: Connection, task: PersistedTask) {
+        connection.prepareStatement(
+            "INSERT INTO task_entry(task_id, id, parent_id, created_at, type, payload_json) VALUES (?, ?, ?, ?, ?, ?)",
+        ).use { statement ->
+            task.entries.forEach { entry ->
+                statement.setString(1, task.id)
+                statement.setString(2, entry.id)
+                statement.setString(3, entry.parentId)
+                statement.setLong(4, entry.createdAt)
+                statement.setString(5, entry.type)
+                statement.setString(6, entry.payloadJson)
+                statement.addBatch()
+            }
+            statement.executeBatch()
+        }
+    }
+
+    /** 读取可空整数时间戳，区分 SQLite 的 NULL 与 0。 */
+    private fun java.sql.ResultSet.getLongOrNull(column: String): Long? {
+        val value = getLong(column)
+        return if (wasNull()) null else value
+    }
+
     /**
      * 在块失败时回滚，在成功时提交当前事务。
      */
@@ -387,6 +487,8 @@ class SqliteTaskRepository(
         const val SESSION_PREFERENCES_SCHEMA_VERSION = 2
         const val WORKSPACE_NAME_SCHEMA_VERSION = 3
         const val DETACHED_WORKSPACE_SCHEMA_VERSION = 4
+        const val CONVERSATION_TREE_SCHEMA_VERSION = 5
+        const val CONVERSATION_HEAD_SCHEMA_VERSION = 6
         const val TASK_BACKUP_DIRECTORY_NAME = "tasks-backups"
         const val TASK_BACKUP_RETENTION_COUNT = 3
     }

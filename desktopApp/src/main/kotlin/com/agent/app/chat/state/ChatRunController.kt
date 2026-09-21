@@ -40,16 +40,19 @@ internal class ChatRunController(private val window: ChatWindowState) {
      */
     fun cancelActiveRun() {
         with(window) {
+            val runConversationId = activeRunConversationId ?: ui.activeTaskId
             activeRunJob?.cancel()
             activeRunJob = null
-            clearPendingOwnership(ui.activeTaskId)
-            mutateActiveConversation { conversation ->
+            clearPendingOwnership(runConversationId)
+            mutateConversation(runConversationId) { conversation ->
                 if (conversation.executionState.isStoppable()) {
                     conversation.copy(
                         progressMessage = null,
                         executionState = ExecutionState.Idle,
                         pendingQuestion = null,
                         pendingApproval = null,
+                        streamingAssistantEntryId = null,
+                        streamingReasoningEntryId = null,
                     )
                 } else {
                     conversation
@@ -97,11 +100,16 @@ internal class ChatRunController(private val window: ChatWindowState) {
             if (!toolInteractionCoordinator.submitQuestion(toolResponse)) return
             pendingQuestionConversationId = null
             mutateConversation(targetConversationId) { conversation ->
-                conversation.copy(
+                appendAnswersConversationEntry(
+                    conversation = conversation.copy(
                     items = conversation.items + AnsweredQuestionsItem(answers = answers),
                     pendingQuestion = null,
                     progressMessage = null,
                     executionState = ExecutionState.Running,
+                    ),
+                    answers = answers,
+                    entryId = UUID.randomUUID().toString(),
+                    createdAt = clock(),
                 )
             }
         }
@@ -266,7 +274,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
             )
             mutateConversation(targetConversationId) { conversation ->
                 val nextItems = conversation.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt))
-                conversation.copy(
+                val titledConversation = conversation.copy(
                     title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
                         ?: buildConversationTitle(prompt),
                     titleState = if (shouldGenerateConversationTitle) {
@@ -274,19 +282,35 @@ internal class ChatRunController(private val window: ChatWindowState) {
                     } else {
                         conversation.titleState
                     },
-                    items = nextItems,
-                    attachments = emptyList(),
-                    history = conversation.history + AgentConversationHistoryMessage.User(
-                        content = prompt,
+                )
+                val withUserEntry = if (conversation.treeFormatVersion > 0) {
+                    appendUserConversationEntry(
+                        conversation = titledConversation,
+                        prompt = prompt,
                         inputParts = inputParts,
-                    ),
+                        entryId = UUID.randomUUID().toString(),
+                        createdAt = clock(),
+                    )
+                } else {
+                    titledConversation.copy(
+                        items = nextItems,
+                        history = conversation.history + AgentConversationHistoryMessage.User(
+                            content = prompt,
+                            inputParts = inputParts,
+                        ),
+                    )
+                }
+                withUserEntry.copy(
+                    attachments = emptyList(),
                     progressMessage = null,
                     executionState = ExecutionState.Running,
                     streamingAssistantItemIndex = null,
                     streamingReasoningItemIndex = null,
                     streamingAssistantHistoryIndex = null,
+                    streamingAssistantEntryId = null,
+                    streamingReasoningEntryId = null,
                     contextUsageFraction = estimateContextUsage(
-                        items = nextItems,
+                        items = withUserEntry.items,
                         attachmentCount = 0,
                         contextWindow = contextWindowFor(profile),
                     ),
@@ -397,7 +421,12 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 ?.let(::contextWindowForConversation)
                 ?: activeContextWindow()
             mutateConversation(conversationId) { conversation ->
-                reduceAgentEvent(conversation, event, contextWindow)
+                applyConversationEntryEvent(
+                    conversation = reduceAgentEvent(conversation, event, contextWindow),
+                    event = event,
+                    idFactory = { UUID.randomUUID().toString() },
+                    clock = clock,
+                )
             }
         }
     }

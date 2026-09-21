@@ -9,6 +9,7 @@ import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.platform.ClipboardPngImage
 import com.agent.shared.agent.api.ConversationTitleGenerator
+import com.agent.shared.agent.api.BranchSummaryGenerator
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.agent.resource.AgentPromptCommand
 import com.agent.shared.agent.resource.AgentResourceDiagnostic
@@ -38,6 +39,7 @@ class ChatWindowState(
     internal val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
     internal val onWorkspaceSelected: (String) -> Unit = {},
     internal val persistenceCoordinator: TaskPersistenceCoordinator? = null,
+    internal val branchSummaryGenerator: BranchSummaryGenerator? = null,
     internal val conversationTitleGenerator: ConversationTitleGenerator? = null,
     internal val clock: () -> Long = System::currentTimeMillis,
     internal val workspaceDirectoryExists: (String) -> Boolean = { path -> path.isNotBlank() },
@@ -117,6 +119,7 @@ class ChatWindowState(
     private val attachmentController = ChatAttachmentController(this)
     private val runController = ChatRunController(this)
     private val titleController = ChatTitleController(this)
+    internal val conversationTreeController = ConversationTreeController(this)
 
     /** 更新配置快照，但保留已有工作区、会话和输入状态。 */
     fun updateSessionSnapshot(snapshot: AppSessionSnapshot) {
@@ -273,13 +276,14 @@ class ChatWindowState(
         val selectedProfile = snapshot.profiles.firstOrNull { it.id == profileId } ?: return
         ui = ui.copy(selectedProfileId = profileId)
         mutateActiveConversation { conversation ->
-            conversation
-                .copy(
-                    profileId = profileId,
-                    reasoningEffort = resolvedReasoningEffort(
-                        profile = selectedProfile,
-                        preferredEffort = conversation.reasoningEffort,
-                    ) ?: conversation.reasoningEffort,
+            val nextEffort = resolvedReasoningEffort(
+                profile = selectedProfile,
+                preferredEffort = conversation.reasoningEffort,
+            ) ?: conversation.reasoningEffort
+            conversationTreeController
+                .recordReasoningEffortChange(
+                    conversationTreeController.recordModelChange(conversation, profileId),
+                    nextEffort,
                 )
                 .withRecalculatedContextUsage(contextWindowFor(selectedProfile))
         }
@@ -288,7 +292,7 @@ class ChatWindowState(
     /** 调整当前活动会话的推理强度档位。 */
     fun updateReasoningEffort(reasoningEffort: ReasoningEffort) {
         mutateActiveConversation { conversation ->
-            conversation.copy(reasoningEffort = reasoningEffort)
+            conversationTreeController.recordReasoningEffortChange(conversation, reasoningEffort)
         }
     }
 
@@ -301,7 +305,7 @@ class ChatWindowState(
     fun restoreTasks(tasks: List<ChatConversationUiState>) {
         if (tasks.isEmpty()) return
         invalidateAllConversationTitleGenerations()
-        val restoredPreferenceSource = tasks.first()
+        val restoredPreferenceSource = tasks.firstOrNull { it.archivedAt == null } ?: tasks.first()
         val restoredProfile = profileForConversation(restoredPreferenceSource)
         val newConversation = ui.tasks.firstOrNull { it.isEmptyDefaultConversation() }
             ?: newConversation(
@@ -314,7 +318,9 @@ class ChatWindowState(
                 permissionPreset = restoredPreferenceSource.permissionPreset,
             )
         ui = ui.copy(
-            tasks = listOf(newConversation) + tasks.filterNot(ChatConversationUiState::isEmptyDefaultConversation),
+            tasks = listOf(newConversation) + tasks.filterNot { conversation ->
+                conversation.archivedAt == null && conversation.isEmptyDefaultConversation()
+            },
             activeTaskId = newConversation.id,
             draft = "",
         )
@@ -397,7 +403,9 @@ class ChatWindowState(
     fun renameConversation(conversationId: String, title: String) = workspaceController.renameConversation(conversationId, title)
 
     /** 删除指定对话；删除当前对话时优先复用已有空白对话，避免重复创建占位项。 */
-    fun deleteConversation(conversationId: String) = workspaceController.deleteConversation(conversationId)
+    fun deleteConversation(conversationId: String) {
+        conversationTreeController.deleteConversation(conversationId)
+    }
 
     /** 在指定工作目录下新建对话并切换焦点。 */
     fun createConversationForWorkspace(workspacePath: String) = workspaceController.createConversationForWorkspace(workspacePath)
@@ -480,6 +488,14 @@ class ChatWindowState(
         firstUserMessage: String,
         profile: ConfigProfile,
     ) = titleController.requestConversationTitle(conversationId, firstUserMessage, profile)
+
+    /** 判断会话是否能从首条用户消息显式重新生成标题。 */
+    fun canRegenerateConversationTitle(conversationId: String): Boolean =
+        titleController.canRegenerateConversationTitle(conversationId)
+
+    /** 启动与任务运行状态相互独立的标题重新生成。 */
+    fun regenerateConversationTitle(conversationId: String): Boolean =
+        titleController.regenerateConversationTitle(conversationId)
 
     /** 取消标题任务，并递增版本以阻止迟到结果覆盖当前状态。 */
     internal fun invalidateConversationTitleGeneration(conversationId: String) = titleController.invalidateConversationTitleGeneration(conversationId)

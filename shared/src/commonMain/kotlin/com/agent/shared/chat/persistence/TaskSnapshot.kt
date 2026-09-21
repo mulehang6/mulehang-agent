@@ -13,6 +13,18 @@ data class PersistedTask(
     val detachedWorkspacePath: String? = null,
     /** 工作区解除关联前的显示名称，用于恢复时保留用户命名。 */
     val detachedWorkspaceName: String? = null,
+    /** 侧栏会话树中的直接父会话。 */
+    val parentConversationId: String? = null,
+    /** fork 创建时所选的源条目；clone 与普通会话为空。 */
+    val forkedFromEntryId: String? = null,
+    /** 当前投影时间线使用的活动 leaf。 */
+    val activeEntryId: String? = null,
+    /** 会话持久主线的末端；浏览历史分支时不会随 [activeEntryId] 移动。 */
+    val headEntryId: String? = null,
+    /** 归档时间；为空表示活跃。 */
+    val archivedAt: Long? = null,
+    /** 0 表示旧线性会话，正数表示条目树格式。 */
+    val treeFormatVersion: Int = 0,
     val reasoningEffort: String,
     val profileId: String? = null,
     val permissionPreset: String = "DEFAULT",
@@ -23,8 +35,19 @@ data class PersistedTask(
     val attachmentsJson: String,
     val timeline: List<PersistedTimelineItem>,
     val history: List<PersistedHistoryItem>,
+    /** 条目图的完整节点集合；旧线性会话为空。 */
+    val entries: List<PersistedTaskEntry> = emptyList(),
     /** 任务最后被操作的时间戳（毫秒）；旧数据为 0。 */
     val updatedAt: Long = 0L,
+)
+
+/** 条目图中一个节点的数据库无关表示。 */
+data class PersistedTaskEntry(
+    val id: String,
+    val parentId: String?,
+    val createdAt: Long,
+    val type: String,
+    val payloadJson: String,
 )
 
 /**

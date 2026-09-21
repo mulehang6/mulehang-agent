@@ -15,6 +15,9 @@ import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
 import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.chat.model.ConversationEntry
+import com.agent.shared.chat.model.CURRENT_CONVERSATION_TREE_FORMAT_VERSION
+import com.agent.shared.chat.model.branchSummaryContext
 import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.FileChangeKind
 import com.agent.shared.tool.model.FileDiffLineKind
@@ -28,6 +31,100 @@ import kotlin.test.assertTrue
  * 验证桌面聊天状态与共享持久化快照之间的完整映射。
  */
 class ChatTaskSnapshotMapperTest {
+    /** 条目图、外层父子关系、活动 leaf 与归档状态必须完整往返。 */
+    @Test
+    fun `should round trip conversation tree metadata and full entry graph`() {
+        val root = ConversationEntry.Message(
+            id = "entry-root",
+            parentId = null,
+            createdAt = 1L,
+            message = ChatMessage(ChatRole.User, "root"),
+        )
+        val active = ConversationEntry.Message(
+            id = "entry-active",
+            parentId = root.id,
+            createdAt = 2L,
+            message = ChatMessage(ChatRole.Assistant, "answer"),
+            inputParts = emptyList(),
+        )
+        val sibling = ConversationEntry.Message(
+            id = "entry-sibling",
+            parentId = root.id,
+            createdAt = 3L,
+            message = ChatMessage(ChatRole.Assistant, "other branch"),
+            inputParts = emptyList(),
+        )
+        val summary = ConversationEntry.BranchSummary(
+            id = "entry-summary",
+            parentId = active.id,
+            createdAt = 4L,
+            fromEntryId = sibling.id,
+            summary = "离开分支摘要",
+            details = "2 entries",
+            inputTokens = 42L,
+            outputTokens = 17L,
+        )
+        val source = ChatConversationUiState(
+            id = "tree-task",
+            title = "树会话",
+            workspacePath = "D:\\workspace",
+            parentConversationId = "parent-task",
+            forkedFromEntryId = root.id,
+            activeEntryId = summary.id,
+            headEntryId = active.id,
+            archivedAt = 99L,
+            treeFormatVersion = CURRENT_CONVERSATION_TREE_FORMAT_VERSION,
+            entries = listOf(root, active, sibling, summary),
+            items = listOf(
+                ChatMessageItem(root.message),
+                ChatMessageItem(active.message),
+            ),
+            history = listOf(
+                AgentConversationHistoryMessage.User("root"),
+                AgentConversationHistoryMessage.Assistant(listOf(AgentConversationHistoryPart.Text("answer"))),
+                AgentConversationHistoryMessage.User(branchSummaryContext(summary.summary)),
+            ),
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
+
+        assertEquals(source.parentConversationId, restored.parentConversationId)
+        assertEquals(source.forkedFromEntryId, restored.forkedFromEntryId)
+        assertEquals(source.activeEntryId, restored.activeEntryId)
+        assertEquals(source.headEntryId, restored.headEntryId)
+        assertEquals(source.archivedAt, restored.archivedAt)
+        assertEquals(source.treeFormatVersion, restored.treeFormatVersion)
+        assertEquals(source.entries, restored.entries)
+        assertEquals(source.items, restored.items)
+        assertEquals(source.history, restored.history)
+    }
+
+    /** 损坏或过期的 head 引用应回退到仍有效的 active leaf。 */
+    @Test
+    fun `should fall back invalid head to active entry`() {
+        val root = ConversationEntry.Message(
+            id = "root",
+            parentId = null,
+            createdAt = 1L,
+            message = ChatMessage(ChatRole.User, "hello"),
+        )
+        val source = ChatConversationUiState(
+            id = "task",
+            title = "task",
+            workspacePath = "D:/workspace",
+            activeEntryId = root.id,
+            headEntryId = root.id,
+            treeFormatVersion = CURRENT_CONVERSATION_TREE_FORMAT_VERSION,
+            entries = listOf(root),
+        )
+        val persisted = ChatTaskSnapshotMapper.toPersistedTask(source).copy(headEntryId = "missing")
+
+        val restored = ChatTaskSnapshotMapper.toConversation(persisted)
+
+        assertEquals(root.id, restored.activeEntryId)
+        assertEquals(root.id, restored.headEntryId)
+    }
+
     /** 结构化 Diff 必须随时间线持久化，重开任务后不能退回原始补丁文本。 */
     @Test
     fun `should preserve patch editor diff in persisted timeline`() {

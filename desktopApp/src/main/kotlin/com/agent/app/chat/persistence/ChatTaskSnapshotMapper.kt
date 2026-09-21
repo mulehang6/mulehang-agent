@@ -13,6 +13,7 @@ import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationItem
+import com.agent.shared.chat.model.projectConversationEntries
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.chat.model.ReasoningItem
 import com.agent.shared.chat.model.ToolEventItem
@@ -55,6 +56,12 @@ internal object ChatTaskSnapshotMapper {
         workspaceName = source.workspaceName,
         detachedWorkspacePath = source.detachedWorkspacePath,
         detachedWorkspaceName = source.detachedWorkspaceName,
+        parentConversationId = source.parentConversationId,
+        forkedFromEntryId = source.forkedFromEntryId,
+        activeEntryId = source.activeEntryId,
+        headEntryId = source.headEntryId,
+        archivedAt = source.archivedAt,
+        treeFormatVersion = source.treeFormatVersion,
         reasoningEffort = source.reasoningEffort.name,
         profileId = source.profileId,
         permissionPreset = source.permissionPreset.name,
@@ -65,34 +72,58 @@ internal object ChatTaskSnapshotMapper {
         attachmentsJson = json.encodeToString(JsonArray(source.attachments.map(::encodeAttachment))),
         timeline = source.items.mapIndexed(::encodeTimeline),
         history = source.history.mapIndexed(::encodeHistory),
+        entries = source.entries.map(ConversationEntrySnapshotMapper::encode),
         updatedAt = source.updatedAt,
     )
 
     /**
      * 恢复一条会话；不可续跑的运行态统一转换为安全失败态。
      */
-    fun toConversation(source: PersistedTask): ChatConversationUiState = ChatConversationUiState(
-        id = source.id,
-        title = source.title,
-        workspacePath = source.workspacePath,
-        workspaceName = source.workspaceName,
-        detachedWorkspacePath = source.detachedWorkspacePath,
-        detachedWorkspaceName = source.detachedWorkspaceName,
-        items = source.timeline.sortedBy(PersistedTimelineItem::sequence).map(::decodeTimeline),
-        attachments = json.parseToJsonElement(source.attachmentsJson).jsonArray.map(::decodeAttachment),
-        history = source.history.sortedBy(PersistedHistoryItem::sequence).map(::decodeHistory),
-        profileId = source.profileId,
-        reasoningEffort = source.reasoningEffort.toReasoningEffort(),
-        permissionPreset = source.permissionPreset.toPermissionPreset(),
-        executionState = source.recoveredExecutionState(),
-        streamingAssistantItemIndex = null,
-        streamingReasoningItemIndex = null,
-        streamingAssistantHistoryIndex = null,
-        contextUsageFraction = source.contextUsageFraction,
-        updatedAt = source.updatedAt,
-        pendingQuestion = null,
-        pendingApproval = null,
-    )
+    fun toConversation(source: PersistedTask): ChatConversationUiState {
+        val entries = source.entries.map(ConversationEntrySnapshotMapper::decode)
+        val entryIds = entries.mapTo(mutableSetOf()) { entry -> entry.id }
+        val storedActiveEntryId = source.activeEntryId?.takeIf(entryIds::contains)
+        val headEntryId = source.headEntryId?.takeIf(entryIds::contains) ?: storedActiveEntryId
+        val activeEntryId = storedActiveEntryId ?: headEntryId
+        val projection = if (source.treeFormatVersion > 0) {
+            projectConversationEntries(entries, activeEntryId)
+        } else {
+            null
+        }
+        return ChatConversationUiState(
+            id = source.id,
+            title = source.title,
+            workspacePath = source.workspacePath,
+            workspaceName = source.workspaceName,
+            detachedWorkspacePath = source.detachedWorkspacePath,
+            detachedWorkspaceName = source.detachedWorkspaceName,
+            parentConversationId = source.parentConversationId,
+            forkedFromEntryId = source.forkedFromEntryId,
+            activeEntryId = activeEntryId,
+            headEntryId = headEntryId,
+            archivedAt = source.archivedAt,
+            treeFormatVersion = source.treeFormatVersion,
+            entries = entries,
+            items = projection?.timeline
+                ?: source.timeline.sortedBy(PersistedTimelineItem::sequence).map(::decodeTimeline),
+            attachments = json.parseToJsonElement(source.attachmentsJson).jsonArray.map(::decodeAttachment),
+            history = projection?.history
+                ?: source.history.sortedBy(PersistedHistoryItem::sequence).map(::decodeHistory),
+            profileId = projection?.profileId ?: source.profileId,
+            reasoningEffort = (projection?.reasoningEffort ?: source.reasoningEffort).toReasoningEffort(),
+            permissionPreset = source.permissionPreset.toPermissionPreset(),
+            executionState = source.recoveredExecutionState(),
+            streamingAssistantItemIndex = null,
+            streamingReasoningItemIndex = null,
+            streamingAssistantHistoryIndex = null,
+            streamingAssistantEntryId = null,
+            streamingReasoningEntryId = null,
+            contextUsageFraction = source.contextUsageFraction,
+            updatedAt = source.updatedAt,
+            pendingQuestion = null,
+            pendingApproval = null,
+        )
+    }
 
     /** 将附件编码为对象，保留 token、快照和会话媒体引用。 */
     private fun encodeAttachment(source: ChatAttachmentUiState): JsonObject = buildJsonObject {

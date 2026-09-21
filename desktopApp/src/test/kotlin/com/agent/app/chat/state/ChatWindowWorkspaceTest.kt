@@ -87,31 +87,32 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
      * 历史会话旁已有同工作区空白会话时，新建操作应直接切换到该会话。
      */
     @Test
-    fun `should reuse existing empty conversation when creating from a historical conversation`() = runTest(dispatcher) {
-        val state = ChatWindowState(
-            resourceDispatcher = dispatcher,
-            sendMessageUseCase = SendMessageUseCase(streamingGateway()),
-            snapshot = AppSessionSnapshot(
-                profiles = listOf(profile()),
-                activeProfile = profile(),
-            ),
-            projectPath = "E:\\abc\\def",
-        )
+    fun `should reuse existing empty conversation when creating from a historical conversation`() =
+        runTest(dispatcher) {
+            val state = ChatWindowState(
+                resourceDispatcher = dispatcher,
+                sendMessageUseCase = SendMessageUseCase(streamingGateway()),
+                snapshot = AppSessionSnapshot(
+                    profiles = listOf(profile()),
+                    activeProfile = profile(),
+                ),
+                projectPath = "E:\\abc\\def",
+            )
 
-        val historicalConversationId = state.ui.activeConversationId
-        state.send("hello")
-        advanceUntilIdle()
-        state.createConversationForWorkspace("E:\\abc\\def")
-        val emptyConversationId = state.ui.activeConversationId
+            val historicalConversationId = state.ui.activeConversationId
+            state.send("hello")
+            advanceUntilIdle()
+            state.createConversationForWorkspace("E:\\abc\\def")
+            val emptyConversationId = state.ui.activeConversationId
 
-        state.selectConversation(historicalConversationId)
-        state.updateDraft("未发送草稿")
-        state.createConversationForWorkspace("E:\\abc\\def")
+            state.selectConversation(historicalConversationId)
+            state.updateDraft("未发送草稿")
+            state.createConversationForWorkspace("E:\\abc\\def")
 
-        assertEquals(emptyConversationId, state.ui.activeConversationId)
-        assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
-        assertEquals("", state.ui.draft)
-    }
+            assertEquals(emptyConversationId, state.ui.activeConversationId)
+            assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+            assertEquals("", state.ui.draft)
+        }
 
     /**
      * task-first 侧栏应把仍在进行中的线程和已完成线程拆到两个分组。
@@ -136,6 +137,7 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         assertEquals(1, sections[ChatTaskGroup.RUNNING]?.tasks?.size)
         assertEquals(1, sections[ChatTaskGroup.DONE]?.tasks?.size)
         assertEquals("新建对话", sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.title)
+        assertEquals(ChatTaskStatus.NEW, sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.status)
         assertEquals("first", sections[ChatTaskGroup.DONE]?.tasks?.single()?.title)
     }
 
@@ -356,9 +358,9 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         assertEquals(survivingConversationId, state.ui.activeConversationId)
     }
 
-    /** 删除当前历史会话时必须复用已有的新建对话，不能再次生成空白占位项。 */
+    /** 当前活动会话不可删除，即使同工作区已经存在另一个空白会话。 */
     @Test
-    fun `should reuse existing new conversation when deleting active historical conversation`() = runTest(dispatcher) {
+    fun `should keep active historical conversation when delete is requested`() = runTest(dispatcher) {
         val state = ChatWindowState(
             resourceDispatcher = dispatcher,
             sendMessageUseCase = SendMessageUseCase(idleGateway()),
@@ -374,8 +376,8 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         state.selectConversation(historicalId)
         state.deleteConversation(historicalId)
 
-        assertEquals(listOf(newConversationId), state.ui.tasks.map { it.id })
-        assertEquals(newConversationId, state.ui.activeConversationId)
+        assertEquals(setOf(historicalId, newConversationId), state.ui.tasks.map { it.id }.toSet())
+        assertEquals(historicalId, state.ui.activeConversationId)
     }
 
     /**
@@ -452,7 +454,10 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
 
         assertEquals(0, calls)
         assertEquals("保留这条草稿", state.ui.draft)
-        assertEquals("工作目录不可用", (state.ui.activeConversation.executionState as ExecutionState.Failed).error.title)
+        assertEquals(
+            "工作目录不可用",
+            (state.ui.activeConversation.executionState as ExecutionState.Failed).error.title
+        )
         assertTrue(state.ui.activeConversation.items.isEmpty())
     }
 

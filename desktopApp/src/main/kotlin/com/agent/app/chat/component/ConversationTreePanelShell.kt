@@ -3,6 +3,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -25,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatWindowState
@@ -126,19 +125,20 @@ private fun ConversationTreeViewAction(label: String, selected: Boolean, onClick
     val palette = LocalDesktopPalette.current
     val interactionSource = remember { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
+    val shape = RoundedCornerShape(7.dp)
     val background = when {
-        selected && hovered -> AppText.copy(alpha = 0.08f).compositeOver(palette.selectedBackground)
-        selected -> palette.selectedBackground
-        hovered -> palette.hoverBackground
+        selected -> islandsTabSelectedFill(isDark = palette.isDark)
+        hovered -> palette.hoverBackground.copy(alpha = 0.74f)
         else -> Color.Transparent
     }
+    val border = if (selected) islandsTabSelectedBorder(isDark = palette.isDark) else Color.Transparent
     Text(
         text = label,
         color = if (selected || hovered) AppText else AppMuted,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(shape)
             .background(background)
+            .border(1.dp, border, shape)
             .hoverable(interactionSource)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),

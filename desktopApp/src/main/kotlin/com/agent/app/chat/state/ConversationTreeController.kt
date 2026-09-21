@@ -6,12 +6,10 @@ import androidx.compose.runtime.setValue
 import com.agent.shared.agent.api.BranchSummaryRequest
 import com.agent.shared.agent.api.GeneratedBranchSummary
 import com.agent.shared.agent.api.ReasoningEffort
-import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationEntry
 import com.agent.shared.chat.model.conversationEntryPath
 import com.agent.shared.chat.model.copyConversationEntryPath
-import java.nio.file.Path
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 
@@ -25,8 +23,8 @@ internal class ConversationTreeController(
     var summaryInProgress: Boolean by mutableStateOf(false)
         private set
 
-    /** 返回树会话中可作为 fork 起点的全部用户消息。 */
-    fun forkCandidates(conversationId: String): List<ConversationEntry.Message> =
+    /** 返回树会话中可作为独立新会话起点的全部用户消息。 */
+    fun newSessionCandidates(conversationId: String): List<ConversationEntry.Message> =
         window.findConversationOrNull(conversationId)
             ?.takeIf { it.treeFormatVersion > 0 }
             ?.entries
@@ -34,17 +32,17 @@ internal class ConversationTreeController(
             ?.filter { it.message.role == ChatRole.User }
             .orEmpty()
 
-    /** 从所选用户消息之前创建子会话，并把原输入恢复到 composer。 */
-    fun forkConversation(
+    /** 从所选用户消息之前创建独立子会话，并把原输入恢复到 composer。 */
+    fun createConversationFromUserEntry(
         conversationId: String,
         userEntryId: String,
     ): ConversationTreeOperationResult {
         val source = window.findConversationOrNull(conversationId)
             ?: return failure("会话不存在。")
-        if (source.treeFormatVersion <= 0) return failure("旧版会话不支持创建分支。")
+        if (source.treeFormatVersion <= 0) return failure("旧版会话不支持从消息新建会话。")
         val selected = source.entries.firstOrNull { it.id == userEntryId } as? ConversationEntry.Message
             ?: return failure("请选择一条用户消息。")
-        if (selected.message.role != ChatRole.User) return failure("只能从用户消息之前创建分支。")
+        if (selected.message.role != ChatRole.User) return failure("只能从用户消息新建会话。")
         window.cancelRunIfOwnedBy(conversationId)
         val copied = copyConversationEntryPath(source.entries, selected.parentId, ::newId)
         val restoredDraft = draftFromInputParts(selected.inputParts)
@@ -70,9 +68,31 @@ internal class ConversationTreeController(
             activeTaskId = child.id,
             draft = restoredDraft.text,
             draftSelectionStart = restoredDraft.text.length,
+            composerFocusRequestId = window.ui.composerFocusRequestId + 1L,
         )
         window.persistenceCoordinator?.schedule(window.ui.tasks)
         return success()
+    }
+
+    /**
+     * 从一条真实用户消息开始编辑当前会话；只有重新发送时才会追加新的兄弟分支。
+     */
+    suspend fun editFromUserEntry(
+        conversationId: String,
+        userEntryId: String,
+        summary: BranchNavigationSummary = BranchNavigationSummary(),
+    ): ConversationTreeOperationResult {
+        val source = window.findConversationOrNull(conversationId)
+            ?: return failure("会话不存在。")
+        if (source.treeFormatVersion <= 0) return failure("旧版会话不支持从此处编辑。")
+        val selected = source.entries.firstOrNull { it.id == userEntryId } as? ConversationEntry.Message
+            ?: return failure("请选择一条用户消息。")
+        if (selected.message.role != ChatRole.User) return failure("只能从用户消息开始编辑。")
+        val result = navigateToEntry(conversationId, userEntryId, summary)
+        if (result.succeeded) {
+            window.ui = window.ui.copy(composerFocusRequestId = window.ui.composerFocusRequestId + 1L)
+        }
+        return result
     }
 
     /** 克隆 root 到当前 leaf 的单一路径，不复制源会话的其他分支。 */
@@ -449,80 +469,6 @@ internal class ConversationTreeController(
         else -> entry.id
     }
 
-    /** 将条目转成不含附件二进制、但保留角色和工具结果的摘要输入。 */
-    private fun branchSummaryContent(entries: List<ConversationEntry>): String = entries
-        .joinToString("\n\n") { entry ->
-            val content = when (entry) {
-                is ConversationEntry.Message -> "${entry.message.role.name}: ${entry.message.content}"
-                is ConversationEntry.Reasoning -> "Reasoning: ${
-                    entry.summaryText?.takeIf(String::isNotBlank)
-                        ?: entry.rawText?.takeIf(String::isNotBlank).orEmpty()
-                }"
-
-                is ConversationEntry.ToolCall -> "Tool call ${entry.toolName}: ${entry.preview.orEmpty()}"
-                is ConversationEntry.ToolResult -> "Tool result ${entry.toolName}: ${entry.resultDisplay ?: entry.resultPreview ?: entry.errorMessage.orEmpty()}"
-                is ConversationEntry.Answers -> entry.answers.joinToString("\n") { "Answer to ${it.question}: ${it.answer}" }
-                is ConversationEntry.BranchSummary -> "Earlier branch summary: ${entry.summary}"
-                is ConversationEntry.Label -> "Label: ${entry.label}"
-                is ConversationEntry.ModelChange -> "Model changed to: ${entry.profileId ?: "default"}"
-                is ConversationEntry.ReasoningEffortChange -> "Reasoning effort changed to: ${entry.reasoningEffort}"
-                is ConversationEntry.Custom -> "${entry.type}: ${entry.text}"
-            }
-            content.take(BRANCH_SUMMARY_ENTRY_CHAR_LIMIT)
-        }
-        .take(BRANCH_SUMMARY_TOTAL_CHAR_LIMIT)
-
-    /** 记录摘要覆盖范围与自定义指令，便于树视图解释条目来源。 */
-    private fun branchSummaryDetails(
-        entries: List<ConversationEntry>,
-        customInstructions: String?,
-    ): String = buildString {
-        append("Summarized ${entries.size} branch entries.")
-        customInstructions?.let { append(" Custom instructions: ").append(it) }
-    }
-
-    /** 从条目有序输入恢复 composer 文本和附件 token。 */
-    private fun draftFromInputParts(parts: List<UserInputPart>): RestoredDraft {
-        val attachments = mutableListOf<ChatAttachmentUiState>()
-        val text = buildString {
-            parts.forEach { part ->
-                when (part) {
-                    is UserInputPart.Text -> append(part.text)
-                    is UserInputPart.FileSnapshot -> {
-                        val name = runCatching { Path.of(part.path).fileName?.toString() }.getOrNull()
-                            ?.ifBlank { null }
-                            ?: part.path
-                        val attachment = ChatAttachmentUiState(
-                            path = part.path,
-                            name = name,
-                            token = "@$name",
-                            kind = ChatAttachmentKind.FILE_SNAPSHOT,
-                            snapshotContent = part.content,
-                            mimeType = part.mimeType,
-                        )
-                        attachments += attachment
-                        append(attachment.token)
-                    }
-
-                    is UserInputPart.Image -> {
-                        val attachment = ChatAttachmentUiState(
-                            path = part.storagePath,
-                            name = part.label,
-                            token = part.label,
-                            kind = ChatAttachmentKind.IMAGE,
-                            mimeType = part.mimeType,
-                            mediaId = part.mediaId,
-                            imageLabel = part.label,
-                        )
-                        attachments += attachment
-                        append(attachment.token)
-                    }
-                }
-            }
-        }
-        return RestoredDraft(text, attachments)
-    }
-
     /** 创建成功结果。 */
     private fun success(): ConversationTreeOperationResult = ConversationTreeOperationResult(true)
 
@@ -533,26 +479,4 @@ internal class ConversationTreeController(
     /** 创建稳定条目标识。 */
     private fun newId(): String = UUID.randomUUID().toString()
 
-    private companion object {
-        const val BRANCH_SUMMARY_ENTRY_CHAR_LIMIT = 8_000
-        const val BRANCH_SUMMARY_TOTAL_CHAR_LIMIT = 60_000
-    }
-}
-
-/** 为派生会话生成有区分度的稳定标题，并在截断时优先保留后缀。 */
-internal fun derivedConversationTitle(sourceTitle: String, operation: String): String {
-    val suffix = " - $operation"
-    val source = sourceTitle.trim().ifBlank { DEFAULT_CONVERSATION_TITLE }
-    return source.take((CONVERSATION_TITLE_MAX_LENGTH - suffix.length).coerceAtLeast(0)).trimEnd() + suffix
-}
-
-/** 从条目恢复出的 composer 状态。 */
-private data class RestoredDraft(
-    val text: String,
-    val attachments: List<ChatAttachmentUiState>,
-)
-
-/** 当指定会话持有全局运行槽位时，先取消它再执行树导航或复制。 */
-private fun ChatWindowState.cancelRunIfOwnedBy(conversationId: String) {
-    if (activeRunConversationId == conversationId) cancelActiveRun()
 }

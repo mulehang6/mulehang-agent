@@ -227,6 +227,8 @@ data class ChatWindowUiState(
     val persistenceErrorMessage: String? = null,
     /** composer 当前插入点，用于在 `@`、图片和命令选择时保持 token 顺序。 */
     val draftSelectionStart: Int = draft.length,
+    /** 单调递增的输入框聚焦请求；仅属于窗口瞬时状态，不参与持久化。 */
+    val composerFocusRequestId: Long = 0L,
 ) {
     /**
      * 当前激活的对话线程。

@@ -37,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
@@ -133,6 +135,7 @@ internal fun ComposerPanel(
     var suppressComposerEnterKeyUp by remember { mutableStateOf(false) }
     var workspaceReferences by remember { mutableStateOf<List<WorkspaceFileReference>>(emptyList()) }
     val inputScrollState = rememberScrollState()
+    val composerFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     var inputViewportHeight by remember { mutableStateOf(0) }
     val inputContentOffset = composerInputContentOffset()
@@ -156,6 +159,9 @@ internal fun ComposerPanel(
             draftFieldValue = TextFieldValue(state.ui.draft, selection = TextRange(selectionStart))
         }
         inputScrollState.scrollTo(inputScrollState.maxValue)
+    }
+    LaunchedEffect(state.ui.composerFocusRequestId) {
+        if (state.ui.composerFocusRequestId > 0L) composerFocusRequester.requestFocus()
     }
     LaunchedEffect(slashQuery) {
         commandBrowserDismissed = false
@@ -325,6 +331,7 @@ internal fun ComposerPanel(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 72.dp)
+                            .focusRequester(composerFocusRequester)
                             .onPreviewKeyEvent { event ->
                                 if (
                                     event.type == KeyEventType.KeyUp &&

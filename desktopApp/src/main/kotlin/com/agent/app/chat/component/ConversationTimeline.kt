@@ -1,14 +1,16 @@
 package com.agent.app.chat.component
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.presentation.*
@@ -26,6 +28,10 @@ internal fun ConversationTimeline(
     conversation: ChatConversationUiState,
     pendingMessageEntry: PendingMessageEntry? = null,
     onMessageEntryFinished: (Long) -> Unit = {},
+    operationEntryId: String? = null,
+    onTurnPositioned: (anchorId: String, topInWindow: Float, bottomInWindow: Float) -> Unit = { _, _, _ -> },
+    onEditFromHere: (String) -> Unit = {},
+    onNewSession: (String) -> Unit = {},
 ) {
     if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
         Text(
@@ -39,6 +45,13 @@ internal fun ConversationTimeline(
         it is ToolEventItem && it.status == ToolEventStatus.Failed
     }
     val displayItems = groupTimelineItems(conversation.items)
+    val timelineTurns = remember(
+        conversation.treeFormatVersion,
+        conversation.entries,
+        conversation.activeEntryId,
+        conversation.items,
+    ) { buildTimelineTurnPresentations(conversation) }
+    var nextUserTurnIndex = 0
     val entryMotionTarget = latestMatchingUserMessage(conversation.items, pendingMessageEntry?.content)
     Column(modifier = Modifier.fillMaxWidth()) {
         displayItems.forEachIndexed { index, displayItem ->
@@ -55,10 +68,21 @@ internal fun ConversationTimeline(
                 is TimelineDisplayItem.Content -> when (val item = displayItem.item) {
                 is ChatMessageItem -> {
                     if (item.message.role == ChatRole.User) {
+                        val turn = timelineTurns.getOrNull(nextUserTurnIndex++)
+                            ?: TimelineTurnPresentation(
+                                anchorId = "rendered-user-${nextUserTurnIndex - 1}",
+                                sourceUserEntryId = null,
+                                userText = item.message.content,
+                                assistantText = null,
+                            )
                         UserMessageCard(
-                            content = item.message.content,
+                            turn = turn,
                             entryMotionId = pendingMessageEntry?.id?.takeIf { item === entryMotionTarget },
+                            operationInProgress = operationEntryId == turn.sourceUserEntryId,
                             onEntryMotionFinished = onMessageEntryFinished,
+                            onPositioned = onTurnPositioned,
+                            onEditFromHere = onEditFromHere,
+                            onNewSession = onNewSession,
                         )
                     } else {
                         AssistantMessageBlock(
@@ -104,66 +128,6 @@ internal fun ConversationTimeline(
                     color = AppDanger,
                     lineHeight = 18.sp,
                 ),
-            )
-        }
-    }
-}
-
-/** 新消息进入动效的初始下移距离，需要足够大才能被看见。 */
-private val MESSAGE_ENTRY_TRAVEL = 24.dp
-
-/**
- * 单条用户消息卡片。
- */
-@Composable
-private fun UserMessageCard(
-    content: String,
-    entryMotionId: Long?,
-    onEntryMotionFinished: (Long) -> Unit,
-) {
-    val travelDistancePx = with(LocalDensity.current) { MESSAGE_ENTRY_TRAVEL.toPx() }
-    val progress = remember(entryMotionId) { Animatable(if (entryMotionId == null) 1f else 0f) }
-    LaunchedEffect(entryMotionId) {
-        val motionId = entryMotionId ?: return@LaunchedEffect
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = 0.62f,
-                stiffness = Spring.StiffnessMediumLow,
-                visibilityThreshold = 0.001f,
-            ),
-        )
-        onEntryMotionFinished(motionId)
-    }
-    val visuals = messageEntryVisuals(
-        progress = progress.value,
-        travelDistancePx = travelDistancePx,
-    )
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.TopEnd,
-    ) {
-        JewelSurface(
-            role = JewelSurfaceRole.PANEL,
-            radius = 8.dp,
-            solidColor = AppUserCardBackground,
-            borderColor = Color.Transparent,
-            modifier = Modifier
-                .widthIn(max = maxWidth * 0.8f)
-                .wrapContentWidth()
-                .graphicsLayer {
-                    alpha = visuals.alpha
-                    scaleX = visuals.scale
-                    scaleY = visuals.scale
-                    translationY = visuals.translationY
-                    // 从最靠近发送按钮的右下角展开，动效来源与用户操作位置一致。
-                    transformOrigin = TransformOrigin(pivotFractionX = 1f, pivotFractionY = 1f)
-                },
-        ) {
-            Text(
-                text = content,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                style = JewelTheme.defaultTextStyle.copy(color = AppText),
             )
         }
     }

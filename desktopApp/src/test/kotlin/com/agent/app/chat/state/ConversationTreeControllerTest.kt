@@ -31,7 +31,7 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
         val source = treeConversation("source")
         state.ui = state.ui.copy(tasks = listOf(source), activeTaskId = source.id)
 
-        val result = state.conversationTreeController.forkConversation(source.id, "user-2")
+        val result = state.conversationTreeController.createConversationFromUserEntry(source.id, "user-2")
 
         assertTrue(result.succeeded)
         val child = state.ui.activeConversation
@@ -42,6 +42,8 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
         assertEquals("again @input.txt", state.ui.draft)
         assertEquals(listOf("input.txt"), child.attachments.map { it.name })
         assertEquals(2, child.entries.size)
+        assertEquals(1L, state.ui.composerFocusRequestId)
+        assertEquals(source.entries, state.findConversation(source.id).entries)
     }
 
     /** clone 复制当前 leaf 的单一路径，并保留源会话中的兄弟分支。 */
@@ -78,6 +80,49 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
         assertEquals(source.headEntryId, navigated.headEntryId)
         assertEquals("again @input.txt", state.ui.draft)
         assertEquals(source.entries, navigated.entries)
+    }
+
+    /** 消息级编辑只移动活动 leaf；重新发送后新旧用户消息成为真正的兄弟分支。 */
+    @Test
+    fun `edit from user entry creates sibling only after resend`() = runTest(dispatcher) {
+        val state = state()
+        val source = treeConversation("source")
+        state.ui = state.ui.copy(tasks = listOf(source), activeTaskId = source.id)
+
+        val result = state.conversationTreeController.editFromUserEntry(source.id, "user-2")
+
+        assertTrue(result.succeeded)
+        assertEquals("assistant-1", state.ui.activeConversation.activeEntryId)
+        assertEquals(source.entries, state.ui.activeConversation.entries)
+        assertEquals(1L, state.ui.composerFocusRequestId)
+
+        val resent = appendUserConversationEntry(
+            conversation = state.ui.activeConversation,
+            prompt = "revised",
+            inputParts = listOf(UserInputPart.Text("revised")),
+            entryId = "user-2-revised",
+            createdAt = 10L,
+        )
+
+        val siblingUsers = resent.entries.filterIsInstance<ConversationEntry.Message>()
+            .filter { it.message.role == ChatRole.User && it.parentId == "assistant-1" }
+        assertEquals(listOf("again", "revised"), siblingUsers.map { it.message.content })
+        assertEquals("user-2-revised", resent.activeEntryId)
+        assertEquals("user-2-revised", resent.headEntryId)
+    }
+
+    /** 消息级控制器拒绝助手条目，避免界面把任意树节点误当作可编辑用户输入。 */
+    @Test
+    fun `edit from user entry rejects non user entries`() = runTest(dispatcher) {
+        val state = state()
+        val source = treeConversation("source")
+        state.ui = state.ui.copy(tasks = listOf(source), activeTaskId = source.id)
+
+        val result = state.conversationTreeController.editFromUserEntry(source.id, "assistant-1")
+
+        assertFalse(result.succeeded)
+        assertEquals(source.activeEntryId, state.ui.activeConversation.activeEntryId)
+        assertEquals(0L, state.ui.composerFocusRequestId)
     }
 
     /** 导航到非用户条目时它直接成为 leaf，并清空旧 composer 内容。 */

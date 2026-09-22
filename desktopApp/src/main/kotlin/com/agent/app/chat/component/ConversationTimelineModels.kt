@@ -116,8 +116,11 @@ internal fun mergeReasoningItems(items: List<ReasoningItem>): ReasoningItem {
     )
 }
 
+/** `ask_user` 由挂起问题卡承载，不应在普通时间线中占用展示位置。 */
+internal const val ASK_USER_TOOL_NAME: String = "ask_user"
+
 /** 判断工具事件是否只应通过挂起问题卡交互，而不写入时间线。 */
-private fun isAskUserToolEvent(item: ToolEventItem): Boolean = item.toolName == "ask_user"
+private fun isAskUserToolEvent(item: ToolEventItem): Boolean = item.toolName == ASK_USER_TOOL_NAME
 
 /**
  * 构造收起状态下统一的工具组标题。

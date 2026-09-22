@@ -92,6 +92,55 @@ class ConversationTimelineNavigationTest {
         )
     }
 
+    /** ask_user 由问题卡承载，不得占用普通时间线展示段的条目 slot。 */
+    @Test
+    fun `ask user entries do not shift projected timeline ids`() {
+        val user = message("user", null, ChatRole.User, "question", 1L)
+        val askCall = ConversationEntry.ToolCall(
+            id = "ask-call",
+            parentId = user.id,
+            createdAt = 2L,
+            toolName = ASK_USER_TOOL_NAME,
+            toolCallId = ASK_USER_TOOL_NAME,
+        )
+        val askResult = ConversationEntry.ToolResult(
+            id = "ask-result",
+            parentId = askCall.id,
+            createdAt = 3L,
+            toolName = ASK_USER_TOOL_NAME,
+            status = ToolEventStatus.Finished,
+            toolCallId = ASK_USER_TOOL_NAME,
+        )
+        val assistant = message("assistant", askResult.id, ChatRole.Assistant, "answer", 4L)
+        val conversation = ChatConversationUiState(
+            id = "tree",
+            title = "tree",
+            workspacePath = "D:/workspace",
+            treeFormatVersion = CURRENT_CONVERSATION_TREE_FORMAT_VERSION,
+            entries = listOf(user, askCall, askResult, assistant),
+            activeEntryId = assistant.id,
+            headEntryId = assistant.id,
+        ).withEntryProjection()
+
+        assertEquals(
+            listOf(setOf(user.id), setOf(assistant.id)),
+            buildTimelineDisplayEntryIds(conversation),
+        )
+    }
+
+    /** 节点点击只允许定位当前活动路径，离开分支必须由显式切换提交。 */
+    @Test
+    fun `entry reveal is limited to active path`() {
+        val root = message("root", null, ChatRole.User, "root", 1L)
+        val active = message("active", root.id, ChatRole.Assistant, "active", 2L)
+        val sibling = message("sibling", root.id, ChatRole.Assistant, "sibling", 3L)
+        val entries = listOf(root, active, sibling)
+
+        assertTrue(isConversationEntryOnActivePath(entries, active.id, root.id))
+        assertTrue(isConversationEntryOnActivePath(entries, active.id, active.id))
+        assertFalse(isConversationEntryOnActivePath(entries, active.id, sibling.id))
+    }
+
     /** 树会话使用用户条目 ID，并保存下一轮之前最后一条非空助手正文。 */
     @Test
     fun `tree turns use entry ids and final assistant preview`() {

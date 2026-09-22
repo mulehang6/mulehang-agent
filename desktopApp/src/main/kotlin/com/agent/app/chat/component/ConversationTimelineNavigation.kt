@@ -126,8 +126,11 @@ internal fun buildTimelineDisplayEntryIds(
         when (entry) {
             is ConversationEntry.Message -> appendVisible(entry.id)
             is ConversationEntry.Reasoning -> appendVisible(entry.id)
-            is ConversationEntry.ToolCall -> appendVisible(entry.id, entry.toolName, entry.toolCallId)
-            is ConversationEntry.ToolResult -> {
+            is ConversationEntry.ToolCall -> if (entry.toolName != ASK_USER_TOOL_NAME) {
+                appendVisible(entry.id, entry.toolName, entry.toolCallId)
+            }
+
+            is ConversationEntry.ToolResult -> if (entry.toolName != ASK_USER_TOOL_NAME) {
                 val matchingIndex = slots.indexOfLast { slot ->
                     !slot.toolCompleted && slot.toolName != null &&
                             (entry.toolCallId?.let { it == slot.toolCallId } ?: (entry.toolName == slot.toolName))
@@ -161,6 +164,13 @@ internal fun buildTimelineDisplayEntryIds(
         }
     }
 }
+
+/** 判断条目是否位于当前活动路径；非活动分支只能通过显式切换操作进入。 */
+internal fun isConversationEntryOnActivePath(
+    entries: List<ConversationEntry>,
+    activeEntryId: String?,
+    entryId: String,
+): Boolean = conversationEntryPath(entries, activeEntryId).any { it.id == entryId }
 
 /** 条目投影到单个时间线项时使用的临时关联。 */
 private data class TimelineEntryProjectionSlot(

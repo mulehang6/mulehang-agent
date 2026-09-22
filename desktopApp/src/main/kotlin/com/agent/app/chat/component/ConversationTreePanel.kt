@@ -164,7 +164,14 @@ internal fun ConversationBranchPanelContent(
                                 onClick = {
                                     selectedLeafId = item.leafEntryId
                                     focusRequester.requestFocus()
-                                    onRevealEntry(item.leafEntryId)
+                                    if (isConversationEntryOnActivePath(
+                                            entries = conversation.entries,
+                                            activeEntryId = conversation.activeEntryId,
+                                            entryId = item.leafEntryId,
+                                        )
+                                    ) {
+                                        onRevealEntry(item.leafEntryId)
+                                    }
                                 },
                             )
                         }
@@ -397,7 +404,14 @@ internal fun ConversationEntryPanelContent(
                             onClick = {
                                 selectedEntryId = row.entry.id
                                 focusRequester.requestFocus()
-                                onRevealEntry(row.entry.id)
+                                if (isConversationEntryOnActivePath(
+                                        entries = conversation.entries,
+                                        activeEntryId = conversation.activeEntryId,
+                                        entryId = row.entry.id,
+                                    )
+                                ) {
+                                    onRevealEntry(row.entry.id)
+                                }
                             },
                             onToggleCollapsed = { toggleCollapsed(row) },
                             onOpenContextMenu = { contextMenuEntryId = row.entry.id },

@@ -213,37 +213,24 @@ internal fun WorkspacePanel(
         }
     }
 
-    /** 从会话树定位条目；必要时先无摘要切到包含该条目的完整分支。 */
+    /** 从会话树定位当前活动路径中的条目；分支切换由树面板底部按钮提交。 */
     val revealConversationEntry: (String) -> Unit = { entryId ->
         val conversation = state.ui.activeConversationOrNull
         if (conversation != null && conversation.id == conversationId) {
             val anchorId = conversationEntryNavigationAnchorId(conversation.entries, entryId)
-            val targetLeafId = conversationEntryNavigationLeaf(
-                entries = conversation.entries,
-                entryId = entryId,
-                activeEntryId = conversation.activeEntryId,
-                headEntryId = conversation.headEntryId,
-            )
-            if (anchorId == null || targetLeafId == null) {
+            if (anchorId == null) {
                 messageActionError = "条目不存在，无法定位。"
+            } else if (!isConversationEntryOnActivePath(
+                    entries = conversation.entries,
+                    activeEntryId = conversation.activeEntryId,
+                    entryId = anchorId,
+                )
+            ) {
+                pendingTreeEntryId = null
             } else {
                 messageActionError = null
                 isFollowingLatest.value = false
                 pendingTreeEntryId = anchorId
-                if (targetLeafId != conversation.activeEntryId) {
-                    timelineEntryBounds.clear()
-                    scope.launch {
-                        val result = state.conversationTreeController.switchToLeaf(
-                            conversationId = conversation.id,
-                            leafEntryId = targetLeafId,
-                            summary = BranchNavigationSummary(),
-                        )
-                        if (!result.succeeded) {
-                            if (pendingTreeEntryId == anchorId) pendingTreeEntryId = null
-                            messageActionError = result.message
-                        }
-                    }
-                }
             }
         }
     }

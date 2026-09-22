@@ -19,13 +19,13 @@ class TaskSidebarLayoutTest {
     }
 
     /**
-     * 新建、分组和任务条目需采用相近的可点击高度，避免侧栏尺度失衡。
+     * 平铺任务条目为标题和最近意图保留双行高度，新建动作保持紧凑。
      */
     @Test
     fun `should use balanced sidebar control heights`() {
         assertEquals(40, TASK_CREATE_BUTTON_HEIGHT_DP)
         assertEquals(36, TASK_SECTION_ROW_HEIGHT_DP)
-        assertEquals(40, TASK_LIST_ITEM_HEIGHT_DP)
+        assertEquals(56, TASK_LIST_ITEM_HEIGHT_DP)
     }
 
     /**

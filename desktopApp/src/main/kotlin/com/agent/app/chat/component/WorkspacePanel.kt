@@ -2,24 +2,24 @@
 
 package com.agent.app.chat.component
 
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,33 +27,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 import com.agent.app.chat.presentation.itemContentSize
 import com.agent.app.chat.presentation.shouldForceScrollToLatestAfterSubmit
+import com.agent.app.chat.state.BranchNavigationSummary
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.design.AppMuted
-import com.agent.app.design.AppText
 import com.agent.app.design.AppWorkspaceBackground
-import com.agent.app.design.LocalDesktopPalette
-import com.agent.app.design.RightRailGlyph
 import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
+import com.agent.app.design.RightRailGlyph
 import com.agent.shared.chat.model.ExecutionState
 import kotlinx.coroutines.launch
-import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.IconActionButton
-import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.VerticalScrollbar
-import org.jetbrains.jewel.ui.component.styling.IconButtonColors
-import org.jetbrains.jewel.ui.component.styling.IconButtonMetrics
-import org.jetbrains.jewel.ui.component.styling.IconButtonStyle
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
-import org.jetbrains.jewel.ui.theme.iconButtonStyle
+
 /**
  * 原型主工作区。
  */
@@ -71,18 +65,19 @@ internal fun WorkspacePanel(
     onCloseOtherTerminalTabs: (Long) -> Unit,
     onHideTerminalPanel: () -> Unit,
     sidePanelVisible: Boolean = terminalPanelVisible && terminalTabs.hasActiveTab(),
-    sidePanel: @Composable (Modifier) -> Unit = { terminalModifier ->
-        EmbeddedTerminalPanel(
-            tabs = terminalTabs,
-            sessions = terminalSessions,
-            onSelectTab = onSelectTerminalTab,
-            onAddTab = onAddTerminalTab,
-            onCloseTab = onCloseTerminalTab,
-            onCloseOtherTabs = onCloseOtherTerminalTabs,
-            onHidePanel = onHideTerminalPanel,
-            modifier = terminalModifier,
-        )
-    },
+    sidePanel: @Composable (Modifier, onRevealConversationEntry: (String) -> Unit) -> Unit =
+        { terminalModifier, _ ->
+            EmbeddedTerminalPanel(
+                tabs = terminalTabs,
+                sessions = terminalSessions,
+                onSelectTab = onSelectTerminalTab,
+                onAddTab = onAddTerminalTab,
+                onCloseTab = onCloseTerminalTab,
+                onCloseOtherTabs = onCloseOtherTerminalTabs,
+                onHidePanel = onHideTerminalPanel,
+                modifier = terminalModifier,
+            )
+        },
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -92,9 +87,33 @@ internal fun WorkspacePanel(
     val isFollowingLatest = remember(conversationId) { mutableStateOf(true) }
     val submittedMessageScrollRequest = remember(conversationId) { mutableStateOf(0) }
     var messageEntry by remember(conversationId) { mutableStateOf<PendingMessageEntry?>(null) }
+    var returningToHead by remember(conversationId) { mutableStateOf(false) }
+    var returnToHeadError by remember(conversationId) { mutableStateOf<String?>(null) }
+    var messageOperationEntryId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var messageActionError by remember(conversationId) { mutableStateOf<String?>(null) }
+    var timelineViewportBounds by remember(conversationId) { mutableStateOf<Rect?>(null) }
+    var timelineContentBounds by remember(conversationId) { mutableStateOf<Rect?>(null) }
+    val timelineTurnBounds = remember(conversationId) { mutableStateMapOf<String, TimelineTurnBounds>() }
+    val timelineEntryBounds = remember(conversationId, activeConversation?.activeEntryId) {
+        mutableStateMapOf<String, TimelineTurnBounds>()
+    }
+    var pendingTreeEntryId by remember(conversationId) { mutableStateOf<String?>(null) }
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     val totalContentSize = activeConversation?.items?.sumOf(::itemContentSize) ?: 0
+    val timelineTurns = remember(
+        activeConversation?.treeFormatVersion,
+        activeConversation?.entries,
+        activeConversation?.activeEntryId,
+        activeConversation?.items,
+    ) {
+        activeConversation?.let(::buildTimelineTurnPresentations).orEmpty()
+    }
+    LaunchedEffect(timelineTurns.map(TimelineTurnPresentation::anchorId)) {
+        val activeIds = timelineTurns.mapTo(mutableSetOf(), TimelineTurnPresentation::anchorId)
+        timelineTurnBounds.keys.toList().filterNot(activeIds::contains).forEach(timelineTurnBounds::remove)
+    }
     LaunchedEffect(scrollState) {
         snapshotFlow {
             isTimelineFollowingLatest(
@@ -124,6 +143,26 @@ internal fun WorkspacePanel(
         }
     }
 
+    val pendingTreeEntryBounds = pendingTreeEntryId?.let(timelineEntryBounds::get)
+    LaunchedEffect(
+        pendingTreeEntryId,
+        pendingTreeEntryBounds != null,
+        timelineViewportBounds != null,
+    ) {
+        val entryId = pendingTreeEntryId ?: return@LaunchedEffect
+        val entryBounds = pendingTreeEntryBounds ?: return@LaunchedEffect
+        val viewport = timelineViewportBounds ?: return@LaunchedEffect
+        val target = timelineScrollTarget(
+            currentScroll = scrollState.value,
+            anchorTop = entryBounds.top,
+            viewportTop = viewport.top,
+            maxScroll = scrollState.maxValue,
+            topInsetPx = with(density) { 24.dp.toPx() },
+        )
+        scrollState.animateScrollTo(target, tween(durationMillis = 140))
+        if (pendingTreeEntryId == entryId) pendingTreeEntryId = null
+    }
+
     val onSendDraft: () -> Unit = {
         val draft = state.ui.draft
         if (shouldForceScrollToLatestAfterSubmit(draft)) {
@@ -143,6 +182,57 @@ internal fun WorkspacePanel(
 
     val onMessageEntryFinished: (Long) -> Unit = { finishedId ->
         if (messageEntry?.id == finishedId) messageEntry = null
+    }
+
+    /** 按 pi-web 语义直接回到用户消息之前，不为消息级编辑生成离开路径摘要。 */
+    val editFromUserEntry: (String) -> Unit = { entryId ->
+        if (conversationId != null && messageOperationEntryId == null) {
+            messageOperationEntryId = entryId
+            scope.launch {
+                val result = state.conversationTreeController.editFromUserEntry(
+                    conversationId = conversationId,
+                    userEntryId = entryId,
+                    summary = BranchNavigationSummary(),
+                )
+                messageOperationEntryId = null
+                if (!result.succeeded) messageActionError = result.message
+            }
+        }
+    }
+
+    /** 从消息创建独立任务，不改变源会话的内部条目图。 */
+    val createConversationFromUserEntry: (String) -> Unit = { entryId ->
+        if (conversationId != null && messageOperationEntryId == null) {
+            messageOperationEntryId = entryId
+            val result = state.conversationTreeController.createConversationFromUserEntry(
+                conversationId,
+                entryId,
+            )
+            messageOperationEntryId = null
+            if (!result.succeeded) messageActionError = result.message
+        }
+    }
+
+    /** 从会话树定位当前活动路径中的条目；分支切换由树面板底部按钮提交。 */
+    val revealConversationEntry: (String) -> Unit = { entryId ->
+        val conversation = state.ui.activeConversationOrNull
+        if (conversation != null && conversation.id == conversationId) {
+            val anchorId = conversationEntryNavigationAnchorId(conversation.entries, entryId)
+            if (anchorId == null) {
+                messageActionError = "条目不存在，无法定位。"
+            } else if (!isConversationEntryOnActivePath(
+                    entries = conversation.entries,
+                    activeEntryId = conversation.activeEntryId,
+                    entryId = anchorId,
+                )
+            ) {
+                pendingTreeEntryId = null
+            } else {
+                messageActionError = null
+                isFollowingLatest.value = false
+                pendingTreeEntryId = anchorId
+            }
+        }
     }
 
     Box(
@@ -170,211 +260,216 @@ internal fun WorkspacePanel(
                         Column(
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(scrollState)
-                                    .padding(horizontal = if (compact) 16.dp else 32.dp, vertical = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(18.dp),
-                            ) {
-                                if (
-                                    activeConversation == null ||
-                                    (activeConversation.items.isEmpty() && activeConversation.executionState == ExecutionState.Idle)
-                                ) {
-                                    EmptyWorkspaceState(state)
-                                } else {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .widthIn(max = 720.dp),
-                                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                                    ) {
-                                        when (activeRailView) {
-                                            RightRailGlyph.CODE -> ConversationTimeline(
-                                                conversation = activeConversation,
-                                                pendingMessageEntry = messageEntry,
-                                                onMessageEntryFinished = onMessageEntryFinished,
-                                            )
-                                            RightRailGlyph.HISTORY -> HistoryPanel(
-                                                activeConversation,
-                                                filterToolActivityOnly
-                                            )
-
-                                            else -> ConversationTimeline(
-                                                conversation = activeConversation,
-                                                pendingMessageEntry = messageEntry,
-                                                onMessageEntryFinished = onMessageEntryFinished,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            if (shouldShowTimelineScrollbar(scrollState.maxValue)) {
-                                VerticalScrollbar(
-                                    scrollState = scrollState,
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .fillMaxHeight()
-                                        .padding(vertical = 12.dp, horizontal = 4.dp),
-                                )
-                            }
                             if (
                                 activeConversation != null &&
-                                shouldShowScrollToBottomButton(
-                                    isFollowingLatest = isFollowingLatest.value,
-                                    hasTimelineContent = activeConversation.items.isNotEmpty(),
-                                )
+                                state.conversationTreeController.isAwayFromHead(activeConversation.id)
                             ) {
-                                val scrollToBottomButtonStyle = timelineScrollToBottomButtonStyle()
-                                // Jewel 的 tooltip 重载会包裹触发器，BoxScope 对齐必须留在其直接子节点上。
                                 Box(
                                     modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(end = 28.dp, bottom = 20.dp)
-                                        .size(36.dp),
+                                        .fillMaxWidth()
+                                        .padding(
+                                            start = if (compact) 16.dp else 32.dp,
+                                            end = if (compact) 16.dp else 32.dp,
+                                            top = 16.dp,
+                                            bottom = 4.dp,
+                                        ),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    IconActionButton(
-                                        key = AllIconsKeys.General.ArrowDown,
-                                        contentDescription = "回到底部",
-                                        onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
-                                        modifier = Modifier.fillMaxSize(),
-                                        iconModifier = Modifier.size(16.dp),
-                                        style = scrollToBottomButtonStyle,
-                                        tooltip = { Text("回到底部") },
+                                    HistoricalBranchBanner(
+                                        returning = returningToHead,
+                                        errorMessage = returnToHeadError,
+                                        onReturnToHead = {
+                                            returnToHeadError = null
+                                            returningToHead = true
+                                            scope.launch {
+                                                val result =
+                                                    state.conversationTreeController.returnToHead(activeConversation.id)
+                                                returningToHead = false
+                                                if (!result.succeeded) returnToHeadError = result.message
+                                            }
+                                        },
+                                        modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
                                     )
                                 }
                             }
+                            BoxWithConstraints(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                                    .onGloballyPositioned { coordinates ->
+                                        timelineViewportBounds = coordinates.boundsInWindow()
+                                    },
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(scrollState)
+                                        .padding(horizontal = if (compact) 16.dp else 32.dp, vertical = 24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                ) {
+                                    if (
+                                        activeConversation == null ||
+                                        (activeConversation.items.isEmpty() && activeConversation.executionState == ExecutionState.Idle)
+                                    ) {
+                                        EmptyWorkspaceState(state)
+                                    } else {
+                                        Column(
+                                            modifier = Modifier
+                                                .widthIn(max = 720.dp)
+                                                .fillMaxWidth()
+                                                .onGloballyPositioned { coordinates ->
+                                                    timelineContentBounds = coordinates.boundsInWindow()
+                                                },
+                                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                                        ) {
+                                            when (activeRailView) {
+                                                RightRailGlyph.CODE -> ConversationTimeline(
+                                                    conversation = activeConversation,
+                                                    pendingMessageEntry = messageEntry,
+                                                    onMessageEntryFinished = onMessageEntryFinished,
+                                                    operationEntryId = messageOperationEntryId,
+                                                    onTurnPositioned = { anchorId, top, bottom ->
+                                                        timelineTurnBounds[anchorId] = TimelineTurnBounds(top, bottom)
+                                                    },
+                                                    onEntryPositioned = { entryId, top, bottom ->
+                                                        timelineEntryBounds[entryId] = TimelineTurnBounds(top, bottom)
+                                                    },
+                                                    onEditFromHere = editFromUserEntry,
+                                                    onNewSession = createConversationFromUserEntry,
+                                                )
+
+                                                RightRailGlyph.HISTORY -> HistoryPanel(
+                                                    activeConversation,
+                                                    filterToolActivityOnly
+                                                )
+
+                                                else -> ConversationTimeline(
+                                                    conversation = activeConversation,
+                                                    pendingMessageEntry = messageEntry,
+                                                    onMessageEntryFinished = onMessageEntryFinished,
+                                                    operationEntryId = messageOperationEntryId,
+                                                    onTurnPositioned = { anchorId, top, bottom ->
+                                                        timelineTurnBounds[anchorId] = TimelineTurnBounds(top, bottom)
+                                                    },
+                                                    onEntryPositioned = { entryId, top, bottom ->
+                                                        timelineEntryBounds[entryId] = TimelineTurnBounds(top, bottom)
+                                                    },
+                                                    onEditFromHere = editFromUserEntry,
+                                                    onNewSession = createConversationFromUserEntry,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (shouldShowTimelineScrollbar(scrollState.maxValue)) {
+                                    VerticalScrollbar(
+                                        scrollState = scrollState,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .fillMaxHeight()
+                                            .padding(vertical = 12.dp, horizontal = 4.dp),
+                                    )
+                                }
+                                val leftGutterDp = timelineViewportBounds?.let { viewport ->
+                                    timelineContentBounds?.let { content ->
+                                        timelineLeftGutterDp(
+                                            viewportLeftPx = viewport.left,
+                                            contentLeftPx = content.left,
+                                            density = density.density,
+                                        )
+                                    }
+                                } ?: 0f
+                                val showTimelineNavigation = activeRailView != RightRailGlyph.HISTORY &&
+                                        shouldShowTimelineNavigation(
+                                            turnCount = timelineTurns.size,
+                                            compact = compact,
+                                            leftGutterDp = leftGutterDp,
+                                        )
+                                if (showTimelineNavigation && maxHeight >= 144.dp) {
+                                    val viewport = timelineViewportBounds
+                                    val activeTurnIndex = viewport?.let { bounds ->
+                                        activeTimelineTurnIndex(
+                                            turns = timelineTurns,
+                                            anchorTops = timelineTurnBounds.mapValues { it.value.top },
+                                            viewportTop = bounds.top,
+                                            viewportBottom = bounds.bottom,
+                                        )
+                                    } ?: 0
+                                    ConversationTimelineMinimap(
+                                        turns = timelineTurns,
+                                        activeIndex = activeTurnIndex,
+                                        railHeight = minOf(maxHeight - 48.dp, 280.dp),
+                                        onNavigate = { index, immediate ->
+                                            val targetTurn = timelineTurns.getOrNull(index)
+                                            val targetBounds = targetTurn?.let { timelineTurnBounds[it.anchorId] }
+                                            val currentViewport = timelineViewportBounds
+                                            if (targetBounds != null && currentViewport != null) {
+                                                val target = timelineScrollTarget(
+                                                    currentScroll = scrollState.value,
+                                                    anchorTop = targetBounds.top,
+                                                    viewportTop = currentViewport.top,
+                                                    maxScroll = scrollState.maxValue,
+                                                    topInsetPx = with(density) { 24.dp.toPx() },
+                                                )
+                                                scope.launch {
+                                                    if (immediate) {
+                                                        scrollState.scrollTo(target)
+                                                    } else {
+                                                        scrollState.animateScrollTo(target, tween(durationMillis = 140))
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .align(Alignment.CenterStart)
+                                            .offset(x = 16.dp),
+                                    )
+                                }
+                                if (
+                                    activeConversation != null &&
+                                    shouldShowScrollToBottomButton(
+                                        isFollowingLatest = isFollowingLatest.value,
+                                        hasTimelineContent = activeConversation.items.isNotEmpty(),
+                                    )
+                                ) {
+                                    val scrollToBottomButtonStyle = timelineScrollToBottomButtonStyle()
+                                    // Jewel 的 tooltip 重载会包裹触发器，BoxScope 对齐必须留在其直接子节点上。
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(end = 28.dp, bottom = 20.dp)
+                                            .size(36.dp),
+                                    ) {
+                                        IconActionButton(
+                                            key = AllIconsKeys.General.ArrowDown,
+                                            contentDescription = "回到底部",
+                                            onClick = { scope.launch { scrollState.animateScrollTo(scrollState.maxValue) } },
+                                            modifier = Modifier.fillMaxSize(),
+                                            iconModifier = Modifier.size(16.dp),
+                                            style = scrollToBottomButtonStyle,
+                                            tooltip = { Text("回到底部") },
+                                        )
+                                    }
+                                }
+                            }
+                            FooterComposerSection(
+                                state = state,
+                                compact = compact,
+                                onSendDraft = onSendDraft,
+                                composerInputMaxHeight = composerInputMaxHeight,
+                            )
                         }
-                        FooterComposerSection(
-                            state = state,
-                            compact = compact,
-                            onSendDraft = onSendDraft,
-                            composerInputMaxHeight = composerInputMaxHeight,
-                        )
-                    }
                     }
                 }
             },
-            terminal = sidePanel,
+            terminal = { terminalModifier -> sidePanel(terminalModifier, revealConversationEntry) },
         )
     }
-}
-
-/**
- * 仅在用户未跟随最新输出时显示回到底部动作。
- */
-internal fun shouldShowScrollToBottomButton(
-    isFollowingLatest: Boolean,
-    hasTimelineContent: Boolean = true,
-): Boolean = hasTimelineContent && !isFollowingLatest
-
-/**
- * 底部输入区因审批或提问卡片扩高时，决定是否保持时间线贴住最新输出。
- */
-internal fun shouldKeepTimelineAtBottomAfterViewportChange(isFollowingLatest: Boolean): Boolean =
-    isFollowingLatest
-
-/** 判断当前时间线位置是否仍跟随最新输出。 */
-internal fun isTimelineFollowingLatest(
-    scrollValue: Int,
-    maxScrollValue: Int,
-): Boolean = scrollValue >= maxScrollValue - TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
-
-/**
- * 提问或审批挂起时都应在 composer 上方展示独立交互卡片。
- */
-internal fun shouldShowPendingInteractionCard(
-    hasPendingQuestion: Boolean,
-    hasPendingApproval: Boolean,
-): Boolean = hasPendingQuestion || hasPendingApproval
-
-/**
- * 主内容实际溢出时才显示垂直滚动条。
- */
-internal fun shouldShowTimelineScrollbar(maxScrollValue: Int): Boolean = maxScrollValue > 0
-
-/** 为回到底部浮动按钮提供 36dp 圆角表面和中性 hover 反馈。 */
-@Composable
-private fun timelineScrollToBottomButtonStyle(): IconButtonStyle {
-    val palette = LocalDesktopPalette.current
-    val base = JewelTheme.iconButtonStyle
-    return remember(base, palette) {
-        IconButtonStyle(
-            colors = IconButtonColors(
-                foregroundSelectedActivated = base.colors.foregroundSelectedActivated,
-                background = palette.panelBackground,
-                backgroundDisabled = base.colors.backgroundDisabled,
-                backgroundSelected = base.colors.backgroundSelected,
-                backgroundSelectedActivated = base.colors.backgroundSelectedActivated,
-                backgroundFocused = palette.hoverBackground,
-                backgroundPressed = palette.hoverBackground.copy(alpha = 0.8f),
-                backgroundHovered = palette.hoverBackground,
-                border = palette.line,
-                borderDisabled = base.colors.borderDisabled,
-                borderSelected = base.colors.borderSelected,
-                borderSelectedActivated = base.colors.borderSelectedActivated,
-                borderFocused = palette.line,
-                borderPressed = palette.line,
-                borderHovered = palette.line,
-            ),
-            metrics = IconButtonMetrics(
-                cornerSize = CornerSize(8.dp),
-                borderWidth = base.metrics.borderWidth,
-                padding = PaddingValues(0.dp),
-                minSize = DpSize(36.dp, 36.dp),
-            ),
+    messageActionError?.let { error ->
+        MessageActionErrorDialog(
+            message = error,
+            onDismiss = { messageActionError = null },
         )
     }
-}
-
-/**
- * 空任务态主区。
- */
-@Composable
-private fun EmptyWorkspaceState(state: ChatWindowState) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 72.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = "从一个任务开始",
-            style = JewelTheme.defaultTextStyle.copy(
-                color = AppText,
-                fontWeight = FontWeight.SemiBold,
-            ),
-        )
-        Text(
-            text = "选择工作区后，告诉 MH Agent 你想推进什么。",
-            style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            EmptyStateAction("审查改动", "审查当前工作区的改动，优先指出高风险问题。", state)
-            EmptyStateAction("解释项目", "解释这个项目的结构、入口和关键数据流。", state)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            EmptyStateAction("规划任务", "为这个需求制定一份可执行的实施计划。", state)
-            EmptyStateAction("修复问题", "定位并修复当前项目中的问题。", state)
-        }
-    }
-}
-
-/**
- * 空态中的高价值起步动作，点击后只填充草稿，不自动发送。
- */
-@Composable
-private fun EmptyStateAction(
-    label: String,
-    prompt: String,
-    state: ChatWindowState,
-) {
-    OutlinedButton(onClick = { state.updateDraft(prompt) }) { Text(label) }
 }

@@ -71,7 +71,10 @@ class ChatScreenPresentationTest {
     /** 标题栏和侧栏任务入口必须展示完全相同的操作菜单。 */
     @Test
     fun `should expose the same task context menu actions everywhere`() {
-        assertEquals(listOf("重命名", "创建分支", "归档", "删除"), taskContextMenuLabels())
+        assertEquals(
+            listOf("重命名", "重新生成标题", "从消息新建会话…", "克隆", "归档", "删除"),
+            taskContextMenuLabels(),
+        )
         assertEquals(AppDanger, taskContextMenuTextColor("删除"))
         assertEquals(AppText, taskContextMenuTextColor("重命名"))
         assertEquals(listOf("编辑", "删除"), workspaceContextMenuLabels())
@@ -207,15 +210,17 @@ class ChatScreenPresentationTest {
         )
     }
 
-    /** 右侧 rail 在顶部保留终端入口，底部按“通知、设置”紧邻排列。 */
+    /** 右侧 rail 上组为通知/设置，下组为终端/会话树。 */
     @Test
     fun `should expose terminal notification and settings rail buttons`() {
         val groups = buildRightRailGroups()
 
-        assertEquals(listOf(1, 2), groups.map { it.size })
-        assertEquals(RightRailGlyph.TERMINAL, groups.first().single().glyph)
         assertEquals(
             listOf(RightRailGlyph.NOTIFICATIONS, RightRailGlyph.SETTINGS),
+            groups.first().map { it.glyph },
+        )
+        assertEquals(
+            listOf(RightRailGlyph.TERMINAL, RightRailGlyph.CONVERSATION_TREE),
             groups.last().map { it.glyph },
         )
         assertEquals(false, groups.flatten().any { it.active })

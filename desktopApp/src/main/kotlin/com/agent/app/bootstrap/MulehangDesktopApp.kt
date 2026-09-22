@@ -37,6 +37,7 @@ import com.agent.app.platform.SuppressWindowsWindowBorder
 import com.agent.app.platform.loadDesktopTerminalShellCatalog
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
+import com.agent.shared.agent.koog.KoogBranchSummaryGenerator
 import com.agent.shared.agent.koog.KoogConversationTitleGenerator
 import com.agent.shared.agent.recording.JsonLinesAgentRunRecorder
 import com.agent.shared.agent.recording.RecordingAgentGateway
@@ -157,6 +158,7 @@ internal fun MulehangDesktopApp(
                 projectRootState.value = DesktopProjectRootResolver.resolve(Paths.get(workspacePath))
             },
             persistenceCoordinator = taskPersistenceCoordinator,
+            branchSummaryGenerator = KoogBranchSummaryGenerator(),
             conversationTitleGenerator = KoogConversationTitleGenerator(),
             resourceSnapshotProvider = { workspacePath ->
                 resourceLoadRequest(userHome, workspacePath)?.let(agentResourceRuntime::snapshotFor)

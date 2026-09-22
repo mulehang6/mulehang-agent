@@ -3,6 +3,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -12,22 +13,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.design.AppChipBackground
+import com.agent.app.design.AppAccent
 import com.agent.app.design.AppLine
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppSidebarBackground
@@ -51,6 +52,7 @@ internal const val TOOL_RAIL_WIDTH_DP = 48
 internal const val TOOL_RAIL_TOP_PADDING_DP = 16
 internal const val TOOL_RAIL_ACTION_SIZE_DP = 40
 internal const val TOOL_RAIL_ICON_SIZE_DP = 22
+
 /** Rail 必须透明，以承接窗口根画布的 Islands 项目环境光。 */
 internal val TOOL_RAIL_BACKGROUND = Color.Transparent
 
@@ -135,10 +137,9 @@ internal fun HistoryPanel(
  */
 @Composable
 internal fun ToolRail(
-    activeGlyph: RightRailGlyph,
-    notificationsVisible: Boolean,
+    selectedGlyphs: Set<RightRailGlyph>,
+    notificationsUnread: Boolean,
     onToolClick: (RightRailGlyph) -> Unit,
-    onNotificationAnchorChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val toolGroups = buildRightRailGroups()
@@ -165,14 +166,9 @@ internal fun ToolRail(
                     topGroup.forEach { item ->
                         ToolRailAction(
                             glyph = item.glyph,
-                            selected = item.glyph == activeGlyph ||
-                                    (item.glyph == RightRailGlyph.NOTIFICATIONS && notificationsVisible),
+                            selected = item.glyph in selectedGlyphs,
+                            unread = item.glyph == RightRailGlyph.NOTIFICATIONS && notificationsUnread,
                             onClick = { onToolClick(item.glyph) },
-                            onPositioned = if (item.glyph == RightRailGlyph.NOTIFICATIONS) {
-                                onNotificationAnchorChanged
-                            } else {
-                                null
-                            },
                         )
                     }
                 }
@@ -183,14 +179,9 @@ internal fun ToolRail(
                     bottomGroup.forEach { item ->
                         ToolRailAction(
                             glyph = item.glyph,
-                            selected = item.glyph == activeGlyph ||
-                                    (item.glyph == RightRailGlyph.NOTIFICATIONS && notificationsVisible),
+                            selected = item.glyph in selectedGlyphs,
+                            unread = item.glyph == RightRailGlyph.NOTIFICATIONS && notificationsUnread,
                             onClick = { onToolClick(item.glyph) },
-                            onPositioned = if (item.glyph == RightRailGlyph.NOTIFICATIONS) {
-                                onNotificationAnchorChanged
-                            } else {
-                                null
-                            },
                         )
                     }
                 }
@@ -208,8 +199,8 @@ internal fun ToolRail(
 private fun ToolRailAction(
     glyph: RightRailGlyph,
     selected: Boolean,
+    unread: Boolean,
     onClick: () -> Unit,
-    onPositioned: ((Rect) -> Unit)?,
 ) {
     val palette = LocalDesktopPalette.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -229,15 +220,6 @@ private fun ToolRailAction(
             borderColor = Color.Transparent,
             modifier = Modifier
                 .size(TOOL_RAIL_ACTION_SIZE_DP.dp)
-                .then(
-                    if (onPositioned == null) {
-                        Modifier
-                    } else {
-                        Modifier.onGloballyPositioned { coordinates ->
-                            onPositioned(coordinates.boundsInRoot())
-                        }
-                    },
-                )
                 .hoverable(interactionSource)
                 .clickable(
                     interactionSource = interactionSource,
@@ -259,6 +241,15 @@ private fun ToolRailAction(
                         palette = palette,
                     ),
                 )
+                if (unread) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = (-7).dp, y = 7.dp)
+                            .size(6.dp)
+                            .background(AppAccent, CircleShape),
+                    )
+                }
             }
         }
     }

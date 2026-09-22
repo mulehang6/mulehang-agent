@@ -6,6 +6,7 @@ import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationItem
+import com.agent.shared.chat.model.ConversationEntry
 import com.agent.shared.chat.model.ConversationState
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.tool.model.PermissionPreset
@@ -93,6 +94,20 @@ data class ChatConversationUiState(
     val detachedWorkspacePath: String? = null,
     /** 解除关联前的工作区显示名。 */
     val detachedWorkspaceName: String? = null,
+    /** 外层会话树中的直接父会话。 */
+    val parentConversationId: String? = null,
+    /** fork 创建时所选的源条目。 */
+    val forkedFromEntryId: String? = null,
+    /** 内部条目树当前活动 leaf。 */
+    val activeEntryId: String? = null,
+    /** 内部条目树持久主线的末端；普通导航只改变 [activeEntryId]。 */
+    val headEntryId: String? = null,
+    /** 归档时间；为空表示显示在活跃侧栏。 */
+    val archivedAt: Long? = null,
+    /** 0 表示旧线性快照，正数表示条目树会话。 */
+    val treeFormatVersion: Int = 0,
+    /** 会话的完整条目图，包含当前路径以外的兄弟分支。 */
+    val entries: List<ConversationEntry> = emptyList(),
     val items: List<ConversationItem> = emptyList(),
     val attachments: List<ChatAttachmentUiState> = emptyList(),
     val history: List<AgentConversationHistoryMessage> = emptyList(),
@@ -107,11 +122,17 @@ data class ChatConversationUiState(
     val streamingAssistantItemIndex: Int? = null,
     val streamingReasoningItemIndex: Int? = null,
     val streamingAssistantHistoryIndex: Int? = null,
+    /** 当前流式助手消息的稳定条目标识。 */
+    val streamingAssistantEntryId: String? = null,
+    /** 当前流式推理块的稳定条目标识。 */
+    val streamingReasoningEntryId: String? = null,
     val contextUsageFraction: Float = 0.72f,
     /** 任务最后被操作的时间戳（毫秒），侧栏"已完成"分组按它倒序展示。 */
     val updatedAt: Long = 0L,
     val pendingQuestion: PendingQuestionUiState? = null,
     val pendingApproval: PendingApprovalUiState? = null,
+    /** 显式重新生成标题的瞬时状态；不参与任务执行状态和持久化。 */
+    val titleRegenerationInProgress: Boolean = false,
 ) {
     /**
      * 将对话线程折叠为旧的会话状态模型，兼容现有测试和渲染辅助函数。
@@ -161,6 +182,17 @@ data class ChatTaskListItemUiState(
     val group: ChatTaskGroup,
     val status: ChatTaskStatus,
     val titleState: ConversationTitleState,
+    val parentConversationId: String? = null,
+    val subtreeUpdatedAt: Long = 0L,
+    val treeFormatVersion: Int = 0,
+    val titleRegenerationInProgress: Boolean = false,
+)
+
+/** 侧栏或设置页中的一棵会话树节点。 */
+data class ChatTaskTreeNodeUiState(
+    val task: ChatTaskListItemUiState,
+    val children: List<ChatTaskTreeNodeUiState>,
+    val subtreeUpdatedAt: Long,
 )
 
 /**
@@ -179,6 +211,8 @@ data class WorkspaceTaskSectionUiState(
     val workspacePath: String,
     val label: String,
     val sections: List<ChatTaskSectionUiState>,
+    /** 不再按运行状态拆段的完整会话森林。 */
+    val roots: List<ChatTaskTreeNodeUiState> = emptyList(),
 )
 
 /**
@@ -193,6 +227,8 @@ data class ChatWindowUiState(
     val persistenceErrorMessage: String? = null,
     /** composer 当前插入点，用于在 `@`、图片和命令选择时保持 token 顺序。 */
     val draftSelectionStart: Int = draft.length,
+    /** 单调递增的输入框聚焦请求；仅属于窗口瞬时状态，不参与持久化。 */
+    val composerFocusRequestId: Long = 0L,
 ) {
     /**
      * 当前激活的对话线程。
@@ -216,7 +252,7 @@ data class ChatWindowUiState(
      * 与旧 workspace-first 辅助逻辑兼容的按工作目录分组视图。
      */
     val workspaceGroups: List<WorkspaceConversationGroupUiState>
-        get() = tasks
+        get() = activeTasks
             .filter { it.workspacePath.isNotBlank() }
             .groupBy { it.workspacePath }
             .map { (workspacePath, conversations) ->
@@ -243,14 +279,14 @@ data class ChatWindowUiState(
             ChatTaskSectionUiState(
                 group = ChatTaskGroup.RUNNING,
                 title = "进行中",
-                tasks = tasks
+                tasks = activeTasks
                     .filter { taskGroupFor(it) == ChatTaskGroup.RUNNING }
                     .map(::toTaskListItem),
             ),
             ChatTaskSectionUiState(
                 group = ChatTaskGroup.DONE,
                 title = "已完成",
-                tasks = tasks
+                tasks = activeTasks
                     .filter { taskGroupFor(it) == ChatTaskGroup.DONE }
                     .sortedByDescending { it.updatedAt }
                     .map(::toTaskListItem),
@@ -261,7 +297,7 @@ data class ChatWindowUiState(
      * 供侧栏使用的工作区优先分组视图。
      */
     val workspaceTaskSections: List<WorkspaceTaskSectionUiState>
-        get() = tasks
+        get() = activeTasks
             .filter { it.workspacePath.isNotBlank() }
             .groupBy { it.workspacePath }
             .map { (workspacePath, conversations) ->
@@ -285,6 +321,28 @@ data class ChatWindowUiState(
                                 .map(::toTaskListItem),
                         ),
                     ),
+                    roots = buildConversationForest(conversations),
+                )
+            }
+
+    /** 当前未归档的全部会话。 */
+    val activeTasks: List<ChatConversationUiState>
+        get() = tasks.filter { it.archivedAt == null }
+
+    /** 设置页中管理的全部归档会话。 */
+    val archivedTasks: List<ChatConversationUiState>
+        get() = tasks.filter { it.archivedAt != null }
+
+    /** 设置页按工作区展示的归档会话森林。 */
+    val archivedWorkspaceTaskSections: List<WorkspaceTaskSectionUiState>
+        get() = archivedTasks
+            .groupBy { it.workspacePath }
+            .map { (workspacePath, conversations) ->
+                WorkspaceTaskSectionUiState(
+                    workspacePath = workspacePath,
+                    label = buildWorkspaceLabel(workspacePath, conversations.firstOrNull()?.workspaceName),
+                    sections = emptyList(),
+                    roots = buildConversationForest(conversations),
                 )
             }
 }
@@ -323,10 +381,17 @@ internal fun taskGroupFor(conversation: ChatConversationUiState): ChatTaskGroup 
 /**
  * 新建空白会话使用虚线占位标识，执行中与完成态使用各自的状态标识。
  */
-internal fun taskStatusFor(conversation: ChatConversationUiState): ChatTaskStatus = when {
-    conversation.isEmptyDefaultConversation() -> ChatTaskStatus.NEW
-    taskGroupFor(conversation) == ChatTaskGroup.RUNNING -> ChatTaskStatus.RUNNING
-    else -> ChatTaskStatus.DONE
+internal fun taskStatusFor(conversation: ChatConversationUiState): ChatTaskStatus {
+    val isBlankPlaceholder = conversation.isConversationContentEmpty() &&
+            (
+                    conversation.executionState == ExecutionState.Idle ||
+                            conversation.title == DEFAULT_CONVERSATION_TITLE
+                    )
+    return when {
+        isBlankPlaceholder -> ChatTaskStatus.NEW
+        taskGroupFor(conversation) == ChatTaskGroup.RUNNING -> ChatTaskStatus.RUNNING
+        else -> ChatTaskStatus.DONE
+    }
 }
 
 /**
@@ -342,7 +407,43 @@ internal fun toTaskListItem(conversation: ChatConversationUiState): ChatTaskList
         group = taskGroupFor(conversation),
         status = taskStatusFor(conversation),
         titleState = conversation.titleState,
+        parentConversationId = conversation.parentConversationId,
+        subtreeUpdatedAt = conversation.updatedAt,
+        treeFormatVersion = conversation.treeFormatVersion,
+        titleRegenerationInProgress = conversation.titleRegenerationInProgress,
     )
+}
+
+/**
+ * 将同一视图中的会话组装为森林；缺失父节点会自然提升为根，整个子树按最近活动时间倒序。
+ */
+internal fun buildConversationForest(
+    conversations: List<ChatConversationUiState>,
+): List<ChatTaskTreeNodeUiState> {
+    val byId = conversations.associateBy(ChatConversationUiState::id)
+    val childrenByParent = conversations
+        .filter { conversation -> conversation.parentConversationId in byId }
+        .groupBy(ChatConversationUiState::parentConversationId)
+
+    fun buildNode(conversation: ChatConversationUiState, ancestors: Set<String>): ChatTaskTreeNodeUiState {
+        val nextAncestors = ancestors + conversation.id
+        val children = childrenByParent[conversation.id]
+            .orEmpty()
+            .filterNot { child -> child.id in nextAncestors }
+            .map { child -> buildNode(child, nextAncestors) }
+            .sortedByDescending(ChatTaskTreeNodeUiState::subtreeUpdatedAt)
+        val subtreeUpdatedAt = maxOf(conversation.updatedAt, children.maxOfOrNull { it.subtreeUpdatedAt } ?: 0L)
+        return ChatTaskTreeNodeUiState(
+            task = toTaskListItem(conversation).copy(subtreeUpdatedAt = subtreeUpdatedAt),
+            children = children,
+            subtreeUpdatedAt = subtreeUpdatedAt,
+        )
+    }
+
+    return conversations
+        .filter { conversation -> conversation.parentConversationId !in byId }
+        .map { conversation -> buildNode(conversation, emptySet()) }
+        .sortedByDescending(ChatTaskTreeNodeUiState::subtreeUpdatedAt)
 }
 
 /**

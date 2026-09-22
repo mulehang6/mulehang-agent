@@ -1,6 +1,8 @@
 package com.agent.app.chat.state
 
 import com.agent.shared.chat.model.ExecutionState
+import com.agent.shared.chat.model.CURRENT_CONVERSATION_TREE_FORMAT_VERSION
+import com.agent.shared.chat.model.ConversationEntry
 import com.agent.shared.session.AppSessionSnapshot
 import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.settings.model.ConfigProfile
@@ -49,6 +51,7 @@ internal fun newConversation(
     id = UUID.randomUUID().toString(),
     title = DEFAULT_CONVERSATION_TITLE,
     workspacePath = workspacePath,
+    treeFormatVersion = CURRENT_CONVERSATION_TREE_FORMAT_VERSION,
     updatedAt = System.currentTimeMillis(),
     profileId = profileId,
     reasoningEffort = reasoningEffort,
@@ -83,12 +86,32 @@ internal fun buildConversationTitle(prompt: String): String {
  */
 internal fun ChatConversationUiState.isEmptyDefaultConversation(): Boolean =
     title == DEFAULT_CONVERSATION_TITLE &&
-            items.isEmpty() &&
             attachments.isEmpty() &&
-            history.isEmpty() &&
-            pendingQuestion == null &&
-            pendingApproval == null &&
+            isConversationContentEmpty() &&
             executionState == ExecutionState.Idle
+
+/**
+ * 判断会话是否还没有产生任何用户可见的执行内容。
+ *
+ * 运行态不参与判断：真正发送消息时会先写入用户条目，再切到运行态；因此一个没有消息、
+ * 工具或回答的任务即使残留了瞬时运行标记，也必须继续显示为“新建”而不是无限转圈。
+ */
+internal fun ChatConversationUiState.isConversationContentEmpty(): Boolean =
+    items.isEmpty() &&
+            history.isEmpty() &&
+            entries.none(ConversationEntry::marksConversationAsUsed) &&
+            pendingQuestion == null &&
+            pendingApproval == null
+
+/** 模型、推理强度和标签只是配置元数据，不应把空白任务标记为已运行。 */
+internal fun ConversationEntry.marksConversationAsUsed(): Boolean = when (this) {
+    is ConversationEntry.Label,
+    is ConversationEntry.ModelChange,
+    is ConversationEntry.ReasoningEffortChange,
+        -> false
+
+    else -> true
+}
 
 internal const val DEFAULT_CONVERSATION_TITLE = "新建对话"
 

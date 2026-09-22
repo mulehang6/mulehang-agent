@@ -15,6 +15,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -123,7 +124,16 @@ internal fun TaskListItem(
     onOpenContextMenu: () -> Unit,
     onDismissContextMenu: () -> Unit,
     onRename: () -> Unit,
+    onRegenerateTitle: () -> Unit = {},
+    onFork: () -> Unit,
+    onClone: () -> Unit,
+    onArchive: () -> Unit,
     onDelete: () -> Unit,
+    canForkOrClone: Boolean = true,
+    canRegenerateTitle: Boolean = false,
+    canArchive: Boolean = true,
+    canDelete: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
     var anchorHeightPixels by remember { mutableStateOf(0) }
     var contextMenuClickPosition by remember { mutableStateOf(Offset.Zero) }
@@ -135,7 +145,7 @@ internal fun TaskListItem(
         density = density.density,
     )
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .onSizeChanged { size ->
                 anchorHeightPixels = size.height
@@ -188,16 +198,27 @@ internal fun TaskListItem(
                         TitleGeneratingIndicator()
                     }
                     if (shouldShowConversationTitleText(task.titleState)) {
-                        Text(
-                            text = task.title,
-                            modifier = Modifier.weight(1f),
-                            style = JewelTheme.defaultTextStyle.copy(
-                                color = AppText,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = task.title,
+                                    modifier = Modifier.weight(1f),
+                                    style = JewelTheme.defaultTextStyle.copy(
+                                        color = AppText,
+                                        fontWeight = FontWeight.Medium,
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (task.titleRegenerationInProgress) TitleGeneratingIndicator()
+                            }
+                            Text(
+                                text = task.subtitle,
+                                style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     } else {
                         Spacer(modifier = Modifier.weight(1f))
                     }
@@ -216,7 +237,18 @@ internal fun TaskListItem(
                 },
                 modifier = Modifier.width(TaskContextMenuWidth),
             ) {
-                taskContextMenuActions(onDelete = onDelete, onRename = onRename)
+                taskContextMenuActions(
+                    onRename = onRename,
+                    onRegenerateTitle = onRegenerateTitle,
+                    onFork = onFork,
+                    onClone = onClone,
+                    onArchive = onArchive,
+                    onDelete = onDelete,
+                    canForkOrClone = canForkOrClone,
+                    canRegenerateTitle = canRegenerateTitle,
+                    canArchive = canArchive,
+                    canDelete = canDelete,
+                )
             }
         }
     }
@@ -228,6 +260,14 @@ internal fun TaskListItem(
 internal fun MenuScope.taskContextMenuActions(
     onDelete: () -> Unit,
     onRename: () -> Unit,
+    onRegenerateTitle: () -> Unit = {},
+    onFork: () -> Unit,
+    onClone: () -> Unit,
+    onArchive: () -> Unit,
+    canForkOrClone: Boolean,
+    canRegenerateTitle: Boolean = false,
+    canArchive: Boolean,
+    canDelete: Boolean = true,
 ) {
     selectableItem(
         selected = false,
@@ -235,16 +275,27 @@ internal fun MenuScope.taskContextMenuActions(
     ) { Text(taskContextMenuLabels()[0], color = taskContextMenuTextColor(taskContextMenuLabels()[0])) }
     selectableItem(
         selected = false,
-        enabled = false,
-        onClick = {},
+        enabled = canRegenerateTitle,
+        onClick = onRegenerateTitle,
     ) { Text(taskContextMenuLabels()[1], color = taskContextMenuTextColor(taskContextMenuLabels()[1])) }
     selectableItem(
         selected = false,
-        enabled = false,
-        onClick = {},
+        enabled = canForkOrClone,
+        onClick = onFork,
     ) { Text(taskContextMenuLabels()[2], color = taskContextMenuTextColor(taskContextMenuLabels()[2])) }
     selectableItem(
         selected = false,
-        onClick = onDelete,
+        enabled = canForkOrClone,
+        onClick = onClone,
     ) { Text(taskContextMenuLabels()[3], color = taskContextMenuTextColor(taskContextMenuLabels()[3])) }
+    selectableItem(
+        selected = false,
+        enabled = canArchive,
+        onClick = onArchive,
+    ) { Text(taskContextMenuLabels()[4], color = taskContextMenuTextColor(taskContextMenuLabels()[4])) }
+    selectableItem(
+        selected = false,
+        enabled = canDelete,
+        onClick = onDelete,
+    ) { Text(taskContextMenuLabels()[5], color = taskContextMenuTextColor(taskContextMenuLabels()[5])) }
 }

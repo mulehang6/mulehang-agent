@@ -18,7 +18,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
@@ -41,8 +40,10 @@ internal const val SIDEBAR_VISIBLE_BY_DEFAULT = false
 internal enum class WorkspaceIslandFocus {
     NONE,
     CHAT,
+    NOTIFICATIONS,
     SETTINGS,
     TERMINAL,
+    CONVERSATION_TREE,
 }
 
 /** 点击 Island 外区域后清除右侧 Island 焦点。 */
@@ -50,13 +51,16 @@ internal fun workspaceFocusAfterExternalPress(): WorkspaceIslandFocus = Workspac
 
 /** 关闭一个 Island 后，将焦点交给仍可见的另一 Island 或聊天区。 */
 internal fun workspaceFocusAfterPanelClosed(
-    settingsVisible: Boolean,
-    terminalVisible: Boolean,
+    upperTool: UpperRightTool?,
+    lowerTool: LowerRightTool?,
 ): WorkspaceIslandFocus = when {
-    terminalVisible -> WorkspaceIslandFocus.TERMINAL
-    settingsVisible -> WorkspaceIslandFocus.SETTINGS
+    lowerTool == LowerRightTool.CONVERSATION_TREE -> WorkspaceIslandFocus.CONVERSATION_TREE
+    lowerTool == LowerRightTool.TERMINAL -> WorkspaceIslandFocus.TERMINAL
+    upperTool == UpperRightTool.SETTINGS -> WorkspaceIslandFocus.SETTINGS
+    upperTool == UpperRightTool.NOTIFICATIONS -> WorkspaceIslandFocus.NOTIFICATIONS
     else -> WorkspaceIslandFocus.CHAT
 }
+
 /**
  * 按原型重构后的桌面主界面。
  */
@@ -84,12 +88,13 @@ internal fun ChatScreen(
 ) {
     val palette = LocalDesktopPalette.current
     val resolvedCodeFont = appearance.codeFont
-    val terminalAppearance = remember(resolvedCodeFont.effectiveAwtFontFamilyName, appearance.preferences.scalePercent) {
-        TerminalAppearance(
-            codeFontFamily = resolvedCodeFont.effectiveAwtFontFamilyName,
-            scalePercent = appearance.preferences.scalePercent,
-        )
-    }
+    val terminalAppearance =
+        remember(resolvedCodeFont.effectiveAwtFontFamilyName, appearance.preferences.scalePercent) {
+            TerminalAppearance(
+                codeFontFamily = resolvedCodeFont.effectiveAwtFontFamilyName,
+                scalePercent = appearance.preferences.scalePercent,
+            )
+        }
     val terminalShell = remember(terminalShellCatalog, terminalPreferences) {
         terminalShellCatalog.resolve(terminalPreferences)
     }
@@ -101,7 +106,13 @@ internal fun ChatScreen(
     var appFeedback by remember { mutableStateOf<AppFeedbackState?>(null) }
     var appFeedbackToken by remember { mutableStateOf(0L) }
     var islandFocus by remember { mutableStateOf(WorkspaceIslandFocus.NONE) }
-    var notificationAnchor by remember { mutableStateOf<Rect?>(null) }
+    var rightTools by remember {
+        mutableStateOf(
+            RightToolSelection(
+                upper = UpperRightTool.SETTINGS.takeIf { settingsVisible },
+            ),
+        )
+    }
     val settingsUiState = remember { SettingsPanelUiState() }
     val showAppFeedback: (AppFeedbackState) -> Unit = { feedback ->
         appFeedbackToken = nextAppFeedbackToken(appFeedbackToken)
@@ -125,17 +136,27 @@ internal fun ChatScreen(
 
     LaunchedEffect(terminalPanel.visible) {
         terminalPanel.closePendingTabAfterExit()
+        if (
+            !terminalPanel.visible &&
+            !terminalPanel.tabs.hasActiveTab() &&
+            rightTools.lower == LowerRightTool.TERMINAL
+        ) {
+            rightTools = rightTools.copy(lower = null)
+            islandFocus = workspaceFocusAfterPanelClosed(rightTools.upper, null)
+        }
     }
 
     LaunchedEffect(settingsVisible) {
-        if (settingsVisible) islandFocus = WorkspaceIslandFocus.SETTINGS
+        if (settingsVisible) {
+            rightTools = rightTools.copy(upper = UpperRightTool.SETTINGS)
+            islandFocus = WorkspaceIslandFocus.SETTINGS
+        } else if (rightTools.upper == UpperRightTool.SETTINGS) {
+            rightTools = rightTools.copy(upper = null)
+        }
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compact = isCompactDesktopLayout(maxWidth.value.toInt())
-        LaunchedEffect(compact) {
-            if (compact) notificationAnchor = null
-        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -159,7 +180,6 @@ internal fun ChatScreen(
                         .weight(1f)
                         .fillMaxWidth(),
                 ) {
-                    val terminalVisible = terminalPanel.visible && terminalPanel.tabs.hasActiveTab() && activeConversation != null
                     TaskSidebarSplitLayout(
                         visible = sidebarVisible,
                         compact = compact,
@@ -189,70 +209,96 @@ internal fun ChatScreen(
                                 onCloseOtherTerminalTabs = terminalPanel::closeOthers,
                                 onHideTerminalPanel = {
                                     terminalPanel.hide()
+                                    rightTools = rightTools.copy(lower = null)
                                     islandFocus = workspaceFocusAfterPanelClosed(
-                                        settingsVisible = settingsVisible,
-                                        terminalVisible = false,
+                                        upperTool = rightTools.upper,
+                                        lowerTool = null,
                                     )
                                 },
-                                sidePanelVisible = settingsVisible || terminalVisible,
-                                sidePanel = { sideModifier ->
-                                    val settings = @Composable { settingsModifier: Modifier ->
-                                        SettingsPanel(
-                                            projectRoot = projectRoot,
-                                            userHome = userHome,
-                                            themeMode = themeMode,
-                                            onThemeChanged = onThemeChanged,
-                                            appearance = appearance,
-                                            onAppearanceChanged = onAppearanceChanged,
-                                            onAppearanceChangeFinished = onAppearanceChangeFinished,
-                                            terminalPreferences = terminalPreferences,
-                                            terminalShellCatalog = terminalShellCatalog,
-                                            onTerminalPreferencesChanged = onTerminalPreferencesChanged,
-                                            onFocus = { islandFocus = WorkspaceIslandFocus.SETTINGS },
-                                            onClose = {
-                                                onSettingsVisibilityChange(false)
-                                                islandFocus = workspaceFocusAfterPanelClosed(
-                                                    settingsVisible = false,
-                                                    terminalVisible = terminalVisible,
-                                                )
-                                            },
-                                            onSettingsSaved = onSettingsChanged,
-                                            onReloadResources = state::reloadAgentResources,
-                                            canReloadResources = state.canReloadAgentResources,
-                                            extensionPackages = state.extensionPackages,
-                                            loadedSkills = state.loadedSkills,
-                                            resourceDiagnostics = state.resourceDiagnostics,
-                                            mcpServers = state.mcpServers,
-                                            mcpConnectionStatuses = mcpConnectionStatuses,
-                                            uiState = settingsUiState,
-                                            modifier = settingsModifier,
-                                        )
+                                sidePanelVisible = rightTools.visible,
+                                sidePanel = { sideModifier, onRevealConversationEntry ->
+                                    val upper = @Composable { upperModifier: Modifier ->
+                                        when (rightTools.upper) {
+                                            UpperRightTool.NOTIFICATIONS -> NotificationsPanel(
+                                                notifications = settingsUiState.changeNotifications,
+                                                onClose = {
+                                                    rightTools = rightTools.copy(upper = null)
+                                                    islandFocus = workspaceFocusAfterPanelClosed(null, rightTools.lower)
+                                                },
+                                                modifier = upperModifier,
+                                            )
+
+                                            UpperRightTool.SETTINGS -> SettingsPanel(
+                                                chatState = state,
+                                                projectRoot = projectRoot,
+                                                userHome = userHome,
+                                                themeMode = themeMode,
+                                                onThemeChanged = onThemeChanged,
+                                                appearance = appearance,
+                                                onAppearanceChanged = onAppearanceChanged,
+                                                onAppearanceChangeFinished = onAppearanceChangeFinished,
+                                                terminalPreferences = terminalPreferences,
+                                                terminalShellCatalog = terminalShellCatalog,
+                                                onTerminalPreferencesChanged = onTerminalPreferencesChanged,
+                                                onFocus = { islandFocus = WorkspaceIslandFocus.SETTINGS },
+                                                onClose = {
+                                                    rightTools = rightTools.copy(upper = null)
+                                                    onSettingsVisibilityChange(false)
+                                                    islandFocus = workspaceFocusAfterPanelClosed(null, rightTools.lower)
+                                                },
+                                                onSettingsSaved = onSettingsChanged,
+                                                onReloadResources = state::reloadAgentResources,
+                                                canReloadResources = state.canReloadAgentResources,
+                                                extensionPackages = state.extensionPackages,
+                                                loadedSkills = state.loadedSkills,
+                                                resourceDiagnostics = state.resourceDiagnostics,
+                                                mcpServers = state.mcpServers,
+                                                mcpConnectionStatuses = mcpConnectionStatuses,
+                                                uiState = settingsUiState,
+                                                modifier = upperModifier,
+                                            )
+
+                                            null -> Box(upperModifier)
+                                        }
                                     }
-                                    val terminal = @Composable { terminalModifier: Modifier ->
-                                        EmbeddedTerminalPanel(
-                                            tabs = terminalPanel.tabs,
-                                            sessions = terminalPanel.sessions,
-                                            onSelectTab = terminalPanel::select,
-                                            onAddTab = { activeConversation?.let { terminalPanel.add(it.workspacePath) } },
-                                            onCloseTab = terminalPanel::close,
-                                            onCloseOtherTabs = terminalPanel::closeOthers,
-                                            onHidePanel = {
-                                                terminalPanel.hide()
-                                                islandFocus = workspaceFocusAfterPanelClosed(
-                                                    settingsVisible = settingsVisible,
-                                                    terminalVisible = false,
-                                                )
-                                            },
-                                            onFocus = { islandFocus = WorkspaceIslandFocus.TERMINAL },
-                                            modifier = terminalModifier,
-                                        )
+                                    val lower = @Composable { lowerModifier: Modifier ->
+                                        when (rightTools.lower) {
+                                            LowerRightTool.TERMINAL -> EmbeddedTerminalPanel(
+                                                tabs = terminalPanel.tabs,
+                                                sessions = terminalPanel.sessions,
+                                                onSelectTab = terminalPanel::select,
+                                                onAddTab = { activeConversation?.let { terminalPanel.add(it.workspacePath) } },
+                                                onCloseTab = terminalPanel::close,
+                                                onCloseOtherTabs = terminalPanel::closeOthers,
+                                                onHidePanel = {
+                                                    terminalPanel.hide()
+                                                    rightTools = rightTools.copy(lower = null)
+                                                    islandFocus = workspaceFocusAfterPanelClosed(rightTools.upper, null)
+                                                },
+                                                onFocus = { islandFocus = WorkspaceIslandFocus.TERMINAL },
+                                                modifier = lowerModifier,
+                                            )
+
+                                            LowerRightTool.CONVERSATION_TREE -> ConversationTreePanel(
+                                                state = state,
+                                                conversation = activeConversation,
+                                                onRevealEntry = onRevealConversationEntry,
+                                                onClose = {
+                                                    rightTools = rightTools.copy(lower = null)
+                                                    islandFocus = workspaceFocusAfterPanelClosed(rightTools.upper, null)
+                                                },
+                                                modifier = lowerModifier,
+                                            )
+
+                                            null -> Box(lowerModifier)
+                                        }
                                     }
-                                    SettingsTerminalStackLayout(
-                                        settingsVisible = settingsVisible,
-                                        terminalVisible = terminalVisible,
+                                    RightToolStackLayout(
+                                        upperVisible = rightTools.upper != null,
+                                        lowerVisible = rightTools.lower != null,
                                         modifier = sideModifier,
-                                        settings = settings,
-                                        terminal = terminal,
+                                        upper = upper,
+                                        lower = lower,
                                     )
                                 },
                                 compact = compact,
@@ -262,49 +308,62 @@ internal fun ChatScreen(
                     )
                     if (!compact) {
                         ToolRail(
-                            activeGlyph = when (islandFocus) {
-                                WorkspaceIslandFocus.SETTINGS -> RightRailGlyph.SETTINGS
-                                WorkspaceIslandFocus.TERMINAL -> RightRailGlyph.TERMINAL
-                                WorkspaceIslandFocus.NONE,
-                                WorkspaceIslandFocus.CHAT,
-                                -> RightRailGlyph.CODE
-                            },
-                            notificationsVisible = settingsUiState.changeNotifications.historyVisible ||
-                                    settingsUiState.changeNotifications.transientEntry != null,
+                            selectedGlyphs = rightTools.selectedGlyphs,
+                            notificationsUnread = settingsUiState.changeNotifications.hasUnreadEntries,
                             onToolClick = { glyph ->
-                                if (glyph == RightRailGlyph.NOTIFICATIONS) {
-                                    settingsUiState.changeNotifications.toggleHistory()
-                                    islandFocus = when {
-                                        terminalVisible -> WorkspaceIslandFocus.TERMINAL
-                                        settingsVisible -> WorkspaceIslandFocus.SETTINGS
-                                        else -> WorkspaceIslandFocus.CHAT
+                                val upperTool = glyph.toUpperRightTool()
+                                if (upperTool != null) {
+                                    val next = rightTools.toggle(upperTool)
+                                    rightTools = next
+                                    onSettingsVisibilityChange(next.upper == UpperRightTool.SETTINGS)
+                                    if (next.upper == UpperRightTool.NOTIFICATIONS) {
+                                        settingsUiState.changeNotifications.markAllRead()
                                     }
-                                } else if (glyph == RightRailGlyph.SETTINGS) {
-                                    val willShowSettings = !settingsVisible
-                                    onSettingsVisibilityChange(willShowSettings)
-                                    islandFocus = if (willShowSettings) {
-                                        WorkspaceIslandFocus.SETTINGS
-                                    } else {
-                                        WorkspaceIslandFocus.CHAT
-                                    }
-                                } else if (glyph == RightRailGlyph.TERMINAL) {
-                                    if (activeConversation == null) {
-                                        showAppFeedback(
-                                            AppFeedbackState(message = "请先选择工作区", anchor = null),
-                                        )
-                                    } else {
-                                        val openingTerminal = !terminalVisible
-                                        terminalPanel.toggleFromRail(activeConversation.workspacePath)
-                                        islandFocus = when {
-                                            openingTerminal -> WorkspaceIslandFocus.TERMINAL
-                                            settingsVisible -> WorkspaceIslandFocus.SETTINGS
-                                            else -> WorkspaceIslandFocus.CHAT
+                                    islandFocus = if (next.upper == upperTool) {
+                                        if (upperTool == UpperRightTool.SETTINGS) {
+                                            WorkspaceIslandFocus.SETTINGS
+                                        } else {
+                                            WorkspaceIslandFocus.NOTIFICATIONS
                                         }
-                                        appFeedback = null
+                                    } else {
+                                        workspaceFocusAfterPanelClosed(next.upper, next.lower)
+                                    }
+                                } else {
+                                    when (glyph.toLowerRightTool()) {
+                                        LowerRightTool.TERMINAL -> {
+                                            if (rightTools.lower == LowerRightTool.TERMINAL) {
+                                                terminalPanel.hide()
+                                                rightTools = rightTools.copy(lower = null)
+                                                islandFocus = workspaceFocusAfterPanelClosed(rightTools.upper, null)
+                                            } else if (activeConversation == null) {
+                                                showAppFeedback(
+                                                    AppFeedbackState(message = "请先选择工作区", anchor = null),
+                                                )
+                                            } else {
+                                                if (!terminalPanel.visible) {
+                                                    terminalPanel.toggleFromRail(activeConversation.workspacePath)
+                                                }
+                                                rightTools = rightTools.copy(lower = LowerRightTool.TERMINAL)
+                                                islandFocus = WorkspaceIslandFocus.TERMINAL
+                                                appFeedback = null
+                                            }
+                                        }
+
+                                        LowerRightTool.CONVERSATION_TREE -> {
+                                            if (rightTools.lower == LowerRightTool.CONVERSATION_TREE) {
+                                                rightTools = rightTools.copy(lower = null)
+                                                islandFocus = workspaceFocusAfterPanelClosed(rightTools.upper, null)
+                                            } else {
+                                                terminalPanel.hide()
+                                                rightTools = rightTools.copy(lower = LowerRightTool.CONVERSATION_TREE)
+                                                islandFocus = WorkspaceIslandFocus.CONVERSATION_TREE
+                                            }
+                                        }
+
+                                        null -> Unit
                                     }
                                 }
                             },
-                            onNotificationAnchorChanged = { anchor -> notificationAnchor = anchor },
                             modifier = Modifier
                                 .width(TOOL_RAIL_WIDTH_DP.dp)
                                 .fillMaxHeight(),
@@ -318,7 +377,7 @@ internal fun ChatScreen(
         }
         SettingsChangeNotificationOverlay(
             notifications = settingsUiState.changeNotifications,
-            anchor = notificationAnchor,
+            notificationsPageVisible = rightTools.upper == UpperRightTool.NOTIFICATIONS,
         )
     }
 }

@@ -26,6 +26,7 @@ internal enum class RightRailGlyph {
     FILTER,
     NOTIFICATIONS,
     SETTINGS,
+    CONVERSATION_TREE,
 }
 
 /** 右侧工具栏中的一个动作模型。 */
@@ -36,10 +37,13 @@ internal data class RightRailButtonModel(
 
 /** 返回当前 Air 信息架构保留的右侧工具栏分组。 */
 internal fun buildRightRailGroups(): List<List<RightRailButtonModel>> = listOf(
-    listOf(RightRailButtonModel(glyph = RightRailGlyph.TERMINAL)),
     listOf(
         RightRailButtonModel(glyph = RightRailGlyph.NOTIFICATIONS),
         RightRailButtonModel(glyph = RightRailGlyph.SETTINGS),
+    ),
+    listOf(
+        RightRailButtonModel(glyph = RightRailGlyph.TERMINAL),
+        RightRailButtonModel(glyph = RightRailGlyph.CONVERSATION_TREE),
     ),
 )
 

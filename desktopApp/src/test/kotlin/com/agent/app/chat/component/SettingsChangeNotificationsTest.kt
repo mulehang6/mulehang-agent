@@ -1,8 +1,5 @@
 package com.agent.app.chat.component
 
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import com.agent.shared.settings.model.AgentHookCommand
 import com.agent.shared.settings.model.AgentHookEvent
 import com.agent.shared.settings.model.AgentHookMatcher
@@ -72,7 +69,7 @@ class SettingsChangeNotificationsTest {
         assertTrue(savedExtensionChangeMessages(baseline, changed, saveSucceeded = false).isEmpty())
     }
 
-    /** 收起单条提示不影响历史，打开历史时则不再保留单条浮层。 */
+    /** 收起单条提示不影响历史；打开独立通知页后标记已读。 */
     @Test
     fun `should retain dismissed notification in session history`() {
         val notifications = SettingsChangeNotifications()
@@ -83,9 +80,11 @@ class SettingsChangeNotificationsTest {
         assertNull(notifications.transientEntry)
         assertEquals(listOf(entry), notifications.entries)
 
-        notifications.toggleHistory()
+        assertTrue(notifications.hasUnreadEntries)
+        assertEquals(1, notifications.unreadCount)
+        notifications.markAllRead()
 
-        assertTrue(notifications.historyVisible)
+        assertFalse(notifications.hasUnreadEntries)
         assertNull(notifications.transientEntry)
         assertEquals(listOf(entry), notifications.entries)
     }
@@ -106,16 +105,15 @@ class SettingsChangeNotificationsTest {
         assertEquals(listOf(first, second), notifications.entries)
     }
 
-    /** 历史浮层关闭仅改变可见性，即使当前没有记录也不需要清空操作。 */
+    /** 标记已读只改变提示状态，不删除会话内记录。 */
     @Test
     fun `should dismiss notification history without clearing entries`() {
         val notifications = SettingsChangeNotifications()
         val entry = notifications.record(SettingsChangeNotificationCategory.EXTENSIONS, "全局设置：已添加 MCP 服务：filesystem")
 
-        notifications.toggleHistory()
-        notifications.dismissHistory()
+        notifications.markAllRead()
 
-        assertFalse(notifications.historyVisible)
+        assertFalse(notifications.hasUnreadEntries)
         assertEquals(listOf(entry), notifications.entries)
     }
 
@@ -132,7 +130,7 @@ class SettingsChangeNotificationsTest {
         assertNull(notifications.transientEntry)
         notifications.clear()
         assertTrue(notifications.entries.isEmpty())
-        assertFalse(notifications.historyVisible)
+        assertFalse(notifications.hasUnreadEntries)
     }
 
     /** 历史只保留最近一百条，最早记录按创建顺序淘汰。 */
@@ -149,22 +147,17 @@ class SettingsChangeNotificationsTest {
         assertEquals(101L, notifications.transientEntry?.id)
     }
 
-    /** 浮层向通知图标的左上侧展开，边缘不足时不得越过窗口。 */
+    /** 新记录在已读游标之后重新点亮未读状态。 */
     @Test
-    fun `should anchor floating card beside notification icon within root bounds`() {
-        val placement = settingsNotificationCardPlacement(
-            rootSize = IntSize(1024, 720),
-            anchor = Rect(left = 980f, top = 640f, right = 1020f, bottom = 680f),
-            cardWidthPx = 360,
-            edgePx = 12,
-            gapPx = 8,
-        )
+    fun `should mark later notifications unread after opening history page`() {
+        val notifications = SettingsChangeNotifications()
+        notifications.record(SettingsChangeNotificationCategory.EXTENSIONS, "first")
+        notifications.markAllRead()
 
-        assertEquals(612, placement.leftPx)
-        assertEquals(40, placement.bottomPx)
-        assertEquals(668, placement.maxHeightPx)
-        assertEquals(360.dp, settingsNotificationCardWidth(600.dp))
-        assertEquals(276.dp, settingsNotificationCardWidth(300.dp))
+        notifications.record(SettingsChangeNotificationCategory.AI_SERVICES, "second")
+
+        assertTrue(notifications.hasUnreadEntries)
+        assertEquals(1, notifications.unreadCount)
     }
 
     /** 通知不暴露绝对路径，范围只使用稳定的配置层级名称。 */

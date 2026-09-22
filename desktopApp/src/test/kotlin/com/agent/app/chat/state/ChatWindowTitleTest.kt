@@ -11,6 +11,69 @@ import kotlin.test.*
 /** 验证ChatWindowTitleTest的状态转换。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatWindowTitleTest : ChatWindowTestFixture() {
+    /** 显式重新生成使用 head 路径首条用户消息，且不会把任务切成运行态。 */
+    @Test
+    fun `should regenerate title without changing execution state`() = runTest(dispatcher) {
+        val regeneratedTitle = CompletableDeferred<String>()
+        var callCount = 0
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\abc\\def",
+            conversationTitleGenerator = object : ConversationTitleGenerator {
+                override suspend fun generate(request: ConversationTitleRequest): String {
+                    callCount += 1
+                    return if (callCount == 1) "初始标题" else regeneratedTitle.await()
+                }
+            },
+        )
+        state.updateDraft("首条用户消息")
+        state.sendDraft()
+        advanceUntilIdle()
+
+        assertTrue(state.regenerateConversationTitle(state.ui.activeConversationId))
+        assertEquals("初始标题", state.ui.activeConversation.title)
+        assertTrue(state.ui.activeConversation.titleRegenerationInProgress)
+        assertEquals(com.agent.shared.chat.model.ExecutionState.Idle, state.ui.activeConversation.executionState)
+
+        regeneratedTitle.complete("重新生成标题")
+        advanceUntilIdle()
+
+        assertEquals("重新生成标题", state.ui.activeConversation.title)
+        assertFalse(state.ui.activeConversation.titleRegenerationInProgress)
+        assertEquals(com.agent.shared.chat.model.ExecutionState.Idle, state.ui.activeConversation.executionState)
+    }
+
+    /** 显式重新生成失败时保留稳定原标题并清除独立生成状态。 */
+    @Test
+    fun `failed title regeneration keeps previous title`() = runTest(dispatcher) {
+        var callCount = 0
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\abc\\def",
+            conversationTitleGenerator = object : ConversationTitleGenerator {
+                override suspend fun generate(request: ConversationTitleRequest): String {
+                    callCount += 1
+                    if (callCount > 1) error("标题服务不可用")
+                    return "稳定标题"
+                }
+            },
+        )
+        state.updateDraft("首条用户消息")
+        state.sendDraft()
+        advanceUntilIdle()
+
+        state.regenerateConversationTitle(state.ui.activeConversationId)
+        advanceUntilIdle()
+
+        assertEquals("稳定标题", state.ui.activeConversation.title)
+        assertFalse(state.ui.activeConversation.titleRegenerationInProgress)
+        assertEquals(ConversationTitleState.GENERATED, state.ui.activeConversation.titleState)
+    }
+
     /**
      * 对话标题应从首条消息生成一个短标题，去掉多行和冗余空白。
      */
@@ -133,6 +196,7 @@ class ChatWindowTitleTest : ChatWindowTestFixture() {
         state.updateDraft("清理待办标题任务")
         state.sendDraft()
         val deletedConversationId = state.ui.activeConversationId
+        state.createConversationForWorkspace("E:\\abc\\def")
         state.deleteConversation(deletedConversationId)
         val replacementConversationId = state.ui.activeConversationId
 

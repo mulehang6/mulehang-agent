@@ -1,9 +1,3 @@
-@file:OptIn(
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
-    androidx.compose.ui.ExperimentalComposeUiApi::class,
-    org.jetbrains.jewel.foundation.ExperimentalJewelApi::class,
-)
-
 package com.agent.app.chat.component
 
 import androidx.compose.ui.geometry.Offset
@@ -20,7 +14,7 @@ internal const val TASK_LIST_ITEM_VERTICAL_PADDING_DP = 0
 internal const val TASK_LIST_ITEM_GAP_DP = 4
 internal const val TASK_CREATE_BUTTON_HEIGHT_DP = 40
 internal const val TASK_SECTION_ROW_HEIGHT_DP = 36
-internal const val TASK_LIST_ITEM_HEIGHT_DP = 40
+internal const val TASK_LIST_ITEM_HEIGHT_DP = 56
 /** 工作区名称与其状态分组间保持紧密关联。 */
 internal const val TASK_WORKSPACE_CONTENT_GAP_DP = 2
 /** 状态分组标题与其具体任务间保持紧密关联。 */
@@ -52,7 +46,8 @@ internal fun shouldShowConversationTitleText(titleState: ConversationTitleState)
 /**
  * 返回侧栏和标题栏共用的任务上下文菜单操作顺序。
  */
-internal fun taskContextMenuLabels(): List<String> = listOf("重命名", "创建分支", "归档", "删除")
+internal fun taskContextMenuLabels(): List<String> =
+    listOf("重命名", "重新生成标题", "从消息新建会话…", "克隆", "归档", "删除")
 
 /** 删除是任务菜单中唯一的破坏性操作，因此使用危险色区分。 */
 internal fun taskContextMenuTextColor(label: String): Color = if (label == "删除") AppDanger else AppText

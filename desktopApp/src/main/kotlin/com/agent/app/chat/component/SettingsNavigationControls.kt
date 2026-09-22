@@ -129,6 +129,7 @@ internal fun SettingsNavigation(
         SettingsSection.EXTENSIONS -> extensionSubsections.isNotEmpty()
         SettingsSection.TOOLS,
         SettingsSection.PROVIDERS,
+        SettingsSection.SESSIONS,
             -> false
     }
 

@@ -216,7 +216,7 @@ internal fun ChatScreen(
                                     )
                                 },
                                 sidePanelVisible = rightTools.visible,
-                                sidePanel = { sideModifier ->
+                                sidePanel = { sideModifier, onRevealConversationEntry ->
                                     val upper = @Composable { upperModifier: Modifier ->
                                         when (rightTools.upper) {
                                             UpperRightTool.NOTIFICATIONS -> NotificationsPanel(
@@ -282,6 +282,7 @@ internal fun ChatScreen(
                                             LowerRightTool.CONVERSATION_TREE -> ConversationTreePanel(
                                                 state = state,
                                                 conversation = activeConversation,
+                                                onRevealEntry = onRevealConversationEntry,
                                                 onClose = {
                                                     rightTools = rightTools.copy(lower = null)
                                                     islandFocus = workspaceFocusAfterPanelClosed(rightTools.upper, null)

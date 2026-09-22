@@ -65,18 +65,19 @@ internal fun WorkspacePanel(
     onCloseOtherTerminalTabs: (Long) -> Unit,
     onHideTerminalPanel: () -> Unit,
     sidePanelVisible: Boolean = terminalPanelVisible && terminalTabs.hasActiveTab(),
-    sidePanel: @Composable (Modifier) -> Unit = { terminalModifier ->
-        EmbeddedTerminalPanel(
-            tabs = terminalTabs,
-            sessions = terminalSessions,
-            onSelectTab = onSelectTerminalTab,
-            onAddTab = onAddTerminalTab,
-            onCloseTab = onCloseTerminalTab,
-            onCloseOtherTabs = onCloseOtherTerminalTabs,
-            onHidePanel = onHideTerminalPanel,
-            modifier = terminalModifier,
-        )
-    },
+    sidePanel: @Composable (Modifier, onRevealConversationEntry: (String) -> Unit) -> Unit =
+        { terminalModifier, _ ->
+            EmbeddedTerminalPanel(
+                tabs = terminalTabs,
+                sessions = terminalSessions,
+                onSelectTab = onSelectTerminalTab,
+                onAddTab = onAddTerminalTab,
+                onCloseTab = onCloseTerminalTab,
+                onCloseOtherTabs = onCloseOtherTerminalTabs,
+                onHidePanel = onHideTerminalPanel,
+                modifier = terminalModifier,
+            )
+        },
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -93,6 +94,10 @@ internal fun WorkspacePanel(
     var timelineViewportBounds by remember(conversationId) { mutableStateOf<Rect?>(null) }
     var timelineContentBounds by remember(conversationId) { mutableStateOf<Rect?>(null) }
     val timelineTurnBounds = remember(conversationId) { mutableStateMapOf<String, TimelineTurnBounds>() }
+    val timelineEntryBounds = remember(conversationId, activeConversation?.activeEntryId) {
+        mutableStateMapOf<String, TimelineTurnBounds>()
+    }
+    var pendingTreeEntryId by remember(conversationId) { mutableStateOf<String?>(null) }
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -136,6 +141,26 @@ internal fun WorkspacePanel(
         if (submittedMessageScrollRequest.value > 0) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
+    }
+
+    val pendingTreeEntryBounds = pendingTreeEntryId?.let(timelineEntryBounds::get)
+    LaunchedEffect(
+        pendingTreeEntryId,
+        pendingTreeEntryBounds != null,
+        timelineViewportBounds != null,
+    ) {
+        val entryId = pendingTreeEntryId ?: return@LaunchedEffect
+        val entryBounds = pendingTreeEntryBounds ?: return@LaunchedEffect
+        val viewport = timelineViewportBounds ?: return@LaunchedEffect
+        val target = timelineScrollTarget(
+            currentScroll = scrollState.value,
+            anchorTop = entryBounds.top,
+            viewportTop = viewport.top,
+            maxScroll = scrollState.maxValue,
+            topInsetPx = with(density) { 24.dp.toPx() },
+        )
+        scrollState.animateScrollTo(target, tween(durationMillis = 140))
+        if (pendingTreeEntryId == entryId) pendingTreeEntryId = null
     }
 
     val onSendDraft: () -> Unit = {
@@ -185,6 +210,41 @@ internal fun WorkspacePanel(
             )
             messageOperationEntryId = null
             if (!result.succeeded) messageActionError = result.message
+        }
+    }
+
+    /** 从会话树定位条目；必要时先无摘要切到包含该条目的完整分支。 */
+    val revealConversationEntry: (String) -> Unit = { entryId ->
+        val conversation = state.ui.activeConversationOrNull
+        if (conversation != null && conversation.id == conversationId) {
+            val anchorId = conversationEntryNavigationAnchorId(conversation.entries, entryId)
+            val targetLeafId = conversationEntryNavigationLeaf(
+                entries = conversation.entries,
+                entryId = entryId,
+                activeEntryId = conversation.activeEntryId,
+                headEntryId = conversation.headEntryId,
+            )
+            if (anchorId == null || targetLeafId == null) {
+                messageActionError = "条目不存在，无法定位。"
+            } else {
+                messageActionError = null
+                isFollowingLatest.value = false
+                pendingTreeEntryId = anchorId
+                if (targetLeafId != conversation.activeEntryId) {
+                    timelineEntryBounds.clear()
+                    scope.launch {
+                        val result = state.conversationTreeController.switchToLeaf(
+                            conversationId = conversation.id,
+                            leafEntryId = targetLeafId,
+                            summary = BranchNavigationSummary(),
+                        )
+                        if (!result.succeeded) {
+                            if (pendingTreeEntryId == anchorId) pendingTreeEntryId = null
+                            messageActionError = result.message
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -285,6 +345,9 @@ internal fun WorkspacePanel(
                                                     onTurnPositioned = { anchorId, top, bottom ->
                                                         timelineTurnBounds[anchorId] = TimelineTurnBounds(top, bottom)
                                                     },
+                                                    onEntryPositioned = { entryId, top, bottom ->
+                                                        timelineEntryBounds[entryId] = TimelineTurnBounds(top, bottom)
+                                                    },
                                                     onEditFromHere = editFromUserEntry,
                                                     onNewSession = createConversationFromUserEntry,
                                                 )
@@ -301,6 +364,9 @@ internal fun WorkspacePanel(
                                                     operationEntryId = messageOperationEntryId,
                                                     onTurnPositioned = { anchorId, top, bottom ->
                                                         timelineTurnBounds[anchorId] = TimelineTurnBounds(top, bottom)
+                                                    },
+                                                    onEntryPositioned = { entryId, top, bottom ->
+                                                        timelineEntryBounds[entryId] = TimelineTurnBounds(top, bottom)
                                                     },
                                                     onEditFromHere = editFromUserEntry,
                                                     onNewSession = createConversationFromUserEntry,
@@ -410,7 +476,7 @@ internal fun WorkspacePanel(
                     }
                 }
             },
-            terminal = sidePanel,
+            terminal = { terminalModifier -> sidePanel(terminalModifier, revealConversationEntry) },
         )
     }
     messageActionError?.let { error ->

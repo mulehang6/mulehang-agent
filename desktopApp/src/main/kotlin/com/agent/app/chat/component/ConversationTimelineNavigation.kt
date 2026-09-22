@@ -48,6 +48,128 @@ internal fun buildTimelineTurnPresentations(
     return turns
 }
 
+/** 将标签节点解析到被标记条目，其余节点保持自身标识。 */
+internal fun conversationEntryNavigationAnchorId(
+    entries: List<ConversationEntry>,
+    entryId: String,
+): String? {
+    val entry = entries.firstOrNull { it.id == entryId } ?: return null
+    return if (entry is ConversationEntry.Label) {
+        entry.targetEntryId.takeIf { targetId -> entries.any { it.id == targetId } }
+            ?: entry.parentId
+    } else {
+        entry.id
+    }
+}
+
+/**
+ * 返回包含目标条目的完整分支末端，避免为了定位历史节点截断该节点之后的时间线。
+ * 当前路径优先，其次使用持久末端路径，其他分支选择最近创建的后代 leaf。
+ */
+internal fun conversationEntryNavigationLeaf(
+    entries: List<ConversationEntry>,
+    entryId: String,
+    activeEntryId: String?,
+    headEntryId: String?,
+): String? {
+    val targetId = conversationEntryNavigationAnchorId(entries, entryId) ?: return null
+    if (conversationEntryPath(entries, activeEntryId).any { it.id == targetId }) return activeEntryId
+    if (conversationEntryPath(entries, headEntryId).any { it.id == targetId }) return headEntryId
+
+    val entriesById = entries.associateBy(ConversationEntry::id)
+    val childrenByParent = entries
+        .asSequence()
+        .filterNot { it is ConversationEntry.Label }
+        .groupBy(ConversationEntry::parentId)
+    val descendants = mutableSetOf<String>()
+    val pending = ArrayDeque<String>().apply { add(targetId) }
+    while (pending.isNotEmpty()) {
+        val current = pending.removeFirst()
+        if (descendants.add(current)) {
+            childrenByParent[current].orEmpty().forEach { child -> pending.add(child.id) }
+        }
+    }
+    return descendants
+        .asSequence()
+        .mapNotNull(entriesById::get)
+        .filter { entry -> childrenByParent[entry.id].isNullOrEmpty() }
+        .maxWithOrNull(compareBy<ConversationEntry>(ConversationEntry::createdAt).thenBy(ConversationEntry::id))
+        ?.id
+        ?: targetId
+}
+
+/**
+ * 为每个渲染时间线段返回对应条目 ID；工具调用与结果共享同一段，隐藏设置条目贴近最近内容。
+ */
+internal fun buildTimelineDisplayEntryIds(
+    conversation: ChatConversationUiState,
+): List<Set<String>> {
+    if (conversation.treeFormatVersion <= 0) return emptyList()
+    val slots = mutableListOf<TimelineEntryProjectionSlot>()
+    val leadingHiddenIds = linkedSetOf<String>()
+
+    fun appendVisible(entryId: String, toolName: String? = null, toolCallId: String? = null) {
+        val entryIds = linkedSetOf<String>().apply {
+            addAll(leadingHiddenIds)
+            add(entryId)
+        }
+        leadingHiddenIds.clear()
+        slots += TimelineEntryProjectionSlot(entryIds, toolName, toolCallId)
+    }
+
+    fun appendHidden(entryId: String) {
+        val latest = slots.lastOrNull()
+        if (latest == null) leadingHiddenIds += entryId else latest.entryIds += entryId
+    }
+
+    conversationEntryPath(conversation.entries, conversation.activeEntryId).forEach { entry ->
+        when (entry) {
+            is ConversationEntry.Message -> appendVisible(entry.id)
+            is ConversationEntry.Reasoning -> appendVisible(entry.id)
+            is ConversationEntry.ToolCall -> appendVisible(entry.id, entry.toolName, entry.toolCallId)
+            is ConversationEntry.ToolResult -> {
+                val matchingIndex = slots.indexOfLast { slot ->
+                    !slot.toolCompleted && slot.toolName != null &&
+                            (entry.toolCallId?.let { it == slot.toolCallId } ?: (entry.toolName == slot.toolName))
+                }
+                if (matchingIndex >= 0) {
+                    slots[matchingIndex].entryIds += entry.id
+                    slots[matchingIndex].toolCompleted = true
+                } else {
+                    appendVisible(entry.id, entry.toolName, entry.toolCallId)
+                    slots.last().toolCompleted = true
+                }
+            }
+
+            is ConversationEntry.Answers -> appendVisible(entry.id)
+            is ConversationEntry.Custom -> appendVisible(entry.id)
+            is ConversationEntry.BranchSummary,
+            is ConversationEntry.Label,
+            is ConversationEntry.ModelChange,
+            is ConversationEntry.ReasoningEffortChange,
+                -> appendHidden(entry.id)
+        }
+    }
+    if (leadingHiddenIds.isNotEmpty() && slots.isNotEmpty()) slots.last().entryIds += leadingHiddenIds
+
+    var slotIndex = 0
+    return groupTimelineItems(conversation.items).map { displayItem ->
+        buildSet {
+            repeat(displayItem.itemCount) {
+                slots.getOrNull(slotIndex++)?.entryIds?.let(::addAll)
+            }
+        }
+    }
+}
+
+/** 条目投影到单个时间线项时使用的临时关联。 */
+private data class TimelineEntryProjectionSlot(
+    val entryIds: MutableSet<String>,
+    val toolName: String? = null,
+    val toolCallId: String? = null,
+    var toolCompleted: Boolean = false,
+)
+
 /** 旧线性会话按用户消息序号生成稳定于当前快照的回退锚点。 */
 private fun buildLegacyTimelineTurns(
     conversation: ChatConversationUiState,

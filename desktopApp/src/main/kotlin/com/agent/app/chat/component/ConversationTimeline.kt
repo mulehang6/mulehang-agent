@@ -1,6 +1,7 @@
 package com.agent.app.chat.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agent.app.chat.presentation.*
@@ -30,6 +33,7 @@ internal fun ConversationTimeline(
     onMessageEntryFinished: (Long) -> Unit = {},
     operationEntryId: String? = null,
     onTurnPositioned: (anchorId: String, topInWindow: Float, bottomInWindow: Float) -> Unit = { _, _, _ -> },
+    onEntryPositioned: (entryId: String, topInWindow: Float, bottomInWindow: Float) -> Unit = { _, _, _ -> },
     onEditFromHere: (String) -> Unit = {},
     onNewSession: (String) -> Unit = {},
 ) {
@@ -45,6 +49,9 @@ internal fun ConversationTimeline(
         it is ToolEventItem && it.status == ToolEventStatus.Failed
     }
     val displayItems = groupTimelineItems(conversation.items)
+    val displayEntryIds = remember(conversation.entries, conversation.activeEntryId, conversation.items) {
+        buildTimelineDisplayEntryIds(conversation)
+    }
     val timelineTurns = remember(
         conversation.treeFormatVersion,
         conversation.entries,
@@ -62,51 +69,62 @@ internal fun ConversationTimeline(
                     ),
                 )
             }
-            when (displayItem) {
-                is TimelineDisplayItem.ToolGroup -> TimelineToolGroup(displayItem.items)
-                is TimelineDisplayItem.ReasoningGroup -> TimelineReasoningItem(mergeReasoningItems(displayItem.items))
-                is TimelineDisplayItem.Content -> when (val item = displayItem.item) {
-                is ChatMessageItem -> {
-                    if (item.message.role == ChatRole.User) {
-                        val turn = timelineTurns.getOrNull(nextUserTurnIndex++)
-                            ?: TimelineTurnPresentation(
-                                anchorId = "rendered-user-${nextUserTurnIndex - 1}",
-                                sourceUserEntryId = null,
-                                userText = item.message.content,
-                                assistantText = null,
+            Box(
+                modifier = Modifier.fillMaxWidth().onGloballyPositioned { coordinates ->
+                    val bounds = coordinates.boundsInWindow(clipBounds = false)
+                    displayEntryIds.getOrNull(index).orEmpty().forEach { entryId ->
+                        onEntryPositioned(entryId, bounds.top, bounds.bottom)
+                    }
+                },
+            ) {
+                when (displayItem) {
+                    is TimelineDisplayItem.ToolGroup -> TimelineToolGroup(displayItem.items)
+                    is TimelineDisplayItem.ReasoningGroup -> TimelineReasoningItem(mergeReasoningItems(displayItem.items))
+                    is TimelineDisplayItem.Content -> when (val item = displayItem.item) {
+                        is ChatMessageItem -> {
+                            if (item.message.role == ChatRole.User) {
+                                val turn = timelineTurns.getOrNull(nextUserTurnIndex++)
+                                    ?: TimelineTurnPresentation(
+                                        anchorId = "rendered-user-${nextUserTurnIndex - 1}",
+                                        sourceUserEntryId = null,
+                                        userText = item.message.content,
+                                        assistantText = null,
+                                    )
+                                UserMessageCard(
+                                    turn = turn,
+                                    entryMotionId = pendingMessageEntry?.id?.takeIf { item === entryMotionTarget },
+                                    operationInProgress = isTimelineOperationInProgress(
+                                        operationEntryId = operationEntryId,
+                                        sourceUserEntryId = turn.sourceUserEntryId,
+                                    ),
+                                    onEntryMotionFinished = onMessageEntryFinished,
+                                    onPositioned = onTurnPositioned,
+                                    onEditFromHere = onEditFromHere,
+                                    onNewSession = onNewSession,
+                                )
+                            } else {
+                                AssistantMessageBlock(
+                                    content = item.message.content,
+                                    isStreaming = item === conversation.items.getOrNull(
+                                        conversation.streamingAssistantItemIndex ?: -1,
+                                    ),
+                                )
+                            }
+                        }
+
+                        is ReasoningItem -> TimelineReasoningItem(item)
+                        is AnsweredQuestionsItem -> TimelineAnswersItem(item)
+                        // 兼容旧版本保存的阶段记录，避免再显示不可点击的工具外观。
+                        is ToolEventItem -> if (item.status == ToolEventStatus.Status) {
+                            Text(
+                                text = item.preview.orEmpty(),
+                                style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
                             )
-                        UserMessageCard(
-                            turn = turn,
-                            entryMotionId = pendingMessageEntry?.id?.takeIf { item === entryMotionTarget },
-                            operationInProgress = isTimelineOperationInProgress(
-                                operationEntryId = operationEntryId,
-                                sourceUserEntryId = turn.sourceUserEntryId,
-                            ),
-                            onEntryMotionFinished = onMessageEntryFinished,
-                            onPositioned = onTurnPositioned,
-                            onEditFromHere = onEditFromHere,
-                            onNewSession = onNewSession,
-                        )
-                    } else {
-                        AssistantMessageBlock(
-                            content = item.message.content,
-                            isStreaming = item === conversation.items.getOrNull(conversation.streamingAssistantItemIndex ?: -1),
+                        } else TimelineToolTextRow(
+                            item = rememberTimelineToolDisplayItem(item),
+                            isFailure = item.status == ToolEventStatus.Failed,
                         )
                     }
-                }
-
-                is ReasoningItem -> TimelineReasoningItem(item)
-                is AnsweredQuestionsItem -> TimelineAnswersItem(item)
-                // 兼容旧版本保存的阶段记录，避免再显示不可点击的工具外观。
-                is ToolEventItem -> if (item.status == ToolEventStatus.Status) {
-                    Text(
-                        text = item.preview.orEmpty(),
-                        style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
-                    )
-                } else TimelineToolTextRow(
-                    item = rememberTimelineToolDisplayItem(item),
-                    isFailure = item.status == ToolEventStatus.Failed,
-                )
                 }
             }
         }

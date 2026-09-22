@@ -53,6 +53,7 @@ import org.jetbrains.jewel.ui.component.VerticalScrollbar
 internal fun ConversationBranchPanelContent(
     state: ChatWindowState,
     conversation: ChatConversationUiState,
+    onRevealEntry: (String) -> Unit,
     modifier: Modifier,
 ) {
     var query by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
@@ -163,6 +164,7 @@ internal fun ConversationBranchPanelContent(
                                 onClick = {
                                     selectedLeafId = item.leafEntryId
                                     focusRequester.requestFocus()
+                                    onRevealEntry(item.leafEntryId)
                                 },
                             )
                         }
@@ -220,6 +222,7 @@ internal fun ConversationBranchPanelContent(
 internal fun ConversationEntryPanelContent(
     state: ChatWindowState,
     conversation: ChatConversationUiState,
+    onRevealEntry: (String) -> Unit,
     modifier: Modifier,
 ) {
     var query by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
@@ -394,6 +397,7 @@ internal fun ConversationEntryPanelContent(
                             onClick = {
                                 selectedEntryId = row.entry.id
                                 focusRequester.requestFocus()
+                                onRevealEntry(row.entry.id)
                             },
                             onToggleCollapsed = { toggleCollapsed(row) },
                             onOpenContextMenu = { contextMenuEntryId = row.entry.id },

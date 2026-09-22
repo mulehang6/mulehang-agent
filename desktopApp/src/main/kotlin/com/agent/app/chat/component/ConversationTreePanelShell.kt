@@ -50,6 +50,7 @@ private enum class ConversationTreePanelView {
 internal fun ConversationTreePanel(
     state: ChatWindowState,
     conversation: ChatConversationUiState?,
+    onRevealEntry: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,12 +81,14 @@ internal fun ConversationTreePanel(
                     ConversationTreePanelView.BRANCHES -> ConversationBranchPanelContent(
                         state = state,
                         conversation = conversation,
+                        onRevealEntry = onRevealEntry,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
 
                     ConversationTreePanelView.ALL_ENTRIES -> ConversationEntryPanelContent(
                         state = state,
                         conversation = conversation,
+                        onRevealEntry = onRevealEntry,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }

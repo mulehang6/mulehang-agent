@@ -7,6 +7,7 @@ import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationEntry
 import com.agent.shared.chat.model.CURRENT_CONVERSATION_TREE_FORMAT_VERSION
+import com.agent.shared.chat.model.ToolEventStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,6 +16,82 @@ import kotlin.test.assertTrue
 
 /** 覆盖时间线轮次投影、活动刻度和滚动定位的纯展示规则。 */
 class ConversationTimelineNavigationTest {
+    /** 树节点定位保留完整分支，依次偏好当前路径、持久末端路径和最近的其他 leaf。 */
+    @Test
+    fun `entry navigation resolves a complete branch leaf`() {
+        val root = message("root", null, ChatRole.User, "root", 1L)
+        val active = message("active", root.id, ChatRole.Assistant, "active", 2L)
+        val activeTail = message("active-tail", active.id, ChatRole.Assistant, "active tail", 3L)
+        val head = message("head", root.id, ChatRole.Assistant, "head", 4L)
+        val headTail = message("head-tail", head.id, ChatRole.Assistant, "head tail", 5L)
+        val other = message("other", root.id, ChatRole.Assistant, "other", 6L)
+        val otherOld = message("other-old", other.id, ChatRole.Assistant, "old", 7L)
+        val otherNew = message("other-new", other.id, ChatRole.Assistant, "new", 8L)
+        val label = ConversationEntry.Label("label", activeTail.id, 9L, head.id, "checkpoint")
+        val entries = listOf(root, active, activeTail, head, headTail, other, otherOld, otherNew, label)
+
+        assertEquals(
+            activeTail.id,
+            conversationEntryNavigationLeaf(entries, root.id, activeTail.id, headTail.id),
+        )
+        assertEquals(
+            headTail.id,
+            conversationEntryNavigationLeaf(entries, head.id, activeTail.id, headTail.id),
+        )
+        assertEquals(
+            otherNew.id,
+            conversationEntryNavigationLeaf(entries, other.id, activeTail.id, headTail.id),
+        )
+        assertEquals(head.id, conversationEntryNavigationAnchorId(entries, label.id))
+        assertEquals(
+            headTail.id,
+            conversationEntryNavigationLeaf(entries, label.id, activeTail.id, headTail.id),
+        )
+    }
+
+    /** 每个渲染段保留来源条目 ID，工具调用与结果定位到同一个时间线卡片。 */
+    @Test
+    fun `display entry ids follow projected timeline groups`() {
+        val user = message("user", null, ChatRole.User, "question", 1L)
+        val model = ConversationEntry.ModelChange("model", user.id, 2L, "profile")
+        val reasoning = ConversationEntry.Reasoning(
+            id = "reasoning",
+            parentId = model.id,
+            createdAt = 3L,
+            summaryText = "thinking",
+            isStreaming = false,
+        )
+        val call = ConversationEntry.ToolCall("call", reasoning.id, 4L, "read_file", toolCallId = "tool-1")
+        val result = ConversationEntry.ToolResult(
+            id = "result",
+            parentId = call.id,
+            createdAt = 5L,
+            toolName = "read_file",
+            status = ToolEventStatus.Finished,
+            toolCallId = "tool-1",
+        )
+        val assistant = message("assistant", result.id, ChatRole.Assistant, "answer", 6L)
+        val conversation = ChatConversationUiState(
+            id = "tree",
+            title = "tree",
+            workspacePath = "D:/workspace",
+            treeFormatVersion = CURRENT_CONVERSATION_TREE_FORMAT_VERSION,
+            entries = listOf(user, model, reasoning, call, result, assistant),
+            activeEntryId = assistant.id,
+            headEntryId = assistant.id,
+        ).withEntryProjection()
+
+        assertEquals(
+            listOf(
+                setOf(user.id, model.id),
+                setOf(reasoning.id),
+                setOf(call.id, result.id),
+                setOf(assistant.id),
+            ),
+            buildTimelineDisplayEntryIds(conversation),
+        )
+    }
+
     /** 树会话使用用户条目 ID，并保存下一轮之前最后一条非空助手正文。 */
     @Test
     fun `tree turns use entry ids and final assistant preview`() {
@@ -140,10 +217,11 @@ class ConversationTimelineNavigationTest {
         parentId: String?,
         role: ChatRole,
         content: String,
+        createdAt: Long = id.length.toLong(),
     ): ConversationEntry.Message = ConversationEntry.Message(
         id = id,
         parentId = parentId,
-        createdAt = id.length.toLong(),
+        createdAt = createdAt,
         message = ChatMessage(role, content),
     )
 }

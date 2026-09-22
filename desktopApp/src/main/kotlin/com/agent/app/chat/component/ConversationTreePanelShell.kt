@@ -80,7 +80,6 @@ internal fun ConversationTreePanel(
                     ConversationTreePanelView.BRANCHES -> ConversationBranchPanelContent(
                         state = state,
                         conversation = conversation,
-                        onShowAllEntries = { view = ConversationTreePanelView.ALL_ENTRIES },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
 

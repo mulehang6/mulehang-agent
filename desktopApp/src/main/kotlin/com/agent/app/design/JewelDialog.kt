@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +54,7 @@ internal object CenteredPopupPositionProvider : PopupPositionProvider {
 
 /**
  * 在当前 Compose 层级内显示 Islands 风格模态浮层，避免创建带系统标题栏的第二个窗口。
+ * [footerContent] 允许少数多选决策弹窗替换标准的取消与确认按钮。
  */
 @Composable
 internal fun JewelDialog(
@@ -66,6 +68,7 @@ internal fun JewelDialog(
     width: Dp = 440.dp,
     height: Dp = 240.dp,
     contentPadding: PaddingValues = PaddingValues(20.dp),
+    footerContent: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val palette = LocalDesktopPalette.current
@@ -127,10 +130,14 @@ internal fun JewelDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        dismissLabel?.let { label ->
-                            OutlinedButton(onClick = onDismiss) { Text(label) }
+                        if (footerContent != null) {
+                            footerContent()
+                        } else {
+                            dismissLabel?.let { label ->
+                                OutlinedButton(onClick = onDismiss) { Text(label) }
+                            }
+                            DefaultButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmLabel) }
                         }
-                        DefaultButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmLabel) }
                     }
                 }
             }

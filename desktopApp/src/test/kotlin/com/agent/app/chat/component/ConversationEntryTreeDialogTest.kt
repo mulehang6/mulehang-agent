@@ -10,6 +10,15 @@ import kotlin.test.assertTrue
 
 /** 覆盖会话树的 Pi 式筛选、扁平化、折叠与标签策略。 */
 class ConversationEntryTreeDialogTest {
+    /** 只有选择了非当前 leaf 且没有摘要任务时才允许提交路径切换。 */
+    @Test
+    fun `switch action requires a different idle selection`() {
+        assertFalse(isConversationTreeSwitchEnabled(null, "active", inProgress = false))
+        assertFalse(isConversationTreeSwitchEnabled("active", "active", inProgress = false))
+        assertFalse(isConversationTreeSwitchEnabled("other", "active", inProgress = true))
+        assertTrue(isConversationTreeSwitchEnabled("other", "active", inProgress = false))
+    }
+
     /** 已可见选择不滚动，越界键盘选择只移动到刚好可见的位置。 */
     @Test
     fun `keyboard selection uses minimal scrolling`() {

@@ -2,12 +2,7 @@
 
 package com.agent.app.chat.component
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,33 +24,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.agent.app.chat.state.BranchNavigationSummary
 import com.agent.app.chat.state.BranchSummaryMode
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.app.chat.state.ChatWindowState
-import com.agent.app.design.AppAccent
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
-import com.agent.app.design.LocalDesktopPalette
 import com.agent.shared.chat.model.ConversationEntry
 import com.agent.shared.chat.model.conversationEntryPath
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.ui.component.Dropdown
-import org.jetbrains.jewel.ui.component.OutlinedButton
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
 import org.jetbrains.jewel.ui.component.VerticalScrollbar
@@ -70,7 +53,6 @@ import org.jetbrains.jewel.ui.component.VerticalScrollbar
 internal fun ConversationBranchPanelContent(
     state: ChatWindowState,
     conversation: ChatConversationUiState,
-    onShowAllEntries: () -> Unit,
     modifier: Modifier,
 ) {
     var query by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
@@ -98,7 +80,14 @@ internal fun ConversationBranchPanelContent(
         if (items.none { it.leafEntryId == selectedLeafId }) selectedLeafId = items.firstOrNull()?.leafEntryId
     }
     val switchPath: () -> Unit = {
-        selectedLeafId?.let { leafEntryId ->
+        selectedLeafId?.takeIf { leafEntryId ->
+            isConversationTreeSwitchEnabled(
+                selectedEntryId = leafEntryId,
+                activeEntryId = conversation.activeEntryId,
+                inProgress = state.conversationTreeController.summaryInProgress,
+            )
+        }?.let { leafEntryId ->
+            operationError = null
             scope.launch {
                 val result = state.conversationTreeController.switchToLeaf(
                     conversationId = conversation.id,
@@ -128,7 +117,6 @@ internal fun ConversationBranchPanelContent(
                         "要创建会话内分支，请在用户消息上选择“从此处编辑”，修改后重新发送。",
                         color = AppMuted,
                     )
-                    OutlinedButton(onClick = onShowAllEntries) { Text("查看全部条目") }
                 }
 
                 items.isEmpty() -> Text("没有匹配的分支", color = AppMuted, modifier = Modifier.align(Alignment.Center))
@@ -151,7 +139,7 @@ internal fun ConversationBranchPanelContent(
                                         true
                                     }
 
-                                    Key.Enter -> {
+                                    Key.Enter, Key.Spacebar -> {
                                         switchPath(); true
                                     }
 
@@ -180,53 +168,15 @@ internal fun ConversationBranchPanelContent(
             }
         }
         ConversationTreeActionFooter(
-            conversation = conversation,
-            state = state,
-            primaryLabel = "切换到分支",
-            primaryEnabled = selectedLeafId != null && !state.conversationTreeController.summaryInProgress,
+            primaryEnabled = isConversationTreeSwitchEnabled(
+                selectedEntryId = selectedLeafId,
+                activeEntryId = conversation.activeEntryId,
+                inProgress = state.conversationTreeController.summaryInProgress,
+            ),
+            inProgress = state.conversationTreeController.summaryInProgress,
             operationError = operationError,
             onPrimary = switchPath,
-            onError = { operationError = it },
         )
-    }
-}
-
-/** 分支概览中的固定缩进末端。 */
-@Composable
-private fun ConversationBranchPanelRow(
-    item: ConversationBranchOverviewItem,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val palette = LocalDesktopPalette.current
-    val interactionSource = remember(item.leafEntryId) { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
-    Row(
-        modifier = Modifier.fillMaxWidth().height(38.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(
-                when {
-                    selected -> palette.selectedBackground
-                    hovered -> palette.hoverBackground
-                    else -> Color.Transparent
-                },
-            )
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick)
-            .padding(start = (10 + item.depth * 12).dp, end = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("└─", color = AppMuted, modifier = Modifier.width(28.dp))
-        Text(
-            item.preview,
-            color = AppText,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        if (item.skippedEntryCount > 0) Text("+${item.skippedEntryCount}", color = AppMuted)
-        if (item.isHeadLeaf) Text(" 末端", color = AppMuted)
-        if (item.isActiveLeaf) Text(" 当前", color = AppAccent, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -240,9 +190,13 @@ internal fun ConversationEntryPanelContent(
     var query by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
     var filter by remember(conversation.id) { mutableStateOf(ConversationEntryFilter.DEFAULT) }
     var collapsedIds by remember(conversation.id) { mutableStateOf(emptySet<String>()) }
-    var summaryMode by remember(conversation.id) { mutableStateOf(BranchSummaryMode.NONE) }
-    var customSummary by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
     var operationError by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var pendingSummaryEntryId by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var customSummaryEntryId by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var customSummaryPrompt by remember(conversation.id) { mutableStateOf("") }
+    var labelEditingEntryId by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var labelText by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
+    var contextMenuEntryId by remember(conversation.id) { mutableStateOf<String?>(null) }
     val labels = remember(conversation.entries) { allEntryLabels(conversation.entries) }
     val visibleIds = remember(conversation.entries, query.text, filter, labels) {
         visibleConversationEntryIds(conversation.entries, query.text, filter, labels.keys)
@@ -258,10 +212,6 @@ internal fun ConversationEntryPanelContent(
     var selectedEntryId by remember(conversation.id) {
         mutableStateOf(nearestVisibleConversationEntryId(conversation.entries, conversation.activeEntryId, visibleIds))
     }
-    val selectedEntry = conversation.entries.firstOrNull { it.id == selectedEntryId }
-    var labelText by remember(conversation.id, selectedEntryId) {
-        mutableStateOf(TextFieldValue(labels[selectedEntryId].orEmpty()))
-    }
     val activePathIds = remember(conversation.entries, conversation.activeEntryId) {
         conversationEntryPath(conversation.entries, conversation.activeEntryId).mapTo(
             mutableSetOf(),
@@ -271,26 +221,40 @@ internal fun ConversationEntryPanelContent(
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
-    val willLeaveActiveBranch = selectedEntryId?.let {
-        state.conversationTreeController.wouldLeaveActiveBranch(conversation.id, it)
-    } == true
 
     LaunchedEffect(query.text, filter) { collapsedIds = emptySet() }
     LaunchedEffect(rows) {
         if (rows.none { it.entry.id == selectedEntryId }) selectedEntryId = rows.firstOrNull()?.entry?.id
+        if (rows.none { it.entry.id == labelEditingEntryId }) labelEditingEntryId = null
     }
-    LaunchedEffect(selectedEntryId, labels) { labelText = TextFieldValue(labels[selectedEntryId].orEmpty()) }
+    LaunchedEffect(conversation.entries) {
+        val entryIds = conversation.entries.mapTo(mutableSetOf(), ConversationEntry::id)
+        if (pendingSummaryEntryId !in entryIds) pendingSummaryEntryId = null
+        if (customSummaryEntryId !in entryIds) customSummaryEntryId = null
+    }
 
-    val switchPath: () -> Unit = {
-        selectedEntryId?.let { entryId ->
-            scope.launch {
-                val result = state.conversationTreeController.navigateToEntry(
-                    conversationId = conversation.id,
-                    entryId = entryId,
-                    summary = BranchNavigationSummary(summaryMode, customSummary.text),
-                )
-                operationError = result.message.takeUnless { result.succeeded }
-            }
+    val navigate: (String, BranchNavigationSummary) -> Unit = { entryId, summary ->
+        operationError = null
+        scope.launch {
+            val result = state.conversationTreeController.navigateToEntry(
+                conversationId = conversation.id,
+                entryId = entryId,
+                summary = summary,
+            )
+            operationError = result.message.takeUnless { result.succeeded }
+        }
+    }
+    val requestSwitch: () -> Unit = {
+        selectedEntryId?.takeIf { entryId ->
+            isConversationTreeSwitchEnabled(
+                selectedEntryId = entryId,
+                activeEntryId = conversation.activeEntryId,
+                inProgress = state.conversationTreeController.summaryInProgress,
+            )
+        }?.let { entryId ->
+            operationError = null
+            customSummaryPrompt = ""
+            pendingSummaryEntryId = entryId
         }
     }
     val selectKeyboard: (String) -> Unit = { entryId ->
@@ -305,6 +269,23 @@ internal fun ConversationEntryPanelContent(
             collapsedIds =
                 if (row.entry.id in collapsedIds) collapsedIds - row.entry.id else collapsedIds + row.entry.id
         }
+    }
+    val beginLabelEdit: (ConversationEntry) -> Unit = { entry ->
+        selectedEntryId = entry.id
+        contextMenuEntryId = null
+        labelText = TextFieldValue(labels[entry.id].orEmpty())
+        labelEditingEntryId = entry.id
+    }
+    val saveLabel: (ConversationEntry, String) -> Unit = { entry, value ->
+        val result = state.conversationTreeController.setEntryLabel(conversation.id, entry.id, value)
+        operationError = result.message.takeUnless { result.succeeded }
+        if (result.succeeded) {
+            labelEditingEntryId = null
+            focusRequester.requestFocus()
+        }
+    }
+    val copyEntry: (ConversationEntry) -> Unit = { entry ->
+        operationError = copyConversationEntryText(entry)
     }
 
     Column(modifier) {
@@ -340,15 +321,21 @@ internal fun ConversationEntryPanelContent(
                     modifier = Modifier.fillMaxSize().padding(end = 12.dp)
                         .focusRequester(focusRequester)
                         .onPreviewKeyEvent { event ->
-                            handleConversationTreeKeyEvent(
-                                event = event,
-                                rows = rows,
-                                selectedEntryId = selectedEntryId,
-                                collapsedIds = collapsedIds,
-                                onSelectEntry = selectKeyboard,
-                                onToggleCollapsed = toggleCollapsed,
-                                onSubmit = switchPath,
-                            )
+                            if (labelEditingEntryId != null) {
+                                false
+                            } else {
+                                handleConversationTreeKeyEvent(
+                                    event = event,
+                                    rows = rows,
+                                    selectedEntryId = selectedEntryId,
+                                    collapsedIds = collapsedIds,
+                                    onSelectEntry = selectKeyboard,
+                                    onToggleCollapsed = toggleCollapsed,
+                                    onSubmit = requestSwitch,
+                                    onCopyEntry = copyEntry,
+                                    onEditLabel = beginLabelEdit,
+                                )
+                            }
                         }
                         .focusable(),
                 ) {
@@ -360,11 +347,24 @@ internal fun ConversationEntryPanelContent(
                             isHead = row.entry.id == conversation.headEntryId,
                             collapsed = row.entry.id in collapsedIds,
                             label = labels[row.entry.id],
+                            labelEditing = labelEditingEntryId == row.entry.id,
+                            labelText = labelText,
+                            contextMenuExpanded = contextMenuEntryId == row.entry.id,
+                            onLabelTextChange = { labelText = it },
+                            onSaveLabel = { value -> saveLabel(row.entry, value) },
+                            onCancelLabelEdit = {
+                                labelEditingEntryId = null
+                                focusRequester.requestFocus()
+                            },
                             onClick = {
                                 selectedEntryId = row.entry.id
                                 focusRequester.requestFocus()
                             },
                             onToggleCollapsed = { toggleCollapsed(row) },
+                            onOpenContextMenu = { contextMenuEntryId = row.entry.id },
+                            onDismissContextMenu = { contextMenuEntryId = null },
+                            onCopyText = { copyEntry(row.entry) },
+                            onEditLabel = { beginLabelEdit(row.entry) },
                         )
                     }
                 }
@@ -375,99 +375,42 @@ internal fun ConversationEntryPanelContent(
                 )
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(LocalDesktopPalette.current.line))
-        ConversationEntryTreeInspector(
-            selectedEntry = selectedEntry,
-            currentLabel = selectedEntryId?.let(labels::get),
-            labelText = labelText,
-            onLabelTextChange = { labelText = it },
-            onSaveLabel = { entry ->
-                val result = state.conversationTreeController.setEntryLabel(conversation.id, entry.id, labelText.text)
-                operationError = result.message.takeUnless { result.succeeded }
-            },
-            willLeaveActiveBranch = willLeaveActiveBranch,
-            summaryMode = summaryMode,
-            onSummaryModeChange = { summaryMode = it },
-            customSummary = customSummary,
-            onCustomSummaryChange = { customSummary = it },
-            summaryInProgress = state.conversationTreeController.summaryInProgress,
-            operationError = operationError,
-        )
         ConversationTreeActionFooter(
-            conversation = conversation,
-            state = state,
-            primaryLabel = "切换到此路径",
-            primaryEnabled = selectedEntry != null && !state.conversationTreeController.summaryInProgress,
-            operationError = null,
-            onPrimary = switchPath,
-            onError = { operationError = it },
+            primaryEnabled = isConversationTreeSwitchEnabled(
+                selectedEntryId = selectedEntryId,
+                activeEntryId = conversation.activeEntryId,
+                inProgress = state.conversationTreeController.summaryInProgress,
+            ),
+            inProgress = state.conversationTreeController.summaryInProgress,
+            operationError = operationError,
+            onPrimary = requestSwitch,
         )
     }
-}
-
-/** 完整条目视图中的一行，活动路径只改变强调，不改变列表排序。 */
-@Composable
-private fun ConversationEntryPanelRow(
-    row: ConversationEntryTreeRow,
-    selected: Boolean,
-    onActivePath: Boolean,
-    isHead: Boolean,
-    collapsed: Boolean,
-    label: String?,
-    onClick: () -> Unit,
-    onToggleCollapsed: () -> Unit,
-) {
-    val palette = LocalDesktopPalette.current
-    val interactionSource = remember(row.entry.id) { MutableInteractionSource() }
-    val hovered by interactionSource.collectIsHoveredAsState()
-    Row(
-        modifier = Modifier.fillMaxWidth().height(34.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(
-                when {
-                    selected -> palette.selectedBackground
-                    hovered -> palette.hoverBackground
-                    else -> Color.Transparent
-                },
-            )
-            .hoverable(interactionSource)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(conversationEntryConnector(row), color = AppMuted, fontFamily = FontFamily.Monospace, maxLines = 1)
-        Box(
-            modifier = Modifier.size(20.dp).clip(RoundedCornerShape(4.dp))
-                .clickable(enabled = row.foldable, onClick = onToggleCollapsed),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (row.foldable) Text(if (collapsed) "›" else "⌄", color = AppMuted)
-        }
-        Text(if (onActivePath) "●" else "", color = AppAccent, modifier = Modifier.width(15.dp))
-        Text(
-            text = entryKindLabel(row.entry),
-            color = if (onActivePath) AppText else AppMuted,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.width(68.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+    pendingSummaryEntryId?.let { entryId ->
+        ConversationTreeSummaryChoiceDialog(
+            onChoose = { mode ->
+                pendingSummaryEntryId = null
+                if (mode == BranchSummaryMode.CUSTOM) {
+                    customSummaryEntryId = entryId
+                } else {
+                    navigate(entryId, BranchNavigationSummary(mode))
+                }
+            },
+            onDismiss = { pendingSummaryEntryId = null },
         )
-        Text(
-            text = entryPreview(row.entry).ifBlank { "（无文本）" },
-            color = if (onActivePath) AppText else AppMuted,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+    }
+    customSummaryEntryId?.let { entryId ->
+        ConversationTreeCustomSummaryDialog(
+            initialPrompt = customSummaryPrompt,
+            onConfirm = { prompt ->
+                customSummaryPrompt = prompt
+                customSummaryEntryId = null
+                navigate(entryId, BranchNavigationSummary(BranchSummaryMode.CUSTOM, prompt))
+            },
+            onBack = {
+                customSummaryEntryId = null
+                pendingSummaryEntryId = entryId
+            },
         )
-        if (isHead) Text(" 末端", color = AppMuted, maxLines = 1)
-        label?.let {
-            Text(
-                " #$it",
-                color = AppAccent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 96.dp)
-            )
-        }
     }
 }

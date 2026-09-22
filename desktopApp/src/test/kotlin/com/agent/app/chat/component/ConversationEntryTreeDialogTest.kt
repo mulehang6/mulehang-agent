@@ -1,5 +1,9 @@
 package com.agent.app.chat.component
 
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationEntry
@@ -87,6 +91,7 @@ class ConversationEntryTreeDialogTest {
         )
 
         assertEquals(List(entries.size) { 0 }, rows.map(ConversationEntryTreeRow::indent))
+        assertFalse(rows[1].foldable)
     }
 
     /** 只有真实兄弟分支增加缩进，分支后的单链不会逐条继续加深。 */
@@ -118,6 +123,59 @@ class ConversationEntryTreeDialogTest {
             activeEntryId = leftTwo.id,
         )
         assertEquals(rows.map { it.entry.id }, leftActiveRows.map { it.entry.id })
+    }
+
+    /** 线性前缀后的分叉点仍然必须可折叠，判断依据是自身子节点而非父节点兄弟数。 */
+    @Test
+    fun `linear prefix before a fork remains foldable`() {
+        val root = message("root", null, ChatRole.User, "根", 1L)
+        val fork = message("fork", root.id, ChatRole.Assistant, "分叉", 2L)
+        val left = message("left", fork.id, ChatRole.User, "左", 3L)
+        val right = message("right", fork.id, ChatRole.User, "右", 4L)
+        val entries = listOf(root, fork, left, right)
+
+        val rows = flattenConversationEntryTree(
+            entries = entries,
+            visibleIds = entries.mapTo(mutableSetOf(), ConversationEntry::id),
+            activeEntryId = right.id,
+        )
+
+        assertTrue(rows.single { it.entry.id == fork.id }.foldable)
+    }
+
+    /** 没有有效选中项时，方向键不得隐式选中第一行或触发其他树操作。 */
+    @Test
+    @OptIn(InternalComposeUiApi::class)
+    fun `keyboard action is ignored without a selected row`() {
+        val entry = message("entry", null, ChatRole.User, "消息", 1L)
+        val row = ConversationEntryTreeRow(
+            entry = entry,
+            indent = 0,
+            visibleParentId = null,
+            visibleChildIds = emptyList(),
+            isLastSibling = true,
+            showConnector = false,
+            foldable = false,
+        )
+        var callbackCount = 0
+
+        val handled = handleConversationTreeKeyEvent(
+            event = KeyEvent(
+                key = Key.DirectionDown,
+                type = KeyEventType.KeyDown,
+            ),
+            rows = listOf(row),
+            selectedEntryId = null,
+            collapsedIds = emptySet(),
+            onSelectEntry = { callbackCount++ },
+            onToggleCollapsed = { callbackCount++ },
+            onSubmit = { callbackCount++ },
+            onCopyEntry = { callbackCount++ },
+            onEditLabel = { callbackCount++ },
+        )
+
+        assertFalse(handled)
+        assertEquals(0, callbackCount)
     }
 
     /** 极深的真实分支仍会封顶，避免正文区域被无限挤向右侧。 */

@@ -69,6 +69,12 @@ private fun buildLegacyTimelineTurns(
     return turns
 }
 
+/** 只有树格式轮次具备来源条目标识时，才允许标记为当前运行中的操作。 */
+internal fun isTimelineOperationInProgress(
+    operationEntryId: String?,
+    sourceUserEntryId: String?,
+): Boolean = sourceUserEntryId != null && operationEntryId == sourceUserEntryId
+
 /** 用本轮最后一条非空助手正文替换预览，忽略流式阶段的空片段。 */
 private fun updateLastAssistantPreview(
     turns: MutableList<TimelineTurnPresentation>,

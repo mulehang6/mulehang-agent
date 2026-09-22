@@ -2,6 +2,7 @@ package com.agent.app.design
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -82,61 +85,72 @@ internal fun JewelDialog(
             dismissOnClickOutside = false,
         ),
     ) {
-        Box(modifier = Modifier.padding(12.dp)) {
-            JewelSurface(
-                role = JewelSurfaceRole.FLOATING,
-                radius = 12.dp,
-                solidColor = palette.panelBackground,
-                borderColor = palette.popupBorder,
-                modifier = modifier.width(width).height(height),
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .pointerInput(Unit) { detectTapGestures { } },
             ) {
-                Column(modifier = Modifier.fillMaxSize().clip(dialogShape)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .background(palette.frameBackground)
-                            .padding(start = 16.dp, end = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Image(
-                            painter = painterResource(Res.drawable.mulehang_agent),
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
+            }
+            Box(modifier = Modifier.align(Alignment.Center).padding(12.dp)) {
+                JewelSurface(
+                    role = JewelSurfaceRole.FLOATING,
+                    radius = 12.dp,
+                    solidColor = palette.panelBackground,
+                    borderColor = palette.popupBorder,
+                    modifier = modifier.width(width).height(height),
+                ) {
+                    Column(modifier = Modifier.fillMaxSize().clip(dialogShape)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .background(palette.frameBackground)
+                                .padding(start = 16.dp, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Image(
+                                painter = painterResource(Res.drawable.mulehang_agent),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = title,
+                                modifier = Modifier.weight(1f),
+                                color = palette.text,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            IconActionButton(
+                                key = AllIconsKeys.General.Close,
+                                contentDescription = "关闭",
+                                onClick = onDismiss,
+                                modifier = Modifier.size(32.dp),
+                            )
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(palette.line))
+                        Column(
+                            modifier = Modifier.weight(1f).fillMaxWidth().padding(contentPadding),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            content = content,
                         )
-                        Text(
-                            text = title,
-                            modifier = Modifier.weight(1f),
-                            color = palette.text,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        IconActionButton(
-                            key = AllIconsKeys.General.Close,
-                            contentDescription = "关闭",
-                            onClick = onDismiss,
-                            modifier = Modifier.size(32.dp),
-                        )
-                    }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(palette.line))
-                    Column(
-                        modifier = Modifier.weight(1f).fillMaxWidth().padding(contentPadding),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        content = content,
-                    )
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(palette.line))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (footerContent != null) {
-                            footerContent()
-                        } else {
-                            dismissLabel?.let { label ->
-                                OutlinedButton(onClick = onDismiss) { Text(label) }
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(palette.line))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (footerContent != null) {
+                                footerContent()
+                            } else {
+                                dismissLabel?.let { label ->
+                                    OutlinedButton(onClick = onDismiss) { Text(label) }
+                                }
+                                DefaultButton(onClick = onConfirm, enabled = confirmEnabled) {
+                                    Text(confirmLabel)
+                                }
                             }
-                            DefaultButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmLabel) }
                         }
                     }
                 }

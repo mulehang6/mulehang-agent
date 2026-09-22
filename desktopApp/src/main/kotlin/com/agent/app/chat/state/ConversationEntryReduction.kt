@@ -6,6 +6,7 @@ import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ConversationEntry
 import com.agent.shared.chat.model.ToolEventStatus
+import com.agent.shared.chat.model.conversationEntryPath
 import com.agent.shared.chat.model.projectConversationEntries
 
 /** 为树格式会话追加用户消息，并立即从新 leaf 重建线性投影。 */
@@ -45,7 +46,7 @@ internal fun applyConversationEntryEvent(
     return when (event) {
         is AgentStreamEvent.TextDelta -> conversation.appendAssistantText(event.text, idFactory, clock)
         is AgentStreamEvent.ReasoningDelta -> conversation.appendReasoningDelta(event, idFactory, clock)
-        is AgentStreamEvent.ReasoningCompleted -> conversation.completeReasoning(event)
+        is AgentStreamEvent.ReasoningCompleted -> conversation.completeReasoning(event, idFactory, clock)
         is AgentStreamEvent.ToolCallStarted -> conversation.appendToolCall(event, idFactory, clock)
         is AgentStreamEvent.ToolCallFinished -> conversation.appendToolResult(
             name = event.name,
@@ -71,7 +72,7 @@ internal fun applyConversationEntryEvent(
 
         is AgentStreamEvent.ToolFileDiffPreviewed -> conversation.attachEntryDiffs(event)
         is AgentStreamEvent.Completed -> conversation.completeAssistantText(event, idFactory, clock)
-        is AgentStreamEvent.Failed -> conversation.appendToolResult(
+        is AgentStreamEvent.Failed -> conversation.closeStreamingReasoning(clock).appendToolResult(
             name = "error",
             toolCallId = null,
             status = ToolEventStatus.Failed,
@@ -149,26 +150,32 @@ private fun ChatConversationUiState.appendAssistantText(
     idFactory: () -> String,
     clock: () -> Long,
 ): ChatConversationUiState {
-    val currentId = streamingAssistantEntryId
-    val current = currentId?.let { id -> entries.firstOrNull { it.id == id } as? ConversationEntry.Message }
+    val normalizedConversation = closeStreamingReasoning(clock)
+    val currentId = normalizedConversation.streamingAssistantEntryId
+    val current = currentId?.let { id ->
+        normalizedConversation.entries.firstOrNull { it.id == id } as? ConversationEntry.Message
+    }
     if (current != null) {
-        val nextEntries = entries.map { entry ->
+        val nextEntries = normalizedConversation.entries.map { entry ->
             if (entry.id == current.id) {
                 current.copy(message = current.message.copy(content = current.message.content + text))
             } else {
                 entry
             }
         }
-        return withAppendedEntryProjection(nextEntries, current.id)
+        return normalizedConversation.withAppendedEntryProjection(nextEntries, current.id)
     }
     val entry = ConversationEntry.Message(
         id = idFactory(),
-        parentId = activeEntryId,
+        parentId = normalizedConversation.activeEntryId,
         createdAt = clock(),
         message = ChatMessage(ChatRole.Assistant, text),
         inputParts = emptyList(),
     )
-    return withAppendedEntryProjection(entries + entry, entry.id).copy(streamingAssistantEntryId = entry.id)
+    return normalizedConversation.withAppendedEntryProjection(
+        normalizedConversation.entries + entry,
+        entry.id,
+    ).copy(streamingAssistantEntryId = entry.id)
 }
 
 /** 追加或更新当前流式推理条目。 */
@@ -177,10 +184,13 @@ private fun ChatConversationUiState.appendReasoningDelta(
     idFactory: () -> String,
     clock: () -> Long,
 ): ChatConversationUiState {
-    val currentId = streamingReasoningEntryId
-    val current = currentId?.let { id -> entries.firstOrNull { it.id == id } as? ConversationEntry.Reasoning }
+    val normalizedConversation = copy(streamingAssistantEntryId = null)
+    val currentId = normalizedConversation.streamingReasoningEntryId
+    val current = currentId?.let { id ->
+        normalizedConversation.entries.firstOrNull { it.id == id } as? ConversationEntry.Reasoning
+    }
     if (current != null) {
-        val nextEntries = entries.map { entry ->
+        val nextEntries = normalizedConversation.entries.map { entry ->
             if (entry.id == current.id) {
                 current.copy(
                     summaryText = current.summaryText.orEmpty() + event.summary.orEmpty(),
@@ -190,25 +200,70 @@ private fun ChatConversationUiState.appendReasoningDelta(
                 entry
             }
         }
-        return withAppendedEntryProjection(nextEntries, current.id)
+        return normalizedConversation.withAppendedEntryProjection(nextEntries, current.id)
     }
     val createdAt = clock()
     val entry = ConversationEntry.Reasoning(
         id = idFactory(),
-        parentId = activeEntryId,
+        parentId = normalizedConversation.activeEntryId,
         createdAt = createdAt,
         summaryText = event.summary,
         rawText = event.rawText ?: event.summary,
         startedAtMillis = createdAt,
     )
-    return withAppendedEntryProjection(entries + entry, entry.id).copy(streamingReasoningEntryId = entry.id)
+    return normalizedConversation.withAppendedEntryProjection(
+        normalizedConversation.entries + entry,
+        entry.id,
+    ).copy(streamingReasoningEntryId = entry.id)
+}
+
+/** 关闭仍在流式中的推理条目，保证后续正文或失败结果不会复用旧段。 */
+private fun ChatConversationUiState.closeStreamingReasoning(clock: () -> Long): ChatConversationUiState {
+    val currentId = streamingReasoningEntryId ?: return this
+    val nextEntries = entries.map { entry ->
+        val reasoning = entry as? ConversationEntry.Reasoning
+        if (reasoning?.id == currentId) {
+            reasoning.copy(
+                isStreaming = false,
+                durationMillis = (clock() - reasoning.startedAtMillis).coerceAtLeast(0L),
+            )
+        } else {
+            entry
+        }
+    }
+    return withEntryProjection(nextEntries, activeEntryId).copy(streamingReasoningEntryId = null)
 }
 
 /** 用完整推理内容收尾当前推理条目。 */
 private fun ChatConversationUiState.completeReasoning(
     event: AgentStreamEvent.ReasoningCompleted,
+    idFactory: () -> String,
+    clock: () -> Long,
 ): ChatConversationUiState {
-    val currentId = streamingReasoningEntryId ?: return this
+    val currentId = streamingReasoningEntryId
+        ?: currentTurnReasoningId()
+    if (currentId == null) {
+        val summary = event.summary?.takeIf(String::isNotBlank)
+        val rawText = event.rawText?.takeIf(String::isNotBlank) ?: summary
+        if (summary == null && rawText == null) return this
+        val normalizedConversation = copy(streamingAssistantEntryId = null)
+        val createdAt = clock()
+        val entry = ConversationEntry.Reasoning(
+            id = idFactory(),
+            parentId = normalizedConversation.activeEntryId,
+            createdAt = createdAt,
+            summaryText = summary,
+            rawText = rawText,
+            isStreaming = false,
+            startedAtMillis = createdAt,
+            durationMillis = 0L,
+        )
+        return normalizedConversation.withAppendedEntryProjection(
+            normalizedConversation.entries + entry,
+            entry.id,
+        ).copy(streamingReasoningEntryId = null)
+    }
+    val completionTime = clock()
     val nextEntries = entries.map { entry ->
         val reasoning = entry as? ConversationEntry.Reasoning
         if (reasoning?.id == currentId) {
@@ -218,13 +273,27 @@ private fun ChatConversationUiState.completeReasoning(
                     ?: event.summary?.takeIf(String::isNotBlank)
                     ?: reasoning.rawText,
                 isStreaming = false,
-                durationMillis = (System.currentTimeMillis() - reasoning.startedAtMillis).coerceAtLeast(0L),
+                durationMillis = (completionTime - reasoning.startedAtMillis).coerceAtLeast(0L),
             )
         } else {
             entry
         }
     }
-    return withEntryProjection(nextEntries, activeEntryId).copy(streamingReasoningEntryId = null)
+    return withEntryProjection(nextEntries).copy(streamingReasoningEntryId = null)
+}
+
+/** 只在当前活动轮次中寻找晚到的推理完成事件，避免改写上一轮的历史条目。 */
+private fun ChatConversationUiState.currentTurnReasoningId(): String? {
+    val activePath = conversationEntryPath(entries, activeEntryId)
+    val latestUserIndex = activePath.indexOfLast { entry ->
+        entry is ConversationEntry.Message && entry.message.role == ChatRole.User
+    }
+    if (latestUserIndex < 0) return null
+    return activePath.asSequence()
+        .drop(latestUserIndex + 1)
+        .filterIsInstance<ConversationEntry.Reasoning>()
+        .lastOrNull()
+        ?.id
 }
 
 /** 追加工具调用条目，并结束此前的正文流式归属。 */
@@ -270,9 +339,10 @@ private fun ChatConversationUiState.appendToolResult(
     idFactory: () -> String,
     clock: () -> Long,
 ): ChatConversationUiState {
+    val normalizedConversation = closeStreamingReasoning(clock).copy(streamingAssistantEntryId = null)
     val entry = ConversationEntry.ToolResult(
         id = idFactory(),
-        parentId = activeEntryId,
+        parentId = normalizedConversation.activeEntryId,
         createdAt = clock(),
         toolName = name,
         status = status,
@@ -281,7 +351,10 @@ private fun ChatConversationUiState.appendToolResult(
         resultPreview = resultPreview,
         resultDisplay = resultDisplay,
     )
-    return withAppendedEntryProjection(entries + entry, entry.id)
+    return normalizedConversation.withAppendedEntryProjection(
+        normalizedConversation.entries + entry,
+        entry.id,
+    )
 }
 
 /** 把文件差异附加到最近的同名运行中工具调用。 */

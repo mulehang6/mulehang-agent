@@ -182,7 +182,7 @@ private fun TimelineTickHitTarget(
             .width(32.dp)
             .height(14.dp)
             .hoverable(interactionSource)
-            .pointerInput(Unit) { detectTapGestures { onClick() } },
+            .pointerInput(onClick) { detectTapGestures { onClick() } },
     )
 }
 

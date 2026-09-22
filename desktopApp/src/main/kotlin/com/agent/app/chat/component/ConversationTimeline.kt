@@ -78,7 +78,10 @@ internal fun ConversationTimeline(
                         UserMessageCard(
                             turn = turn,
                             entryMotionId = pendingMessageEntry?.id?.takeIf { item === entryMotionTarget },
-                            operationInProgress = operationEntryId == turn.sourceUserEntryId,
+                            operationInProgress = isTimelineOperationInProgress(
+                                operationEntryId = operationEntryId,
+                                sourceUserEntryId = turn.sourceUserEntryId,
+                            ),
                             onEntryMotionFinished = onMessageEntryFinished,
                             onPositioned = onTurnPositioned,
                             onEditFromHere = onEditFromHere,

@@ -26,8 +26,9 @@ internal fun handleConversationTreeKeyEvent(
     onEditLabel: (ConversationEntry) -> Unit,
 ): Boolean {
     if (event.type != KeyEventType.KeyDown) return false
-    val index = rows.indexOfFirst { it.entry.id == selectedEntryId }.coerceAtLeast(0)
+    val index = rows.indexOfFirst { it.entry.id == selectedEntryId }
     val selectedRow = rows.getOrNull(index)
+    if (selectedRow == null) return false
     return when {
         event.key == Key.DirectionUp ->
             rows.getOrNull(index - 1)?.let { onSelectEntry(it.entry.id); true } ?: false
@@ -35,7 +36,7 @@ internal fun handleConversationTreeKeyEvent(
         event.key == Key.DirectionDown ->
             rows.getOrNull(index + 1)?.let { onSelectEntry(it.entry.id); true } ?: false
 
-        event.key == Key.DirectionLeft && selectedRow != null -> {
+        event.key == Key.DirectionLeft -> {
             when {
                 selectedRow.foldable && selectedRow.entry.id !in collapsedIds -> onToggleCollapsed(selectedRow)
                 selectedRow.visibleParentId != null -> onSelectEntry(selectedRow.visibleParentId)
@@ -44,7 +45,7 @@ internal fun handleConversationTreeKeyEvent(
             true
         }
 
-        event.key == Key.DirectionRight && selectedRow != null -> {
+        event.key == Key.DirectionRight -> {
             when {
                 selectedRow.foldable && selectedRow.entry.id in collapsedIds -> onToggleCollapsed(selectedRow)
                 selectedRow.visibleChildIds.isNotEmpty() -> onSelectEntry(selectedRow.visibleChildIds.first())
@@ -53,17 +54,17 @@ internal fun handleConversationTreeKeyEvent(
             true
         }
 
-        (event.key == Key.Enter || event.key == Key.Spacebar) && selectedRow != null -> {
+        event.key == Key.Enter || event.key == Key.Spacebar -> {
             onSubmit()
             true
         }
 
-        event.isCtrlPressed && event.key == Key.C && selectedRow != null -> {
+        event.isCtrlPressed && event.key == Key.C -> {
             onCopyEntry(selectedRow.entry)
             true
         }
 
-        event.isShiftPressed && event.key == Key.L && selectedRow != null -> {
+        event.isShiftPressed && event.key == Key.L -> {
             onEditLabel(selectedRow.entry)
             true
         }

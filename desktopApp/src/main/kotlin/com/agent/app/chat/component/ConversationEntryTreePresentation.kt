@@ -78,7 +78,8 @@ internal fun flattenConversationEntryTree(
             foldable = childEntries.isNotEmpty() &&
                     (
                             effectiveParents[entry.id] == null ||
-                                    parentSiblingCount > 1
+                                    parentSiblingCount > 1 ||
+                                    childEntries.size > 1
                             ),
         )
         if (entry.id in collapsedIds) return

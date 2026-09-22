@@ -57,6 +57,9 @@ internal fun ConversationBranchPanelContent(
 ) {
     var query by remember(conversation.id) { mutableStateOf(TextFieldValue()) }
     var operationError by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var pendingSummaryLeafId by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var customSummaryLeafId by remember(conversation.id) { mutableStateOf<String?>(null) }
+    var customSummaryPrompt by remember(conversation.id) { mutableStateOf("") }
     val allItems = remember(conversation.entries, conversation.activeEntryId, conversation.headEntryId) {
         buildConversationBranchOverview(conversation.entries, conversation.activeEntryId, conversation.headEntryId)
     }
@@ -79,7 +82,18 @@ internal fun ConversationBranchPanelContent(
     LaunchedEffect(items) {
         if (items.none { it.leafEntryId == selectedLeafId }) selectedLeafId = items.firstOrNull()?.leafEntryId
     }
-    val switchPath: () -> Unit = {
+    val switchToLeaf: (String, BranchNavigationSummary) -> Unit = { leafEntryId, summary ->
+        operationError = null
+        scope.launch {
+            val result = state.conversationTreeController.switchToLeaf(
+                conversationId = conversation.id,
+                leafEntryId = leafEntryId,
+                summary = summary,
+            )
+            operationError = result.message.takeUnless { result.succeeded }
+        }
+    }
+    val requestSwitch: () -> Unit = {
         selectedLeafId?.takeIf { leafEntryId ->
             isConversationTreeSwitchEnabled(
                 selectedEntryId = leafEntryId,
@@ -88,14 +102,8 @@ internal fun ConversationBranchPanelContent(
             )
         }?.let { leafEntryId ->
             operationError = null
-            scope.launch {
-                val result = state.conversationTreeController.switchToLeaf(
-                    conversationId = conversation.id,
-                    leafEntryId = leafEntryId,
-                    summary = BranchNavigationSummary(),
-                )
-                operationError = result.message.takeUnless { result.succeeded }
-            }
+            customSummaryPrompt = ""
+            pendingSummaryLeafId = leafEntryId
         }
     }
     Column(modifier) {
@@ -140,7 +148,7 @@ internal fun ConversationBranchPanelContent(
                                     }
 
                                     Key.Enter, Key.Spacebar -> {
-                                        switchPath(); true
+                                        requestSwitch(); true
                                     }
 
                                     else -> false
@@ -175,7 +183,34 @@ internal fun ConversationBranchPanelContent(
             ),
             inProgress = state.conversationTreeController.summaryInProgress,
             operationError = operationError,
-            onPrimary = switchPath,
+            onPrimary = requestSwitch,
+        )
+    }
+    pendingSummaryLeafId?.let { leafEntryId ->
+        ConversationTreeSummaryChoiceDialog(
+            onChoose = { mode ->
+                pendingSummaryLeafId = null
+                if (mode == BranchSummaryMode.CUSTOM) {
+                    customSummaryLeafId = leafEntryId
+                } else {
+                    switchToLeaf(leafEntryId, BranchNavigationSummary(mode))
+                }
+            },
+            onDismiss = { pendingSummaryLeafId = null },
+        )
+    }
+    customSummaryLeafId?.let { leafEntryId ->
+        ConversationTreeCustomSummaryDialog(
+            initialPrompt = customSummaryPrompt,
+            onConfirm = { prompt ->
+                customSummaryPrompt = prompt
+                customSummaryLeafId = null
+                switchToLeaf(leafEntryId, BranchNavigationSummary(BranchSummaryMode.CUSTOM, prompt))
+            },
+            onBack = {
+                customSummaryLeafId = null
+                pendingSummaryLeafId = leafEntryId
+            },
         )
     }
 }

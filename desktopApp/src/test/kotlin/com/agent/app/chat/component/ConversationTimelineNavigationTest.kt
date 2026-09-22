@@ -63,6 +63,14 @@ class ConversationTimelineNavigationTest {
         assertEquals("answer", turns.first().assistantText)
     }
 
+    /** 旧线性轮次没有来源条目 ID 时，空闲状态不得误判为正在运行。 */
+    @Test
+    fun `legacy operation state does not match two null ids`() {
+        assertFalse(isTimelineOperationInProgress(operationEntryId = null, sourceUserEntryId = null))
+        assertTrue(isTimelineOperationInProgress(operationEntryId = "user-1", sourceUserEntryId = "user-1"))
+        assertFalse(isTimelineOperationInProgress(operationEntryId = "user-1", sourceUserEntryId = "user-2"))
+    }
+
     /** 导航轨只在宽布局和至少两个用户轮次时出现。 */
     @Test
     fun `timeline visibility requires turns and left gutter`() {

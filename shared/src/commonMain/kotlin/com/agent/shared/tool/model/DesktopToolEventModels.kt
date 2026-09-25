@@ -22,6 +22,7 @@ data class QuestionAnswer(
 /**
  * `ask_user` 发起的问题请求。
  */
+@Serializable
 data class QuestionRequest(
     val requestId: String,
     val toolCallId: String,
@@ -60,6 +61,7 @@ fun normalizeQuestionPrompts(raw: List<QuestionPrompt>): List<QuestionPrompt> = 
 /**
  * 需要用户审批的危险操作请求。
  */
+@Serializable
 data class ApprovalRequest(
     val requestId: String,
     val toolName: String,
@@ -75,6 +77,7 @@ data class ApprovalRequest(
 )
 
 /** 描述工具调用的安全敏感度，供审批器与界面共同使用。 */
+@Serializable
 enum class ToolRisk {
     READ_ONLY,
     WORKSPACE_WRITE,

@@ -42,6 +42,8 @@ import com.agent.app.design.JewelSurface
 import com.agent.app.design.JewelSurfaceRole
 import com.agent.app.design.RightRailGlyph
 import com.agent.shared.chat.model.ExecutionState
+import com.agent.shared.chat.model.ConversationEntry
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.ui.component.IconActionButton
 import org.jetbrains.jewel.ui.component.Text
@@ -91,6 +93,7 @@ internal fun WorkspacePanel(
     var returnToHeadError by remember(conversationId) { mutableStateOf<String?>(null) }
     var messageOperationEntryId by remember(conversationId) { mutableStateOf<String?>(null) }
     var messageActionError by remember(conversationId) { mutableStateOf<String?>(null) }
+    var fileRestoreSummary by remember(conversationId) { mutableStateOf<String?>(null) }
     var timelineViewportBounds by remember(conversationId) { mutableStateOf<Rect?>(null) }
     var timelineContentBounds by remember(conversationId) { mutableStateOf<Rect?>(null) }
     val timelineTurnBounds = remember(conversationId) { mutableStateMapOf<String, TimelineTurnBounds>() }
@@ -98,6 +101,7 @@ internal fun WorkspacePanel(
         mutableStateMapOf<String, TimelineTurnBounds>()
     }
     var pendingTreeEntryId by remember(conversationId) { mutableStateOf<String?>(null) }
+    var navigationExpandedEntryId by remember(conversationId) { mutableStateOf<String?>(null) }
     var nextMessageEntryId by remember(conversationId) { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -144,14 +148,26 @@ internal fun WorkspacePanel(
     }
 
     val pendingTreeEntryBounds = pendingTreeEntryId?.let(timelineEntryBounds::get)
+    LaunchedEffect(activeConversation?.entries, activeConversation?.activeEntryId, activeConversation?.items, navigationExpandedEntryId) {
+        val target = navigationExpandedEntryId ?: return@LaunchedEffect
+        val conversation = activeConversation ?: run { navigationExpandedEntryId = null; return@LaunchedEffect }
+        if (!isConversationEntryOnActivePath(conversation.entries, conversation.activeEntryId, target) ||
+            buildTimelineDisplayEntryIds(conversation).none { target in it }
+        ) navigationExpandedEntryId = null
+    }
     LaunchedEffect(
         pendingTreeEntryId,
         pendingTreeEntryBounds != null,
         timelineViewportBounds != null,
     ) {
         val entryId = pendingTreeEntryId ?: return@LaunchedEffect
-        val entryBounds = pendingTreeEntryBounds ?: return@LaunchedEffect
+        pendingTreeEntryBounds ?: return@LaunchedEffect
         val viewport = timelineViewportBounds ?: return@LaunchedEffect
+        val selected = activeConversation?.entries?.firstOrNull { it.id == entryId }
+        if (selected is ConversationEntry.ToolCall || selected is ConversationEntry.ToolResult ||
+            selected is ConversationEntry.Reasoning
+        ) delay(maxOf(TOOL_GROUP_EXPAND_DURATION_MILLIS, REASONING_BODY_EXPAND_DURATION_MILLIS).toLong())
+        val entryBounds = timelineEntryBounds[entryId] ?: return@LaunchedEffect
         val target = timelineScrollTarget(
             currentScroll = scrollState.value,
             anchorTop = entryBounds.top,
@@ -213,6 +229,19 @@ internal fun WorkspacePanel(
         }
     }
 
+    /** 根据用户选择恢复会话，或同时尝试恢复受管文件。 */
+    val rollbackFromUserEntry: (String, Boolean) -> Unit = { entryId, restoreFiles ->
+        if (conversationId != null && messageOperationEntryId == null) {
+            messageOperationEntryId = entryId
+            scope.launch {
+                val result = state.conversationTreeController.rollbackUserTurn(conversationId, entryId, restoreFiles)
+                messageOperationEntryId = null
+                if (!result.succeeded) messageActionError = result.message
+                else fileRestoreSummary = result.message
+            }
+        }
+    }
+
     /** 从会话树定位当前活动路径中的条目；分支切换由树面板底部按钮提交。 */
     val revealConversationEntry: (String) -> Unit = { entryId ->
         val conversation = state.ui.activeConversationOrNull
@@ -230,10 +259,13 @@ internal fun WorkspacePanel(
             } else {
                 messageActionError = null
                 isFollowingLatest.value = false
+                timelineEntryBounds.remove(anchorId)
+                navigationExpandedEntryId = anchorId
                 pendingTreeEntryId = anchorId
             }
         }
     }
+    ConsumeAttentionNavigation(state, conversationId, revealConversationEntry) { messageActionError = it }
 
     Box(
         modifier = modifier
@@ -323,28 +355,13 @@ internal fun WorkspacePanel(
                                                 },
                                             verticalArrangement = Arrangement.spacedBy(16.dp),
                                         ) {
-                                            when (activeRailView) {
-                                                RightRailGlyph.CODE -> ConversationTimeline(
-                                                    conversation = activeConversation,
-                                                    pendingMessageEntry = messageEntry,
-                                                    onMessageEntryFinished = onMessageEntryFinished,
-                                                    operationEntryId = messageOperationEntryId,
-                                                    onTurnPositioned = { anchorId, top, bottom ->
-                                                        timelineTurnBounds[anchorId] = TimelineTurnBounds(top, bottom)
-                                                    },
-                                                    onEntryPositioned = { entryId, top, bottom ->
-                                                        timelineEntryBounds[entryId] = TimelineTurnBounds(top, bottom)
-                                                    },
-                                                    onEditFromHere = editFromUserEntry,
-                                                    onNewSession = createConversationFromUserEntry,
-                                                )
-
-                                                RightRailGlyph.HISTORY -> HistoryPanel(
+                                            if (activeRailView == RightRailGlyph.HISTORY) {
+                                                HistoryPanel(
                                                     activeConversation,
                                                     filterToolActivityOnly
                                                 )
-
-                                                else -> ConversationTimeline(
+                                            } else {
+                                                ConversationTimeline(
                                                     conversation = activeConversation,
                                                     pendingMessageEntry = messageEntry,
                                                     onMessageEntryFinished = onMessageEntryFinished,
@@ -357,6 +374,11 @@ internal fun WorkspacePanel(
                                                     },
                                                     onEditFromHere = editFromUserEntry,
                                                     onNewSession = createConversationFromUserEntry,
+                                                    onRollback = rollbackFromUserEntry,
+                                                    navigationEntryId = navigationExpandedEntryId,
+                                                    onNavigationTargetPositioned = { entryId, top, bottom ->
+                                                        timelineEntryBounds[entryId] = TimelineTurnBounds(top, bottom)
+                                                    },
                                                 )
                                             }
                                         }
@@ -466,10 +488,10 @@ internal fun WorkspacePanel(
             terminal = { terminalModifier -> sidePanel(terminalModifier, revealConversationEntry) },
         )
     }
-    messageActionError?.let { error ->
-        MessageActionErrorDialog(
-            message = error,
-            onDismiss = { messageActionError = null },
-        )
-    }
+    WorkspacePanelActionDialogs(
+        messageActionError = messageActionError,
+        fileRestoreSummary = fileRestoreSummary,
+        onDismissMessageError = { messageActionError = null },
+        onDismissFileSummary = { fileRestoreSummary = null },
+    )
 }

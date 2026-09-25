@@ -39,7 +39,7 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
 
         assertEquals(
             listOf("ChatScreen.kt", "design.png"),
-            state.ui.activeConversation.attachments.map { it.name },
+            state.activeDraftAttachments.map { it.name },
         )
     }
 
@@ -61,7 +61,28 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
 
         state.removeAttachment("D:\\tmp\\ChatScreen.kt")
 
-        assertEquals(listOf("design.png"), state.ui.activeConversation.attachments.map { it.name })
+        assertEquals(listOf("design.png"), state.activeDraftAttachments.map { it.name })
+    }
+
+    /** 当前会话草稿附件应提高上下文环估值，移除后恢复到会话基线。 */
+    @Test
+    fun `should update context usage when draft attachments change`() = runTest(dispatcher) {
+        val profile = profile(limit = com.agent.shared.settings.model.ModelLimit(context = 100_000, output = 20_000))
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile), activeProfile = profile),
+            projectPath = "E:\\context",
+        )
+        state.send("已有会话内容")
+        advanceUntilIdle()
+        val baseline = state.activeContextUsageFraction
+
+        state.attachFiles(listOf("D:\\tmp\\context.md"))
+
+        assertTrue(state.activeContextUsageFraction > baseline)
+        state.removeAttachment("D:\\tmp\\context.md")
+        assertEquals(baseline, state.activeContextUsageFraction)
     }
 
     /** prompt 命令先插入编辑器，用户再次发送才运行；`/reload` 则直接执行资源重载控制动作。 */
@@ -109,7 +130,7 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
         state.updateDraft("/review src/App.kt")
         state.sendDraft()
         assertEquals("请审查 src/App.kt", state.ui.draft)
-        assertTrue(state.ui.activeConversation.history.isEmpty())
+        assertNull(state.ui.activeConversationOrNull)
 
         state.sendDraft()
         advanceUntilIdle()

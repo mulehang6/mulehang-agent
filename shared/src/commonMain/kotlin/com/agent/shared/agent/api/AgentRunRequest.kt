@@ -26,6 +26,17 @@ data class AgentRunRequest(
     val runtimeResources: AgentRuntimeResources = AgentRuntimeResources(),
     /** 关联本地准备与模型请求的匿名诊断标识。 */
     val traceId: String = "",
+    /** 仅在继续既有运行时传入；普通新轮次总是创建独立 Koog run。 */
+    val resumeRunId: String? = null,
+    /** 本轮用户消息的条目 ID，用于关联状态快照。 */
+    val userEntryId: String = "",
+    /** 发送时的上下文窗口估计，实际 usage 到达后可覆盖。 */
+    val contextUsageFraction: Float? = null,
+    val contextWindow: Int? = null,
+    /** 本轮冻结的自动压缩触发阈值。 */
+    val contextCompactionThresholdPercent: Int = 80,
+    /** 已在同一轮重试前压缩，避免再次把摘要当原始历史压缩。 */
+    val contextAlreadyCompacted: Boolean = false,
 )
 
 /**

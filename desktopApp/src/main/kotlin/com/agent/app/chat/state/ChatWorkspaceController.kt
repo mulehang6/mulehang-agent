@@ -1,8 +1,6 @@
 package com.agent.app.chat.state
 
-import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.ExecutionState
-import com.agent.shared.tool.model.PermissionPreset
 
 /** 管理会话与工作区的关联、迁移和历史恢复。 */
 internal class ChatWorkspaceController(private val window: ChatWindowState) {
@@ -12,7 +10,7 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
     fun selectConversation(conversationId: String) {
         with(window) {
             if (findConversationOrNull(conversationId) != null) {
-                ui = ui.copy(activeTaskId = conversationId)
+                showExistingConversation(conversationId)
                 refreshResourceSnapshotFor(ui.activeConversationOrNull?.workspacePath.orEmpty())
             }
         }
@@ -77,9 +75,7 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
         }
     }
 
-    /**
-     * 在指定工作目录下新建对话并切换焦点。
-     */
+    /** 在指定工作目录下切换到进程内新会话页，直到首次发送才创建真实会话。 */
     fun createConversationForWorkspace(workspacePath: String) {
         with(window) {
             val normalizedPath = workspacePath.trim()
@@ -88,46 +84,11 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
                 conversations = ui.tasks,
                 workspacePath = normalizedPath,
             )
-            val reusableConversation = restoredTasks.firstOrNull { conversation ->
-                conversation.workspacePath == normalizedPath && conversation.isEmptyDefaultConversation()
-            }
-            if (reusableConversation != null) {
-                ui = ui.copy(
-                    tasks = restoredTasks,
-                    activeTaskId = reusableConversation.id,
-                    draft = "",
-                )
+            if (restoredTasks != ui.tasks) {
+                ui = ui.copy(tasks = restoredTasks)
                 persistenceCoordinator?.schedule(ui.tasks)
-                return
             }
-            val preferenceSource = ui.activeConversationOrNull
-            val selectedProfile = activeProfile
-            val conversation = newConversation(
-                workspacePath = normalizedPath,
-                contextWindow = selectedProfile?.let(::contextWindowFor),
-                profileId = preferenceSource?.profileId ?: selectedProfile?.id,
-                reasoningEffort = preferenceSource?.reasoningEffort
-                    ?: selectedProfile?.let(::defaultReasoningEffortFor)
-                    ?: ReasoningEffort.MEDIUM,
-                permissionPreset = preferenceSource?.permissionPreset ?: PermissionPreset.DEFAULT,
-            ).copy(workspaceName = workspaceNameFor(normalizedPath, restoredTasks))
-            val updatedTasks = if (shouldReplaceActiveEmptyConversation(normalizedPath)) {
-                restoredTasks.map { existing ->
-                    if (existing.id == ui.activeTaskId) {
-                        conversation
-                    } else {
-                        existing
-                    }
-                }
-            } else {
-                listOf(conversation) + restoredTasks
-            }
-            ui = ui.copy(
-                tasks = updatedTasks,
-                activeTaskId = conversation.id,
-                draft = "",
-            )
-            persistenceCoordinator?.schedule(ui.tasks)
+            showNewConversation(normalizedPath)
         }
     }
 
@@ -258,7 +219,10 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
         with(window) {
             val activeConversation = ui.activeConversationOrNull
             val isDisconnectingActiveWorkspace = activeConversation?.workspacePath == workspacePath
-            val fallbackWorkspacePath = if (isDisconnectingActiveWorkspace) {
+            val isDisconnectingNewConversation =
+                ui.activeTaskId.isBlank() && ui.newWorkspacePath == workspacePath
+            val shouldSelectFallback = isDisconnectingActiveWorkspace || isDisconnectingNewConversation
+            val fallbackWorkspacePath = if (shouldSelectFallback) {
                 findRecentAvailableWorkspacePath(excludedWorkspacePath = workspacePath)
             } else {
                 null
@@ -282,37 +246,12 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
                         conversation
                     }
                 }
-            val fallbackConversation = fallbackWorkspacePath?.let { fallbackPath ->
-                retainedTasks.firstOrNull { conversation ->
-                    conversation.workspacePath == fallbackPath && conversation.isEmptyDefaultConversation()
-                } ?: newConversation(
-                    workspacePath = fallbackPath,
-                    contextWindow = activeProfile?.let(::contextWindowFor),
-                    profileId = activeConversation?.profileId ?: activeProfile?.id,
-                    reasoningEffort = activeConversation?.reasoningEffort
-                        ?: activeProfile?.let(::defaultReasoningEffortFor)
-                        ?: ReasoningEffort.MEDIUM,
-                    permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT,
-                ).copy(
-                    workspaceName = retainedTasks.firstOrNull { it.workspacePath == fallbackPath }?.workspaceName,
-                )
-            }
-            val updatedTasks = if (fallbackConversation != null && fallbackConversation !in retainedTasks) {
-                listOf(fallbackConversation) + retainedTasks
-            } else {
-                retainedTasks
-            }
             ui = ui.copy(
-                tasks = updatedTasks,
-                activeTaskId = if (isDisconnectingActiveWorkspace) {
-                    fallbackConversation?.id.orEmpty()
-                } else if (ui.activeTaskId in removedTaskIds) {
-                    updatedTasks.firstOrNull()?.id.orEmpty()
-                } else {
-                    ui.activeTaskId
-                },
-                draft = if (isDisconnectingActiveWorkspace) "" else ui.draft,
+                tasks = retainedTasks,
             )
+            if (shouldSelectFallback || ui.activeTaskId in removedTaskIds) {
+                showNewConversation(fallbackWorkspacePath.orEmpty())
+            }
             persistenceCoordinator?.schedule(ui.tasks)
         }
     }
@@ -369,6 +308,9 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
             }
             .maxByOrNull(ChatConversationUiState::updatedAt)
             ?.workspacePath
+                ?: ui.newWorkspacePath.takeIf { path ->
+                    path.isNotBlank() && path != excludedWorkspacePath && workspaceDirectoryExists(path)
+                }
         }
     }
 

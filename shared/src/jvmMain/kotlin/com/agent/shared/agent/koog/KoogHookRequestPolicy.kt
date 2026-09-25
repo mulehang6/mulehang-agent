@@ -59,6 +59,7 @@ internal fun AgentRunRequest.continueAfterStop(
         history = history + AgentConversationHistoryMessage.User(prompt, inputParts) +
             AgentConversationHistoryMessage.Assistant(listOf(AgentConversationHistoryPart.Text(previousResult))),
         inputParts = listOf(UserInputPart.Text(continuationPrompt)),
+        resumeRunId = null,
     )
 }
 

@@ -22,9 +22,10 @@ internal class ChatAttachmentController(private val window: ChatWindowState) {
      */
     fun attachWorkspaceFile(path: String): String? {
         with(window) {
-            val conversation = ui.activeConversationOrNull ?: return "请先选择工作区。"
+            val workspacePath = ui.activeConversationOrNull?.workspacePath ?: ui.newWorkspacePath
+            if (workspacePath.isBlank()) return "请先选择工作区。"
             val workspace = runCatching {
-                Paths.get(conversation.workspacePath).toRealPath()
+                Paths.get(workspacePath).toRealPath()
             }.getOrElse {
                 return "当前工作区不可用，无法引用文件。"
             }
@@ -50,14 +51,15 @@ internal class ChatAttachmentController(private val window: ChatWindowState) {
      */
     fun addClipboardImage(image: ClipboardPngImage): String? {
         with(window) {
-            val conversation = ui.activeConversationOrNull ?: return "请先选择会话。"
+            val workspacePath = ui.activeConversationOrNull?.workspacePath ?: ui.newWorkspacePath
+            if (workspacePath.isBlank()) return "请先选择工作区。"
             val mediaStore = sessionMediaStore ?: return "当前环境未配置会话媒体库，无法粘贴图片。"
             val storedImage = runCatching {
-                mediaStore.storePng(conversation.id, image.bytes)
+                mediaStore.storePng(ui.activeTaskId.ifBlank { "draft-${workspacePath.hashCode()}" }, image.bytes)
             }.getOrElse {
                 return "保存粘贴图片失败：${it.message ?: "未知错误"}"
             }
-            val label = nextImageLabel(conversation.attachments)
+            val label = nextImageLabel(activeDraftAttachments)
             appendDraftAttachment(
                 ChatAttachmentUiState(
                     path = storedImage.path.toString(),
@@ -78,28 +80,11 @@ internal class ChatAttachmentController(private val window: ChatWindowState) {
      */
     fun removeAttachment(path: String) {
         with(window) {
-            val removedTokens = ui.activeConversationOrNull
-                ?.attachments
-                ?.filter { attachment -> attachment.path == path }
-                ?.map(ChatAttachmentUiState::token)
-                .orEmpty()
-            mutateActiveConversation { conversation ->
-                val attachments = conversation.attachments.filterNot { it.path == path }
-                conversation.copy(
-                    attachments = attachments,
-                    contextUsageFraction = estimateContextUsage(
-                        items = conversation.items,
-                        attachmentCount = attachments.size,
-                        contextWindow = contextWindowForConversation(conversation),
-                    ),
-                )
-            }
+            val removedTokens = activeDraftAttachments.filter { it.path == path }.map(ChatAttachmentUiState::token)
+            updateDraftAttachments(activeDraftAttachments.filterNot { it.path == path })
             if (removedTokens.isNotEmpty()) {
                 val nextDraft = removedTokens.fold(ui.draft) { draft, token -> draft.replace(token, "") }
-                ui = ui.copy(
-                    draft = nextDraft,
-                    draftSelectionStart = ui.draftSelectionStart.coerceAtMost(nextDraft.length),
-                )
+                updateDraft(nextDraft, ui.draftSelectionStart.coerceAtMost(nextDraft.length))
             }
         }
     }
@@ -145,23 +130,14 @@ internal class ChatAttachmentController(private val window: ChatWindowState) {
         replaceActiveAtReference: Boolean = false,
     ) {
         with(window) {
-            val conversation = ui.activeConversationOrNull ?: return
-            val existing = conversation.attachments.firstOrNull { current -> current.path == attachment.path }
+            if (ui.activeConversationOrNull == null && ui.newWorkspacePath.isBlank()) return
+            val currentAttachments = activeDraftAttachments
+            val existing = currentAttachments.firstOrNull { current -> current.path == attachment.path }
             val attachmentToInsert = existing ?: attachment.copy(
-                token = uniqueAttachmentToken(attachment.token, conversation.attachments),
+                token = uniqueAttachmentToken(attachment.token, currentAttachments),
             )
             if (existing == null) {
-                mutateActiveConversation { current ->
-                    val attachments = current.attachments + attachmentToInsert
-                    current.copy(
-                        attachments = attachments,
-                        contextUsageFraction = estimateContextUsage(
-                            items = current.items,
-                            attachmentCount = attachments.size,
-                            contextWindow = contextWindowForConversation(current),
-                        ),
-                    )
-                }
+                updateDraftAttachments(currentAttachments + attachmentToInsert)
             }
 
             val draft = ui.draft
@@ -178,10 +154,7 @@ internal class ChatAttachmentController(private val window: ChatWindowState) {
                 replacementEndExclusive,
                 attachmentToInsert.token,
             )
-            ui = ui.copy(
-                draft = nextDraft,
-                draftSelectionStart = replacementStart + attachmentToInsert.token.length,
-            )
+            updateDraft(nextDraft, replacementStart + attachmentToInsert.token.length)
         }
     }
 

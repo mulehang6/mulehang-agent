@@ -15,11 +15,15 @@ import com.agent.shared.agent.hook.NoAgentHookDispatcher
 import com.agent.shared.agent.hook.WindowsAgentHookDispatcher
 import com.agent.shared.agent.resource.McpToolRegistryBridge
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.tool.interaction.InteractionRequestRepository
 import com.agent.shared.tool.interaction.RejectingDesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.QuestionRequest
 import com.agent.shared.tool.runtime.DesktopToolRegistryFactory
+import com.agent.shared.tool.runtime.FileMutationJournal
 import com.agent.shared.tool.runtime.ToolApprovalAgent
+import com.agent.shared.persistence.DesktopPersistenceDatabase
+import com.agent.shared.agent.status.AgentTodoRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -52,12 +56,13 @@ class KoogAgentGateway(
     private val approvalAgentFactory: (AgentRunRequest) -> ToolApprovalAgent? = { request ->
         request.fasterProfile?.let(::KoogToolApprovalAgent)
     },
-    private val agentRunner: suspend (
+    private val agentRunner: (suspend (
         request: AgentRunRequest,
         toolRegistry: ToolRegistry,
         bridge: DesktopToolInteractionBridge,
         emitEvent: suspend (AgentStreamEvent) -> Unit,
-    ) -> String = ::runWithKoogAgent,
+    ) -> String)? = null,
+    private val persistenceDatabase: DesktopPersistenceDatabase? = null,
     private val mcpToolRegistryBridge: McpToolRegistryBridge = McpToolRegistryBridge(),
     private val hookDispatcherFactory: (AgentRunRequest) -> AgentHookDispatcher = { request ->
         if (request.hookSettings.hooks.isEmpty()) NoAgentHookDispatcher else WindowsAgentHookDispatcher(request.hookSettings)
@@ -79,13 +84,21 @@ class KoogAgentGateway(
             timing.mark("gateway_start")
             send(AgentStreamEvent.Started)
             val eventQueue = Channel<AgentStreamEvent>(TOOL_EVENT_CHANNEL_CAPACITY)
+            val eventJournal = persistenceDatabase?.let { database ->
+                AgentRunEventJournal(database, request.sessionId, request.resumeRunId ?: request.traceId)
+            }
             val forwardingJob = launch {
                 for (event in eventQueue) {
+                    eventJournal?.record(event)
                     send(event)
                 }
             }
+            val interactionRequests = persistenceDatabase?.let(::InteractionRequestRepository)
             val bridge = eventEmittingBridge(
                 emitEvent = eventQueue::send,
+                conversationId = request.sessionId,
+                runId = request.resumeRunId ?: request.traceId,
+                interactionRequests = interactionRequests,
                 emitToolOutput = { event ->
                     runCatching {
                         runBlocking { eventQueue.send(event) }
@@ -106,6 +119,8 @@ class KoogAgentGateway(
                 approvalAgent = approvalAgentFactory(request) ?: com.agent.shared.tool.runtime.ManualFallbackToolApprovalAgent,
                 hookDispatcher = hookDispatcher,
                 sessionId = request.sessionId,
+                fileMutationJournal = persistenceDatabase?.let(::FileMutationJournal),
+                todoRepository = persistenceDatabase?.let(::AgentTodoRepository),
             ).create()
             launch(executionDispatcher) {
                 var mcpLease: com.agent.shared.agent.resource.McpToolRegistryLease? = null
@@ -229,6 +244,7 @@ class KoogAgentGateway(
         dispatcher: AgentHookDispatcher,
         emitEvent: suspend (AgentStreamEvent) -> Unit,
     ): AgentRunRequest? {
+        if (request.resumeRunId != null) return request
         var preparedRequest = request
         if (request.sessionId.isBlank() || startedHookSessions.add(request.sessionId)) {
             val startResult = AgentRunTiming(request.traceId).phase("session_start_hook", "正在执行启动 Hook…", emitEvent) { dispatchHookSafely(
@@ -271,7 +287,10 @@ class KoogAgentGateway(
     ): String {
         var currentRequest = request
         repeat(STOP_RETRY_LIMIT + 1) { retryIndex ->
-            val result = agentRunner(currentRequest, toolRegistry, bridge, emitEvent)
+            val result = agentRunner?.invoke(currentRequest, toolRegistry, bridge, emitEvent)
+                ?: runWithContextOverflowRetry(currentRequest, persistenceDatabase, emitEvent) { attempt, forward ->
+                    runWithKoogAgent(attempt, toolRegistry, bridge, forward, persistenceDatabase)
+                }
             val stopResult = dispatchHookSafely(
                 hookDispatcher,
                 hookRequest(
@@ -323,6 +342,9 @@ class KoogAgentGateway(
      */
     private fun eventEmittingBridge(
         emitEvent: suspend (AgentStreamEvent) -> Unit,
+        conversationId: String,
+        runId: String,
+        interactionRequests: InteractionRequestRepository?,
         emitToolOutput: (AgentStreamEvent.ToolOutputDelta) -> Unit,
         emitFileDiffPreview: (AgentStreamEvent.ToolFileDiffPreviewed) -> Unit,
     ): DesktopToolInteractionBridge = object : DesktopToolInteractionBridge {
@@ -330,15 +352,35 @@ class KoogAgentGateway(
             interactionBridge.isApprovalAutoApproved(request)
 
         override suspend fun requestQuestion(request: QuestionRequest): String {
-            emitEvent(AgentStreamEvent.QuestionRequested(request))
-            return interactionBridge.requestQuestion(request)
+            if (runId.isNotBlank()) interactionRequests?.claimQuestion(runId, request)?.let { return it }
+            val savedRequest = if (conversationId.isNotBlank() && runId.isNotBlank()) {
+                interactionRequests?.recordQuestion(conversationId, runId, request) ?: request
+            } else {
+                request
+            }
+            emitEvent(AgentStreamEvent.QuestionRequested(savedRequest))
+            return interactionBridge.requestQuestion(savedRequest).also { response ->
+                interactionRequests?.consumed(savedRequest.requestId, response)
+            }
         }
 
         override suspend fun requestApproval(request: ApprovalRequest): Boolean {
-            if (!interactionBridge.isApprovalAutoApproved(request)) {
-                emitEvent(AgentStreamEvent.ApprovalRequested(request))
+            if (interactionBridge.isApprovalAutoApproved(request)) return interactionBridge.requestApproval(request)
+            if (runId.isNotBlank()) {
+                interactionRequests?.claimApproval(runId, request)?.let { decision ->
+                    if (decision.allowToolType) interactionBridge.rememberApproval(request)
+                    return decision.approved
+                }
             }
-            return interactionBridge.requestApproval(request)
+            val savedRequest = if (conversationId.isNotBlank() && runId.isNotBlank()) {
+                interactionRequests?.recordApproval(conversationId, runId, request) ?: request
+            } else {
+                request
+            }
+            emitEvent(AgentStreamEvent.ApprovalRequested(savedRequest))
+            return interactionBridge.requestApproval(savedRequest).also { approved ->
+                interactionRequests?.consumed(savedRequest.requestId, approved.toString())
+            }
         }
 
         override fun onToolOutputChunk(

@@ -230,6 +230,25 @@ internal fun TaskStatusIndicator(status: ChatTaskStatus) {
         val stroke = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
         val inset = 2.5.dp.toPx()
         when (status) {
+            ChatTaskStatus.NONE -> Unit
+
+            ChatTaskStatus.WAITING -> drawCircle(
+                color = AppAccent,
+                radius = 4.dp.toPx(),
+            )
+
+            ChatTaskStatus.FAILED -> {
+                drawCircle(color = AppDanger, radius = 6.dp.toPx(), style = stroke)
+                drawLine(
+                    color = AppDanger,
+                    start = Offset(size.width / 2f, size.height * 0.31f),
+                    end = Offset(size.width / 2f, size.height * 0.57f),
+                    strokeWidth = 1.8.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+                drawCircle(color = AppDanger, radius = 1.dp.toPx(), center = Offset(size.width / 2f, size.height * 0.7f))
+            }
+
             ChatTaskStatus.NEW -> drawCircle(
                 color = AppMuted,
                 radius = (size.minDimension - inset * 2f) / 2f,
@@ -248,6 +267,23 @@ internal fun TaskStatusIndicator(status: ChatTaskStatus) {
                 size = androidx.compose.ui.geometry.Size(size.width - inset * 2f, size.height - inset * 2f),
                 style = stroke,
             )
+
+            ChatTaskStatus.PAUSED -> {
+                drawLine(
+                    color = AppMuted,
+                    start = Offset(size.width * 0.38f, size.height * 0.29f),
+                    end = Offset(size.width * 0.38f, size.height * 0.71f),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    color = AppMuted,
+                    start = Offset(size.width * 0.62f, size.height * 0.29f),
+                    end = Offset(size.width * 0.62f, size.height * 0.71f),
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
 
             ChatTaskStatus.DONE -> {
                 drawLine(

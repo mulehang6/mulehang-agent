@@ -11,6 +11,7 @@
     }
   },
   "maxIterations": -1,
+  "contextCompactionThresholdPercent": 80,
   "hooks": {
     "PreToolUse": [
       {

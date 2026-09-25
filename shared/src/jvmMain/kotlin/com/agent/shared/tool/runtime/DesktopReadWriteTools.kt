@@ -57,7 +57,7 @@ class DesktopReadWriteTools(private val fileSupport: DesktopFileToolSupport) {
     }
 
     /** 审批完成后提交整个批次；任何失败都会恢复先前已写入的文件。 */
-    fun applyPatch(pending: PendingPatchBatch): String {
+    fun applyPatch(pending: PendingPatchBatch, onApplied: (PendingPatchBatch) -> Unit = {}): String {
         pending.files.forEach(::ensureUnchangedSincePreview)
         val applied = mutableListOf<PendingFilePatch>()
         try {
@@ -65,6 +65,7 @@ class DesktopReadWriteTools(private val fileSupport: DesktopFileToolSupport) {
                 applyOne(file)
                 applied += file
             }
+            onApplied(pending)
         } catch (error: Exception) {
             applied.asReversed().forEach { file -> runCatching { restore(file) } }
             throw IllegalStateException("PATCH_APPLY_FAILED: 批量写入失败，已尝试回滚已完成的文件。", error)

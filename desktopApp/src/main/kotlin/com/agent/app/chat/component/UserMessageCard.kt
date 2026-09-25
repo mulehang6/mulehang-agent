@@ -13,6 +13,7 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,6 +53,8 @@ import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.ActionButton
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.Text
+import org.jetbrains.jewel.ui.component.PopupMenu
+import org.jetbrains.jewel.ui.component.Tooltip
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -77,6 +80,7 @@ internal fun UserMessageCard(
     onPositioned: (anchorId: String, topInWindow: Float, bottomInWindow: Float) -> Unit,
     onEditFromHere: (String) -> Unit,
     onNewSession: (String) -> Unit,
+    onRollback: (String, Boolean) -> Unit,
 ) {
     val travelDistancePx = with(LocalDensity.current) { MESSAGE_ENTRY_TRAVEL.toPx() }
     val progress = remember(entryMotionId) { Animatable(if (entryMotionId == null) 1f else 0f) }
@@ -142,6 +146,7 @@ internal fun UserMessageCard(
             keyboardVisible = actionsHaveFocus,
             onEditFromHere = onEditFromHere,
             onNewSession = onNewSession,
+            onRollback = onRollback,
         )
     }
 }
@@ -156,9 +161,11 @@ private fun UserMessageActionRow(
     onFocusWithinChange: (Boolean) -> Unit,
     onEditFromHere: (String) -> Unit,
     onNewSession: (String) -> Unit,
+    onRollback: (String, Boolean) -> Unit,
 ) {
     var copyFeedback by remember(turn.anchorId) { mutableStateOf(CopyFeedback.IDLE) }
     var copyFeedbackNonce by remember(turn.anchorId) { mutableIntStateOf(0) }
+    var rollbackMenuExpanded by remember(turn.anchorId) { mutableStateOf(false) }
     val animatedPointerAlpha by animateFloatAsState(
         targetValue = if (pointerVisible || operationInProgress) 1f else 0f,
         animationSpec = tween(durationMillis = 120),
@@ -196,6 +203,32 @@ private fun UserMessageActionRow(
             },
         )
         turn.sourceUserEntryId?.let { entryId ->
+            Box {
+                Tooltip(tooltip = { Text("回退到此处") }) {
+                    ActionButton(
+                        onClick = { rollbackMenuExpanded = true },
+                        enabled = actionsVisible && !operationInProgress,
+                        contentPadding = PaddingValues(horizontal = 5.dp),
+                    ) {
+                        Text("↶", style = JewelTheme.defaultTextStyle.copy(color = AppMuted))
+                    }
+                }
+                if (rollbackMenuExpanded) {
+                    PopupMenu(
+                        onDismissRequest = { rollbackMenuExpanded = false; true },
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        selectableItem(selected = false, onClick = {
+                            rollbackMenuExpanded = false
+                            onRollback(entryId, false)
+                        }) { Text("仅回退会话") }
+                        selectableItem(selected = false, onClick = {
+                            rollbackMenuExpanded = false
+                            onRollback(entryId, true)
+                        }) { Text("回退会话并恢复文件") }
+                    }
+                }
+            }
             MessageActionButton(
                 icon = AllIconsKeys.Actions.Edit,
                 label = "从此处编辑",

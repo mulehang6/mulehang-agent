@@ -92,12 +92,14 @@ internal fun FooterComposerSection(
                         }
                     }
             }
+            AgentTodoCapsule(state.ui.activeConversationOrNull)
             ComposerPanel(
                 state = state,
                 onSendDraft = onSendDraft,
                 composerInputMaxHeight = composerInputMaxHeight,
                 modifier = Modifier.fillMaxWidth(),
             )
+            AgentRunMetrics(state.ui.activeConversationOrNull)
         }
     }
 }

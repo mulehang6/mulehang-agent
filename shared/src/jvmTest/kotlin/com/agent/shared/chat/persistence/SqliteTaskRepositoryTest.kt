@@ -1,341 +1,198 @@
 package com.agent.shared.chat.persistence
 
+import com.agent.shared.agent.status.AgentTodoDraft
+import com.agent.shared.agent.status.AgentTodoRepository
+import com.agent.shared.agent.status.AgentTodoStatus
+import com.agent.shared.persistence.DesktopPersistenceDatabase
 import java.nio.file.Files
-import kotlin.io.path.ExperimentalPathApi
-import kotlin.io.path.deleteRecursively
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 
-/**
- * 验证 SQLite 任务仓库对完整持久化快照的读写语义。
- */
+/** 验证 SQLDelight 会话仓库的新库语义。 */
 class SqliteTaskRepositoryTest {
-    private val databaseDirectory = Files.createTempDirectory("mulehang-task-repository-test")
+    /** 回退用户轮次时恢复发送前 TODO，删除本轮 Agent 新增的项目。 */
+    @Test
+    fun `user turn rollback restores previous todos`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-turn-todos").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val repository = SqliteTaskRepository(database)
+            val todos = AgentTodoRepository(database)
+            val before = taskSnapshot().copy(id = "conversation", entries = taskSnapshot().entries.take(1))
+            val after = before.copy(entries = taskSnapshot().entries)
+            repository.saveAll(listOf(before))
+            todos.rewrite(before.id, listOf(AgentTodoDraft("existing", "保留", AgentTodoStatus.IN_PROGRESS)))
+            repository.saveUserTurn(listOf(after), before, after.id, "entry-2")
+            todos.rewrite(after.id, listOf(AgentTodoDraft("new", "新项目", AgentTodoStatus.COMPLETED)))
 
-    /**
-     * 删除临时数据库目录，避免测试污染用户目录。
-     */
-    @AfterTest
-    @OptIn(ExperimentalPathApi::class)
-    fun tearDown() {
-        databaseDirectory.deleteRecursively()
+            repository.rollbackUserTurn(after.id, "entry-2")
+
+            assertEquals(listOf("existing"), todos.list(after.id).map { it.id })
+            assertEquals(AgentTodoStatus.IN_PROGRESS, todos.list(after.id).single().status)
+        }
     }
 
-    /**
-     * 原始 reasoning 与完整工具结果在数据库往返后必须逐字段保留。
-     */
+    /** 完整的会话元数据、负载和条目树应在数据库重开后原样恢复。 */
     @Test
-    fun `should round trip raw reasoning and complete tool output`() = runTest {
-        val repository = SqliteTaskRepository(databaseDirectory.resolve("tasks.db"))
+    fun `should restore complete snapshots after reopening database`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-task-reopen-test").resolve("mulehang.db")
         val expected = taskSnapshot()
-
-        repository.saveAll(listOf(expected))
-
-        assertEquals(listOf(expected), repository.loadAll())
-    }
-
-    /**
-     * 删除任务必须级联删除它的时间线与 Agent history，避免留下不可见敏感数据。
-     */
-    @Test
-    fun `should cascade delete task timeline and history`() = runTest {
-        val repository = SqliteTaskRepository(databaseDirectory.resolve("tasks.db"))
-        repository.saveAll(listOf(taskSnapshot()))
-
-        repository.delete("task-1")
-
-        assertTrue(repository.loadAll().isEmpty())
-    }
-
-    /**
-     * updated_at 时间戳必须随快照往返，且加载按最近更新倒序返回。
-     */
-    @Test
-    fun `should round trip updated at and load newest first`() = runTest {
-        val repository = SqliteTaskRepository(databaseDirectory.resolve("tasks.db"))
-        val older = taskSnapshot().copy(id = "task-old", updatedAt = 100L)
-        val newer = taskSnapshot().copy(id = "task-new", updatedAt = 300L)
-
-        repository.saveAll(listOf(older, newer))
-
-        assertEquals(listOf(newer, older), repository.loadAll())
-    }
-
-    /**
-     * 会话绑定的非默认 profile 与权限档位也必须通过真实 SQLite 仓库完整往返。
-     */
-    @Test
-    fun `should round trip non default profile id and permission preset`() = runTest {
-        val repository = SqliteTaskRepository(databaseDirectory.resolve("tasks.db"))
-        val expected = taskSnapshot().copy(
-            id = "task-2",
-            profileId = "deepseek:deepseek-v4-pro",
-            permissionPreset = "BRAVE",
-        )
-
-        repository.saveAll(listOf(expected))
-
-        assertEquals(listOf(expected), repository.loadAll())
-    }
-
-    /**
-     * v1 遗留数据库缺少 profile_id/permission_preset 列时，打开仓库应自动迁移且不丢数据。
-     */
-    @Test
-    fun `should migrate legacy v1 database and preserve existing rows`() = runTest {
-        val databasePath = databaseDirectory.resolve("legacy.db")
-        createLegacyV1Database(databasePath)
-        val backupDirectory = databaseDirectory.resolve("tasks-backups")
-        Files.createDirectories(backupDirectory)
-        repeat(3) { index ->
-            Files.writeString(backupDirectory.resolve("legacy-00000000000$index.db"), "previous backup")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            SqliteTaskRepository(database).saveAll(listOf(expected))
         }
 
-        val repository = SqliteTaskRepository(databasePath)
-        val tasks = repository.loadAll()
+        val restored = DesktopPersistenceDatabase.open(databasePath).use { database ->
+            SqliteTaskRepository(database).loadAll()
+        }
 
-        assertEquals(1, tasks.size)
-        val migratedTask = tasks.single()
-        assertEquals("task-legacy", migratedTask.id)
-        assertEquals("旧版本任务", migratedTask.title)
-        assertEquals(null, migratedTask.workspaceName)
-        assertEquals(null, migratedTask.detachedWorkspacePath)
-        assertEquals(null, migratedTask.detachedWorkspaceName)
-        assertEquals(null, migratedTask.profileId)
-        assertEquals("DEFAULT", migratedTask.permissionPreset)
-        assertTrue(Files.isDirectory(backupDirectory))
-        Files.list(backupDirectory).use { backups ->
-            assertEquals(3L, backups.count())
+        assertEquals(listOf(expected), restored)
+    }
+
+    /** 删除父会话时子会话应提升为根，子会话负载不得被级联删除。 */
+    @Test
+    fun `should promote child conversation when deleting parent`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-task-parent-test").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val repository = SqliteTaskRepository(database)
+            val parent = taskSnapshot().copy(id = "parent", title = "父会话", updatedAt = 1L)
+            val child = taskSnapshot().copy(
+                id = "child",
+                title = "子会话",
+                parentConversationId = parent.id,
+                updatedAt = 2L,
+            )
+            repository.saveAll(listOf(child, parent))
+
+            repository.delete(parent.id)
+
+            val restoredChild = repository.loadAll().single()
+            assertEquals("child", restoredChild.id)
+            assertNull(restoredChild.parentConversationId)
+            assertEquals(child.timeline, restoredChild.timeline)
         }
     }
 
-    /**
-     * v4 数据库升级到 v5 后必须保留旧任务，并为条目图字段提供兼容默认值。
-     */
+    /** 第一条消息回退后会话应消失，子会话则由外键提升为根。 */
     @Test
-    fun `should migrate v4 database to conversation tree schema`() = runTest {
-        val databasePath = databaseDirectory.resolve("legacy-v4.db")
-        createLegacyV4Database(databasePath)
+    fun `should remove new conversation on first user turn rollback`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-first-turn-test").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val repository = SqliteTaskRepository(database)
+            val parent = taskSnapshot().copy(id = "parent", parentConversationId = null)
+            repository.saveUserTurn(listOf(parent), null, parent.id, "entry-1")
+            val child = taskSnapshot().copy(
+                id = "child",
+                parentConversationId = parent.id,
+                forkedFromEntryId = "entry-1",
+            )
+            repository.saveAll(listOf(parent, child))
 
-        val migratedTask = SqliteTaskRepository(databasePath).loadAll().single()
+            val snapshot = repository.rollbackUserTurn(parent.id, "entry-1")
 
-        assertEquals("task-v4", migratedTask.id)
-        assertEquals(null, migratedTask.parentConversationId)
-        assertEquals(null, migratedTask.forkedFromEntryId)
-        assertEquals(null, migratedTask.activeEntryId)
-        assertEquals(null, migratedTask.headEntryId)
-        assertEquals(null, migratedTask.archivedAt)
-        assertEquals(0, migratedTask.treeFormatVersion)
-        assertTrue(migratedTask.entries.isEmpty())
-        Files.list(databaseDirectory.resolve("tasks-backups")).use { backups ->
-            assertEquals(1L, backups.count())
+            assertNull(snapshot?.before)
+            assertEquals(listOf("child"), repository.loadAll().map(PersistedTask::id))
+            assertNull(repository.loadAll().single().parentConversationId)
+            assertNull(repository.rollbackUserTurn(parent.id, "entry-1"))
         }
     }
 
-    /** v5 树会话升级到 v6 时，持久末端从原活动 leaf 回填。 */
+    /** 后续消息回退恢复旧主线，并保留从被移除消息派生出的独立子会话。 */
     @Test
-    fun `should backfill head from active entry during v6 migration`() = runTest {
-        val databasePath = databaseDirectory.resolve("legacy-v5.db")
-        createLegacyV5Database(databasePath)
+    fun `should restore previous turn and promote detached child`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-later-turn-test").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val repository = SqliteTaskRepository(database)
+            val before = taskSnapshot().copy(id = "parent", entries = taskSnapshot().entries.take(1),
+                activeEntryId = "entry-1", headEntryId = "entry-1")
+            val after = before.copy(entries = taskSnapshot().entries, activeEntryId = "entry-2", headEntryId = "entry-2")
+            repository.saveAll(listOf(before))
+            repository.saveUserTurn(listOf(after), before, after.id, "entry-2")
+            val child = taskSnapshot().copy(id = "child", parentConversationId = after.id, forkedFromEntryId = "entry-2")
+            repository.saveAll(listOf(after, child))
 
-        val migratedTask = SqliteTaskRepository(databasePath).loadAll().single()
+            val snapshot = repository.rollbackUserTurn(after.id, "entry-2")
+            val restored = repository.loadAll().associateBy(PersistedTask::id)
 
-        assertEquals("entry-v5", migratedTask.activeEntryId)
-        assertEquals("entry-v5", migratedTask.headEntryId)
-        assertEquals(1, migratedTask.treeFormatVersion)
-    }
-
-    /**
-     * 手工建立不含 v2 列的 v1 schema 数据库，模拟迁移前遗留下来的真实数据文件。
-     */
-    private fun createLegacyV1Database(databasePath: java.nio.file.Path) {
-        java.sql.DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
-            connection.createStatement().use { statement ->
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE schema_migration (
-                        version INTEGER PRIMARY KEY,
-                        applied_at INTEGER NOT NULL
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate("INSERT INTO schema_migration(version, applied_at) VALUES (1, 0)")
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task (
-                        id TEXT PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        workspace_path TEXT NOT NULL,
-                        reasoning_effort TEXT NOT NULL,
-                        context_usage_fraction REAL NOT NULL,
-                        execution_state TEXT NOT NULL,
-                        execution_error_title TEXT,
-                        execution_error_message TEXT,
-                        attachments_json TEXT NOT NULL,
-                        created_at INTEGER NOT NULL,
-                        updated_at INTEGER NOT NULL
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_timeline_item (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        sequence INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, sequence)
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_history_item (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        sequence INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, sequence)
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    INSERT INTO task(
-                        id, title, workspace_path, reasoning_effort, context_usage_fraction,
-                        execution_state, execution_error_title, execution_error_message,
-                        attachments_json, created_at, updated_at
-                    ) VALUES (
-                        'task-legacy', '旧版本任务', 'D:\workspace', 'MEDIUM', 0.0,
-                        'IDLE', NULL, NULL, '[]', 0, 0
-                    )
-                    """.trimIndent(),
-                )
-            }
+            assertEquals(before, snapshot?.before)
+            assertEquals(before, restored[after.id])
+            assertNull(restored[child.id]?.parentConversationId)
         }
     }
 
-    /** 在既有 v4 固定数据上补齐 v5 结构，供 v6 head 回填测试使用。 */
-    private fun createLegacyV5Database(databasePath: java.nio.file.Path) {
-        createLegacyV4Database(databasePath)
-        java.sql.DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
-            connection.createStatement().use { statement ->
-                statement.executeUpdate("ALTER TABLE task ADD COLUMN parent_conversation_id TEXT")
-                statement.executeUpdate("ALTER TABLE task ADD COLUMN forked_from_entry_id TEXT")
-                statement.executeUpdate("ALTER TABLE task ADD COLUMN active_entry_id TEXT")
-                statement.executeUpdate("ALTER TABLE task ADD COLUMN archived_at INTEGER")
-                statement.executeUpdate("ALTER TABLE task ADD COLUMN tree_format_version INTEGER NOT NULL DEFAULT 0")
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_entry (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        id TEXT NOT NULL,
-                        parent_id TEXT,
-                        created_at INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, id)
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate("CREATE INDEX task_entry_parent_idx ON task_entry(task_id, parent_id, created_at)")
-                statement.executeUpdate("UPDATE task SET active_entry_id = 'entry-v5', tree_format_version = 1")
-                statement.executeUpdate(
-                    """
-                    INSERT INTO task_entry(task_id, id, parent_id, created_at, type, payload_json)
-                    VALUES ('task-v4', 'entry-v5', NULL, 1, 'message', '{"role":"USER","parts":[]}')
-                    """.trimIndent(),
-                )
-                statement.executeUpdate("INSERT INTO schema_migration(version, applied_at) VALUES (5, 0)")
-            }
+    /** 回退较早轮次时要清理其后的回退点，避免未来消息再次被错误恢复。 */
+    @Test
+    fun `should remove later user turn checkpoints`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-turn-order-test").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val repository = SqliteTaskRepository(database)
+            val beforeFirst = taskSnapshot().copy(
+                id = "parent",
+                entries = emptyList(),
+                activeEntryId = null,
+                headEntryId = null,
+                timeline = emptyList(),
+                history = emptyList(),
+            )
+            val first = taskSnapshot().copy(id = "parent", entries = taskSnapshot().entries.take(1),
+                activeEntryId = "entry-1", headEntryId = "entry-1")
+            val second = first.copy(entries = taskSnapshot().entries)
+            repository.saveAll(listOf(beforeFirst))
+            repository.saveUserTurn(listOf(first), beforeFirst, first.id, "entry-1")
+            repository.saveUserTurn(listOf(second), first, second.id, "entry-2")
+
+            repository.rollbackUserTurn(first.id, "entry-1")
+
+            assertNull(repository.rollbackUserTurn(first.id, "entry-2"))
+            assertEquals(beforeFirst, repository.loadAll().single())
         }
     }
 
-    /**
-     * 建立已完成前四版迁移的数据库，用于隔离验证 v5 条目图迁移。
-     */
-    private fun createLegacyV4Database(databasePath: java.nio.file.Path) {
-        java.sql.DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}").use { connection ->
-            connection.createStatement().use { statement ->
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE schema_migration (
-                        version INTEGER PRIMARY KEY,
-                        applied_at INTEGER NOT NULL
-                    )
-                    """.trimIndent(),
-                )
-                (1..4).forEach { version ->
-                    statement.executeUpdate("INSERT INTO schema_migration(version, applied_at) VALUES ($version, 0)")
+    /** 保存快照失败时事务应回滚，不能留下半套时间线或会话行。 */
+    @Test
+    fun `should roll back failed write transaction`() {
+        val databasePath = Files.createTempDirectory("mulehang-task-rollback-test").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            runCatching {
+                database.write { queries ->
+                    queries.upsertUiState("desktop", 1L, "{}", 1L)
+                    error("模拟事务失败")
                 }
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task (
-                        id TEXT PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        workspace_path TEXT NOT NULL,
-                        reasoning_effort TEXT NOT NULL,
-                        context_usage_fraction REAL NOT NULL,
-                        execution_state TEXT NOT NULL,
-                        execution_error_title TEXT,
-                        execution_error_message TEXT,
-                        attachments_json TEXT NOT NULL,
-                        created_at INTEGER NOT NULL,
-                        updated_at INTEGER NOT NULL,
-                        profile_id TEXT,
-                        permission_preset TEXT NOT NULL DEFAULT 'DEFAULT',
-                        workspace_name TEXT,
-                        detached_workspace_path TEXT,
-                        detached_workspace_name TEXT
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_timeline_item (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        sequence INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, sequence)
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    CREATE TABLE task_history_item (
-                        task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                        sequence INTEGER NOT NULL,
-                        type TEXT NOT NULL,
-                        payload_json TEXT NOT NULL,
-                        PRIMARY KEY (task_id, sequence)
-                    )
-                    """.trimIndent(),
-                )
-                statement.executeUpdate(
-                    """
-                    INSERT INTO task(
-                        id, title, workspace_path, reasoning_effort, context_usage_fraction,
-                        execution_state, execution_error_title, execution_error_message,
-                        attachments_json, created_at, updated_at, profile_id, permission_preset,
-                        workspace_name, detached_workspace_path, detached_workspace_name
-                    ) VALUES (
-                        'task-v4', '第四版任务', 'D:\workspace', 'MEDIUM', 0.0,
-                        'IDLE', NULL, NULL, '[]', 0, 40, NULL, 'DEFAULT',
-                        '工作区', NULL, NULL
-                    )
-                    """.trimIndent(),
-                )
             }
+
+            val persisted = database.read { queries -> queries.selectUiState("desktop").executeAsOneOrNull() }
+            assertNull(persisted)
         }
     }
 
-    /**
-     * 构造含完整原始负载的固定任务快照，不依赖被测仓库的实现细节。
-     */
+    /** 同一数据库实例的并发写入应被串行化且最终文件仍可重开。 */
+    @Test
+    fun `should serialize concurrent snapshot writes`() = runTest {
+        val databasePath = Files.createTempDirectory("mulehang-task-concurrency-test").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val repository = SqliteTaskRepository(database)
+            coroutineScope {
+                repeat(8) { index ->
+                    launch {
+                        repository.saveAll(
+                            listOf(taskSnapshot().copy(title = "版本 $index", updatedAt = index.toLong())),
+                        )
+                    }
+                }
+            }
+        }
+
+        DesktopPersistenceDatabase.open(databasePath).use { database ->
+            val restored = SqliteTaskRepository(database).loadAll()
+            assertEquals(1, restored.size)
+            assertTrue(restored.single().title.startsWith("版本 "))
+        }
+    }
+
+    /** 构造包含稳定字段、版本化 JSON 和条目图的固定会话。 */
     private fun taskSnapshot(): PersistedTask = PersistedTask(
         id = "task-1",
         title = "持久化测试",
@@ -343,52 +200,31 @@ class SqliteTaskRepositoryTest {
         workspaceName = "测试工作区",
         detachedWorkspacePath = "D:\\previous-workspace",
         detachedWorkspaceName = "旧工作区",
-        parentConversationId = "task-parent",
+        parentConversationId = null,
         forkedFromEntryId = "entry-source",
         activeEntryId = "entry-2",
         headEntryId = "entry-2",
         archivedAt = 987L,
         treeFormatVersion = 1,
         reasoningEffort = "HIGH",
+        profileId = "deepseek:deepseek-v4-pro",
+        permissionPreset = "BRAVE",
         contextUsageFraction = 0.5f,
         executionState = "IDLE",
         executionErrorTitle = null,
         executionErrorMessage = null,
         attachmentsJson = "[{\"path\":\"D:/workspace/input.txt\",\"name\":\"input.txt\"}]",
         timeline = listOf(
-            PersistedTimelineItem(
-                sequence = 0,
-                type = "reasoning",
-                payloadJson = "{\"summaryText\":\"摘要\",\"rawText\":\"原始推理内容\"}",
-            ),
-            PersistedTimelineItem(
-                sequence = 1,
-                type = "tool_event",
-                payloadJson = "{\"toolName\":\"run_powershell\",\"arguments\":\"Get-Content secret.txt\",\"resultDisplay\":\"完整工具输出\"}",
-            ),
+            PersistedTimelineItem(0, "reasoning", "{\"summaryText\":\"摘要\"}"),
+            PersistedTimelineItem(1, "tool_event", "{\"toolName\":\"run_powershell\"}"),
         ),
         history = listOf(
-            PersistedHistoryItem(
-                sequence = 0,
-                type = "assistant",
-                payloadJson = "{\"parts\":[{\"type\":\"reasoning\",\"rawText\":\"原始推理内容\"}]}",
-            ),
+            PersistedHistoryItem(0, "assistant", "{\"parts\":[]}"),
         ),
         entries = listOf(
-            PersistedTaskEntry(
-                id = "entry-1",
-                parentId = null,
-                createdAt = 10L,
-                type = "message",
-                payloadJson = "{\"role\":\"USER\",\"parts\":[{\"type\":\"text\",\"text\":\"开始\"}]}",
-            ),
-            PersistedTaskEntry(
-                id = "entry-2",
-                parentId = "entry-1",
-                createdAt = 20L,
-                type = "label",
-                payloadJson = "{\"targetEntryId\":\"entry-1\",\"label\":\"检查点\"}",
-            ),
+            PersistedTaskEntry("entry-1", null, 10L, "message", "{\"role\":\"USER\"}"),
+            PersistedTaskEntry("entry-2", "entry-1", 20L, "label", "{\"label\":\"检查点\"}"),
         ),
+        updatedAt = 42L,
     )
 }

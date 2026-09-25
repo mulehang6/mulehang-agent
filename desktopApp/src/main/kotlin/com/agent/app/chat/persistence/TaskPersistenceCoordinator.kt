@@ -2,6 +2,8 @@ package com.agent.app.chat.persistence
 
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.shared.chat.persistence.TaskRepository
+import com.agent.shared.tool.runtime.FileMutationJournal
+import com.agent.shared.tool.runtime.FileRestoreSummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +22,7 @@ class TaskPersistenceCoordinator(
     private val repository: TaskRepository,
     private val scope: CoroutineScope,
     private val reportError: (String) -> Unit,
+    private val fileMutationJournal: FileMutationJournal? = null,
 ) {
     private val writeMutex = Mutex()
     private var scheduledWrite: Job? = null
@@ -61,6 +64,64 @@ class TaskPersistenceCoordinator(
         }
     }
 
+    /** 用户消息被接受后立即保存，保证带外键的 Agent run 不会先于会话写入。 */
+    suspend fun saveNow(tasks: List<ChatConversationUiState>) {
+        if (!persistenceEnabled) error("历史会话尚未完成加载，不能启动持久化运行。")
+        scheduledWrite?.cancel()
+        writeMutex.withLock {
+            withContext(Dispatchers.IO) {
+                repository.saveAll(tasks.map(ChatTaskSnapshotMapper::toPersistedTask))
+            }
+        }
+    }
+
+    /** 首次或后续发送都以单个事务保存消息和其 USER_TURN 回退点。 */
+    suspend fun saveAcceptedUserTurn(
+        tasks: List<ChatConversationUiState>,
+        before: ChatConversationUiState?,
+        conversationId: String,
+        userEntryId: String,
+    ) {
+        if (!persistenceEnabled) error("历史会话尚未完成加载，不能接受用户消息。")
+        scheduledWrite?.cancel()
+        writeMutex.withLock {
+            withContext(Dispatchers.IO) {
+                repository.saveUserTurn(
+                    tasks = tasks.map(ChatTaskSnapshotMapper::toPersistedTask),
+                    before = before?.let(ChatTaskSnapshotMapper::toPersistedTask),
+                    conversationId = conversationId,
+                    userEntryId = userEntryId,
+                )
+            }
+        }
+    }
+
+    /** 从永久 USER_TURN 快照回退，并返回数据库事务提交后的会话树。 */
+    suspend fun rollbackUserTurn(
+        conversationId: String,
+        userEntryId: String,
+        restoreFiles: Boolean,
+    ): UserTurnRollbackOutcome? {
+        if (!persistenceEnabled) error("历史会话尚未完成加载，不能回退用户消息。")
+        scheduledWrite?.cancel()
+        return writeMutex.withLock {
+            withContext(Dispatchers.IO) {
+                val fileSummary = if (restoreFiles) {
+                    requireNotNull(fileMutationJournal) { "文件恢复服务不可用。" }
+                        .restoreFromUserTurn(conversationId, userEntryId)
+                } else {
+                    FileRestoreSummary(emptyList(), emptyList())
+                }
+                repository.rollbackUserTurn(conversationId, userEntryId)
+                    ?: return@withContext null
+                UserTurnRollbackOutcome(
+                    tasks = repository.loadAll().map(ChatTaskSnapshotMapper::toConversation),
+                    fileSummary = fileSummary,
+                )
+            }
+        }
+    }
+
     /**
      * 读取并映射此前保存的全部任务。
      */
@@ -88,6 +149,12 @@ class TaskPersistenceCoordinator(
         const val SAVE_DEBOUNCE_MILLIS = 300L
     }
 }
+
+/** 用户轮次回退后的会话树及可展示的文件冲突摘要。 */
+data class UserTurnRollbackOutcome(
+    val tasks: List<ChatConversationUiState>,
+    val fileSummary: FileRestoreSummary,
+)
 
 /**
  * 判断一次持久化异常是否应反馈给用户；协程取消是新快照替换旧快照的正常调度结果。

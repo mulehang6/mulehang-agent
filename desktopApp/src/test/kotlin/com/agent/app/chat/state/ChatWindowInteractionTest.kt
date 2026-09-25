@@ -18,6 +18,71 @@ import kotlin.test.*
 /** 验证ChatWindowInteractionTest的状态转换。 */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatWindowInteractionTest : ChatWindowTestFixture() {
+    /** Provider 的实际用量在助手收尾后仍优先于文本估算。 */
+    @Test
+    fun `should keep provider usage after completion`() = runTest(dispatcher) {
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                emit(AgentStreamEvent.Started)
+                emit(AgentStreamEvent.UsageUpdated(50, 10, 100))
+                emit(AgentStreamEvent.Completed("完成"))
+            }
+        }
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\abc\\def",
+        )
+        state.send("执行")
+        advanceUntilIdle()
+        assertEquals(0.5f, state.ui.activeConversation.contextUsageFraction)
+    }
+
+    /** 暂停取消原请求，继续沿同一用户轮次恢复并完成。 */
+    @Test
+    fun `should pause and resume the same user turn`() = runTest(dispatcher) {
+        val requests = mutableListOf<AgentRunRequest>()
+        val gateway = object : AgentGateway {
+            override fun run(request: AgentRunRequest): Flow<AgentStreamEvent> = flow {
+                requests += request
+                emit(AgentStreamEvent.Started)
+                if (requests.size == 1) awaitCancellation()
+                emit(AgentStreamEvent.Completed("resumed"))
+            }
+        }
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(gateway),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\abc\\def",
+        )
+
+        state.send("continue this task")
+        advanceUntilIdle()
+        val conversationId = state.ui.activeConversationId
+        assertEquals(ExecutionState.Running, state.ui.activeConversation.executionState)
+
+        state.pauseActiveRun()
+        advanceUntilIdle()
+        assertEquals(ExecutionState.Paused, state.ui.activeConversation.executionState)
+        assertNull(state.activeRunJob)
+        assertNull(state.activeRunConversationId)
+        state.send("must not create a second turn")
+        advanceUntilIdle()
+        assertEquals(1, requests.size)
+        assertEquals(1, state.ui.activeConversation.history.filterIsInstance<AgentConversationHistoryMessage.User>().size)
+
+        state.resumeActiveRun()
+        advanceUntilIdle()
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals(conversationId, state.ui.activeConversationId)
+        assertEquals(2, requests.size)
+        assertEquals("continue this task", requests.last().prompt)
+        assertEquals(ExecutionState.Idle, state.ui.activeConversation.executionState)
+        assertEquals("resumed", (state.ui.activeConversation.items.last() as ChatMessageItem).message.content)
+    }
+
     /**
      * 执行中再次触发主按钮时应取消当前轮次，并恢复到空闲态。
      */
@@ -180,17 +245,16 @@ class ChatWindowInteractionTest : ChatWindowTestFixture() {
         val ownerConversationId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\ghi")
         val otherConversationId = state.ui.activeConversationId
+        assertEquals("", otherConversationId)
 
         state.answerPendingQuestion("Option A")
         advanceUntilIdle()
 
         val ownerConversation = state.findConversation(ownerConversationId)
-        val otherConversation = state.findConversation(otherConversationId)
         assertEquals(ExecutionState.Idle, ownerConversation.executionState)
         assertEquals(null, ownerConversation.pendingQuestion)
         assertEquals("selected: Option A", (ownerConversation.items.last() as ChatMessageItem).message.content)
-        assertEquals(ExecutionState.Idle, otherConversation.executionState)
-        assertEquals(null, otherConversation.pendingQuestion)
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /**
@@ -322,17 +386,16 @@ class ChatWindowInteractionTest : ChatWindowTestFixture() {
         val ownerConversationId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\ghi")
         val otherConversationId = state.ui.activeConversationId
+        assertEquals("", otherConversationId)
 
         state.answerPendingApproval(true)
         advanceUntilIdle()
 
         val ownerConversation = state.findConversation(ownerConversationId)
-        val otherConversation = state.findConversation(otherConversationId)
         assertEquals(ExecutionState.Idle, ownerConversation.executionState)
         assertEquals(null, ownerConversation.pendingApproval)
         assertEquals("approved: true", (ownerConversation.items.last() as ChatMessageItem).message.content)
-        assertEquals(ExecutionState.Idle, otherConversation.executionState)
-        assertEquals(null, otherConversation.pendingApproval)
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /**

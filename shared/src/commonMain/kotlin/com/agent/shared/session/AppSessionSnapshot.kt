@@ -13,4 +13,6 @@ data class AppSessionSnapshot(
     val fasterProfiles: Map<String, ConfigProfile> = emptyMap(),
     /** 仅来自用户级 settings 的命令 Hook 设置。 */
     val hookSettings: AgentHookSettings = AgentHookSettings(),
+    /** 当前用户级上下文压缩阈值。 */
+    val contextCompactionThresholdPercent: Int = 80,
 )

@@ -1,495 +1,335 @@
 package com.agent.shared.chat.persistence
 
-import java.nio.file.Files
+import com.agent.shared.agent.status.AgentTodoItem
+import com.agent.shared.agent.status.AgentTodoStatus
+import com.agent.shared.persistence.DesktopPersistenceDatabase
+import com.agent.shared.persistence.db.Conversation
+import com.agent.shared.persistence.db.MulehangDatabaseQueries
 import java.nio.file.Path
-import java.sql.Connection
-import java.sql.DriverManager
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 /**
- * 使用本机 SQLite 文件保存完整任务快照的仓库。
+ * 使用统一 SQLDelight 数据库保存完整会话快照的仓库。
+ *
+ * 快照更新只替换对应会话的时间线、历史与条目，不会误删运行检查点、TODO 或通知等关联数据。
  */
 class SqliteTaskRepository(
-    private val databasePath: Path,
+    private val persistence: DesktopPersistenceDatabase,
 ) : TaskRepository {
-    /**
-     * 读取按最近更新时间排序的全部任务及其关联内容。
-     */
+    /** 为测试和独立调用保留的便捷构造函数。 */
+    constructor(databasePath: Path) : this(DesktopPersistenceDatabase.open(databasePath))
+
+    /** 将旧版 tasks.db 中尚未进入统一库的会话导入一次，并保留原数据库。 */
+    suspend fun importLegacyDatabase(legacyDatabasePath: Path): Boolean = withContext(Dispatchers.IO) {
+        val alreadyImported = persistence.read { queries ->
+            queries.selectUiState(LEGACY_TASK_DATABASE_MIGRATION_KEY).executeAsOneOrNull() != null
+        }
+        if (alreadyImported) return@withContext false
+        val legacyTasks = LegacyTaskDatabaseReader.read(legacyDatabasePath) ?: return@withContext false
+        persistence.write { queries ->
+            if (queries.selectUiState(LEGACY_TASK_DATABASE_MIGRATION_KEY).executeAsOneOrNull() != null) {
+                return@write false
+            }
+            val existingIds = queries.selectConversationIds().executeAsList().toHashSet()
+            val tasksToImport = legacyTasks.filterNot { it.id in existingIds }
+            upsertTaskRows(queries, tasksToImport)
+            queries.upsertUiState(
+                state_key = LEGACY_TASK_DATABASE_MIGRATION_KEY,
+                payload_version = 1L,
+                payload_json = "{\"completed\":true}",
+                updated_at = System.currentTimeMillis(),
+            )
+            true
+        }
+    }
+
+    /** 读取按最近更新时间排序的全部会话及其关联内容。 */
     override suspend fun loadAll(): List<PersistedTask> = withContext(Dispatchers.IO) {
-        openConnection().use { connection ->
-            connection.prepareStatement(
-                """
-                SELECT id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
-                    parent_conversation_id, forked_from_entry_id, active_entry_id, head_entry_id, archived_at, tree_format_version,
-                    reasoning_effort, profile_id, permission_preset,
-                    context_usage_fraction, execution_state, execution_error_title, execution_error_message, attachments_json,
-                    updated_at
-                FROM task
-                ORDER BY updated_at DESC, id 
-                """.trimIndent(),
-            ).use { statement ->
-                statement.executeQuery().use { resultSet ->
-                    buildList {
-                        while (resultSet.next()) {
-                            val taskId = resultSet.getString("id")
-                            add(
-                                PersistedTask(
-                                    id = taskId,
-                                    title = resultSet.getString("title"),
-                                    workspacePath = resultSet.getString("workspace_path"),
-                                    workspaceName = resultSet.getString("workspace_name"),
-                                    detachedWorkspacePath = resultSet.getString("detached_workspace_path"),
-                                    detachedWorkspaceName = resultSet.getString("detached_workspace_name"),
-                                    parentConversationId = resultSet.getString("parent_conversation_id"),
-                                    forkedFromEntryId = resultSet.getString("forked_from_entry_id"),
-                                    activeEntryId = resultSet.getString("active_entry_id"),
-                                    headEntryId = resultSet.getString("head_entry_id"),
-                                    archivedAt = resultSet.getLongOrNull("archived_at"),
-                                    treeFormatVersion = resultSet.getInt("tree_format_version"),
-                                    reasoningEffort = resultSet.getString("reasoning_effort"),
-                                    profileId = resultSet.getString("profile_id"),
-                                    permissionPreset = resultSet.getString("permission_preset"),
-                                    contextUsageFraction = resultSet.getFloat("context_usage_fraction"),
-                                    executionState = resultSet.getString("execution_state"),
-                                    executionErrorTitle = resultSet.getString("execution_error_title"),
-                                    executionErrorMessage = resultSet.getString("execution_error_message"),
-                                    attachmentsJson = resultSet.getString("attachments_json"),
-                                    updatedAt = resultSet.getLong("updated_at"),
-                                    timeline = loadTimeline(connection, taskId),
-                                    history = loadHistory(connection, taskId),
-                                    entries = loadEntries(connection, taskId),
-                                ),
+        persistence.read(::loadAllRows)
+    }
+
+    /** 在已有数据库访问区中组装全部会话，供读取和原子回退共用。 */
+    private fun loadAllRows(queries: MulehangDatabaseQueries): List<PersistedTask> =
+        queries.selectAllConversations().executeAsList().map { conversation ->
+                conversation.toPersistedTask(
+                    timeline = queries.selectTimelineForConversation(conversation.id)
+                        .executeAsList()
+                        .map { item ->
+                            PersistedTimelineItem(
+                                sequence = item.sequence.toInt(),
+                                type = item.type,
+                                payloadJson = item.payload_json,
+                            )
+                        },
+                    history = queries.selectHistoryForConversation(conversation.id)
+                        .executeAsList()
+                        .map { item ->
+                            PersistedHistoryItem(
+                                sequence = item.sequence.toInt(),
+                                type = item.type,
+                                payloadJson = item.payload_json,
+                            )
+                        },
+                    entries = queries.selectEntriesForConversation(conversation.id)
+                        .executeAsList()
+                        .map { entry ->
+                            PersistedTaskEntry(
+                                id = entry.id,
+                                parentId = entry.parent_id,
+                                createdAt = entry.created_at,
+                                type = entry.type,
+                                payloadJson = entry.payload_json,
+                            )
+                        },
+                )
+        }
+
+    /** 在单个事务中同步当前会话集合，并保留其余统一持久化数据。 */
+    override suspend fun saveAll(tasks: List<PersistedTask>) = withContext(Dispatchers.IO) {
+        persistence.write { queries ->
+            saveAllRows(queries, tasks)
+        }
+    }
+
+    /** 在同一事务中创建会话、用户消息和永久 USER_TURN 回退点。 */
+    override suspend fun saveUserTurn(
+        tasks: List<PersistedTask>,
+        before: PersistedTask?,
+        conversationId: String,
+        userEntryId: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            persistence.write { queries ->
+                saveAllRows(queries, tasks)
+                val now = System.currentTimeMillis()
+                queries.insertCheckpoint(
+                    id = UUID.randomUUID().toString(),
+                    conversation_id = conversationId,
+                    run_id = null,
+                    entry_id = userEntryId,
+                    kind = "USER_TURN",
+                    koog_version = "",
+                    strategy_fingerprint = "",
+                    model_fingerprint = "",
+                    tool_fingerprint = "",
+                    payload_version = 1L,
+                    payload_json = Json.encodeToString(UserTurnSnapshot(
+                        before = before,
+                        todos = queries.selectTodosForConversation(conversationId).executeAsList().map { row ->
+                            AgentTodoItem(
+                                id = row.id,
+                                content = row.content,
+                                status = AgentTodoStatus.valueOf(row.status),
+                                sortOrder = row.sort_order.toInt(),
+                                createdAt = row.created_at,
+                                updatedAt = row.updated_at,
+                            )
+                        },
+                    )),
+                    recovery_state = "READY",
+                    created_at = now,
+                    updated_at = now,
+                )
+            }
+        }
+    }
+
+    /** 以 USER_TURN 快照原子恢复目标会话，并清除从该轮开始的运行和派生记录。 */
+    override suspend fun rollbackUserTurn(conversationId: String, userEntryId: String): UserTurnSnapshot? =
+        withContext(Dispatchers.IO) {
+            persistence.write { queries ->
+                val checkpoint = queries.selectUserTurnCheckpoint(conversationId, userEntryId)
+                    .executeAsOneOrNull() ?: return@write null
+                require(checkpoint.payload_version == PAYLOAD_VERSION) { "不支持的用户回退点版本。" }
+                val snapshot = Json.decodeFromString<UserTurnSnapshot>(checkpoint.payload_json)
+                require(snapshot.version == 1 && snapshot.before?.id.orEmpty().let { it.isEmpty() || it == conversationId }) {
+                    "用户回退点内容不匹配。"
+                }
+                val timestamp = checkpoint.created_at
+                val checkpointOrder = queries.selectCheckpointOrder(checkpoint.id).executeAsOne()
+                val currentTasks = loadAllRows(queries)
+                val retainedEntryIds = snapshot.before?.entries?.mapTo(mutableSetOf(), PersistedTaskEntry::id).orEmpty()
+                val detachedChildren = currentTasks.filter { task ->
+                    task.parentConversationId == conversationId &&
+                        (snapshot.before == null || task.forkedFromEntryId !in retainedEntryIds)
+                }.map(PersistedTask::id)
+                queries.deleteAttentionEventsFrom(conversationId, timestamp)
+                queries.deleteToolAuditsFrom(conversationId, timestamp)
+                queries.deleteToolInvocationsFrom(conversationId, timestamp)
+                queries.deleteStatusSnapshotsFrom(conversationId, timestamp)
+                queries.deleteCompactionsFrom(conversationId, timestamp)
+                queries.deleteAgentRunsFrom(conversationId, timestamp)
+                queries.deleteUserTurnCheckpointsFrom(conversationId, checkpointOrder)
+                if (snapshot.before == null) {
+                    queries.deleteConversation(conversationId)
+                } else {
+                    detachedChildren.forEach { childId -> queries.promoteChildConversation(childId, conversationId) }
+                    saveAllRows(queries, currentTasks.map { task ->
+                        if (task.id == conversationId) snapshot.before else task
+                    }.map { task ->
+                        if (task.id in detachedChildren) task.copy(parentConversationId = null) else task
+                    })
+                    snapshot.todos?.let { todos ->
+                        queries.deleteTodosForConversation(conversationId)
+                        todos.forEach { todo ->
+                            queries.insertTodo(
+                                conversation_id = conversationId,
+                                id = todo.id,
+                                content = todo.content,
+                                status = todo.status.name,
+                                sort_order = todo.sortOrder.toLong(),
+                                created_at = todo.createdAt,
+                                updated_at = todo.updatedAt,
                             )
                         }
                     }
                 }
+                snapshot
+            }
+        }
+
+    /** 仅在调用方持有数据库写事务时同步会话与关联内容。 */
+    private fun saveAllRows(queries: MulehangDatabaseQueries, tasks: List<PersistedTask>) {
+        val incomingIds = tasks.mapTo(mutableSetOf(), PersistedTask::id)
+        queries.selectConversationIds().executeAsList()
+            .filterNot(incomingIds::contains)
+            .forEach(queries::deleteConversation)
+
+        upsertTaskRows(queries, tasks)
+    }
+
+    /** 在已有数据库访问区写入会话及其可替换负载，不删除集合以外的会话。 */
+    private fun upsertTaskRows(queries: MulehangDatabaseQueries, tasks: List<PersistedTask>) {
+        tasks.sortedByParentDependency().forEach { task ->
+            val now = System.currentTimeMillis()
+            queries.upsertConversation(
+                id = task.id,
+                title = task.title,
+                workspace_path = task.workspacePath,
+                workspace_name = task.workspaceName,
+                detached_workspace_path = task.detachedWorkspacePath,
+                detached_workspace_name = task.detachedWorkspaceName,
+                parent_conversation_id = task.parentConversationId,
+                forked_from_entry_id = task.forkedFromEntryId,
+                active_entry_id = task.activeEntryId,
+                head_entry_id = task.headEntryId,
+                archived_at = task.archivedAt,
+                tree_format_version = task.treeFormatVersion.toLong(),
+                reasoning_effort = task.reasoningEffort,
+                profile_id = task.profileId,
+                permission_preset = task.permissionPreset,
+                context_usage_fraction = task.contextUsageFraction.toDouble(),
+                execution_state = task.executionState,
+                execution_error_title = task.executionErrorTitle,
+                execution_error_message = task.executionErrorMessage,
+                attachments_json = task.attachmentsJson,
+                created_at = now,
+                updated_at = task.updatedAt,
+            )
+            queries.deleteTimelineForConversation(task.id)
+            task.timeline.forEach { item ->
+                queries.insertTimelineItem(
+                    conversation_id = task.id,
+                    sequence = item.sequence.toLong(),
+                    type = item.type,
+                    payload_version = PAYLOAD_VERSION,
+                    payload_json = item.payloadJson,
+                )
+            }
+            queries.deleteHistoryForConversation(task.id)
+            task.history.forEach { item ->
+                queries.insertHistoryItem(
+                    conversation_id = task.id,
+                    sequence = item.sequence.toLong(),
+                    type = item.type,
+                    payload_version = PAYLOAD_VERSION,
+                    payload_json = item.payloadJson,
+                )
+            }
+            queries.deleteEntriesForConversation(task.id)
+            task.entries.forEach { entry ->
+                queries.insertConversationEntry(
+                    conversation_id = task.id,
+                    id = entry.id,
+                    parent_id = entry.parentId,
+                    created_at = entry.createdAt,
+                    type = entry.type,
+                    payload_version = PAYLOAD_VERSION,
+                    payload_json = entry.payloadJson,
+                )
             }
         }
     }
 
-    /**
-     * 以单个事务替换数据库中的任务集合，保证删除和新增不会留下孤立负载。
-     */
-    override suspend fun saveAll(tasks: List<PersistedTask>) = withContext(Dispatchers.IO) {
-        openConnection().use { connection ->
-            connection.inTransaction {
-                createStatement().use { statement ->
-                    statement.executeUpdate("DELETE FROM task")
-                }
-                tasks.forEach { task ->
-                    insertTask(this, task)
-                    insertTimeline(this, task)
-                    insertHistory(this, task)
-                    insertEntries(this, task)
-                }
-            }
-        }
-    }
-
-    /**
-     * 删除一个任务，SQLite 外键会级联清理时间线和 history。
-     */
+    /** 删除一个会话；子会话由数据库外键自动提升为根。 */
     override suspend fun delete(taskId: String) {
         withContext(Dispatchers.IO) {
-        openConnection().use { connection ->
-            connection.prepareStatement("DELETE FROM task WHERE id = ?").use { statement ->
-                statement.setString(1, taskId)
-                statement.executeUpdate()
-            }
-        }
-        }
-    }
-
-    /**
-     * 打开配置完成且已迁移的 SQLite 连接。
-     */
-    private fun openConnection(): Connection {
-        databasePath.parent?.let(Files::createDirectories)
-        val connection = DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}")
-        connection.createStatement().use { statement ->
-            statement.execute("PRAGMA foreign_keys = ON")
-            statement.execute("PRAGMA journal_mode = WAL")
-        }
-        migrate(connection)
-        return connection
-    }
-
-    /**
-     * 应用当前 SQLite schema 的第一版迁移。
-     */
-    private fun migrate(connection: Connection) {
-        connection.createStatement().use { statement ->
-            statement.executeUpdate(
-                """
-                CREATE TABLE IF NOT EXISTS schema_migration (
-                    version INTEGER PRIMARY KEY,
-                    applied_at INTEGER NOT NULL
-                )
-                """.trimIndent(),
-            )
-        }
-        val pendingMigrations = listOf(
-            INITIAL_SCHEMA_VERSION,
-            SESSION_PREFERENCES_SCHEMA_VERSION,
-            WORKSPACE_NAME_SCHEMA_VERSION,
-            DETACHED_WORKSPACE_SCHEMA_VERSION,
-            CONVERSATION_TREE_SCHEMA_VERSION,
-            CONVERSATION_HEAD_SCHEMA_VERSION,
-        ).filterNot { version -> isMigrationApplied(connection, version) }
-        if (pendingMigrations.isNotEmpty() && hasTaskTable(connection)) {
-            backupDatabaseBeforeMigration(connection)
-        }
-        connection.inTransaction {
-            if (!isMigrationApplied(this, INITIAL_SCHEMA_VERSION)) {
-                createStatement().use { statement ->
-                    statement.executeUpdate(
-                        """
-                        CREATE TABLE task (
-                            id TEXT PRIMARY KEY,
-                            title TEXT NOT NULL,
-                            workspace_path TEXT NOT NULL,
-                            reasoning_effort TEXT NOT NULL,
-                            context_usage_fraction REAL NOT NULL,
-                            execution_state TEXT NOT NULL,
-                            execution_error_title TEXT,
-                            execution_error_message TEXT,
-                            attachments_json TEXT NOT NULL,
-                            created_at INTEGER NOT NULL,
-                            updated_at INTEGER NOT NULL
-                        )
-                        """.trimIndent(),
-                    )
-                    statement.executeUpdate(
-                        """
-                        CREATE TABLE task_timeline_item (
-                            task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                            sequence INTEGER NOT NULL,
-                            type TEXT NOT NULL,
-                            payload_json TEXT NOT NULL,
-                            PRIMARY KEY (task_id, sequence)
-                        )
-                        """.trimIndent(),
-                    )
-                    statement.executeUpdate(
-                        """
-                        CREATE TABLE task_history_item (
-                            task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                            sequence INTEGER NOT NULL,
-                            type TEXT NOT NULL,
-                            payload_json TEXT NOT NULL,
-                            PRIMARY KEY (task_id, sequence)
-                        )
-                        """.trimIndent(),
-                    )
-                    statement.executeUpdate("CREATE INDEX task_workspace_updated_idx ON task(workspace_path, updated_at DESC)")
-                }
-                recordMigration(this, INITIAL_SCHEMA_VERSION)
-            }
-            if (!isMigrationApplied(this, SESSION_PREFERENCES_SCHEMA_VERSION)) {
-                createStatement().use { statement ->
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN profile_id TEXT")
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN permission_preset TEXT NOT NULL DEFAULT 'DEFAULT'")
-                }
-                recordMigration(this, SESSION_PREFERENCES_SCHEMA_VERSION)
-            }
-            if (!isMigrationApplied(this, WORKSPACE_NAME_SCHEMA_VERSION)) {
-                createStatement().use { statement ->
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN workspace_name TEXT")
-                }
-                recordMigration(this, WORKSPACE_NAME_SCHEMA_VERSION)
-            }
-            if (!isMigrationApplied(this, DETACHED_WORKSPACE_SCHEMA_VERSION)) {
-                createStatement().use { statement ->
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN detached_workspace_path TEXT")
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN detached_workspace_name TEXT")
-                }
-                recordMigration(this, DETACHED_WORKSPACE_SCHEMA_VERSION)
-            }
-            if (!isMigrationApplied(this, CONVERSATION_TREE_SCHEMA_VERSION)) {
-                createStatement().use { statement ->
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN parent_conversation_id TEXT")
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN forked_from_entry_id TEXT")
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN active_entry_id TEXT")
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN archived_at INTEGER")
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN tree_format_version INTEGER NOT NULL DEFAULT 0")
-                    statement.executeUpdate(
-                        """
-                        CREATE TABLE task_entry (
-                            task_id TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
-                            id TEXT NOT NULL,
-                            parent_id TEXT,
-                            created_at INTEGER NOT NULL,
-                            type TEXT NOT NULL,
-                            payload_json TEXT NOT NULL,
-                            PRIMARY KEY (task_id, id)
-                        )
-                        """.trimIndent(),
-                    )
-                    statement.executeUpdate(
-                        "CREATE INDEX task_entry_parent_idx ON task_entry(task_id, parent_id, created_at)",
-                    )
-                }
-                recordMigration(this, CONVERSATION_TREE_SCHEMA_VERSION)
-            }
-            if (!isMigrationApplied(this, CONVERSATION_HEAD_SCHEMA_VERSION)) {
-                createStatement().use { statement ->
-                    statement.executeUpdate("ALTER TABLE task ADD COLUMN head_entry_id TEXT")
-                    statement.executeUpdate(
-                        "UPDATE task SET head_entry_id = active_entry_id WHERE tree_format_version > 0",
-                    )
-                }
-                recordMigration(this, CONVERSATION_HEAD_SCHEMA_VERSION)
+            persistence.write { queries ->
+                queries.deleteConversation(taskId)
+                Unit
             }
         }
     }
 
-    /**
-     * 判断迁移版本是否已经成功写入迁移日志。
-     */
-    private fun isMigrationApplied(connection: Connection, version: Int): Boolean =
-        connection.prepareStatement("SELECT 1 FROM schema_migration WHERE version = ?").use { statement ->
-            statement.setInt(1, version)
-            statement.executeQuery().use { resultSet -> resultSet.next() }
-        }
+    /** 将关系化会话行与三个有序负载集合组合为既有快照模型。 */
+    private fun Conversation.toPersistedTask(
+        timeline: List<PersistedTimelineItem>,
+        history: List<PersistedHistoryItem>,
+        entries: List<PersistedTaskEntry>,
+    ): PersistedTask = PersistedTask(
+        id = id,
+        title = title,
+        workspacePath = workspace_path,
+        workspaceName = workspace_name,
+        detachedWorkspacePath = detached_workspace_path,
+        detachedWorkspaceName = detached_workspace_name,
+        parentConversationId = parent_conversation_id,
+        forkedFromEntryId = forked_from_entry_id,
+        activeEntryId = active_entry_id,
+        headEntryId = head_entry_id,
+        archivedAt = archived_at,
+        treeFormatVersion = tree_format_version.toInt(),
+        reasoningEffort = reasoning_effort,
+        profileId = profile_id,
+        permissionPreset = permission_preset,
+        contextUsageFraction = context_usage_fraction.toFloat(),
+        executionState = execution_state,
+        executionErrorTitle = execution_error_title,
+        executionErrorMessage = execution_error_message,
+        attachmentsJson = attachments_json,
+        timeline = timeline,
+        history = history,
+        entries = entries,
+        updatedAt = updated_at,
+    )
 
-    private fun recordMigration(connection: Connection, version: Int) {
-        connection.prepareStatement("INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)").use { statement ->
-            statement.setInt(1, version)
-            statement.setLong(2, System.currentTimeMillis())
-            statement.executeUpdate()
-        }
-    }
-
-    /**
-     * 判断当前数据库是否已包含历史任务，避免为全新数据库生成无意义备份。
-     */
-    private fun hasTaskTable(connection: Connection): Boolean =
-        connection.prepareStatement(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task'",
-        ).use { statement ->
-            statement.executeQuery().use { resultSet -> resultSet.next() }
-        }
-
-    /**
-     * 在迁移前生成已 checkpoint 的 SQLite 文件副本，并只保留最近的备份。
-     */
-    private fun backupDatabaseBeforeMigration(connection: Connection) {
-        connection.createStatement().use { statement ->
-            statement.execute("PRAGMA wal_checkpoint(FULL)")
-        }
-        val backupDirectory = databasePath.parent?.resolve(TASK_BACKUP_DIRECTORY_NAME)
-            ?: databasePath.resolveSibling(TASK_BACKUP_DIRECTORY_NAME)
-        Files.createDirectories(backupDirectory)
-        val databaseBaseName = databasePath.fileName.toString().removeSuffix(".db")
-        val backupPath = backupDirectory.resolve(
-            "$databaseBaseName-${System.currentTimeMillis()}.db",
-        )
-        Files.copy(databasePath, backupPath)
-        Files.list(backupDirectory).use { paths ->
-            paths
-                .filter { path -> path.fileName.toString().startsWith("$databaseBaseName-") }
-                .sorted { left, right -> right.fileName.toString().compareTo(left.fileName.toString()) }
-                .skip(TASK_BACKUP_RETENTION_COUNT.toLong())
-                .forEach(Files::deleteIfExists)
-        }
-    }
-
-    /**
-     * 查询单个任务的有序时间线。
-     */
-    private fun loadTimeline(connection: Connection, taskId: String): List<PersistedTimelineItem> =
-        connection.prepareStatement(
-            "SELECT sequence, type, payload_json FROM task_timeline_item WHERE task_id = ? ORDER BY sequence ",
-        ).use { statement ->
-            statement.setString(1, taskId)
-            statement.executeQuery().use { resultSet ->
-                buildList {
-                    while (resultSet.next()) {
-                        add(
-                            PersistedTimelineItem(
-                                sequence = resultSet.getInt("sequence"),
-                                type = resultSet.getString("type"),
-                                payloadJson = resultSet.getString("payload_json"),
-                            ),
-                        )
-                    }
-                }
+    /** 父会话优先插入，满足自引用外键；循环引用仍由数据库拒绝。 */
+    private fun List<PersistedTask>.sortedByParentDependency(): List<PersistedTask> {
+        val remaining = associateBy(PersistedTask::id).toMutableMap()
+        val ordered = mutableListOf<PersistedTask>()
+        while (remaining.isNotEmpty()) {
+            val ready = remaining.values.filter { task ->
+                task.parentConversationId == null || task.parentConversationId !in remaining
+            }
+            if (ready.isEmpty()) {
+                ordered += remaining.values
+                break
+            }
+            ready.forEach { task ->
+                ordered += task
+                remaining.remove(task.id)
             }
         }
-
-    /**
-     * 查询单个任务的有序 Agent history。
-     */
-    private fun loadHistory(connection: Connection, taskId: String): List<PersistedHistoryItem> =
-        connection.prepareStatement(
-            "SELECT sequence, type, payload_json FROM task_history_item WHERE task_id = ? ORDER BY sequence ",
-        ).use { statement ->
-            statement.setString(1, taskId)
-            statement.executeQuery().use { resultSet ->
-                buildList {
-                    while (resultSet.next()) {
-                        add(
-                            PersistedHistoryItem(
-                                sequence = resultSet.getInt("sequence"),
-                                type = resultSet.getString("type"),
-                                payloadJson = resultSet.getString("payload_json"),
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-
-    /** 查询单个任务的完整条目图。 */
-    private fun loadEntries(connection: Connection, taskId: String): List<PersistedTaskEntry> =
-        connection.prepareStatement(
-            "SELECT id, parent_id, created_at, type, payload_json FROM task_entry WHERE task_id = ? ORDER BY created_at, id",
-        ).use { statement ->
-            statement.setString(1, taskId)
-            statement.executeQuery().use { resultSet ->
-                buildList {
-                    while (resultSet.next()) {
-                        add(
-                            PersistedTaskEntry(
-                                id = resultSet.getString("id"),
-                                parentId = resultSet.getString("parent_id"),
-                                createdAt = resultSet.getLong("created_at"),
-                                type = resultSet.getString("type"),
-                                payloadJson = resultSet.getString("payload_json"),
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-
-    /**
-     * 插入任务的可查询元数据。
-     */
-    private fun insertTask(connection: Connection, task: PersistedTask) {
-        val now = System.currentTimeMillis()
-        connection.prepareStatement(
-            """
-            INSERT INTO task(
-                id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
-                parent_conversation_id, forked_from_entry_id, active_entry_id, head_entry_id, archived_at, tree_format_version,
-                reasoning_effort, profile_id, permission_preset,
-                context_usage_fraction, execution_state, execution_error_title, execution_error_message,
-                attachments_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent(),
-        ).use { statement ->
-            statement.setString(1, task.id)
-            statement.setString(2, task.title)
-            statement.setString(3, task.workspacePath)
-            statement.setString(4, task.workspaceName)
-            statement.setString(5, task.detachedWorkspacePath)
-            statement.setString(6, task.detachedWorkspaceName)
-            statement.setString(7, task.parentConversationId)
-            statement.setString(8, task.forkedFromEntryId)
-            statement.setString(9, task.activeEntryId)
-            statement.setString(10, task.headEntryId)
-            if (task.archivedAt == null) statement.setObject(11, null) else statement.setLong(11, task.archivedAt)
-            statement.setInt(12, task.treeFormatVersion)
-            statement.setString(13, task.reasoningEffort)
-            statement.setString(14, task.profileId)
-            statement.setString(15, task.permissionPreset)
-            statement.setFloat(16, task.contextUsageFraction)
-            statement.setString(17, task.executionState)
-            statement.setString(18, task.executionErrorTitle)
-            statement.setString(19, task.executionErrorMessage)
-            statement.setString(20, task.attachmentsJson)
-            statement.setLong(21, now)
-            statement.setLong(22, task.updatedAt)
-            statement.executeUpdate()
-        }
-    }
-
-    /**
-     * 插入任务时间线的全部有序负载。
-     */
-    private fun insertTimeline(connection: Connection, task: PersistedTask) {
-        connection.prepareStatement(
-            "INSERT INTO task_timeline_item(task_id, sequence, type, payload_json) VALUES (?, ?, ?, ?)",
-        ).use { statement ->
-            task.timeline.sortedBy(PersistedTimelineItem::sequence).forEach { item ->
-                statement.setString(1, task.id)
-                statement.setInt(2, item.sequence)
-                statement.setString(3, item.type)
-                statement.setString(4, item.payloadJson)
-                statement.addBatch()
-            }
-            statement.executeBatch()
-        }
-    }
-
-    /**
-     * 插入任务 Agent history 的全部有序负载。
-     */
-    private fun insertHistory(connection: Connection, task: PersistedTask) {
-        connection.prepareStatement(
-            "INSERT INTO task_history_item(task_id, sequence, type, payload_json) VALUES (?, ?, ?, ?)",
-        ).use { statement ->
-            task.history.sortedBy(PersistedHistoryItem::sequence).forEach { item ->
-                statement.setString(1, task.id)
-                statement.setInt(2, item.sequence)
-                statement.setString(3, item.type)
-                statement.setString(4, item.payloadJson)
-                statement.addBatch()
-            }
-            statement.executeBatch()
-        }
-    }
-
-    /** 插入任务条目图的全部节点。 */
-    private fun insertEntries(connection: Connection, task: PersistedTask) {
-        connection.prepareStatement(
-            "INSERT INTO task_entry(task_id, id, parent_id, created_at, type, payload_json) VALUES (?, ?, ?, ?, ?, ?)",
-        ).use { statement ->
-            task.entries.forEach { entry ->
-                statement.setString(1, task.id)
-                statement.setString(2, entry.id)
-                statement.setString(3, entry.parentId)
-                statement.setLong(4, entry.createdAt)
-                statement.setString(5, entry.type)
-                statement.setString(6, entry.payloadJson)
-                statement.addBatch()
-            }
-            statement.executeBatch()
-        }
-    }
-
-    /** 读取可空整数时间戳，区分 SQLite 的 NULL 与 0。 */
-    private fun java.sql.ResultSet.getLongOrNull(column: String): Long? {
-        val value = getLong(column)
-        return if (wasNull()) null else value
-    }
-
-    /**
-     * 在块失败时回滚，在成功时提交当前事务。
-     */
-    private inline fun <T> Connection.inTransaction(block: Connection.() -> T): T {
-        val previousAutoCommit = autoCommit
-        autoCommit = false
-        return try {
-            block().also { commit() }
-        } catch (exception: Exception) {
-            rollback()
-            throw exception
-        } finally {
-            autoCommit = previousAutoCommit
-        }
+        return ordered
     }
 
     private companion object {
-        const val INITIAL_SCHEMA_VERSION = 1
-        const val SESSION_PREFERENCES_SCHEMA_VERSION = 2
-        const val WORKSPACE_NAME_SCHEMA_VERSION = 3
-        const val DETACHED_WORKSPACE_SCHEMA_VERSION = 4
-        const val CONVERSATION_TREE_SCHEMA_VERSION = 5
-        const val CONVERSATION_HEAD_SCHEMA_VERSION = 6
-        const val TASK_BACKUP_DIRECTORY_NAME = "tasks-backups"
-        const val TASK_BACKUP_RETENTION_COUNT = 3
+        const val PAYLOAD_VERSION: Long = 1L
+        const val LEGACY_TASK_DATABASE_MIGRATION_KEY: String = "migration:legacy-tasks-db-v1"
     }
 }

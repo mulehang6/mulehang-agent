@@ -23,6 +23,7 @@ class LoadAppSessionUseCase(
             activeProfile = activeProfile,
             fasterProfiles = repository.loadFasterProfiles(),
             hookSettings = repository.loadHookSettings(),
+            contextCompactionThresholdPercent = repository.loadContextCompactionThresholdPercent(),
         )
     }
 }

@@ -4,14 +4,10 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
-/** 验证按项目记忆的 UI 状态存储及用户级终端偏好。 */
+/** 验证统一数据库中的桌面 UI 状态及用户级终端偏好。 */
 class DesktopUiStateStoreTest {
-
-    /**
-     * 缺失缩放应采用默认值，任意输入都应落到受支持的离散档位。
-     */
+    /** 缺失缩放应采用默认值，任意输入都应落到受支持的离散档位。 */
     @Test
     fun `should normalize desktop ui scale percent`() {
         assertEquals(100, normalizeDesktopUiScalePercent(null))
@@ -22,123 +18,52 @@ class DesktopUiStateStoreTest {
         assertEquals(200, normalizeDesktopUiScalePercent(999))
     }
 
-    /**
-     * 外观偏好应立即保存，并对旧状态中缺失字段保持兼容。
-     */
+    /** 外观偏好应规范化后保存，并可在数据库重开后恢复。 */
     @Test
-    fun `should persist normalized appearance preferences and read legacy state`() {
-        val root = Files.createTempDirectory("mulehang-ui-appearance-state-test")
-        val statePath = root.resolve(".mulehang/ui-state.json")
-        Files.createDirectories(statePath.parent)
-        Files.writeString(statePath, """{"themeMode":"dark"}""")
-        val store = DesktopUiStateStore(statePath)
+    fun `should persist normalized appearance preferences`() {
+        val databasePath = Files.createTempDirectory("mulehang-ui-appearance-test").resolve("mulehang.db")
+        DesktopUiStateStore(databasePath).use { store ->
+            store.saveAppearancePreferences(DesktopAppearancePreferences(126, "Inter", "JetBrains Mono"))
+        }
 
-        assertEquals(DesktopAppearancePreferences(), store.loadAppearancePreferences())
-
-        store.saveAppearancePreferences(
-            DesktopAppearancePreferences(
-                scalePercent = 126,
-                uiFontFamily = "Inter",
-                codeFontFamily = "JetBrains Mono",
-            ),
-        )
-
-        assertEquals(
-            DesktopAppearancePreferences(
-                scalePercent = 130,
-                uiFontFamily = "Inter",
-                codeFontFamily = "JetBrains Mono",
-            ),
-            store.loadAppearancePreferences(),
-        )
+        DesktopUiStateStore(databasePath).use { store ->
+            assertEquals(
+                DesktopAppearancePreferences(130, "Inter", "JetBrains Mono"),
+                store.loadAppearancePreferences(),
+            )
+        }
     }
 
-    /**
-     * UI 状态应按项目路径保存和读取最近选择的 profile。
-     */
+    /** 项目选择、最近工作区、主题和 Shell 应共享同一个版本化文档。 */
     @Test
-    fun `should remember last selected profile for each project`() {
-        val root = Files.createTempDirectory("mulehang-ui-state-test")
-        val store = DesktopUiStateStore(root.resolve(".mulehang/ui-state.json"))
+    fun `should merge independent ui preferences`() {
+        val databasePath = Files.createTempDirectory("mulehang-ui-state-test").resolve("mulehang.db")
+        DesktopUiStateStore(databasePath).use { store ->
+            store.saveSelectedProfile("D:/workspace/demo", "openai-main")
+            store.saveRecentWorkspace("D:/workspace/demo")
+            store.saveThemeMode("light")
+            store.saveTerminalPreferences(DesktopTerminalPreferences("powershell-7"))
+        }
 
-        store.saveSelectedProfile(
-            projectPath = "D:/workspace/demo",
-            profileId = "openai-main",
-        )
-
-        val remembered = store.loadSelectedProfile("D:/workspace/demo")
-
-        assertEquals("openai-main", remembered)
+        DesktopUiStateStore(databasePath).use { reopened ->
+            assertEquals("openai-main", reopened.loadSelectedProfile("D:/workspace/demo"))
+            assertEquals("D:/workspace/demo", reopened.loadRecentWorkspace())
+            assertEquals("light", reopened.loadThemeMode())
+            assertEquals("powershell-7", reopened.loadTerminalPreferences().defaultShellId)
+        }
     }
 
-    /**
-     * UI 状态应保存和读取最近使用的工作区。
-     */
+    /** 旧 ui-state.json 不应被读取、改写或自动删除。 */
     @Test
-    fun `should remember last selected workspace`() {
-        val root = Files.createTempDirectory("mulehang-ui-workspace-state-test")
-        val store = DesktopUiStateStore(root.resolve(".mulehang/ui-state.json"))
+    fun `should not migrate or delete legacy ui state`() {
+        val root = Files.createTempDirectory("mulehang-ui-legacy-test")
+        val legacyPath = root.resolve("ui-state.json")
+        Files.writeString(legacyPath, """{"themeMode":"light"}""")
 
-        store.saveRecentWorkspace("D:/workspace/demo")
-
-        assertEquals("D:/workspace/demo", store.loadRecentWorkspace())
-    }
-
-    /** 旧强调色字段应可读取，并在下一次状态写入时从文档中自然移除。 */
-    @Test
-    fun `should discard legacy accent color after next write`() {
-        val root = Files.createTempDirectory("mulehang-ui-legacy-accent-test")
-        val statePath = root.resolve(".mulehang/ui-state.json")
-        Files.createDirectories(statePath.parent)
-        Files.writeString(
-            statePath,
-            """{"themeMode":"dark","accentColor":"teal"}""",
-        )
-        val store = DesktopUiStateStore(statePath)
-
-        assertEquals("dark", store.loadThemeMode())
-        store.saveThemeMode("light")
-
-        assertFalse(Files.readString(statePath).contains("accentColor"))
-        assertEquals("light", store.loadThemeMode())
-    }
-
-    /** 旧 Liquid Glass 字段应由 ignoreUnknownKeys 忽略，并在下次写入时自然移除。 */
-    @Test
-    fun `should ignore legacy liquid glass state`() {
-        val root = Files.createTempDirectory("mulehang-ui-liquid-glass-test")
-        val statePath = root.resolve(".mulehang/ui-state.json")
-        Files.createDirectories(statePath.parent)
-        Files.writeString(
-            statePath,
-            """{"themeMode":"dark","liquidGlassEnabled":true}""",
-        )
-        val store = DesktopUiStateStore(statePath)
-
-        assertEquals("dark", store.loadThemeMode())
-        store.saveThemeMode("light")
-
-        assertEquals("light", store.loadThemeMode())
-        assertFalse(Files.readString(statePath).contains("liquidGlassEnabled"))
-    }
-
-    /** 旧状态缺少 Shell 字段时必须默认到旧版 Windows PowerShell，保存时只写稳定类型标识。 */
-    @Test
-    fun `should default and persist terminal shell preference independently`() {
-        val root = Files.createTempDirectory("mulehang-ui-terminal-state-test")
-        val statePath = root.resolve(".mulehang/ui-state.json")
-        Files.createDirectories(statePath.parent)
-        Files.writeString(statePath, """{"uiScalePercent":130,"uiFontFamily":"Consolas"}""")
-        val store = DesktopUiStateStore(statePath)
-
-        assertEquals(DEFAULT_DESKTOP_TERMINAL_SHELL_ID, store.loadTerminalPreferences().defaultShellId)
-
-        store.saveTerminalPreferences(DesktopTerminalPreferences(defaultShellId = "powershell-7"))
-
-        assertEquals("powershell-7", store.loadTerminalPreferences().defaultShellId)
-        val persisted = Files.readString(statePath)
-        assertTrue(persisted.contains("\"defaultTerminalShellId\": \"powershell-7\""))
-        assertFalse(persisted.contains("powershell.exe"))
-        assertFalse(persisted.contains("C:/"))
+        DesktopUiStateStore(root.resolve("mulehang.db")).use { store ->
+            assertEquals(null, store.loadThemeMode())
+            assertEquals("""{"themeMode":"light"}""", Files.readString(legacyPath))
+            assertFalse(Files.notExists(legacyPath))
+        }
     }
 }

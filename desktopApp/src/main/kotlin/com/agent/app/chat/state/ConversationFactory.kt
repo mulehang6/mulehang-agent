@@ -18,23 +18,12 @@ internal fun initialUiState(
     projectPath: String,
 ): ChatWindowUiState {
     val selectedProfile = snapshot.activeProfile ?: snapshot.profiles.firstOrNull()
-    if (projectPath.isBlank()) {
-        return ChatWindowUiState(
-            tasks = emptyList(),
-            activeTaskId = "",
-            selectedProfileId = selectedProfile?.id,
-        )
-    }
-    val initialConversation = newConversation(
-        workspacePath = projectPath,
-        contextWindow = selectedProfile?.let(::resolveContextWindow),
-        profileId = selectedProfile?.id,
-        reasoningEffort = selectedProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
-    )
     return ChatWindowUiState(
-        tasks = listOf(initialConversation),
-        activeTaskId = initialConversation.id,
+        tasks = emptyList(),
+        activeTaskId = "",
+        newWorkspacePath = projectPath,
         selectedProfileId = selectedProfile?.id,
+        newReasoningEffort = selectedProfile?.let(::defaultReasoningEffortFor) ?: ReasoningEffort.MEDIUM,
     )
 }
 

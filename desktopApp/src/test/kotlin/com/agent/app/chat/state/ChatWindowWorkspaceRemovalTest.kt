@@ -46,9 +46,9 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
             clock = { now },
             workspaceDirectoryExists = { it != "E:\\invalid" },
         )
-        val currentConversationId = state.ui.activeConversationId
         state.send("保留当前历史")
         advanceUntilIdle()
+        val currentConversationId = state.ui.activeConversationId
         now = 200L
         state.createConversationForWorkspace("E:\\older")
         state.send("较早工作区历史")
@@ -66,9 +66,9 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
 
         state.disconnectWorkspace("E:\\current")
 
-        assertEquals("E:\\newer", state.ui.activeConversation.workspacePath)
-        assertTrue(state.ui.activeConversation.isEmptyDefaultConversation())
-        assertEquals(2, state.ui.tasks.count { it.workspacePath == "E:\\newer" })
+        assertEquals("E:\\newer", state.ui.newWorkspacePath)
+        assertNull(state.ui.activeConversationOrNull)
+        assertEquals(1, state.ui.tasks.count { it.workspacePath == "E:\\newer" })
         assertEquals("", state.ui.draft)
         assertEquals("", state.findConversation(currentConversationId).workspacePath)
     }
@@ -85,9 +85,9 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
             clock = { now },
             workspaceDirectoryExists = { true },
         )
-        val currentConversationId = state.ui.activeConversationId
         state.send("保留当前历史")
         advanceUntilIdle()
+        val currentConversationId = state.ui.activeConversationId
         now = 200L
         state.createConversationForWorkspace("E:\\target")
         val reusableConversationId = state.ui.activeConversationId
@@ -96,8 +96,30 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
         state.disconnectWorkspace("E:\\current")
 
         assertEquals(reusableConversationId, state.ui.activeTaskId)
-        assertEquals(2, state.ui.tasks.size)
-        assertTrue(state.ui.activeConversation.isEmptyDefaultConversation())
+        assertEquals(1, state.ui.tasks.size)
+        assertEquals("E:\\target", state.ui.newWorkspacePath)
+        assertNull(state.ui.activeConversationOrNull)
+    }
+
+    /** 删除新会话页当前工作区时，也应切换到最近可用的其他工作区。 */
+    @Test
+    fun `should retain a recent fallback when disconnecting workspace from new conversation page`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\current",
+            workspaceDirectoryExists = { true },
+        )
+        state.createConversationForWorkspace("E:\\fallback")
+        state.send("fallback history")
+        advanceUntilIdle()
+        state.showNewConversation("E:\\current")
+
+        state.disconnectWorkspace("E:\\current")
+
+        assertEquals("E:\\fallback", state.ui.newWorkspacePath)
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /** 删除非当前工作区不得打断当前会话或清空草稿。 */
@@ -112,6 +134,8 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
             clock = { now },
             workspaceDirectoryExists = { true },
         )
+        state.send("活动工作区历史")
+        advanceUntilIdle()
         val activeConversationId = state.ui.activeConversationId
         now = 200L
         state.createConversationForWorkspace("E:\\disconnected")
@@ -141,10 +165,10 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
             projectPath = "E:\\crud",
             workspaceDirectoryExists = { true },
         )
-        val historyConversationId = state.ui.activeConversationId
-        assertEquals(null, state.editWorkspace("E:\\crud", "CRUD 历史", "E:\\crud"))
         state.send("保留的 crud 历史")
         advanceUntilIdle()
+        val historyConversationId = state.ui.activeConversationId
+        assertEquals(null, state.editWorkspace("E:\\crud", "CRUD 历史", "E:\\crud"))
 
         state.disconnectWorkspace("E:\\crud")
 
@@ -157,7 +181,7 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
         assertEquals("E:\\crud", state.findConversation(historyConversationId).workspacePath)
         assertEquals(null, state.findConversation(historyConversationId).detachedWorkspacePath)
         assertEquals("CRUD 历史", state.findConversation(historyConversationId).workspaceName)
-        assertEquals(2, state.ui.tasks.count { it.workspacePath == "E:\\crud" })
+        assertEquals(1, state.ui.tasks.count { it.workspacePath == "E:\\crud" })
         assertEquals("CRUD 历史", state.ui.workspaceTaskSections.single().label)
     }
 
@@ -171,16 +195,17 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
             projectPath = "E:\\crud",
             workspaceDirectoryExists = { true },
         )
-        val historyConversationId = state.ui.activeConversationId
         state.send("保留的 crud 历史")
         advanceUntilIdle()
+        val historyConversationId = state.ui.activeConversationId
         state.disconnectWorkspace("E:\\crud")
 
         state.createConversationForWorkspace("E:\\other")
 
         assertEquals("", state.findConversation(historyConversationId).workspacePath)
         assertEquals("E:\\crud", state.findConversation(historyConversationId).detachedWorkspacePath)
-        assertEquals("E:\\other", state.ui.activeConversation.workspacePath)
+        assertEquals("E:\\other", state.ui.newWorkspacePath)
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /** 删除工作区时不应将空白默认对话留在未关联历史中。 */

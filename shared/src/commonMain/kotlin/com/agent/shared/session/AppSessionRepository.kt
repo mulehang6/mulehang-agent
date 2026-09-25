@@ -19,6 +19,9 @@ interface AppSessionRepository {
     @Suppress("unused")
     suspend fun loadHookSettings(): AgentHookSettings = AgentHookSettings()
 
+    /** 读取上下文压缩阈值，环境变量优先于用户设置。 */
+    suspend fun loadContextCompactionThresholdPercent(): Int = 80
+
     /**
      * 加载当前项目上次记忆的 profile id。
      */

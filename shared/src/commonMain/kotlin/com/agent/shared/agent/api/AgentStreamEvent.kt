@@ -3,6 +3,7 @@ package com.agent.shared.agent.api
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.FileDiffPreview
 import com.agent.shared.tool.model.QuestionRequest
+import com.agent.shared.agent.status.AgentStatusSnapshot
 
 /**
  * UI 可消费的 agent 流式事件。
@@ -26,6 +27,8 @@ sealed interface AgentStreamEvent {
         val name: String,
         val argumentsPreview: String? = null,
         val operationIntent: String? = null,
+        /** 完整结构化调用参数，供工具审计和不确定结果恢复使用。 */
+        val argumentsJson: String? = null,
     ) : AgentStreamEvent
 
     /**
@@ -54,6 +57,15 @@ sealed interface AgentStreamEvent {
     data class ToolCallFailed(
         val toolCallId: String? = null,
         val name: String,
+        val reason: String,
+    ) : AgentStreamEvent
+
+    /** 暂停时无法确认副作用的工具调用，由合成结果接续而不重跑原调用。 */
+    data class ToolCallInterrupted(
+        val toolCallId: String?,
+        val name: String,
+        val argumentsJson: String,
+        val partialOutput: String,
         val reason: String,
     ) : AgentStreamEvent
 
@@ -89,6 +101,19 @@ sealed interface AgentStreamEvent {
      * 非正文的中间状态文本。
      */
     data class Status(val message: String) : AgentStreamEvent
+
+    /** 代码生成且已保存的模型状态文本；普通时间线不显示。 */
+    data class StatusSnapshotUpdated(
+        val snapshot: AgentStatusSnapshot,
+        val modelMessageText: String,
+    ) : AgentStreamEvent
+
+    /** Provider 实际 token 用量；缺失字段由界面继续沿用估算。 */
+    data class UsageUpdated(
+        val inputTokens: Long?,
+        val outputTokens: Long?,
+        val contextWindow: Int?,
+    ) : AgentStreamEvent
 
     /**
      * 思考内容的流式增量。

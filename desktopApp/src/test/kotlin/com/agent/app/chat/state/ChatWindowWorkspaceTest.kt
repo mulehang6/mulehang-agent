@@ -51,10 +51,10 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         val originalConversationId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\def")
 
-        assertEquals("def", state.ui.workspaceGroups.single().label)
-        assertEquals(1, state.ui.workspaceGroups.single().conversations.size)
+        assertTrue(state.ui.workspaceGroups.isEmpty())
         assertEquals(originalConversationId, state.ui.activeConversationId)
-        assertEquals(emptyList(), state.ui.activeConversation.attachments)
+        assertNull(state.ui.activeConversationOrNull)
+        assertEquals("def", state.ui.activeWorkspaceLabel)
     }
 
     /**
@@ -71,16 +71,15 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             ),
             projectPath = "E:\\abc\\def",
         )
-        val originalConversationId = state.ui.activeConversationId
-
         state.send("hello")
         advanceUntilIdle()
+        val originalConversationId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\def")
 
-        assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+        assertEquals(1, state.ui.workspaceGroups.single().conversations.size)
         assertNotEquals(originalConversationId, state.ui.activeConversationId)
         assertEquals(2, state.findConversation(originalConversationId).items.size)
-        assertEquals(emptyList(), state.ui.activeConversation.items)
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /**
@@ -99,9 +98,9 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
                 projectPath = "E:\\abc\\def",
             )
 
-            val historicalConversationId = state.ui.activeConversationId
             state.send("hello")
             advanceUntilIdle()
+            val historicalConversationId = state.ui.activeConversationId
             state.createConversationForWorkspace("E:\\abc\\def")
             val emptyConversationId = state.ui.activeConversationId
 
@@ -110,7 +109,7 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             state.createConversationForWorkspace("E:\\abc\\def")
 
             assertEquals(emptyConversationId, state.ui.activeConversationId)
-            assertEquals(2, state.ui.workspaceGroups.single().conversations.size)
+            assertEquals(1, state.ui.workspaceGroups.single().conversations.size)
             assertEquals("", state.ui.draft)
         }
 
@@ -134,10 +133,8 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         state.createConversationForWorkspace("E:\\abc\\def")
 
         val sections = state.ui.taskSections.associateBy { it.group }
-        assertEquals(1, sections[ChatTaskGroup.RUNNING]?.tasks?.size)
+        assertEquals(0, sections[ChatTaskGroup.RUNNING]?.tasks?.size)
         assertEquals(1, sections[ChatTaskGroup.DONE]?.tasks?.size)
-        assertEquals("新建对话", sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.title)
-        assertEquals(ChatTaskStatus.NEW, sections[ChatTaskGroup.RUNNING]?.tasks?.single()?.status)
         assertEquals("first", sections[ChatTaskGroup.DONE]?.tasks?.single()?.title)
     }
 
@@ -230,6 +227,8 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         advanceUntilIdle()
         val firstConversationId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\ghi")
+        state.send("second")
+        advanceUntilIdle()
         val secondConversationId = state.ui.activeConversationId
 
         state.selectConversation(firstConversationId)
@@ -254,7 +253,11 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             ),
             projectPath = "E:\\abc\\def",
         )
+        state.send("first")
+        advanceUntilIdle()
         state.createConversationForWorkspace("E:\\abc\\ghi")
+        state.send("second")
+        advanceUntilIdle()
         val activeConversationId = state.ui.activeConversationId
 
         state.updateSessionSnapshot(
@@ -283,15 +286,15 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             ),
             projectPath = "E:\\abc\\def",
         )
-        val firstConversationId = state.ui.activeConversationId
         state.send("seed")
         advanceUntilIdle()
+        val firstConversationId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\def")
-        val secondConversationId = state.ui.activeConversationId
 
         state.updateDraft("hello")
         state.sendDraft()
         advanceUntilIdle()
+        val secondConversationId = state.ui.activeConversationId
 
         val firstConversation = state.findConversation(firstConversationId)
         val secondConversation = state.findConversation(secondConversationId)
@@ -346,11 +349,15 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             ),
             projectPath = "E:\\abc\\def",
         )
+        state.send("待重命名任务")
+        advanceUntilIdle()
         val renamedConversationId = state.ui.activeConversationId
 
         state.renameConversation(renamedConversationId, "改名后的任务")
         assertEquals("改名后的任务", state.findConversation(renamedConversationId).title)
         state.createConversationForWorkspace("E:\\abc\\def")
+        state.send("保留任务")
+        advanceUntilIdle()
         val survivingConversationId = state.ui.activeConversationId
         state.deleteConversation(renamedConversationId)
 
@@ -358,7 +365,7 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         assertEquals(survivingConversationId, state.ui.activeConversationId)
     }
 
-    /** 当前活动会话不可删除，即使同工作区已经存在另一个空白会话。 */
+    /** 当前活动会话可删除，界面回到未落库的新会话页。 */
     @Test
     fun `should keep active historical conversation when delete is requested`() = runTest(dispatcher) {
         val state = ChatWindowState(
@@ -367,17 +374,18 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
             projectPath = "E:\\abc\\def",
         )
-        val historicalId = state.ui.activeConversationId
         state.send("历史会话")
         advanceUntilIdle()
+        val historicalId = state.ui.activeConversationId
         state.createConversationForWorkspace("E:\\abc\\def")
         val newConversationId = state.ui.activeConversationId
 
         state.selectConversation(historicalId)
         state.deleteConversation(historicalId)
 
-        assertEquals(setOf(historicalId, newConversationId), state.ui.tasks.map { it.id }.toSet())
-        assertEquals(historicalId, state.ui.activeConversationId)
+        assertTrue(state.ui.tasks.isEmpty())
+        assertEquals(newConversationId, state.ui.activeConversationId)
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /**
@@ -405,7 +413,7 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
 
         assertEquals(newConversationId, state.ui.activeConversationId)
         assertEquals(
-            listOf(newConversationId, historicalConversation.id),
+            listOf(historicalConversation.id),
             state.ui.tasks.map(ChatConversationUiState::id),
         )
     }
@@ -456,9 +464,9 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         assertEquals("保留这条草稿", state.ui.draft)
         assertEquals(
             "工作目录不可用",
-            (state.ui.activeConversation.executionState as ExecutionState.Failed).error.title
+            state.ui.newConversationError?.title,
         )
-        assertTrue(state.ui.activeConversation.items.isEmpty())
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /** 编辑工作区应将旧组迁入目标目录，并以显式名称覆盖合并后的分组。 */
@@ -516,9 +524,9 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
             clock = { now },
             workspaceDirectoryExists = { it == "E:\\current" },
         )
-        val currentConversationId = state.ui.activeConversationId
         state.send("保留当前历史")
         advanceUntilIdle()
+        val currentConversationId = state.ui.activeConversationId
         now = 200L
         state.createConversationForWorkspace("E:\\unavailable")
         val unavailableConversationId = state.ui.activeConversationId
@@ -533,7 +541,7 @@ class ChatWindowWorkspaceTest : ChatWindowTestFixture() {
         assertEquals(null, state.ui.activeConversationOrNull)
         assertEquals("", state.ui.draft)
         assertEquals("", state.findConversation(currentConversationId).workspacePath)
-        assertTrue(state.ui.tasks.any { it.id == unavailableConversationId })
+        assertTrue(state.ui.tasks.none { it.id == unavailableConversationId })
     }
 
 }

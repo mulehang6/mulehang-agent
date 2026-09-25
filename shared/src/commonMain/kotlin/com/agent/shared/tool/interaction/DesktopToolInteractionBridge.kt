@@ -15,6 +15,9 @@ interface DesktopToolInteractionBridge {
      */
     fun isApprovalAutoApproved(request: ApprovalRequest): Boolean = false
 
+    /** 恢复持久化的本轮同类工具授权；非桌面实现默认不记忆该选择。 */
+    fun rememberApproval(request: ApprovalRequest) = Unit
+
     /**
      * 将工具执行期间产生的输出同步转发给 UI。
      *

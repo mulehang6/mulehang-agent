@@ -36,6 +36,9 @@ internal fun ConversationTimeline(
     onEntryPositioned: (entryId: String, topInWindow: Float, bottomInWindow: Float) -> Unit = { _, _, _ -> },
     onEditFromHere: (String) -> Unit = {},
     onNewSession: (String) -> Unit = {},
+    onRollback: (String, Boolean) -> Unit = { _, _ -> },
+    navigationEntryId: String? = null,
+    onNavigationTargetPositioned: (entryId: String, topInWindow: Float, bottomInWindow: Float) -> Unit = { _, _, _ -> },
 ) {
     if (conversation.items.isEmpty() && conversation.executionState == ExecutionState.Idle) {
         Text(
@@ -51,6 +54,12 @@ internal fun ConversationTimeline(
     val displayItems = groupTimelineItems(conversation.items)
     val displayEntryIds = remember(conversation.entries, conversation.activeEntryId, conversation.items) {
         buildTimelineDisplayEntryIds(conversation)
+    }
+    val navigationEntry = conversation.entries.firstOrNull { it.id == navigationEntryId }
+    val navigationToolCallId = when (navigationEntry) {
+        is ConversationEntry.ToolCall -> navigationEntry.toolCallId
+        is ConversationEntry.ToolResult -> navigationEntry.toolCallId
+        else -> null
     }
     val timelineTurns = remember(
         conversation.treeFormatVersion,
@@ -72,14 +81,32 @@ internal fun ConversationTimeline(
             Box(
                 modifier = Modifier.fillMaxWidth().onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInWindow(clipBounds = false)
-                    displayEntryIds.getOrNull(index).orEmpty().forEach { entryId ->
+                    val groupEntries = displayEntryIds.getOrNull(index).orEmpty()
+                    groupEntries.forEach { entryId ->
+                        if (displayItem is TimelineDisplayItem.ToolGroup && entryId == navigationEntryId &&
+                            navigationToolCallId != null
+                        ) return@forEach
                         onEntryPositioned(entryId, bounds.top, bounds.bottom)
                     }
                 },
             ) {
                 when (displayItem) {
-                    is TimelineDisplayItem.ToolGroup -> TimelineToolGroup(displayItem.items)
-                    is TimelineDisplayItem.ReasoningGroup -> TimelineReasoningItem(mergeReasoningItems(displayItem.items))
+                    is TimelineDisplayItem.ToolGroup -> TimelineToolGroup(
+                        items = displayItem.items,
+                        navigationExpanded = navigationEntryId in displayEntryIds.getOrNull(index).orEmpty() &&
+                            navigationEntry is ConversationEntry.ToolCall ||
+                            navigationEntryId in displayEntryIds.getOrNull(index).orEmpty() &&
+                            navigationEntry is ConversationEntry.ToolResult,
+                        navigationTargetToolCallId = navigationToolCallId,
+                        onTargetPositioned = { top, bottom ->
+                            navigationEntryId?.let { onNavigationTargetPositioned(it, top, bottom) }
+                        },
+                    )
+                    is TimelineDisplayItem.ReasoningGroup -> TimelineReasoningItem(
+                        mergeReasoningItems(displayItem.items),
+                        navigationExpanded = navigationEntryId in displayEntryIds.getOrNull(index).orEmpty() &&
+                            navigationEntry is ConversationEntry.Reasoning,
+                    )
                     is TimelineDisplayItem.Content -> when (val item = displayItem.item) {
                         is ChatMessageItem -> {
                             if (item.message.role == ChatRole.User) {
@@ -101,6 +128,7 @@ internal fun ConversationTimeline(
                                     onPositioned = onTurnPositioned,
                                     onEditFromHere = onEditFromHere,
                                     onNewSession = onNewSession,
+                                    onRollback = onRollback,
                                 )
                             } else {
                                 AssistantMessageBlock(

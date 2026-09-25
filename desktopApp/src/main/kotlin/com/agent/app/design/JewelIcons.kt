@@ -35,6 +35,7 @@ internal val HeaderGlyph.iconKey: IconKey
         HeaderGlyph.SEARCH -> AllIconsKeys.Actions.Find
         HeaderGlyph.SEND -> COMPOSER_SEND_ICON_KEY
         HeaderGlyph.STOP -> AllIconsKeys.Actions.Suspend
+        HeaderGlyph.RESUME -> PathIconKey("icons/resume.svg", ApplicationIconResources::class.java)
     }
 
 /** 将右侧工具栏业务动作映射到 IntelliJ 图标包。 */

@@ -172,13 +172,13 @@ internal fun ComposerPanel(
     LaunchedEffect(matchingCommands) {
         commandSelectionIndex = commandSelectionIndex.coerceIn(0, (matchingCommands.lastIndex).coerceAtLeast(0))
     }
-    LaunchedEffect(activeConversation?.workspacePath, referenceQuery) {
+    LaunchedEffect(activeConversation?.workspacePath, state.ui.newWorkspacePath, referenceQuery) {
         workspaceReferences = if (referenceQuery == null) {
             emptyList()
         } else {
             withContext(Dispatchers.IO) {
                 discoverWorkspaceFileReferences(
-                    workspacePath = activeConversation?.workspacePath.orEmpty(),
+                    workspacePath = activeConversation?.workspacePath ?: state.ui.newWorkspacePath,
                     query = referenceQuery,
                 )
             }
@@ -235,12 +235,12 @@ internal fun ComposerPanel(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (!activeConversation?.attachments.isNullOrEmpty()) {
+            if (state.activeDraftAttachments.isNotEmpty()) {
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    activeConversation.attachments.forEach { attachment ->
+                    state.activeDraftAttachments.forEach { attachment ->
                         Tooltip(tooltip = { Text("单击使用 Windows 默认程序打开\n${attachment.path}") }) {
                             JewelSurface(
                                 role = JewelSurfaceRole.CHROME,
@@ -438,7 +438,11 @@ internal fun ComposerPanel(
                                 }
                                 if (shouldSubmitComposerKey(event.key, event.type, event.isShiftPressed)) {
                                     if (executionState.isStoppable()) {
-                                        state.cancelActiveRun()
+                                        state.pauseActiveRun()
+                                    } else if (executionState == ExecutionState.Paused ||
+                                        executionState == ExecutionState.Interrupted
+                                    ) {
+                                        state.resumeActiveRun()
                                     } else {
                                         onSendDraft()
                                     }

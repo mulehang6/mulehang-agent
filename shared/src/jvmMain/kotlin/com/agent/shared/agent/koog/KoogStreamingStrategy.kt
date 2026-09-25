@@ -9,6 +9,7 @@ import ai.koog.agents.core.dsl.extension.ReceivedToolResults
 import ai.koog.agents.core.dsl.extension.nodeExecuteTools
 import ai.koog.agents.core.dsl.extension.onToolCalls
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.snapshot.feature.Persistence
 import ai.koog.agents.features.eventHandler.feature.handleEvents
 import ai.koog.prompt.message.Message
 import ai.koog.serialization.JSONObject
@@ -20,6 +21,10 @@ import kotlinx.coroutines.flow.onEach
 import com.agent.shared.agent.prompt.buildLlmModel
 import com.agent.shared.agent.provider.ProviderKoogTransportAdapters
 import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
+import com.agent.shared.persistence.DesktopPersistenceDatabase
+import java.security.MessageDigest
+import java.util.UUID
+import kotlinx.coroutines.CancellationException
 
 /**
  * 使用 Koog agent + ToolRegistry 执行当前桌面轮次。
@@ -33,24 +38,44 @@ internal suspend fun runWithKoogAgent(
     toolRegistry: ToolRegistry,
     bridge: DesktopToolInteractionBridge,
     emitEvent: suspend (AgentStreamEvent) -> Unit,
+    persistenceDatabase: DesktopPersistenceDatabase? = null,
 ): String {
+    val runId = request.resumeRunId ?: request.traceId.ifBlank { UUID.randomUUID().toString() }
+    val provider = persistenceDatabase?.let { database ->
+        SqlDelightPersistenceStorageProvider(
+            persistence = database,
+            runId = runId,
+            conversationId = request.sessionId,
+            modelFingerprint = runModelFingerprint(request),
+            toolFingerprint = runToolFingerprint(toolRegistry),
+            userEntryId = request.userEntryId.takeIf(String::isNotBlank),
+        ).also { it.beginRun(request.profile.model) }
+    }
+    val effectiveRequest = persistenceDatabase?.let { database ->
+        ContextCompactionCoordinator(database).prepare(request, runId)
+    } ?: request
+    val statusTracker = persistenceDatabase?.let { database -> AgentRunStatusTracker(database, effectiveRequest, runId) }
     val agent = AIAgent
         .builder()
-        .promptExecutor(buildPromptExecutor(request.profile))
-        .llmModel(buildLlmModel(request.profile))
+        .promptExecutor(buildPromptExecutor(effectiveRequest.profile))
+        .llmModel(buildLlmModel(effectiveRequest.profile))
         .toolRegistry(toolRegistry)
         .prompt(
             buildAgentPrompt(
-                profile = request.profile,
-                reasoningEffort = request.reasoningEffort,
-                runtimeResources = request.runtimeResources,
+                profile = effectiveRequest.profile,
+                reasoningEffort = effectiveRequest.reasoningEffort,
+                runtimeResources = effectiveRequest.runtimeResources,
             ),
         )
-        .maxIterations(request.profile.maxIterations)
-        .graphStrategy(buildStreamingSingleRunStrategy(request, emitEvent))
+        .maxIterations(effectiveRequest.profile.maxIterations)
+        .graphStrategy(buildStreamingSingleRunStrategy(effectiveRequest, emitEvent, statusTracker))
+        .apply {
+            if (provider != null) install(Persistence) { config -> config.storage = provider }
+        }
         .install {
             handleEvents {
                 onToolCallStarting { context ->
+                    statusTracker?.toolStarted()
                     emitEvent(
                         buildToolCallStartedEvent(
                             toolCallId = context.toolCallId,
@@ -69,6 +94,7 @@ internal suspend fun runWithKoogAgent(
                     )
                 }
                 onToolCallFailed { context ->
+                    statusTracker?.toolFailed(context.message.ifBlank { context.error?.message ?: "工具执行失败" })
                     emitEvent(
                         AgentStreamEvent.ToolCallFailed(
                             toolCallId = context.toolCallId,
@@ -82,8 +108,67 @@ internal suspend fun runWithKoogAgent(
             }
         }
         .build()
-    return agent.run(request.prompt, null)
+    return try {
+        val result = if (request.resumeRunId != null) {
+            val checkpoint = requireNotNull(provider?.getLatestCheckpoint(runId)) {
+                "没有可用的运行恢复点。"
+            }
+            val database = requireNotNull(persistenceDatabase)
+            val adjusted = InterruptedToolCheckpointAdapter(database, runId).adapt(checkpoint)
+            if (adjusted.checkpoint !== checkpoint) {
+                adjusted.unknownCalls.forEach { call ->
+                    val event = AgentStreamEvent.ToolCallInterrupted(
+                        toolCallId = call.id,
+                        name = call.name,
+                        argumentsJson = call.argumentsJson,
+                        partialOutput = call.partialOutput,
+                        reason = call.modelResultText(),
+                    )
+                    AgentRunEventJournal(database, request.sessionId, runId).record(event)
+                    emitEvent(event)
+                }
+                provider.saveCheckpoint(runId, adjusted.checkpoint)
+            }
+            Persistence.runFromCheckpoint(agent, request.prompt, adjusted.checkpoint, sessionId = runId)
+        } else {
+            agent.run(request.prompt, runId)
+        }
+        provider?.finishRun("COMPLETED")
+        result
+    } catch (cancellation: CancellationException) {
+        provider?.interruptRun()
+        throw cancellation
+    } catch (error: Exception) {
+        provider?.interruptRun()
+        throw error
+    }
 }
+
+/** 固定本轮模型与推理配置，拒绝以变化后的设置恢复旧图状态。 */
+private fun runModelFingerprint(request: AgentRunRequest): String = sha256(
+    listOf(
+        request.profile.providerType.name,
+        request.profile.providerId,
+        request.profile.baseUrl,
+        request.profile.model,
+        request.reasoningEffort?.wireValue.orEmpty(),
+        request.profile.maxIterations.toString(),
+        request.profile.requestBody.toString(),
+        request.profile.reasoningBodyByEffort.toSortedMap().toString(),
+    ).joinToString("\n"),
+)
+
+/** 工具名、参数描述和类型共同决定可恢复工具集合的指纹。 */
+private fun runToolFingerprint(registry: ToolRegistry): String = sha256(
+    registry.tools.sortedBy { it.name }.joinToString("\n") { tool ->
+        "${tool.name}|${tool.descriptor}|${tool.argsType}|${tool.resultType}"
+    },
+)
+
+/** 生成稳定的十六进制 SHA-256 指纹。 */
+private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+    .digest(value.toByteArray(Charsets.UTF_8))
+    .joinToString("") { byte -> "%02x".format(byte) }
 
 /**
  * 从完整的结构化参数构建工具开始事件，避免预览截断破坏终端命令和操作意图。
@@ -99,6 +184,7 @@ internal fun buildToolCallStartedEvent(
             toolCallId = toolCallId,
             name = toolName,
             argumentsPreview = serializedArguments.toPreview(),
+            argumentsJson = serializedArguments,
         )
     }
     val script = arguments.stringArgument("script")
@@ -109,6 +195,7 @@ internal fun buildToolCallStartedEvent(
         name = toolName,
         argumentsPreview = (script ?: serializedArguments).toPreview(),
         operationIntent = operationIntent,
+        argumentsJson = serializedArguments,
     )
 }
 
@@ -156,6 +243,7 @@ private val OPERATION_INTENT_ARGUMENT_PATTERN =
 private fun buildStreamingSingleRunStrategy(
     request: AgentRunRequest,
     emitEvent: suspend (AgentStreamEvent) -> Unit,
+    statusTracker: AgentRunStatusTracker?,
 ): AIAgentGraphStrategy<String, String> = strategy("single_run_streaming") {
     val nodeCallLlm by node<String, Message.Assistant>("call_llm_streaming") { message ->
         llm.writeSession {
@@ -166,7 +254,7 @@ private fun buildStreamingSingleRunStrategy(
                     inputParts = request.inputParts,
                 ).forEach(::message)
             }
-            requestStreamingAssistantMessage(request, emitEvent)
+            requestStreamingAssistantMessage(request, emitEvent, statusTracker)
         }
     }
     val nodeExecuteTool by nodeExecuteTools()
@@ -179,7 +267,7 @@ private fun buildStreamingSingleRunStrategy(
                     }
                 }
             }
-            requestStreamingAssistantMessage(request, emitEvent)
+            requestStreamingAssistantMessage(request, emitEvent, statusTracker)
         }
     }
 
@@ -208,7 +296,13 @@ private fun buildStreamingSingleRunStrategy(
 private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingAssistantMessage(
     request: AgentRunRequest,
     emitEvent: suspend (AgentStreamEvent) -> Unit,
+    statusTracker: AgentRunStatusTracker?,
 ): Message.Assistant {
+    statusTracker?.pendingSnapshot()?.let { (snapshot, messageText) ->
+        appendPrompt { user { text(messageText) } }
+        statusTracker.persist(snapshot, messageText)
+        emitEvent(AgentStreamEvent.StatusSnapshotUpdated(snapshot, messageText))
+    }
     val timing = AgentRunTiming(request.traceId)
     timing.mark("model_request")
     var firstFrame = true
@@ -222,6 +316,12 @@ private suspend fun AIAgentLLMWriteSessionCommon.requestStreamingAssistantMessag
         },
         emitEvent = emitEvent,
     )
+    val inputTokens = response.metaInfo.inputTokensCount?.toLong()
+    val outputTokens = response.metaInfo.outputTokensCount?.toLong()
+    statusTracker?.updateUsage(inputTokens)
+    if (inputTokens != null || outputTokens != null) {
+        emitEvent(AgentStreamEvent.UsageUpdated(inputTokens, outputTokens, request.contextWindow))
+    }
     rewritePrompt { currentPrompt ->
         appendAssistantMessageToPrompt(
             currentPrompt = currentPrompt,

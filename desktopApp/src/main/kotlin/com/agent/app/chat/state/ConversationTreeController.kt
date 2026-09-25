@@ -61,14 +61,14 @@ internal class ConversationTreeController(
             entries = copied.entries,
             activeEntryId = copied.activeEntryId,
             headEntryId = copied.activeEntryId,
-            attachments = restoredDraft.attachments,
         ).withEntryProjection()
         window.ui = window.ui.copy(
             tasks = listOf(child) + window.ui.tasks,
-            activeTaskId = child.id,
-            draft = restoredDraft.text,
-            draftSelectionStart = restoredDraft.text.length,
             composerFocusRequestId = window.ui.composerFocusRequestId + 1L,
+        )
+        window.showExistingConversation(
+            child.id,
+            ComposerDraft(restoredDraft.text, restoredDraft.text.length, restoredDraft.attachments),
         )
         window.persistenceCoordinator?.schedule(window.ui.tasks)
         return success()
@@ -95,6 +95,42 @@ internal class ConversationTreeController(
         return result
     }
 
+    /** 回到指定用户消息发送前，并仅将该消息的原始输入恢复到对应草稿。 */
+    suspend fun rollbackUserTurn(
+        conversationId: String,
+        userEntryId: String,
+        restoreFiles: Boolean = false,
+    ): ConversationTreeOperationResult {
+        val source = window.findConversationOrNull(conversationId) ?: return failure("会话不存在。")
+        val selected = source.entries.firstOrNull { it.id == userEntryId } as? ConversationEntry.Message
+            ?: return failure("用户消息不存在。")
+        if (selected.message.role != ChatRole.User) return failure("只能回退用户消息。")
+        val coordinator = window.persistenceCoordinator ?: return failure("会话持久化不可用。")
+        val runningJob = window.activeRunJob.takeIf { window.activeRunConversationId == conversationId }
+        window.cancelRunIfOwnedBy(conversationId)
+        runningJob?.join()
+        val outcome = runCatching { coordinator.rollbackUserTurn(conversationId, userEntryId, restoreFiles) }
+            .getOrElse { error -> return failure(error.message ?: "消息回退失败。") }
+            ?: return failure("这条消息没有可用的回退点。")
+        val restoredTasks = outcome.tasks.map(window::withAgentStatus)
+        window.invalidateConversationTitleGeneration(conversationId)
+        window.clearPendingOwnership(conversationId)
+        val restoredDraft = draftFromInputParts(selected.inputParts)
+        val draft = ComposerDraft(restoredDraft.text, restoredDraft.text.length, restoredDraft.attachments)
+        window.ui = window.ui.copy(tasks = restoredTasks)
+        if (restoredTasks.none { it.id == conversationId }) {
+            window.showNewConversation(source.workspacePath)
+            window.updateDraft(draft.text, draft.selectionStart)
+            window.updateDraftAttachments(draft.attachments)
+            window.forgetConversationDraft(conversationId)
+        } else {
+            window.showExistingConversation(conversationId, draft)
+        }
+        window.ui = window.ui.copy(composerFocusRequestId = window.ui.composerFocusRequestId + 1L)
+        return if (outcome.fileSummary.skipped.isEmpty()) success()
+        else success("会话已回退；${outcome.fileSummary.skipped.size} 个文件已变化，未覆盖。")
+    }
+
     /** 克隆 root 到当前 leaf 的单一路径，不复制源会话的其他分支。 */
     fun cloneConversation(conversationId: String): ConversationTreeOperationResult {
         val source = window.findConversationOrNull(conversationId)
@@ -119,10 +155,8 @@ internal class ConversationTreeController(
         ).withEntryProjection()
         window.ui = window.ui.copy(
             tasks = listOf(child) + window.ui.tasks,
-            activeTaskId = child.id,
-            draft = "",
-            draftSelectionStart = 0,
         )
+        window.showExistingConversation(child.id, ComposerDraft())
         window.persistenceCoordinator?.schedule(window.ui.tasks)
         return success()
     }
@@ -242,16 +276,15 @@ internal class ConversationTreeController(
             activeEntryId = nextLeafId,
             headEntryId = current.headEntryId,
         ).copy(
-            attachments = restoredDraft?.attachments ?: current.attachments,
             streamingAssistantEntryId = null,
             streamingReasoningEntryId = null,
         )
-        val nextDraft = restoredDraft?.text ?: window.ui.draft
         window.ui = window.ui.copy(
             tasks = window.ui.tasks.map { if (it.id == conversationId) nextConversation else it },
-            activeTaskId = conversationId,
-            draft = nextDraft,
-            draftSelectionStart = nextDraft.length,
+        )
+        window.showExistingConversation(
+            conversationId,
+            restoredDraft?.let { ComposerDraft(it.text, it.text.length, it.attachments) },
         )
         window.persistenceCoordinator?.schedule(window.ui.tasks)
         return success()
@@ -288,28 +321,14 @@ internal class ConversationTreeController(
     }
 
     /** 记录活动路径上的模型切换。 */
-    fun recordModelChange(conversation: ChatConversationUiState, profileId: String?): ChatConversationUiState {
-        if (conversation.treeFormatVersion <= 0) return conversation.copy(profileId = profileId)
-        val entry = ConversationEntry.ModelChange(newId(), conversation.activeEntryId, window.clock(), profileId)
-        return conversation.withAppendedEntryProjection(conversation.entries + entry, entry.id)
-            .copy(profileId = profileId)
-    }
+    fun recordModelChange(conversation: ChatConversationUiState, profileId: String?): ChatConversationUiState =
+        recordModelChangeEntry(conversation, profileId, newId(), window.clock())
 
     /** 记录活动路径上的推理强度切换。 */
     fun recordReasoningEffortChange(
         conversation: ChatConversationUiState,
         effort: ReasoningEffort,
-    ): ChatConversationUiState {
-        if (conversation.treeFormatVersion <= 0) return conversation.copy(reasoningEffort = effort)
-        val entry = ConversationEntry.ReasoningEffortChange(
-            id = newId(),
-            parentId = conversation.activeEntryId,
-            createdAt = window.clock(),
-            reasoningEffort = effort.name,
-        )
-        return conversation.withAppendedEntryProjection(conversation.entries + entry, entry.id)
-            .copy(reasoningEffort = effort)
-    }
+    ): ChatConversationUiState = recordReasoningEffortChangeEntry(conversation, effort, newId(), window.clock())
 
     /** 判断会话子树是否可以归档。 */
     fun canArchive(conversationId: String): Boolean {
@@ -327,13 +346,7 @@ internal class ConversationTreeController(
     /** 返回会话不能永久删除的具体原因；为空表示可以进入确认流程。 */
     fun deleteBlockReason(conversationId: String): String? {
         val source = window.findConversationOrNull(conversationId) ?: return "会话不存在。"
-        return when {
-            window.ui.activeTaskId == conversationId -> "当前活动会话不能删除，请先切换到其他会话。"
-            source.executionState.isStoppable() || window.activeRunConversationId == conversationId ->
-                "运行中或等待交互的会话不能删除。"
-
-            else -> null
-        }
+        return null
     }
 
     /** 归档选中会话及全部后代，并为当前会话选择安全替代项。 */
@@ -351,18 +364,14 @@ internal class ConversationTreeController(
             val replacement = tasks
                 .filter { it.archivedAt == null && it.workspacePath == target.workspacePath }
                 .maxByOrNull(ChatConversationUiState::updatedAt)
-                ?: newConversation(
-                    workspacePath = target.workspacePath,
-                    contextWindow = window.contextWindowForConversation(target),
-                    profileId = target.profileId,
-                    reasoningEffort = target.reasoningEffort,
-                    permissionPreset = target.permissionPreset,
-                ).copy(workspaceName = target.workspaceName)
-            if (replacement !in tasks) tasks = listOf(replacement) + tasks
-            activeTaskId = replacement.id
+            activeTaskId = replacement?.id.orEmpty()
             draft = ""
         }
-        window.ui = window.ui.copy(tasks = tasks, activeTaskId = activeTaskId, draft = draft)
+        window.ui = window.ui.copy(tasks = tasks)
+        if (window.ui.activeTaskId in archivedIds) {
+            if (activeTaskId.isBlank()) window.showNewConversation(target.workspacePath)
+            else window.showExistingConversation(activeTaskId)
+        }
         window.persistenceCoordinator?.schedule(window.ui.tasks)
         return success()
     }
@@ -375,15 +384,15 @@ internal class ConversationTreeController(
         return success()
     }
 
-    /**
-     * 永久删除单个非活动、非运行会话；直接子会话提升为根，不级联删除后代。
-     */
+    /** 永久删除单个会话；取消其运行，直接子会话提升为根。 */
     fun deleteConversation(conversationId: String): ConversationTreeOperationResult {
         val source = window.findConversationOrNull(conversationId) ?: return failure("会话不存在。")
         deleteBlockReason(conversationId)?.let { reason -> return failure(reason) }
+        window.cancelRunIfOwnedBy(conversationId)
         window.onSessionClosed(conversationId, source.workspacePath)
         window.invalidateConversationTitleGeneration(conversationId)
         window.clearPendingOwnership(conversationId)
+        val deletingActive = window.ui.activeTaskId == conversationId
         window.ui = window.ui.copy(
             tasks = window.ui.tasks
                 .filterNot { it.id == conversationId }
@@ -395,6 +404,8 @@ internal class ConversationTreeController(
                     }
                 },
         )
+        if (deletingActive) window.showNewConversation(source.workspacePath)
+        window.forgetConversationDraft(conversationId)
         window.persistenceCoordinator?.schedule(window.ui.tasks)
         return success()
     }
@@ -470,7 +481,8 @@ internal class ConversationTreeController(
     }
 
     /** 创建成功结果。 */
-    private fun success(): ConversationTreeOperationResult = ConversationTreeOperationResult(true)
+    private fun success(message: String? = null): ConversationTreeOperationResult =
+        ConversationTreeOperationResult(true, message)
 
     /** 创建失败结果。 */
     private fun failure(message: String): ConversationTreeOperationResult =

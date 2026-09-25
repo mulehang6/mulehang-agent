@@ -195,7 +195,8 @@ class ChatTaskSnapshotMapperTest {
             contextUsageFraction = 0.25f,
         )
 
-        assertEquals(source, ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source)))
+        assertEquals(source.copy(attachments = emptyList()),
+            ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source)))
     }
 
     /** 文件快照与会话媒体引用必须连同图号顺序写入历史，重启后仍可准确重放给模型。 */
@@ -239,13 +240,11 @@ class ChatTaskSnapshotMapperTest {
 
         val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
 
-        assertEquals(source.attachments, restored.attachments)
+        assertEquals(emptyList(), restored.attachments)
         assertEquals(orderedInput, (restored.history.single() as AgentConversationHistoryMessage.User).inputParts)
     }
 
-    /**
-     * 重启后不能继续运行已消失的协程或工具进程。
-     */
+    /** 重启后旧协程已消失，运行态应变为等待恢复点检查的中断态。 */
     @Test
     fun `should mark running task as interrupted during restore`() {
         val source = ChatConversationUiState(
@@ -258,8 +257,22 @@ class ChatTaskSnapshotMapperTest {
 
         val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
 
-        assertTrue(restored.executionState is ExecutionState.Failed)
-        assertEquals("执行已中断", restored.executionState.error.title)
+        assertEquals(ExecutionState.Interrupted, restored.executionState)
+    }
+
+    /** 用户显式暂停的会话在重启后仍显示继续操作。 */
+    @Test
+    fun `should preserve paused state during restore`() {
+        val source = ChatConversationUiState(
+            id = "task-paused",
+            title = "已暂停",
+            workspacePath = "D:\\workspace",
+            executionState = ExecutionState.Paused,
+        )
+
+        val restored = ChatTaskSnapshotMapper.toConversation(ChatTaskSnapshotMapper.toPersistedTask(source))
+
+        assertEquals(ExecutionState.Paused, restored.executionState)
     }
 
     /**

@@ -1,18 +1,14 @@
 package com.agent.shared.session
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import com.agent.shared.persistence.DesktopPersistenceDatabase
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.exists
-import kotlin.io.path.readText
+import java.sql.DriverManager
 import kotlin.math.roundToInt
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
-/**
- * 桌面端全局外观偏好。
- *
- * 字体名称保持原样保存，以便系统字体重新可用时自动恢复；是否实际可用由桌面端解析。
- */
+/** 桌面端全局外观偏好。 */
 data class DesktopAppearancePreferences(
     val scalePercent: Int = DEFAULT_UI_SCALE_PERCENT,
     val uiFontFamily: String? = null,
@@ -26,29 +22,18 @@ data class DesktopAppearancePreferences(
     )
 
     companion object {
-        /** 默认的全局界面缩放百分比。 */
         const val DEFAULT_UI_SCALE_PERCENT: Int = 100
-
-        /** 允许的最小全局界面缩放百分比。 */
         const val MIN_UI_SCALE_PERCENT: Int = 50
-
-        /** 允许的最大全局界面缩放百分比。 */
         const val MAX_UI_SCALE_PERCENT: Int = 200
-
-        /** 全局界面缩放的离散步长。 */
         const val UI_SCALE_STEP_PERCENT: Int = 10
     }
 }
 
-/**
- * 内嵌终端的用户级偏好。
- *
- * Shell 仅以稳定类型标识持久化，机器相关的可执行文件路径由桌面端在启动时重新检测。
- */
+/** 内嵌终端的用户级偏好；只保存稳定 Shell 类型标识。 */
 data class DesktopTerminalPreferences(
     val defaultShellId: String = DEFAULT_DESKTOP_TERMINAL_SHELL_ID,
 ) {
-    /** 返回可安全应用和持久化的规范化终端偏好。 */
+    /** 返回规范化后的终端偏好。 */
     fun normalized(): DesktopTerminalPreferences = copy(
         defaultShellId = defaultShellId.trim().ifBlank { DEFAULT_DESKTOP_TERMINAL_SHELL_ID },
     )
@@ -57,9 +42,7 @@ data class DesktopTerminalPreferences(
 /** 旧版 Windows PowerShell 的稳定持久化标识，也是终端的默认回退项。 */
 const val DEFAULT_DESKTOP_TERMINAL_SHELL_ID: String = "windows-powershell"
 
-/**
- * 将任意缩放百分比归一到支持范围内最近的 10% 档位。
- */
+/** 将任意缩放百分比归一到支持范围内最近的 10% 档位。 */
 fun normalizeDesktopUiScalePercent(scalePercent: Int?): Int {
     if (scalePercent == null) return DesktopAppearancePreferences.DEFAULT_UI_SCALE_PERCENT
     val rounded = (scalePercent / DesktopAppearancePreferences.UI_SCALE_STEP_PERCENT.toDouble())
@@ -71,54 +54,124 @@ fun normalizeDesktopUiScalePercent(scalePercent: Int?): Int {
 }
 
 /**
- * 按项目保存 UI 级最近选择状态。
+ * 在统一 SQLDelight 数据库中保存桌面 UI 状态。
+ *
+ * 该状态不包含任何会话输入草稿；草稿只存在于进程内存中。
  */
 class DesktopUiStateStore(
-    private val statePath: Path,
+    private val persistence: DesktopPersistenceDatabase,
     private val json: Json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
     },
 ) {
-    /**
-     * 读取指定项目上次选择的 profile id。
-     */
-    fun loadSelectedProfile(projectPath: String): String? {
-        val state = readState() ?: return null
-        return state.projectSelections[projectPath]
+    /** 为测试和独立使用保留的数据库路径构造函数。 */
+    constructor(databasePath: Path) : this(DesktopPersistenceDatabase.open(databasePath))
+
+    /** 合并旧版 JSON 或 SQLite UI 状态；源文件保留作回退。 */
+    fun migrateLegacyState(legacyPath: Path) {
+        val alreadyMigrated = persistence.read { queries ->
+            queries.selectUiState(LEGACY_STATE_MIGRATION_KEY).executeAsOneOrNull() != null
+        }
+        if (alreadyMigrated) return
+        if (!Files.isRegularFile(legacyPath)) return
+        val legacyState = readLegacyState(legacyPath) ?: return
+        persistence.write { queries ->
+            if (queries.selectUiState(LEGACY_STATE_MIGRATION_KEY).executeAsOneOrNull() != null) return@write
+            val currentRow = queries.selectUiState(DESKTOP_STATE_KEY).executeAsOneOrNull()
+            val currentState = currentRow?.let { row ->
+                require(row.payload_version <= UI_STATE_PAYLOAD_VERSION) {
+                    "不支持的 UI 状态版本：${row.payload_version}"
+                }
+                json.decodeFromString(UiStateDocument.serializer(), row.payload_json)
+            }
+            val mergedState = mergeUiState(legacyState, currentState)
+            val now = System.currentTimeMillis()
+            queries.upsertUiState(
+                state_key = DESKTOP_STATE_KEY,
+                payload_version = UI_STATE_PAYLOAD_VERSION,
+                payload_json = json.encodeToString(UiStateDocument.serializer(), mergedState),
+                updated_at = now,
+            )
+            queries.upsertUiState(
+                state_key = LEGACY_STATE_MIGRATION_KEY,
+                payload_version = UI_STATE_PAYLOAD_VERSION,
+                payload_json = "{}",
+                updated_at = now,
+            )
+        }
     }
 
-    /**
-     * 保存指定项目当前选择的 profile id。
-     */
+    /** 保留统一库中较新的字段，并补齐它尚未保存的旧版状态。 */
+    private fun mergeUiState(legacy: UiStateDocument, current: UiStateDocument?): UiStateDocument {
+        if (current == null) return legacy
+        return UiStateDocument(
+            projectSelections = legacy.projectSelections + current.projectSelections,
+            recentWorkspace = current.recentWorkspace ?: legacy.recentWorkspace,
+            themeMode = current.themeMode ?: legacy.themeMode,
+            uiScalePercent = current.uiScalePercent ?: legacy.uiScalePercent,
+            uiFontFamily = current.uiFontFamily ?: legacy.uiFontFamily,
+            codeFontFamily = current.codeFontFamily ?: legacy.codeFontFamily,
+            defaultTerminalShellId = current.defaultTerminalShellId ?: legacy.defaultTerminalShellId,
+        )
+    }
+
+    /** 读取原版 JSON，或旧版缺陷曾生成的同路径 SQLite 状态库。 */
+    private fun readLegacyState(legacyPath: Path): UiStateDocument? {
+        runCatching {
+            json.decodeFromString(UiStateDocument.serializer(), Files.readString(legacyPath))
+        }.getOrNull()?.let { return it }
+        if (!legacyPath.hasSqliteHeader()) return null
+        return runCatching {
+            DriverManager.getConnection("jdbc:sqlite:${legacyPath.toAbsolutePath().normalize()}").use { connection ->
+                connection.createStatement().use { it.execute("PRAGMA query_only = ON") }
+                val hasStateTable = connection.prepareStatement(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_ui_state'",
+                ).use { it.executeQuery().use { rows -> rows.next() } }
+                if (!hasStateTable) return@use null
+                connection.prepareStatement(
+                    "SELECT payload_version, payload_json FROM app_ui_state WHERE state_key = ?",
+                ).use { statement ->
+                    statement.setString(1, DESKTOP_STATE_KEY)
+                    statement.executeQuery().use { rows ->
+                        if (rows.next()) {
+                            require(rows.getLong("payload_version") <= UI_STATE_PAYLOAD_VERSION) {
+                                "不支持的旧版 UI 状态版本。"
+                            }
+                            json.decodeFromString(UiStateDocument.serializer(), rows.getString("payload_json"))
+                        } else {
+                            null
+                        }
+                    }
+                }
+            }
+        }.getOrNull()
+    }
+
+    /** 仅尝试把 SQLite 文件作为数据库读取，避免打开任意损坏的 JSON。 */
+    private fun Path.hasSqliteHeader(): Boolean = runCatching {
+        Files.newInputStream(this).use { stream -> stream.readNBytes(SQLITE_HEADER.size).contentEquals(SQLITE_HEADER) }
+    }.getOrDefault(false)
+
+    /** 读取指定项目上次选择的 profile id。 */
+    fun loadSelectedProfile(projectPath: String): String? = readState()?.projectSelections?.get(projectPath)
+
+    /** 保存指定项目当前选择的 profile id。 */
     fun saveSelectedProfile(projectPath: String, profileId: String) {
         val current = readState() ?: UiStateDocument()
-        val updated = current.copy(
-            projectSelections = current.projectSelections + (projectPath to profileId),
-        )
-        statePath.parent?.let(Files::createDirectories)
-        Files.writeString(statePath, json.encodeToString(UiStateDocument.serializer(), updated))
+        saveState(current.copy(projectSelections = current.projectSelections + (projectPath to profileId)))
     }
 
-    /**
-     * 读取最近使用的工作区路径。
-     */
-    fun loadRecentWorkspace(): String? {
-        val state = readState() ?: return null
-        return state.recentWorkspace
-    }
+    /** 读取最近使用的工作区路径。 */
+    fun loadRecentWorkspace(): String? = readState()?.recentWorkspace
 
-    /**
-     * 保存最近使用的工作区路径。
-     */
+    /** 保存最近使用的工作区路径。 */
     fun saveRecentWorkspace(workspacePath: String) {
         val current = readState() ?: UiStateDocument()
-        val updated = current.copy(recentWorkspace = workspacePath)
-        statePath.parent?.let(Files::createDirectories)
-        Files.writeString(statePath, json.encodeToString(UiStateDocument.serializer(), updated))
+        saveState(current.copy(recentWorkspace = workspacePath))
     }
 
-    /** 读取用户选择的界面主题模式；缺省时由桌面端采用深色主题。 */
+    /** 读取用户选择的界面主题模式。 */
     fun loadThemeMode(): String? = readState()?.themeMode
 
     /** 保存用户选择的界面主题模式。 */
@@ -127,9 +180,7 @@ class DesktopUiStateStore(
         saveState(current.copy(themeMode = themeMode))
     }
 
-    /**
-     * 读取用户级全局外观偏好；旧状态和缺失缩放均按默认值兼容。
-     */
+    /** 读取用户级全局外观偏好。 */
     fun loadAppearancePreferences(): DesktopAppearancePreferences {
         val state = readState() ?: return DesktopAppearancePreferences()
         return DesktopAppearancePreferences(
@@ -139,7 +190,7 @@ class DesktopUiStateStore(
         ).normalized()
     }
 
-    /** 保存用户级全局外观偏好，并先规范化缩放和值为空的字体名称。 */
+    /** 保存用户级全局外观偏好。 */
     fun saveAppearancePreferences(preferences: DesktopAppearancePreferences) {
         val current = readState() ?: UiStateDocument()
         val normalized = preferences.normalized()
@@ -152,40 +203,41 @@ class DesktopUiStateStore(
         )
     }
 
-    /**
-     * 读取用户级终端偏好；旧状态未包含该字段时兼容到旧版 Windows PowerShell。
-     */
+    /** 读取用户级终端偏好。 */
     fun loadTerminalPreferences(): DesktopTerminalPreferences = DesktopTerminalPreferences(
         defaultShellId = readState()?.defaultTerminalShellId ?: DEFAULT_DESKTOP_TERMINAL_SHELL_ID,
     ).normalized()
 
-    /** 保存用户级终端偏好，并只记录稳定 Shell 类型标识。 */
+    /** 保存用户级终端偏好。 */
     fun saveTerminalPreferences(preferences: DesktopTerminalPreferences) {
         val current = readState() ?: UiStateDocument()
-        saveState(
-            current.copy(
-                defaultTerminalShellId = preferences.normalized().defaultShellId,
-            ),
-        )
+        saveState(current.copy(defaultTerminalShellId = preferences.normalized().defaultShellId))
     }
 
-    /**
-     * 读取 UI 状态文档，文件不存在时返回 null。
-     */
-    private fun readState(): UiStateDocument? {
-        if (!statePath.exists()) return null
-        return json.decodeFromString(UiStateDocument.serializer(), statePath.readText())
+    /** 读取统一数据库中的版本化 UI 状态文档。 */
+    private fun readState(): UiStateDocument? = persistence.read { queries ->
+        queries.selectUiState(DESKTOP_STATE_KEY).executeAsOneOrNull()?.let { row ->
+            require(row.payload_version <= UI_STATE_PAYLOAD_VERSION) {
+                "不支持的 UI 状态版本：${row.payload_version}"
+            }
+            json.decodeFromString(UiStateDocument.serializer(), row.payload_json)
+        }
     }
 
-    /** 写入完整 UI 状态，同时保证父目录已经存在。 */
+    /** 原子写入完整 UI 状态文档。 */
     private fun saveState(state: UiStateDocument) {
-        statePath.parent?.let(Files::createDirectories)
-        Files.writeString(statePath, json.encodeToString(UiStateDocument.serializer(), state))
+        val payload = json.encodeToString(UiStateDocument.serializer(), state)
+        persistence.write { queries ->
+            queries.upsertUiState(
+                state_key = DESKTOP_STATE_KEY,
+                payload_version = UI_STATE_PAYLOAD_VERSION,
+                payload_json = payload,
+                updated_at = System.currentTimeMillis(),
+            )
+        }
     }
 
-    /**
-     * 用户级 UI 状态文档。
-     */
+    /** 用户级 UI 状态文档。 */
     @Serializable
     private data class UiStateDocument(
         val projectSelections: Map<String, String> = emptyMap(),
@@ -196,4 +248,11 @@ class DesktopUiStateStore(
         val codeFontFamily: String? = null,
         val defaultTerminalShellId: String? = null,
     )
+
+    private companion object {
+        const val DESKTOP_STATE_KEY: String = "desktop"
+        const val LEGACY_STATE_MIGRATION_KEY: String = "migration:legacy-ui-state-v1"
+        const val UI_STATE_PAYLOAD_VERSION: Long = 1L
+        val SQLITE_HEADER: ByteArray = "SQLite format 3\u0000".encodeToByteArray()
+    }
 }

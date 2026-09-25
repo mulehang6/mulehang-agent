@@ -14,6 +14,7 @@ import java.nio.file.Paths
  */
 class DesktopAppSessionRepository(
     projectRoot: Path,
+    private val uiStateStore: DesktopUiStateStore,
     userHome: Path = Paths.get(System.getProperty("user.home")),
 ) : AppSessionRepository {
     private val pathResolver = DesktopPathResolver(
@@ -24,8 +25,6 @@ class DesktopAppSessionRepository(
         pathResolver = pathResolver,
         environmentOverrides = DesktopEnvironmentOverrides(),
     )
-    private val uiStateStore = DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json"))
-
     /**
      * 加载双层 settings 合并后的 profile 列表。
      */
@@ -37,6 +36,13 @@ class DesktopAppSessionRepository(
     /** Hook 仅从用户层加载，项目 settings 永远不会参与命令执行。 */
     override suspend fun loadHookSettings(): AgentHookSettings =
         settingsRepository.loadDocument(ConfigLayer.USER).hooks
+
+    /** 环境覆盖用户级设置；非法值退回有效用户设置或默认值。 */
+    override suspend fun loadContextCompactionThresholdPercent(): Int {
+        val userValue = settingsRepository.loadDocument(ConfigLayer.USER).contextCompactionThresholdPercent
+        val environmentValue = System.getenv("MULEHANG_CONTEXT_COMPACTION_THRESHOLD_PERCENT")?.toIntOrNull()
+        return listOfNotNull(environmentValue, userValue, 80).first { it in 50..95 && it % 5 == 0 }
+    }
 
     /**
      * 读取当前项目上次选择的 profile id。

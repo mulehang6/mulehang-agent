@@ -1,8 +1,11 @@
 package com.agent.shared.chat.persistence
 
+import kotlinx.serialization.Serializable
+
 /**
  * 单条任务的完整可持久化快照。
  */
+@Serializable
 data class PersistedTask(
     val id: String,
     val title: String,
@@ -42,6 +45,7 @@ data class PersistedTask(
 )
 
 /** 条目图中一个节点的数据库无关表示。 */
+@Serializable
 data class PersistedTaskEntry(
     val id: String,
     val parentId: String?,
@@ -53,6 +57,7 @@ data class PersistedTaskEntry(
 /**
  * 时间线中按顺序保存的一条类型化 JSON 负载。
  */
+@Serializable
 data class PersistedTimelineItem(
     val sequence: Int,
     val type: String,
@@ -62,6 +67,7 @@ data class PersistedTimelineItem(
 /**
  * Agent 上下文历史中按顺序保存的一条类型化 JSON 负载。
  */
+@Serializable
 data class PersistedHistoryItem(
     val sequence: Int,
     val type: String,
@@ -81,6 +87,19 @@ interface TaskRepository {
      * 事务化保存传入的任务快照。
      */
     suspend fun saveAll(tasks: List<PersistedTask>)
+
+    /** 原子写入已接受的用户消息和其发送前回退点。 */
+    suspend fun saveUserTurn(
+        tasks: List<PersistedTask>,
+        before: PersistedTask?,
+        conversationId: String,
+        userEntryId: String,
+    ) {
+        saveAll(tasks)
+    }
+
+    /** 将指定用户消息及其后续会话内容回退到发送前的永久快照。 */
+    suspend fun rollbackUserTurn(conversationId: String, userEntryId: String): UserTurnSnapshot? = null
 
     /**
      * 删除指定任务及其关联的时间线和 history。

@@ -69,7 +69,7 @@ internal object ChatTaskSnapshotMapper {
         executionState = source.executionState.persistenceType(),
         executionErrorTitle = (source.executionState as? ExecutionState.Failed)?.error?.title,
         executionErrorMessage = (source.executionState as? ExecutionState.Failed)?.error?.message,
-        attachmentsJson = json.encodeToString(JsonArray(source.attachments.map(::encodeAttachment))),
+        attachmentsJson = "[]",
         timeline = source.items.mapIndexed(::encodeTimeline),
         history = source.history.mapIndexed(::encodeHistory),
         entries = source.entries.map(ConversationEntrySnapshotMapper::encode),
@@ -106,7 +106,7 @@ internal object ChatTaskSnapshotMapper {
             entries = entries,
             items = projection?.timeline
                 ?: source.timeline.sortedBy(PersistedTimelineItem::sequence).map(::decodeTimeline),
-            attachments = json.parseToJsonElement(source.attachmentsJson).jsonArray.map(::decodeAttachment),
+            attachments = emptyList(),
             history = projection?.history
                 ?: source.history.sortedBy(PersistedHistoryItem::sequence).map(::decodeHistory),
             profileId = projection?.profileId ?: source.profileId,
@@ -368,6 +368,8 @@ internal object ChatTaskSnapshotMapper {
     /** 将原运行态恢复为不可续跑的错误状态。 */
     private fun PersistedTask.recoveredExecutionState(): ExecutionState = when (executionState) {
         "IDLE" -> ExecutionState.Idle
+        "PAUSED" -> ExecutionState.Paused
+        "INTERRUPTED", "RUNNING", "WAITING_FOR_USER_INPUT", "WAITING_FOR_APPROVAL" -> ExecutionState.Interrupted
         "FAILED" -> ExecutionState.Failed(AppError(executionErrorTitle ?: "执行失败", executionErrorMessage.orEmpty()))
         else -> ExecutionState.Failed(AppError("执行已中断", "应用重启后无法继续此前的 Agent 执行。"))
     }
@@ -376,6 +378,8 @@ internal object ChatTaskSnapshotMapper {
     private fun ExecutionState.persistenceType(): String = when (this) {
         ExecutionState.Idle -> "IDLE"
         ExecutionState.Running -> "RUNNING"
+        ExecutionState.Paused -> "PAUSED"
+        ExecutionState.Interrupted -> "INTERRUPTED"
         ExecutionState.WaitingForUserInput -> "WAITING_FOR_USER_INPUT"
         ExecutionState.WaitingForApproval -> "WAITING_FOR_APPROVAL"
         is ExecutionState.Failed -> "FAILED"

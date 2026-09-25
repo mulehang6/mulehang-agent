@@ -1,0 +1,524 @@
+CREATE TABLE conversation (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    workspace_path TEXT NOT NULL,
+    workspace_name TEXT,
+    detached_workspace_path TEXT,
+    detached_workspace_name TEXT,
+    parent_conversation_id TEXT REFERENCES conversation(id) ON DELETE SET NULL,
+    forked_from_entry_id TEXT,
+    active_entry_id TEXT,
+    head_entry_id TEXT,
+    archived_at INTEGER,
+    tree_format_version INTEGER NOT NULL DEFAULT 0,
+    reasoning_effort TEXT NOT NULL,
+    profile_id TEXT,
+    permission_preset TEXT NOT NULL,
+    context_usage_fraction REAL NOT NULL,
+    execution_state TEXT NOT NULL,
+    execution_error_title TEXT,
+    execution_error_message TEXT,
+    attachments_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX conversation_workspace_updated_idx
+ON conversation(workspace_path, updated_at DESC);
+
+CREATE INDEX conversation_parent_idx
+ON conversation(parent_conversation_id, updated_at DESC);
+
+CREATE TABLE conversation_timeline_item (
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, sequence)
+);
+
+CREATE TABLE conversation_history_item (
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    sequence INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, sequence)
+);
+
+CREATE TABLE conversation_entry (
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    parent_id TEXT,
+    created_at INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, id)
+);
+
+CREATE INDEX conversation_entry_parent_idx
+ON conversation_entry(conversation_id, parent_id, created_at);
+
+CREATE TABLE app_ui_state (
+    state_key TEXT NOT NULL PRIMARY KEY,
+    payload_version INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE agent_run (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    user_entry_id TEXT,
+    state TEXT NOT NULL,
+    model_id TEXT,
+    strategy_fingerprint TEXT NOT NULL,
+    tool_fingerprint TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    error_json TEXT
+);
+
+CREATE INDEX agent_run_conversation_idx
+ON agent_run(conversation_id, updated_at DESC);
+
+CREATE TABLE agent_checkpoint (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES agent_run(id) ON DELETE CASCADE,
+    entry_id TEXT,
+    kind TEXT NOT NULL,
+    koog_version TEXT NOT NULL,
+    strategy_fingerprint TEXT NOT NULL,
+    model_fingerprint TEXT NOT NULL,
+    tool_fingerprint TEXT NOT NULL,
+    payload_version INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    recovery_state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX agent_checkpoint_conversation_idx
+ON agent_checkpoint(conversation_id, kind, updated_at DESC);
+
+CREATE INDEX agent_checkpoint_run_idx
+ON agent_checkpoint(run_id, kind, updated_at DESC);
+
+CREATE TABLE agent_status_snapshot (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES agent_run(id) ON DELETE CASCADE,
+    turn_id TEXT NOT NULL,
+    payload_version INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    model_message_text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX agent_status_conversation_idx
+ON agent_status_snapshot(conversation_id, created_at DESC);
+
+CREATE TABLE agent_todo (
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    status TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, id)
+);
+
+CREATE INDEX agent_todo_order_idx
+ON agent_todo(conversation_id, sort_order);
+
+CREATE TABLE context_compaction (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES agent_run(id) ON DELETE SET NULL,
+    through_entry_id TEXT,
+    payload_version INTEGER NOT NULL,
+    summary_json TEXT NOT NULL,
+    source_token_count INTEGER NOT NULL,
+    retained_token_count INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX context_compaction_conversation_idx
+ON context_compaction(conversation_id, created_at DESC);
+
+CREATE TABLE tool_invocation (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES agent_run(id) ON DELETE CASCADE,
+    entry_id TEXT,
+    tool_name TEXT NOT NULL,
+    arguments_version INTEGER NOT NULL,
+    arguments_json TEXT NOT NULL,
+    state TEXT NOT NULL,
+    result_version INTEGER,
+    result_json TEXT,
+    partial_output TEXT,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER
+);
+
+CREATE INDEX tool_invocation_run_idx
+ON tool_invocation(run_id, started_at);
+
+CREATE TABLE tool_audit (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES agent_run(id) ON DELETE CASCADE,
+    invocation_id TEXT REFERENCES tool_invocation(id) ON DELETE SET NULL,
+    event_type TEXT NOT NULL,
+    payload_version INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX tool_audit_run_idx
+ON tool_audit(run_id, created_at);
+
+CREATE TABLE file_mutation (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES agent_run(id) ON DELETE SET NULL,
+    user_turn_checkpoint_id TEXT REFERENCES agent_checkpoint(id) ON DELETE CASCADE,
+    invocation_id TEXT REFERENCES tool_invocation(id) ON DELETE SET NULL,
+    transaction_order INTEGER NOT NULL,
+    absolute_path TEXT NOT NULL,
+    before_sha256 TEXT,
+    after_sha256 TEXT NOT NULL,
+    before_content BLOB,
+    is_new_file INTEGER AS kotlin.Boolean NOT NULL,
+    after_exists INTEGER AS kotlin.Boolean NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX file_mutation_checkpoint_idx
+ON file_mutation(user_turn_checkpoint_id, transaction_order DESC);
+
+CREATE TABLE conversation_attention (
+    id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    entry_id TEXT,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    action_resolved INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    read_at INTEGER,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX conversation_attention_unread_idx
+ON conversation_attention(conversation_id, read_at, created_at DESC);
+
+CREATE TABLE interaction_request (
+    request_id TEXT NOT NULL PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+    run_id TEXT NOT NULL REFERENCES agent_run(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    request_json TEXT NOT NULL,
+    response_text TEXT,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    answered_at INTEGER,
+    consumed_at INTEGER
+);
+
+CREATE INDEX interaction_request_replay_idx
+ON interaction_request(run_id, kind, signature, state, created_at DESC);
+
+selectAllConversations:
+SELECT * FROM conversation ORDER BY updated_at DESC, id;
+
+selectConversationIds:
+SELECT id FROM conversation;
+
+upsertConversation:
+INSERT INTO conversation(
+    id, title, workspace_path, workspace_name, detached_workspace_path, detached_workspace_name,
+    parent_conversation_id, forked_from_entry_id, active_entry_id, head_entry_id, archived_at,
+    tree_format_version, reasoning_effort, profile_id, permission_preset, context_usage_fraction,
+    execution_state, execution_error_title, execution_error_message, attachments_json, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    workspace_path = excluded.workspace_path,
+    workspace_name = excluded.workspace_name,
+    detached_workspace_path = excluded.detached_workspace_path,
+    detached_workspace_name = excluded.detached_workspace_name,
+    parent_conversation_id = excluded.parent_conversation_id,
+    forked_from_entry_id = excluded.forked_from_entry_id,
+    active_entry_id = excluded.active_entry_id,
+    head_entry_id = excluded.head_entry_id,
+    archived_at = excluded.archived_at,
+    tree_format_version = excluded.tree_format_version,
+    reasoning_effort = excluded.reasoning_effort,
+    profile_id = excluded.profile_id,
+    permission_preset = excluded.permission_preset,
+    context_usage_fraction = excluded.context_usage_fraction,
+    execution_state = excluded.execution_state,
+    execution_error_title = excluded.execution_error_title,
+    execution_error_message = excluded.execution_error_message,
+    attachments_json = excluded.attachments_json,
+    updated_at = excluded.updated_at;
+
+deleteConversation:
+DELETE FROM conversation WHERE id = ?;
+
+promoteChildConversation:
+UPDATE conversation SET parent_conversation_id = NULL
+WHERE id = ? AND parent_conversation_id = ?;
+
+deleteTimelineForConversation:
+DELETE FROM conversation_timeline_item WHERE conversation_id = ?;
+
+insertTimelineItem:
+INSERT INTO conversation_timeline_item(
+    conversation_id, sequence, type, payload_version, payload_json
+) VALUES (?, ?, ?, ?, ?);
+
+selectTimelineForConversation:
+SELECT * FROM conversation_timeline_item WHERE conversation_id = ? ORDER BY sequence;
+
+deleteHistoryForConversation:
+DELETE FROM conversation_history_item WHERE conversation_id = ?;
+
+insertHistoryItem:
+INSERT INTO conversation_history_item(
+    conversation_id, sequence, type, payload_version, payload_json
+) VALUES (?, ?, ?, ?, ?);
+
+selectHistoryForConversation:
+SELECT * FROM conversation_history_item WHERE conversation_id = ? ORDER BY sequence;
+
+deleteEntriesForConversation:
+DELETE FROM conversation_entry WHERE conversation_id = ?;
+
+insertConversationEntry:
+INSERT INTO conversation_entry(
+    conversation_id, id, parent_id, created_at, type, payload_version, payload_json
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectEntriesForConversation:
+SELECT * FROM conversation_entry WHERE conversation_id = ? ORDER BY created_at, id;
+
+selectUiState:
+SELECT payload_version, payload_json FROM app_ui_state WHERE state_key = ?;
+
+upsertUiState:
+INSERT INTO app_ui_state(state_key, payload_version, payload_json, updated_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(state_key) DO UPDATE SET
+    payload_version = excluded.payload_version,
+    payload_json = excluded.payload_json,
+    updated_at = excluded.updated_at;
+
+upsertAgentRun:
+INSERT INTO agent_run(
+    id, conversation_id, user_entry_id, state, model_id, strategy_fingerprint,
+    tool_fingerprint, started_at, updated_at, finished_at, error_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    state = excluded.state,
+    model_id = excluded.model_id,
+    strategy_fingerprint = excluded.strategy_fingerprint,
+    tool_fingerprint = excluded.tool_fingerprint,
+    updated_at = excluded.updated_at,
+    finished_at = excluded.finished_at,
+    error_json = excluded.error_json;
+
+selectActiveRunForConversation:
+SELECT * FROM agent_run
+WHERE conversation_id = ? AND finished_at IS NULL
+ORDER BY updated_at DESC LIMIT 1;
+
+selectAgentRun:
+SELECT * FROM agent_run WHERE id = ?;
+
+deleteRecoveryCheckpointsForRun:
+DELETE FROM agent_checkpoint WHERE run_id = ? AND kind = 'RECOVERY';
+
+insertCheckpoint:
+INSERT INTO agent_checkpoint(
+    id, conversation_id, run_id, entry_id, kind, koog_version, strategy_fingerprint,
+    model_fingerprint, tool_fingerprint, payload_version, payload_json, recovery_state,
+    created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectLatestCheckpoint:
+SELECT * FROM agent_checkpoint
+WHERE conversation_id = ? AND kind = ?
+ORDER BY updated_at DESC, rowid DESC LIMIT 1;
+
+selectCheckpoint:
+SELECT * FROM agent_checkpoint WHERE id = ?;
+
+selectUserTurnCheckpoint:
+SELECT * FROM agent_checkpoint
+WHERE conversation_id = ? AND entry_id = ? AND kind = 'USER_TURN'
+ORDER BY rowid DESC LIMIT 1;
+
+deleteUserTurnCheckpointsFrom:
+DELETE FROM agent_checkpoint
+WHERE conversation_id = ? AND kind = 'USER_TURN' AND rowid >= ?;
+
+selectCheckpointOrder:
+SELECT CAST(rowid AS INTEGER) AS checkpoint_order FROM agent_checkpoint WHERE id = ?;
+
+deleteAgentRunsFrom:
+DELETE FROM agent_run WHERE conversation_id = ? AND started_at >= ?;
+
+deleteCompactionsFrom:
+DELETE FROM context_compaction WHERE conversation_id = ? AND created_at >= ?;
+
+deleteStatusSnapshotsFrom:
+DELETE FROM agent_status_snapshot WHERE conversation_id = ? AND created_at >= ?;
+
+deleteToolInvocationsFrom:
+DELETE FROM tool_invocation WHERE conversation_id = ? AND started_at >= ?;
+
+deleteToolAuditsFrom:
+DELETE FROM tool_audit WHERE conversation_id = ? AND created_at >= ?;
+
+deleteAttentionEventsFrom:
+DELETE FROM conversation_attention WHERE conversation_id = ? AND created_at >= ?;
+
+selectRecoveryCheckpointsForRun:
+SELECT * FROM agent_checkpoint
+WHERE run_id = ? AND kind = 'RECOVERY'
+ORDER BY updated_at DESC;
+
+deleteCheckpoint:
+DELETE FROM agent_checkpoint WHERE id = ?;
+
+insertStatusSnapshot:
+INSERT INTO agent_status_snapshot(
+    id, conversation_id, run_id, turn_id, payload_version, payload_json, model_message_text, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectLatestStatusSnapshot:
+SELECT * FROM agent_status_snapshot WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1;
+
+deleteTodosForConversation:
+DELETE FROM agent_todo WHERE conversation_id = ?;
+
+insertTodo:
+INSERT INTO agent_todo(
+    conversation_id, id, content, status, sort_order, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectTodosForConversation:
+SELECT * FROM agent_todo WHERE conversation_id = ? ORDER BY sort_order, created_at;
+
+insertCompaction:
+INSERT INTO context_compaction(
+    id, conversation_id, run_id, through_entry_id, payload_version, summary_json,
+    source_token_count, retained_token_count, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectLatestCompaction:
+SELECT * FROM context_compaction WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1;
+
+upsertToolInvocation:
+INSERT INTO tool_invocation(
+    id, conversation_id, run_id, entry_id, tool_name, arguments_version, arguments_json,
+    state, result_version, result_json, partial_output, started_at, finished_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    state = excluded.state,
+    result_version = excluded.result_version,
+    result_json = excluded.result_json,
+    partial_output = excluded.partial_output,
+    finished_at = excluded.finished_at;
+
+selectToolInvocationsForRun:
+SELECT * FROM tool_invocation WHERE run_id = ? ORDER BY started_at;
+
+insertToolAudit:
+INSERT INTO tool_audit(
+    id, conversation_id, run_id, invocation_id, event_type, payload_version, payload_json, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+insertFileMutation:
+INSERT INTO file_mutation(
+    id, conversation_id, run_id, user_turn_checkpoint_id, invocation_id, transaction_order,
+    absolute_path, before_sha256, after_sha256, before_content, is_new_file, after_exists, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectNextFileMutationOrder:
+SELECT COALESCE(MAX(transaction_order), 0) + 1 FROM file_mutation WHERE conversation_id = ?;
+
+selectFileMutationsForCheckpoint:
+SELECT * FROM file_mutation WHERE user_turn_checkpoint_id = ? ORDER BY transaction_order DESC;
+
+selectFileMutationsFromUserTurn:
+SELECT file_mutation.* FROM file_mutation
+JOIN agent_checkpoint ON file_mutation.user_turn_checkpoint_id = agent_checkpoint.id
+WHERE agent_checkpoint.conversation_id = ?
+AND agent_checkpoint.rowid >= (SELECT rowid FROM agent_checkpoint WHERE id = ?)
+ORDER BY file_mutation.transaction_order DESC;
+
+insertAttentionEvent:
+INSERT INTO conversation_attention(
+    id, conversation_id, entry_id, type, title, body, action_resolved, read_at, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAttentionEventsForConversation:
+SELECT * FROM conversation_attention WHERE conversation_id = ? ORDER BY created_at DESC;
+
+selectUnreadAttentionEvents:
+SELECT * FROM conversation_attention WHERE read_at IS NULL ORDER BY created_at DESC;
+
+markAttentionViewed:
+UPDATE conversation_attention
+SET read_at = CASE WHEN type IN ('FAILED', 'COMPLETED') OR action_resolved = 1 THEN ? ELSE read_at END
+WHERE conversation_id = ? AND read_at IS NULL;
+
+resolveAttentionEvent:
+UPDATE conversation_attention SET action_resolved = 1, read_at = ? WHERE id = ?;
+
+insertInteractionRequest:
+INSERT INTO interaction_request(
+    request_id, conversation_id, run_id, kind, tool_name, signature, request_json,
+    response_text, state, created_at, answered_at, consumed_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'PENDING', ?, NULL, NULL);
+
+selectInteractionRequest:
+SELECT * FROM interaction_request WHERE request_id = ?;
+
+selectLatestPendingInteraction:
+SELECT * FROM interaction_request
+WHERE conversation_id = ? AND state = 'PENDING'
+ORDER BY created_at DESC, rowid DESC LIMIT 1;
+
+selectAnsweredInteractionForReplay:
+SELECT * FROM interaction_request
+WHERE run_id = ? AND kind = ? AND signature = ? AND state = 'ANSWERED'
+ORDER BY answered_at DESC, rowid DESC LIMIT 1;
+
+selectAnsweredInteractionForTool:
+SELECT * FROM interaction_request
+WHERE run_id = ? AND tool_name = ? AND state = 'ANSWERED'
+ORDER BY answered_at DESC, rowid DESC LIMIT 1;
+
+answerInteractionRequest:
+UPDATE interaction_request SET response_text = ?, state = 'ANSWERED', answered_at = ?
+WHERE request_id = ? AND state = 'PENDING';
+
+consumeInteractionRequest:
+UPDATE interaction_request SET state = 'CONSUMED', consumed_at = ?
+WHERE request_id = ? AND state = 'ANSWERED';
+
+cancelPendingInteractions:
+UPDATE interaction_request SET state = 'CANCELLED'
+WHERE conversation_id = ? AND state IN ('PENDING', 'ANSWERED');

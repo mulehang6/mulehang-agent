@@ -42,7 +42,7 @@ internal object WindowsToastWinRt {
             val notificationRef = PointerByReference()
             checkHresult(comCall(factory, 6, factory, xmlInspectable, notificationRef), "CreateToastNotification")
             val notification = requireNotNull(notificationRef.value).also(liveObjects::add)
-            checkHresult(comCall(notifier, 7, notifier, notification), "IToastNotifier.Show")
+            checkHresult(comCall(notifier, 6, notifier, notification), "IToastNotifier.Show")
         } finally {
             liveObjects.asReversed().forEach(::releaseComObject)
             liveStrings.asReversed().forEach(combase::WindowsDeleteString)

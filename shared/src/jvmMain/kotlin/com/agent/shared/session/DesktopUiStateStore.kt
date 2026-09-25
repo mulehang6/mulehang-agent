@@ -64,9 +64,20 @@ class DesktopUiStateStore(
         ignoreUnknownKeys = true
         prettyPrint = true
     },
-) {
+) : AutoCloseable {
+    private var ownedPersistenceDatabase: DesktopPersistenceDatabase? = null
+
     /** 为测试和独立使用保留的数据库路径构造函数。 */
-    constructor(databasePath: Path) : this(DesktopPersistenceDatabase.open(databasePath))
+    constructor(databasePath: Path) : this(DesktopPersistenceDatabase.open(databasePath)) {
+        ownedPersistenceDatabase = persistence
+    }
+
+    /** 关闭路径构造函数创建的连接；共享数据库由调用方负责关闭。 */
+    override fun close() {
+        val ownedDatabase = ownedPersistenceDatabase ?: return
+        ownedPersistenceDatabase = null
+        ownedDatabase.close()
+    }
 
     /** 合并旧版 JSON 或 SQLite UI 状态；源文件保留作回退。 */
     fun migrateLegacyState(legacyPath: Path) {

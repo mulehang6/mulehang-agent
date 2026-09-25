@@ -129,16 +129,25 @@ class SqliteTaskRepositoryTest {
         val databasePath = Files.createTempDirectory("mulehang-turn-order-test").resolve("mulehang.db")
         DesktopPersistenceDatabase.open(databasePath).use { database ->
             val repository = SqliteTaskRepository(database)
+            val beforeFirst = taskSnapshot().copy(
+                id = "parent",
+                entries = emptyList(),
+                activeEntryId = null,
+                headEntryId = null,
+                timeline = emptyList(),
+                history = emptyList(),
+            )
             val first = taskSnapshot().copy(id = "parent", entries = taskSnapshot().entries.take(1),
                 activeEntryId = "entry-1", headEntryId = "entry-1")
             val second = first.copy(entries = taskSnapshot().entries)
-            repository.saveUserTurn(listOf(first), null, first.id, "entry-1")
+            repository.saveAll(listOf(beforeFirst))
+            repository.saveUserTurn(listOf(first), beforeFirst, first.id, "entry-1")
             repository.saveUserTurn(listOf(second), first, second.id, "entry-2")
 
             repository.rollbackUserTurn(first.id, "entry-1")
 
             assertNull(repository.rollbackUserTurn(first.id, "entry-2"))
-            assertTrue(repository.loadAll().isEmpty())
+            assertEquals(beforeFirst, repository.loadAll().single())
         }
     }
 

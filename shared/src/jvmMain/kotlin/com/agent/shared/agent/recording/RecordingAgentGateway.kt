@@ -159,6 +159,8 @@ private class AgentRunRecordCollector(
             is AgentStreamEvent.QuestionRequested,
             is AgentStreamEvent.ApprovalRequested,
             is AgentStreamEvent.Status,
+            is AgentStreamEvent.StatusSnapshotUpdated,
+            is AgentStreamEvent.UsageUpdated,
             is AgentStreamEvent.ToolFileDiffPreviewed,
             is AgentStreamEvent.ToolOutputDelta,
             -> Unit
@@ -203,6 +205,14 @@ private class AgentRunRecordCollector(
                         result = event.reason,
                     ),
                 )
+
+            is AgentStreamEvent.ToolCallInterrupted -> tools
+                .lastOrNull { tool ->
+                    tool.result == null && (tool.toolCallId == event.toolCallId ||
+                        (event.toolCallId == null && tool.name == event.name))
+                }
+                ?.apply { result = event.reason }
+                ?: tools.add(MutableAgentRunToolRecord(event.toolCallId, event.name, event.argumentsJson, event.reason))
 
             is AgentStreamEvent.Completed -> {
                 finalText = event.text.ifBlank { text.toString() }

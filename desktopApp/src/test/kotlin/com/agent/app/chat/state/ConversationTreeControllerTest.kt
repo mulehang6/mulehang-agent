@@ -40,7 +40,7 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
         assertEquals("user-2", child.forkedFromEntryId)
         assertEquals(listOf("first", "answer"), child.entries.filterIsInstance<ConversationEntry.Message>().map { it.message.content })
         assertEquals("again @input.txt", state.ui.draft)
-        assertEquals(listOf("input.txt"), child.attachments.map { it.name })
+        assertEquals(listOf("input.txt"), state.activeDraftAttachments.map { it.name })
         assertEquals(2, child.entries.size)
         assertEquals(1L, state.ui.composerFocusRequestId)
         assertEquals(source.entries, state.findConversation(source.id).entries)
@@ -355,20 +355,19 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
         assertNull(state.findConversation(child.id).parentConversationId)
     }
 
-    /** 当前活动会话即使空闲也不可永久删除。 */
+    /** 删除当前活动会话后回到未落库的新会话页。 */
     @Test
     fun `active conversation cannot be deleted`() = runTest(dispatcher) {
         val state = state()
-        val activeId = state.ui.activeTaskId
+        val active = treeConversation("active")
+        state.ui = state.ui.copy(tasks = listOf(active), activeTaskId = active.id)
+        val activeId = active.id
 
         val result = state.conversationTreeController.deleteConversation(activeId)
 
-        assertFalse(result.succeeded)
-        assertEquals(
-            "当前活动会话不能删除，请先切换到其他会话。",
-            state.conversationTreeController.deleteBlockReason(activeId),
-        )
-        assertTrue(state.findConversationOrNull(activeId) != null)
+        assertTrue(result.succeeded)
+        assertNull(state.findConversationOrNull(activeId))
+        assertEquals("", state.ui.activeTaskId)
     }
 
     /** 子树中任一节点运行或等待交互时，归档入口必须拒绝整棵子树。 */
@@ -390,7 +389,7 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
         assertNull(state.findConversation(runningChild.id).archivedAt)
     }
 
-    /** 后台协程仍占有运行槽时，即使展示状态已空闲也不能永久删除会话。 */
+    /** 删除有残留运行所有权的会话时应清理槽位。 */
     @Test
     fun `run ownership blocks deletion during cancellation cleanup`() = runTest(dispatcher) {
         val state = state()
@@ -401,8 +400,9 @@ class ConversationTreeControllerTest : ChatWindowTestFixture() {
 
         val result = state.conversationTreeController.deleteConversation(source.id)
 
-        assertFalse(result.succeeded)
-        assertTrue(state.findConversationOrNull(source.id) != null)
+        assertTrue(result.succeeded)
+        assertNull(state.findConversationOrNull(source.id))
+        assertNull(state.activeRunConversationId)
     }
 
     /** 创建带一条兄弟分支和第二轮用户输入的树会话。 */

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.TIMELINE_SCROLL_FOLLOW_THRESHOLD_PX
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.AppMuted
+import com.agent.app.design.AppDanger
 import com.agent.app.design.AppText
 import com.agent.app.design.LocalDesktopPalette
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -102,6 +103,12 @@ internal fun EmptyWorkspaceState(state: ChatWindowState) {
             text = "选择工作区后，告诉 MH Agent 你想推进什么。",
             style = JewelTheme.defaultTextStyle.copy(color = AppMuted),
         )
+        state.ui.newConversationError?.let { error ->
+            Text(
+                text = "${error.title}：${error.message}",
+                style = JewelTheme.defaultTextStyle.copy(color = AppDanger),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             EmptyStateAction("审查改动", "审查当前工作区的改动，优先指出高风险问题。", state)
             EmptyStateAction("解释项目", "解释这个项目的结构、入口和关键数据流。", state)

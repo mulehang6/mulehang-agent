@@ -37,7 +37,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
     val profiles = state.availableProfiles
     val selectedProfile = state.activeProfile
     val executionState = activeConversation?.executionState ?: ExecutionState.Idle
-    val permissionPreset = activeConversation?.permissionPreset ?: PermissionPreset.DEFAULT
+    val permissionPreset = activeConversation?.permissionPreset ?: state.ui.permissionPreset
     val iconActionButtonStyle = composerIconActionButtonStyle()
     val primaryActionVisual = buildComposerPrimaryActionVisual(executionState)
     val providerProfiles = groupProfilesByProvider(profiles)
@@ -61,7 +61,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
             add(
                 ComposerSelectorSlot(
                     menu = ComposerMenu.REASONING,
-                    label = reasoningControlLabel(activeConversation?.reasoningEffort),
+                    label = reasoningControlLabel(activeConversation?.reasoningEffort ?: state.ui.newReasoningEffort),
                 ),
             )
         }
@@ -168,7 +168,7 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
                             selectedVariants.forEach { variant ->
                                 val effort = variant.reasoningEffort ?: return@forEach
                                 selectableItem(
-                                    selected = effort == activeConversation?.reasoningEffort,
+                                    selected = effort == (activeConversation?.reasoningEffort ?: state.ui.newReasoningEffort),
                                     onClick = {
                                         expandedMenu = null
                                         state.updateReasoningEffort(effort)
@@ -203,9 +203,9 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
         },
         contextIndicator = {
             ComposerContextIndicator(
-                sweepAngle = contextRingSweepAngle(activeConversation?.contextUsageFraction ?: 0f),
+                sweepAngle = contextRingSweepAngle(state.activeContextUsageFraction),
                 tooltip = buildContextTooltip(
-                    usageFraction = activeConversation?.contextUsageFraction ?: 0f,
+                    usageFraction = state.activeContextUsageFraction,
                     contextWindow = selectedProfile?.let(::resolveContextWindow),
                 ),
             )
@@ -215,13 +215,23 @@ internal fun ComposerActions(state: ChatWindowState, onSendDraft: () -> Unit) {
                 danger = primaryActionVisual.danger,
                 onClick = {
                     if (executionState.isStoppable()) {
-                        state.cancelActiveRun()
+                        state.pauseActiveRun()
+                    } else if (executionState == ExecutionState.Paused || executionState == ExecutionState.Interrupted) {
+                        state.resumeActiveRun()
                     } else {
                         onSendDraft()
                     }
                 },
-                iconKey = composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey,
-                contentDescription = if (primaryActionVisual.danger) "停止当前任务" else "发送消息",
+                iconKey = if (executionState == ExecutionState.Paused || executionState == ExecutionState.Interrupted) {
+                    HeaderGlyph.RESUME.iconKey
+                } else {
+                    composerPrimaryActionGlyph(primaryActionVisual.danger).iconKey
+                },
+                contentDescription = when {
+                    executionState.isStoppable() -> "暂停当前任务"
+                    executionState == ExecutionState.Paused || executionState == ExecutionState.Interrupted -> "继续当前任务"
+                    else -> "发送消息"
+                },
             )
         },
     )

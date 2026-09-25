@@ -70,6 +70,8 @@ internal data class ComposerPrimaryActionVisual(
 internal fun buildComposerPrimaryActionVisual(executionState: ExecutionState): ComposerPrimaryActionVisual =
     if (executionState.isStoppable()) {
         ComposerPrimaryActionVisual(symbol = "■", danger = true)
+    } else if (executionState == ExecutionState.Paused || executionState == ExecutionState.Interrupted) {
+        ComposerPrimaryActionVisual(symbol = "▶", danger = false)
     } else {
         ComposerPrimaryActionVisual(symbol = "↑", danger = false)
     }

@@ -6,25 +6,26 @@ import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.agent.api.UserInputPart
 import com.agent.shared.agent.resource.AgentCommandExpansion
-import com.agent.shared.agent.resource.AgentResourceDiagnostic
-import com.agent.shared.agent.resource.AgentResourceDiagnosticSeverity
 import com.agent.shared.agent.resource.expandSlashCommand
 import com.agent.shared.chat.model.AppError
-import com.agent.shared.chat.model.AnsweredQuestionsItem
 import com.agent.shared.chat.model.ChatMessage
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
 import com.agent.shared.chat.model.ExecutionState
 import com.agent.shared.settings.resolver.supportsImageInput
+import com.agent.shared.agent.status.SavedAgentStatus
 import com.agent.shared.tool.model.QuestionAnswer
-import com.agent.shared.tool.model.QuestionPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import com.agent.shared.agent.api.AgentRunTiming
+import com.agent.shared.agent.koog.isContextOverflowMessage
 import java.util.UUID
 
 /** 管理消息执行、流式事件及挂起交互的状态转换。 */
 internal class ChatRunController(private val window: ChatWindowState) {
+    private val pendingInteractions = ChatPendingInteractionController(window)
     /**
      * 兼容旧调用方式的直接发送入口。
      */
@@ -41,9 +42,14 @@ internal class ChatRunController(private val window: ChatWindowState) {
     fun cancelActiveRun() {
         with(window) {
             val runConversationId = activeRunConversationId ?: ui.activeTaskId
-            activeRunJob?.cancel()
+            val runningJob = activeRunJob
+            runningJob?.cancel()
             activeRunJob = null
+            activeRunRequest = null
+            pauseRequestedConversationId = null
+            if (runningJob == null) activeRunConversationId = null
             clearPendingOwnership(runConversationId)
+            interactionRequestRepository?.cancelPending(runConversationId)
             mutateConversation(runConversationId) { conversation ->
                 if (conversation.executionState.isStoppable()) {
                     conversation.copy(
@@ -61,112 +67,17 @@ internal class ChatRunController(private val window: ChatWindowState) {
         }
     }
 
-    /**
-     * 回答当前挂起问题，并恢复同一轮 agent 执行。
-     */
-    fun answerPendingQuestion(answer: String) {
-        with(window) {
-            val targetConversationId = resolvePendingQuestionConversationId() ?: return
-            val pending = findConversation(targetConversationId).pendingQuestion ?: return
-            val question = pending.effectiveQuestions.singleOrNull()?.question ?: return
-            submitPendingQuestionAnswers(
-                answers = listOf(QuestionAnswer(question = question, answer = answer)),
-                toolResponse = answer,
-            )
-        }
-    }
+    /** 回答当前挂起问题，并恢复同一轮执行。 */
+    fun answerPendingQuestion(answer: String) = pendingInteractions.answerQuestion(answer)
 
-    /**
-     * 一次提交当前批量问题的完整回答，并恢复发起问题的同一轮 Agent。
-     */
-    fun answerPendingQuestions(answers: List<QuestionAnswer>) {
-        submitPendingQuestionAnswers(
-            answers = answers,
-            toolResponse = formatQuestionAnswers(answers),
-        )
-    }
+    /** 提交当前批量问题的完整回答。 */
+    fun answerPendingQuestions(answers: List<QuestionAnswer>) = pendingInteractions.answerQuestions(answers)
 
-    /**
-     * 写入问答记录、解除挂起并向等待中的工具调用提交指定文本结果。
-     */
-    private fun submitPendingQuestionAnswers(
-        answers: List<QuestionAnswer>,
-        toolResponse: String,
-    ) {
-        with(window) {
-            val targetConversationId = resolvePendingQuestionConversationId() ?: return
-            val pending = findConversation(targetConversationId).pendingQuestion ?: return
-            if (!isCompleteQuestionAnswerSet(pending = pending, answers = answers)) return
-            if (!toolInteractionCoordinator.submitQuestion(toolResponse)) return
-            pendingQuestionConversationId = null
-            mutateConversation(targetConversationId) { conversation ->
-                appendAnswersConversationEntry(
-                    conversation = conversation.copy(
-                    items = conversation.items + AnsweredQuestionsItem(answers = answers),
-                    pendingQuestion = null,
-                    progressMessage = null,
-                    executionState = ExecutionState.Running,
-                    ),
-                    answers = answers,
-                    entryId = UUID.randomUUID().toString(),
-                    createdAt = clock(),
-                )
-            }
-        }
-    }
+    /** 提交当前挂起审批。 */
+    fun answerPendingApproval(response: ApprovalResponse) = pendingInteractions.answerApproval(response)
 
-    /**
-     * 验证答案必须按当前问卷顺序完整覆盖，且每项都包含非空文本。
-     */
-    private fun isCompleteQuestionAnswerSet(
-        pending: PendingQuestionUiState,
-        answers: List<QuestionAnswer>,
-    ): Boolean {
-        return pending.effectiveQuestions.map(QuestionPrompt::question) == answers.map(QuestionAnswer::question) &&
-            answers.all { it.answer.isNotBlank() }
-    }
-
-    /**
-     * 将批量回答编码为稳定的纯文本，供挂起中的 Agent 工具调用继续读取。
-     */
-    private fun formatQuestionAnswers(answers: List<QuestionAnswer>): String {
-        return answers.joinToString("\n\n") { answer ->
-        "Question: ${answer.question}\nAnswer: ${answer.answer.trim()}"
-    }
-    }
-
-    /**
-     * 提交当前挂起审批；拒绝时停止当前 agent 轮次，其余选择恢复同一轮执行。
-     */
-    fun answerPendingApproval(response: ApprovalResponse) {
-        with(window) {
-            if (!toolInteractionCoordinator.submitApproval(response)) return
-            if (response == ApprovalResponse.REJECT_AND_STOP) {
-                cancelActiveRun()
-                return
-            }
-            val targetConversationId = resolvePendingApprovalConversationId() ?: return
-            pendingApprovalConversationId = null
-            mutateConversation(targetConversationId) { conversation ->
-                conversation.copy(
-                    pendingApproval = null,
-                    progressMessage = null,
-                    executionState = ExecutionState.Running,
-                )
-            }
-        }
-    }
-
-    /**
-     * 兼容既有二元审批调用。
-     */
-    fun answerPendingApproval(approved: Boolean) {
-        with(window) {
-            answerPendingApproval(
-                if (approved) ApprovalResponse.APPROVE_ONCE else ApprovalResponse.REJECT_AND_STOP,
-            )
-        }
-    }
+    /** 兼容既有二元审批调用。 */
+    fun answerPendingApproval(approved: Boolean) = pendingInteractions.answerApproval(approved)
 
     /**
      * 发送当前草稿，并把流式结果归入当前活动会话。
@@ -175,75 +86,45 @@ internal class ChatRunController(private val window: ChatWindowState) {
         with(window) {
             val prompt = ui.draft.trim()
             if (prompt.isBlank()) return
-
-            if (ui.activeConversationOrNull == null) {
-                ui = ui.copy(draft = prompt)
+            val sourceTarget = ui.activeTarget
+            val existingConversation = ui.activeConversationOrNull
+            val acceptedDraft = ComposerDraft(ui.draft, ui.draftSelectionStart, activeDraftAttachments)
+            val workspacePath = existingConversation?.workspacePath ?: ui.newWorkspacePath
+            fun rejectBeforeCreation(error: AppError) {
+                if (existingConversation == null) ui = ui.copy(newConversationError = error)
+                else mutateConversation(existingConversation.id) { current ->
+                    current.copy(progressMessage = null, executionState = ExecutionState.Failed(error))
+                }
+            }
+            if (workspacePath.isBlank()) {
+                rejectBeforeCreation(AppError("未选择工作区", "请先选择工作目录。"))
                 return
             }
-
-            val targetConversationId = ui.activeTaskId
             if (activeRunConversationId != null || resourceReloadInProgress) {
-                mutateConversation(targetConversationId) { conversation ->
-                    conversation.copy(
-                        progressMessage = null,
-                        executionState = ExecutionState.Failed(
-                            AppError(
-                                title = "已有任务在执行",
-                                message = "请等待当前任务完成，或先停止当前任务再启动新的 task。",
-                            ),
-                        ),
-                    )
-                }
+                rejectBeforeCreation(AppError("已有任务在执行", "请等待当前任务完成，或先停止当前任务再启动新的 task。"))
                 return
             }
-
-            val sourceConversation = findConversation(targetConversationId)
-            workspaceIssue(sourceConversation)?.let { message ->
-                mutateConversation(targetConversationId) { conversation ->
-                    conversation.copy(
-                        progressMessage = null,
-                        executionState = ExecutionState.Failed(
-                            AppError(
-                                title = "工作目录不可用",
-                                message = message,
-                            ),
-                        ),
-                    )
-                }
+            if (existingConversation?.executionState == ExecutionState.Paused ||
+                existingConversation?.executionState == ExecutionState.Interrupted
+            ) {
                 return
             }
-            val profile = profileForConversation(sourceConversation)
+            workspaceIssueForPath(workspacePath)?.let { message ->
+                rejectBeforeCreation(AppError("工作目录不可用", message))
+                return
+            }
+            val profile = existingConversation?.let(::profileForConversation) ?: activeProfile
             if (profile == null) {
-                mutateActiveConversation { conversation ->
-                    conversation.copy(
-                        progressMessage = null,
-                        executionState = ExecutionState.Failed(
-                            AppError(
-                                title = "缺少可用配置",
-                                message = "请先在 settings.json 中配置并启用至少一个 profile。",
-                            ),
-                        ),
-                    )
-                }
+                rejectBeforeCreation(AppError("缺少可用配置", "请先在 settings.json 中配置并启用至少一个 profile。"))
                 return
             }
 
             val inputParts = buildOrderedDraftInputParts(
                 draft = prompt,
-                attachments = sourceConversation.attachments,
+                attachments = activeDraftAttachments,
             )
             if (inputParts.any { part -> part is UserInputPart.Image } && !profile.supportsImageInput()) {
-                mutateConversation(targetConversationId) { conversation ->
-                    conversation.copy(
-                        progressMessage = null,
-                        executionState = ExecutionState.Failed(
-                            AppError(
-                                title = "当前模型不支持图片输入",
-                                message = "请切换到支持视觉输入的模型后再发送图像。",
-                            ),
-                        ),
-                    )
-                }
+                rejectBeforeCreation(AppError("当前模型不支持图片输入", "请切换到支持视觉输入的模型后再发送图像。"))
                 return
             }
 
@@ -264,6 +145,17 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 null -> Unit
             }
 
+            val sourceConversation = existingConversation ?: newConversation(
+                workspacePath = workspacePath,
+                contextWindow = contextWindowFor(profile),
+                profileId = profile.id,
+                reasoningEffort = ui.newReasoningEffort,
+                permissionPreset = ui.permissionPreset,
+            ).copy(workspaceName = ui.tasks.firstOrNull { it.workspacePath == workspacePath }?.workspaceName)
+            val targetConversationId = sourceConversation.id
+            if (existingConversation == null) {
+                ui = ui.copy(tasks = listOf(sourceConversation) + ui.tasks, activeTaskId = targetConversationId)
+            }
             val requestHistory = sourceConversation.history
             val shouldGenerateConversationTitle = sourceConversation.title == DEFAULT_CONVERSATION_TITLE &&
                     sourceConversation.history.none { message -> message is AgentConversationHistoryMessage.User } &&
@@ -272,7 +164,8 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 profile = profile,
                 conversation = sourceConversation,
             )
-            mutateConversation(targetConversationId) { conversation ->
+            val userEntryId = UUID.randomUUID().toString()
+            mutateConversation(targetConversationId, schedulePersistence = false) { conversation ->
                 val nextItems = conversation.items + ChatMessageItem(ChatMessage(ChatRole.User, prompt))
                 val titledConversation = conversation.copy(
                     title = conversation.title.takeUnless { it == DEFAULT_CONVERSATION_TITLE }
@@ -288,7 +181,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                         conversation = titledConversation,
                         prompt = prompt,
                         inputParts = inputParts,
-                        entryId = UUID.randomUUID().toString(),
+                        entryId = userEntryId,
                         createdAt = clock(),
                     )
                 } else {
@@ -302,6 +195,7 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 }
                 withUserEntry.copy(
                     attachments = emptyList(),
+                    providerContextUsageFraction = null,
                     progressMessage = null,
                     executionState = ExecutionState.Running,
                     streamingAssistantItemIndex = null,
@@ -316,40 +210,59 @@ internal class ChatRunController(private val window: ChatWindowState) {
                     ),
                 )
             }
-            ui = ui.copy(draft = "", draftSelectionStart = 0)
-            if (shouldGenerateConversationTitle) {
-                requestConversationTitle(
-                    conversationId = targetConversationId,
-                    firstUserMessage = prompt,
-                    profile = fasterProfileForInternalTask(profile, snapshot.fasterProfiles),
-                )
-            }
-
+            consumeDraftAfterSend(sourceTarget)
             activeRunConversationId = targetConversationId
+            val acceptedTasks = ui.tasks
             val traceId = UUID.randomUUID().toString()
+            val runRequest = AgentRunRequest(
+                traceId = traceId,
+                userEntryId = userEntryId,
+                contextUsageFraction = findConversationOrNull(targetConversationId)?.contextUsageFraction,
+                contextWindow = contextWindowFor(profile),
+                contextCompactionThresholdPercent = snapshot.contextCompactionThresholdPercent,
+                prompt = prompt,
+                profile = profile,
+                history = requestHistory,
+                inputParts = inputParts,
+                runtimeResources = runResources.toRuntimeResources(),
+                reasoningEffort = reasoningEffort,
+                workspacePath = sourceConversation.workspacePath,
+                permissionPreset = sourceConversation.permissionPreset,
+                fasterProfile = snapshot.fasterProfiles[profile.providerId],
+                sessionId = targetConversationId,
+                hookSettings = runResources.hookSettings,
+            )
+            activeRunRequest = runRequest
             val timing = AgentRunTiming(traceId)
             timing.mark("message_accepted")
             activeRunJob = scope.launch {
+                var turnPersisted = false
                 try {
+                    persistenceCoordinator?.saveAcceptedUserTurn(
+                        tasks = acceptedTasks,
+                        before = existingConversation,
+                        conversationId = targetConversationId,
+                        userEntryId = userEntryId,
+                    )
+                    turnPersisted = true
+                    if (shouldGenerateConversationTitle &&
+                        findConversationOrNull(targetConversationId)?.titleState == ConversationTitleState.GENERATING
+                    ) {
+                        requestConversationTitle(
+                            conversationId = targetConversationId,
+                            firstUserMessage = prompt,
+                            profile = fasterProfileForInternalTask(profile, snapshot.fasterProfiles),
+                        )
+                    }
                     val runResources = timing.phase("resource_prepare", "正在准备资源…", { event ->
                         applyAgentEvent(targetConversationId, event)
                     }) { loadRunResourceSnapshot(sourceConversation.workspacePath) }
-                    sendMessageUseCase(
-                        AgentRunRequest(
-                            traceId = traceId,
-                            prompt = prompt,
-                            profile = profile,
-                            history = requestHistory,
-                            inputParts = inputParts,
-                            runtimeResources = runResources.toRuntimeResources(),
-                            reasoningEffort = reasoningEffort,
-                            workspacePath = sourceConversation.workspacePath,
-                            permissionPreset = sourceConversation.permissionPreset,
-                            fasterProfile = snapshot.fasterProfiles[profile.providerId],
-                            sessionId = targetConversationId,
-                            hookSettings = runResources.hookSettings,
-                        ),
-                    ).collect { event ->
+                    val preparedRequest = runRequest.copy(
+                        runtimeResources = runResources.toRuntimeResources(),
+                        hookSettings = runResources.hookSettings,
+                    )
+                    activeRunRequest = preparedRequest
+                    sendMessageUseCase(preparedRequest).collect { event ->
                         applyAgentEvent(targetConversationId, event)
                     }
                 } catch (_: CancellationException) {
@@ -358,7 +271,11 @@ internal class ChatRunController(private val window: ChatWindowState) {
                         if (conversation.executionState.isStoppable()) {
                             conversation.copy(
                                 progressMessage = null,
-                                executionState = ExecutionState.Idle,
+                                executionState = if (pauseRequestedConversationId == targetConversationId) {
+                                    ExecutionState.Paused
+                                } else {
+                                    ExecutionState.Idle
+                                },
                                 pendingQuestion = null,
                                 pendingApproval = null,
                             )
@@ -367,6 +284,22 @@ internal class ChatRunController(private val window: ChatWindowState) {
                         }
                     }
                 } catch (exception: Exception) {
+                    if (!turnPersisted) {
+                        ui = ui.copy(tasks = if (existingConversation == null) {
+                            ui.tasks.filterNot { it.id == targetConversationId }
+                        } else {
+                            ui.tasks.map { if (it.id == targetConversationId) existingConversation else it }
+                        })
+                        if (existingConversation == null) {
+                            showNewConversation(workspacePath)
+                            updateDraft(acceptedDraft.text, acceptedDraft.selectionStart)
+                            updateDraftAttachments(acceptedDraft.attachments)
+                        } else {
+                            showExistingConversation(targetConversationId, acceptedDraft)
+                        }
+                        setPersistenceError("用户消息保存失败：${exception.message ?: "未知错误"}")
+                        return@launch
+                    }
                     mutateConversation(targetConversationId) { conversation ->
                         val reason = exception.message ?: "执行过程中发生未知错误。"
                         val withToolFailure = attachFailureToTimeline(
@@ -384,11 +317,20 @@ internal class ChatRunController(private val window: ChatWindowState) {
                             ),
                         )
                     }
+                    attentionController.record(
+                        targetConversationId,
+                        AgentStreamEvent.Failed(exception.message ?: "执行过程中发生未知错误。"),
+                    )
                 } finally {
                     if (activeRunConversationId == targetConversationId) {
                         activeRunConversationId = null
                     }
-                    activeRunJob = null
+                    if (activeRunJob === currentCoroutineContext().job) activeRunJob = null
+                    if (pauseRequestedConversationId == targetConversationId) {
+                        pauseRequestedConversationId = null
+                    } else if (activeRunRequest?.sessionId == targetConversationId) {
+                        activeRunRequest = null
+                    }
                 }
             }
         }
@@ -397,9 +339,15 @@ internal class ChatRunController(private val window: ChatWindowState) {
     /**
      * 将 agent 事件应用到指定活动会话。
      */
-    private fun applyAgentEvent(conversationId: String, event: AgentStreamEvent) {
+    internal fun applyAgentEvent(conversationId: String, event: AgentStreamEvent) {
         with(window) {
-            reportMcpResourceDiagnostic(event)
+            if (event is AgentStreamEvent.StatusSnapshotUpdated) {
+                mutateConversation(conversationId) { conversation ->
+                    conversation.copy(agentStatus = SavedAgentStatus(event.snapshot, event.modelMessageText))
+                }
+                return
+            }
+            window.reportMcpResourceDiagnostic(event)
             when (event) {
                 is AgentStreamEvent.QuestionRequested -> {
                     pendingQuestionConversationId = conversationId
@@ -421,63 +369,34 @@ internal class ChatRunController(private val window: ChatWindowState) {
                 ?.let(::contextWindowForConversation)
                 ?: activeContextWindow()
             mutateConversation(conversationId) { conversation ->
-                applyConversationEntryEvent(
+                val updated = applyConversationEntryEvent(
                     conversation = reduceAgentEvent(conversation, event, contextWindow),
                     event = event,
                     idFactory = { UUID.randomUUID().toString() },
                     clock = clock,
                 )
+                val recoverable = event is AgentStreamEvent.Failed &&
+                    isContextOverflowMessage(event.reason) &&
+                    recoveryRepository?.interruptedRun(conversationId)?.hasCheckpoint == true
+                val withRecovery = if (recoverable) updated.copy(executionState = ExecutionState.Interrupted) else updated
+                val withActualUsage = withRecovery.providerContextUsageFraction?.let { actual ->
+                    withRecovery.copy(contextUsageFraction = actual)
+                } ?: withRecovery
+                if (event is AgentStreamEvent.ToolCallFinished || event is AgentStreamEvent.ToolCallFailed ||
+                    event is AgentStreamEvent.ToolCallInterrupted
+                ) {
+                    withActualUsage.copy(agentTodos = todoRepository?.list(conversationId).orEmpty())
+                } else {
+                    withActualUsage
+                }
             }
-        }
-    }
-
-    /** 将 MCP 连接与工具冲突诊断同步到扩展中心，避免只在时间线里短暂可见。 */
-    private fun reportMcpResourceDiagnostic(event: AgentStreamEvent) {
-        with(window) {
-            val failure = event as? AgentStreamEvent.ToolCallFailed ?: return
-            if (!failure.name.startsWith("MCP:")) return
-            val diagnostic = AgentResourceDiagnostic(
-                severity = AgentResourceDiagnosticSeverity.WARNING,
-                message = "${failure.name.removePrefix("MCP:")}：${failure.reason}",
-            )
-            if (diagnostic !in runtimeResourceDiagnostics) {
-                runtimeResourceDiagnostics += diagnostic
-            }
-        }
-    }
-
-    /**
-     * 找到当前挂起问题所属的会话；记录缺失时退回到真正挂起该问题的线程。
-     */
-    private fun resolvePendingQuestionConversationId(): String? {
-        return with(window) {
-            pendingQuestionConversationId
-                ?: ui.tasks.firstOrNull { it.pendingQuestion != null }?.id
-        }
-    }
-
-    /**
-     * 找到当前挂起审批所属的会话；记录缺失时退回到真正挂起该审批的线程。
-     */
-    private fun resolvePendingApprovalConversationId(): String? {
-        return with(window) {
-            pendingApprovalConversationId
-                ?: ui.tasks.firstOrNull { it.pendingApproval != null }?.id
+            attentionController.record(conversationId, event)
         }
     }
 
     /**
      * 当指定会话结束或失败后，清理挂起请求的归属记录。
      */
-    fun clearPendingOwnership(conversationId: String) {
-        with(window) {
-            if (pendingQuestionConversationId == conversationId) {
-                pendingQuestionConversationId = null
-            }
-            if (pendingApprovalConversationId == conversationId) {
-                pendingApprovalConversationId = null
-            }
-        }
-    }
+    fun clearPendingOwnership(conversationId: String) = window.clearPendingInteractionOwnership(conversationId)
 
 }

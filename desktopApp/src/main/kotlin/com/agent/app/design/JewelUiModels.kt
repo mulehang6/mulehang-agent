@@ -13,6 +13,7 @@ internal enum class HeaderGlyph {
     SEARCH,
     SEND,
     STOP,
+    RESUME,
 }
 
 /** 右侧工具栏可切换的业务视图。 */

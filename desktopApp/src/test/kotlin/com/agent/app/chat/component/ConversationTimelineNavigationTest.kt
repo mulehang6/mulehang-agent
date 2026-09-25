@@ -16,6 +16,29 @@ import kotlin.test.assertTrue
 
 /** 覆盖时间线轮次投影、活动刻度和滚动定位的纯展示规则。 */
 class ConversationTimelineNavigationTest {
+    /** 导航临时展开仅在目标有效时生效，离开后恢复默认折叠。 */
+    @Test
+    fun `navigation expansion follows target lifetime`() {
+        val expansion = TimelineExpansionState()
+
+        assertFalse(expansion.expanded(defaultExpanded = false, navigationExpanded = false))
+        assertTrue(expansion.expanded(defaultExpanded = false, navigationExpanded = true))
+        assertFalse(expansion.expanded(defaultExpanded = false, navigationExpanded = false))
+    }
+
+    /** 用户手动展开或折叠优先于导航，导航切换不能覆盖用户选择。 */
+    @Test
+    fun `manual expansion survives navigation changes`() {
+        val expansion = TimelineExpansionState()
+
+        expansion.toggle(defaultExpanded = false, navigationExpanded = false)
+        assertTrue(expansion.expanded(defaultExpanded = false, navigationExpanded = true))
+        assertTrue(expansion.expanded(defaultExpanded = false, navigationExpanded = false))
+        expansion.toggle(defaultExpanded = false, navigationExpanded = true)
+        assertFalse(expansion.expanded(defaultExpanded = false, navigationExpanded = true))
+        assertFalse(expansion.expanded(defaultExpanded = true, navigationExpanded = false))
+    }
+
     /** 树节点定位保留完整分支，依次偏好当前路径、持久末端路径和最近的其他 leaf。 */
     @Test
     fun `entry navigation resolves a complete branch leaf`() {

@@ -70,6 +70,17 @@ internal fun applyConversationEntryEvent(
             clock = clock,
         )
 
+        is AgentStreamEvent.ToolCallInterrupted -> conversation.appendToolResult(
+            name = event.name,
+            toolCallId = event.toolCallId,
+            status = ToolEventStatus.Failed,
+            resultPreview = null,
+            resultDisplay = event.partialOutput,
+            errorMessage = event.reason,
+            idFactory = idFactory,
+            clock = clock,
+        )
+
         is AgentStreamEvent.ToolFileDiffPreviewed -> conversation.attachEntryDiffs(event)
         is AgentStreamEvent.Completed -> conversation.completeAssistantText(event, idFactory, clock)
         is AgentStreamEvent.Failed -> conversation.closeStreamingReasoning(clock).appendToolResult(
@@ -87,6 +98,8 @@ internal fun applyConversationEntryEvent(
         is AgentStreamEvent.ApprovalRequested,
         is AgentStreamEvent.QuestionRequested,
         is AgentStreamEvent.Status,
+        is AgentStreamEvent.StatusSnapshotUpdated,
+        is AgentStreamEvent.UsageUpdated,
             -> conversation
 
         is AgentStreamEvent.ToolOutputDelta -> conversation.appendToolOutput(event)

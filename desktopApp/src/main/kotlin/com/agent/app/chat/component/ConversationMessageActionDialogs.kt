@@ -23,3 +23,17 @@ internal fun MessageActionErrorDialog(
         Text(message, color = AppDanger)
     }
 }
+
+/** 汇总文件恢复时被哈希检查保护的冲突文件。 */
+@Composable
+internal fun FileRestoreSummaryDialog(message: String, onDismiss: () -> Unit) {
+    JewelDialog(
+        title = "文件恢复结果",
+        confirmLabel = "知道了",
+        dismissLabel = null,
+        onDismiss = onDismiss,
+        onConfirm = onDismiss,
+    ) {
+        Text(message)
+    }
+}

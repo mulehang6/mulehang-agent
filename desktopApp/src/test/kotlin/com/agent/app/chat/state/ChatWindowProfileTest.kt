@@ -77,7 +77,7 @@ class ChatWindowProfileTest : ChatWindowTestFixture() {
 
         assertTrue(state.state.executionState is ExecutionState.Failed)
         assertTrue(state.errorMessage.orEmpty().contains("不支持图片输入"))
-        assertTrue(state.ui.activeConversation.history.isEmpty())
+        assertNull(state.ui.activeConversationOrNull)
     }
 
     /**
@@ -162,7 +162,7 @@ class ChatWindowProfileTest : ChatWindowTestFixture() {
             projectPath = "E:\\abc\\def",
         )
 
-        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+        assertEquals(ReasoningEffort.HIGH, state.ui.newReasoningEffort)
     }
 
     /**
@@ -185,7 +185,7 @@ class ChatWindowProfileTest : ChatWindowTestFixture() {
             ),
         )
 
-        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+        assertEquals(ReasoningEffort.HIGH, state.ui.newReasoningEffort)
     }
 
     /**
@@ -207,7 +207,7 @@ class ChatWindowProfileTest : ChatWindowTestFixture() {
 
         state.selectProfile(deepSeekProfile.id)
 
-        assertEquals(ReasoningEffort.HIGH, state.ui.activeConversation.reasoningEffort)
+        assertEquals(ReasoningEffort.HIGH, state.ui.newReasoningEffort)
     }
 
     /**
@@ -268,7 +268,7 @@ class ChatWindowProfileTest : ChatWindowTestFixture() {
 
         assertEquals(
             estimateContextUsage(state.ui.activeConversation.items, 0, 100),
-            state.ui.activeConversation.contextUsageFraction,
+            state.activeContextUsageFraction,
         )
     }
 
@@ -293,7 +293,7 @@ class ChatWindowProfileTest : ChatWindowTestFixture() {
 
         assertEquals(
             estimateContextUsage(emptyList(), 0, 100),
-            state.ui.activeConversation.contextUsageFraction,
+            state.activeContextUsageFraction,
         )
     }
 

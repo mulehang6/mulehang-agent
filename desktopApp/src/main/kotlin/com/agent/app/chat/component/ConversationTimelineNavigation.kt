@@ -1,5 +1,9 @@
 package com.agent.app.chat.component
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 import com.agent.app.chat.state.ChatConversationUiState
 import com.agent.shared.chat.model.ChatMessageItem
 import com.agent.shared.chat.model.ChatRole
@@ -21,6 +25,20 @@ internal data class TimelineTurnBounds(
     val top: Float,
     val bottom: Float,
 )
+
+/** 分开记录用户手动选择和导航临时展开，导航离开时不会关闭用户手动展开的内容。 */
+internal class TimelineExpansionState {
+    private var manualExpanded: Boolean? by mutableStateOf(null)
+
+    /** 读取当前展开状态，用户选择优先于流式默认值和导航请求。 */
+    fun expanded(defaultExpanded: Boolean, navigationExpanded: Boolean): Boolean =
+        manualExpanded ?: (defaultExpanded || navigationExpanded)
+
+    /** 点击标题后固定用户选择，之后的导航不会覆盖它。 */
+    fun toggle(defaultExpanded: Boolean, navigationExpanded: Boolean) {
+        manualExpanded = !expanded(defaultExpanded, navigationExpanded)
+    }
+}
 
 /** 为当前可见路径生成用户轮次；树会话使用条目 ID，旧会话回退到用户序号。 */
 internal fun buildTimelineTurnPresentations(

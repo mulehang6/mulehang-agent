@@ -8,9 +8,17 @@ import com.agent.app.tool.interaction.ApprovalResponse
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
 import com.agent.app.platform.ClipboardPngImage
+import com.agent.app.platform.ToastActivationTarget
 import com.agent.shared.agent.api.ConversationTitleGenerator
 import com.agent.shared.agent.api.BranchSummaryGenerator
 import com.agent.shared.agent.api.ReasoningEffort
+import com.agent.shared.agent.api.AgentRunRequest
+import com.agent.shared.agent.koog.AgentRunRecoveryRepository
+import com.agent.shared.agent.status.AgentTodoRepository
+import com.agent.shared.agent.status.AgentStatusRepository
+import com.agent.shared.chat.attention.ConversationAttentionEvent
+import com.agent.shared.chat.attention.ConversationAttentionRepository
+import com.agent.shared.tool.interaction.InteractionRequestRepository
 import com.agent.shared.agent.resource.AgentPromptCommand
 import com.agent.shared.agent.resource.AgentResourceDiagnostic
 import com.agent.shared.agent.resource.AgentResourceSnapshot
@@ -27,7 +35,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 窗口状态门面，装配会话、附件、执行与标题协作者。
@@ -39,20 +46,28 @@ class ChatWindowState(
     internal val toolInteractionCoordinator: DesktopToolInteractionCoordinator = DesktopToolInteractionCoordinator(),
     internal val onWorkspaceSelected: (String) -> Unit = {},
     internal val persistenceCoordinator: TaskPersistenceCoordinator? = null,
+    internal val todoRepository: AgentTodoRepository? = null,
+    internal val statusRepository: AgentStatusRepository? = null,
+    internal val recoveryRepository: AgentRunRecoveryRepository? = null,
+    internal val attentionRepository: ConversationAttentionRepository? = null,
+    internal val interactionRequestRepository: InteractionRequestRepository? = null,
+    internal val onAttentionNotification: (ConversationAttentionEvent) -> Unit = {},
     internal val branchSummaryGenerator: BranchSummaryGenerator? = null,
     internal val conversationTitleGenerator: ConversationTitleGenerator? = null,
     internal val clock: () -> Long = System::currentTimeMillis,
     internal val workspaceDirectoryExists: (String) -> Boolean = { path -> path.isNotBlank() },
-    private val resourceSnapshotProvider: (String) -> AgentResourceSnapshot? = { null },
-    private val resourceReloader: suspend (String) -> AgentResourceSnapshot? = { null },
+    internal val resourceSnapshotProvider: (String) -> AgentResourceSnapshot? = { null },
+    internal val resourceReloader: suspend (String) -> AgentResourceSnapshot? = { null },
     internal val sessionMediaStore: SessionMediaStore? = null,
     internal val onSessionClosed: (String, String) -> Unit = { _, _ -> },
-    private val resourceDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    internal val resourceDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) {
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     internal var activeRunJob: Job? = null
     internal var activeRunConversationId: String? = null
-    internal var resourceReloadInProgress = false
+    internal var activeRunRequest: AgentRunRequest? = null
+    internal var pauseRequestedConversationId: String? = null
+    internal val resourceReloadInProgress: Boolean get() = resourceController.reloadInProgress
     internal var pendingQuestionConversationId: String? = null
     internal var pendingApprovalConversationId: String? = null
     internal val conversationTitleJobs = mutableMapOf<String, Job>()
@@ -60,6 +75,8 @@ class ChatWindowState(
     internal var snapshot by mutableStateOf(snapshot)
     internal var resourceSnapshot by mutableStateOf(AgentResourceSnapshot.empty())
     internal var runtimeResourceDiagnostics by mutableStateOf(emptyList<AgentResourceDiagnostic>())
+    private var pendingToastActivation: ToastActivationTarget? = null
+    private var attentionNavigationSerial = 0L
 
     /** 当前窗口可选的全部 profile。 */
     val availableProfiles: List<ConfigProfile>
@@ -98,7 +115,37 @@ class ChatWindowState(
 
     /** 兼容旧渲染逻辑的活动会话状态投影。 */
     val state: ConversationState
-        get() = ui.activeConversation.toConversationState(activeProfile?.id)
+        get() = ui.activeConversationOrNull?.toConversationState(activeProfile?.id)
+            ?: ConversationState(
+                items = emptyList(),
+                executionState = ui.newConversationError?.let(ExecutionState::Failed) ?: ExecutionState.Idle,
+                activeProfileId = activeProfile?.id,
+            )
+
+    /** 当前输入区附件由内存草稿持有，不能进入会话快照。 */
+    val activeDraftAttachments: List<ChatAttachmentUiState>
+        get() = draftController.activeAttachments
+
+    /** 当前输入目标的上下文估计；新会话也按所选模型窗口计算。 */
+    val activeContextUsageFraction: Float
+        get() = ui.activeConversationOrNull?.contextUsageFraction
+            ?: estimateContextUsage(emptyList(), activeDraftAttachments.size, activeContextWindow())
+
+    /** 保存当前输入区后切换到工作区的新会话页。 */
+    internal fun showNewConversation(workspacePath: String) = draftController.showNewConversation(workspacePath)
+
+    /** 保存当前输入区后切换到真实会话，可指定回退后恢复的输入。 */
+    internal fun showExistingConversation(conversationId: String, restored: ComposerDraft? = null) =
+        draftController.showExistingConversation(conversationId, restored)
+
+    /** 替换活动草稿的附件并触发 composer 重绘。 */
+    internal fun updateDraftAttachments(attachments: List<ChatAttachmentUiState>) = draftController.updateAttachments(attachments)
+
+    /** 发送成功接受后只消费来源草稿，其他会话和工作区草稿保持原样。 */
+    internal fun consumeDraftAfterSend(source: ActiveConversationTarget) = draftController.consumeAfterSend(source)
+
+    /** 删除真实会话时同时移除它的未发送输入。 */
+    internal fun forgetConversationDraft(conversationId: String) = draftController.forgetConversation(conversationId)
 
     /** 当前激活 profile。 */
     val activeProfile: ConfigProfile?
@@ -111,65 +158,29 @@ class ChatWindowState(
 
     /** 当前失败状态对应的 UI 可见错误文本。 */
     val errorMessage: String?
-        get() = (ui.activeConversationOrNull?.executionState as? ExecutionState.Failed)?.error?.let { error ->
+        get() = ((ui.activeConversationOrNull?.executionState as? ExecutionState.Failed)?.error
+            ?: ui.newConversationError)?.let { error ->
             "${error.title}: ${error.message}"
         }
 
     private val workspaceController = ChatWorkspaceController(this)
+    private val resourceController = ChatResourceController(this)
+    private val draftController = ChatDraftController(this)
     private val attachmentController = ChatAttachmentController(this)
-    private val runController = ChatRunController(this)
+    internal val runController = ChatRunController(this)
+    private val recoveryController = ChatRunRecoveryController(this)
+    internal val attentionController = ChatAttentionController(this)
     private val titleController = ChatTitleController(this)
     internal val conversationTreeController = ConversationTreeController(this)
 
     /** 更新配置快照，但保留已有工作区、会话和输入状态。 */
-    fun updateSessionSnapshot(snapshot: AppSessionSnapshot) {
-        this.snapshot = snapshot
-        val selectedProfileId = ui.selectedProfileId
-            ?.takeIf { profileId -> snapshot.profiles.any { it.id == profileId } }
-            ?: snapshot.activeProfile?.id
-            ?: snapshot.profiles.firstOrNull()?.id
-        ui = ui.copy(
-            selectedProfileId = selectedProfileId,
-            tasks = ui.tasks.map { conversation ->
-                val boundProfile = conversation.profileId?.let { profileId ->
-                    snapshot.profiles.firstOrNull { it.id == profileId }
-                }
-                // 没有显式绑定 profile 的会话代表"跟随窗口默认"，需要沿用与
-                // profileForConversation 相同的回退链，否则新快照的默认档位能力
-                // 不会传导到这些会话的 reasoning effort 和上下文窗口。
-                val effectiveProfile = boundProfile
-                    ?: snapshot.profiles.firstOrNull { it.id == selectedProfileId }
-                    ?: snapshot.activeProfile
-                conversation
-                    .copy(
-                        profileId = conversation.profileId?.takeIf { boundProfile != null },
-                        reasoningEffort = effectiveProfile?.let { profile ->
-                            resolvedReasoningEffort(profile, conversation.reasoningEffort)
-                        } ?: conversation.reasoningEffort,
-                    )
-                    .withRecalculatedContextUsage(effectiveProfile?.let(::contextWindowFor))
-            },
-        )
-        persistenceCoordinator?.schedule(ui.tasks)
-    }
+    fun updateSessionSnapshot(snapshot: AppSessionSnapshot) = applySessionSnapshot(snapshot)
 
     /** 更新当前输入框草稿。 */
     fun updateDraft(
         value: String,
         selectionStart: Int = value.length,
-    ) {
-        val currentAttachments = ui.activeConversationOrNull?.attachments.orEmpty()
-        val retainedAttachments = currentAttachments.filter { attachment -> value.contains(attachment.token) }
-        if (retainedAttachments.size != currentAttachments.size) {
-            mutateActiveConversation { conversation ->
-                conversation.copy(attachments = retainedAttachments)
-            }
-        }
-        ui = ui.copy(
-            draft = value,
-            draftSelectionStart = selectionStart.coerceIn(0, value.length),
-        )
-    }
+    ) = draftController.updateDraft(value, selectionStart)
 
     /** 将命令浏览器中的选择插回 composer，而不是直接运行，用户仍可补充参数后再发送。 */
     fun insertPromptCommand(command: AgentPromptCommand) {
@@ -185,87 +196,34 @@ class ChatWindowState(
 
     /** 当前没有 Agent 任务占用 MCP 连接时才允许重载资源。 */
     val canReloadAgentResources: Boolean
-        get() = activeRunJob == null && activeRunConversationId == null && !resourceReloadInProgress
+        get() = resourceController.canReload
 
     /** 手动重载当前工作区或仅用户级资源；运行期间拒绝重载，避免中途断开 MCP 工具。 */
-    suspend fun reloadAgentResources(): Boolean {
-        if (!canReloadAgentResources) return false
-        resourceReloadInProgress = true
-        return try {
-            reloadAgentResourcesInternal()
-        } finally {
-            resourceReloadInProgress = false
-        }
-    }
+    suspend fun reloadAgentResources(): Boolean = resourceController.reload()
 
     /** 预先占用重载槽位，再异步执行重载，避免新任务插入重载与旧连接替换之间。 */
-    internal fun startResourceReload(onSuccess: () -> Unit = {}): Boolean {
-        if (!canReloadAgentResources) return false
-        resourceReloadInProgress = true
-        scope.launch {
-            try {
-                if (reloadAgentResourcesInternal()) onSuccess()
-            } finally {
-                resourceReloadInProgress = false
-            }
-        }
-        return true
-    }
-
-    /** 执行已占用槽位的资源重载；资源发现和 MCP 连接准备均离开 UI 调度器。 */
-    private suspend fun reloadAgentResourcesInternal(): Boolean {
-        val workspacePath = ui.activeConversationOrNull?.workspacePath.orEmpty()
-        val next = withContext(resourceDispatcher) {
-            resourceReloader(workspacePath)
-        } ?: return false
-        resourceSnapshot = next
-        runtimeResourceDiagnostics = emptyList()
-        return true
-    }
+    internal fun startResourceReload(onSuccess: () -> Unit = {}): Boolean = resourceController.startReload(onSuccess)
 
     /** 进入应用或切换工作区时读取当前发布快照，不触发手动 reload。 */
-    fun refreshActiveResourceSnapshot() {
-        val workspacePath = ui.activeConversationOrNull?.workspacePath.orEmpty()
-        scope.launch {
-            val next = withContext(resourceDispatcher) {
-                resourceSnapshotProvider(workspacePath)
-            } ?: AgentResourceSnapshot.empty()
-            if (ui.activeConversationOrNull?.workspacePath == workspacePath) {
-                val current = resourceSnapshot
-                if (next.version >= current.version) {
-                    if (current.version != next.version || current.workspacePath != next.workspacePath) {
-                        runtimeResourceDiagnostics = emptyList()
-                    }
-                    resourceSnapshot = next
-                }
-            }
-        }
-    }
+    fun refreshActiveResourceSnapshot() = resourceController.refreshActiveSnapshot()
 
     /**
      * 获取指定工作区当前已发布的资源快照。provider 返回 null 时保持普通聊天可用，不注入
      * 可能属于另一个工作区的旧资源。
      */
-    internal fun refreshResourceSnapshotFor(workspacePath: String): AgentResourceSnapshot {
-        return resourceSnapshotProvider(workspacePath)?.also { next ->
-            if (resourceSnapshot.version != next.version || resourceSnapshot.workspacePath != next.workspacePath) {
-                runtimeResourceDiagnostics = emptyList()
-            }
-            resourceSnapshot = next
-        } ?: AgentResourceSnapshot.empty()
-    }
+    internal fun refreshResourceSnapshotFor(workspacePath: String): AgentResourceSnapshot =
+        resourceController.refreshFor(workspacePath)
 
     /** 发送后的资源读取离开 UI 线程，读取完成后才发布到当前界面。 */
-    internal suspend fun loadRunResourceSnapshot(workspacePath: String): AgentResourceSnapshot {
-        val next = withContext(resourceDispatcher) {
-            resourceSnapshotProvider(workspacePath) ?: AgentResourceSnapshot.empty()
-        }
-        if (ui.activeConversationOrNull?.workspacePath == workspacePath) resourceSnapshot = next
-        return next
-    }
+    internal suspend fun loadRunResourceSnapshot(workspacePath: String): AgentResourceSnapshot =
+        resourceController.loadForRun(workspacePath)
 
     /** 调整当前会话的权限档位。 */
     fun updatePermission(permissionPreset: PermissionPreset) {
+        if (ui.activeConversationOrNull == null) {
+            ui = ui.copy(permissionPreset = permissionPreset)
+            return
+        }
         mutateActiveConversation { conversation ->
             conversation.copy(permissionPreset = permissionPreset)
         }
@@ -275,6 +233,10 @@ class ChatWindowState(
     fun selectProfile(profileId: String) {
         val selectedProfile = snapshot.profiles.firstOrNull { it.id == profileId } ?: return
         ui = ui.copy(selectedProfileId = profileId)
+        if (ui.activeConversationOrNull == null) {
+            ui = ui.copy(newReasoningEffort = defaultReasoningEffortFor(selectedProfile))
+            return
+        }
         mutateActiveConversation { conversation ->
             val nextEffort = resolvedReasoningEffort(
                 profile = selectedProfile,
@@ -291,6 +253,10 @@ class ChatWindowState(
 
     /** 调整当前活动会话的推理强度档位。 */
     fun updateReasoningEffort(reasoningEffort: ReasoningEffort) {
+        if (ui.activeConversationOrNull == null) {
+            ui = ui.copy(newReasoningEffort = reasoningEffort)
+            return
+        }
         mutateActiveConversation { conversation ->
             conversationTreeController.recordReasoningEffortChange(conversation, reasoningEffort)
         }
@@ -301,30 +267,49 @@ class ChatWindowState(
         findConversationOrNull(conversationId)
             ?: error("Conversation $conversationId not found.")
 
-    /** 用数据库加载的任务替换初始占位任务；空数据库保持当前可用会话。 */
+    /** 加载真实会话；新会话页保持未落库且不生成 UUID。 */
     fun restoreTasks(tasks: List<ChatConversationUiState>) {
-        if (tasks.isEmpty()) return
         invalidateAllConversationTitleGenerations()
-        val restoredPreferenceSource = tasks.firstOrNull { it.archivedAt == null } ?: tasks.first()
-        val restoredProfile = profileForConversation(restoredPreferenceSource)
-        val newConversation = ui.tasks.firstOrNull { it.isEmptyDefaultConversation() }
-            ?: newConversation(
-                workspacePath = restoredPreferenceSource.workspacePath,
-                contextWindow = restoredProfile?.let(::contextWindowFor),
-                profileId = restoredPreferenceSource.profileId ?: restoredProfile?.id,
-                reasoningEffort = restoredProfile?.let { profile ->
-                    resolvedReasoningEffort(profile, restoredPreferenceSource.reasoningEffort)
-                } ?: restoredPreferenceSource.reasoningEffort,
-                permissionPreset = restoredPreferenceSource.permissionPreset,
-            )
+        val unreadAttention = attentionRepository?.unread().orEmpty()
         ui = ui.copy(
-            tasks = listOf(newConversation) + tasks.filterNot { conversation ->
-                conversation.archivedAt == null && conversation.isEmptyDefaultConversation()
+            tasks = tasks.map(::withAgentStatus).map(::withRestoredPendingInteraction)
+                .map { attentionController.hydrate(it, unreadAttention) },
+            activeTaskId = "",
+            newWorkspacePath = ui.newWorkspacePath.ifBlank {
+                tasks.firstOrNull { it.archivedAt == null }?.workspacePath.orEmpty()
             },
-            activeTaskId = newConversation.id,
-            draft = "",
         )
+        pendingToastActivation?.let(::activateToast)
     }
+
+    /** 热启动立即定位；冷启动先排队，待真实会话加载后再处理。 */
+    internal fun activateToast(target: ToastActivationTarget) {
+        if (ui.tasks.none { it.id == target.conversationId }) {
+            pendingToastActivation = target
+            return
+        }
+        pendingToastActivation = null
+        showExistingConversation(target.conversationId)
+        target.entryId?.let { entryId ->
+            attentionNavigationSerial++
+            ui = ui.copy(attentionNavigation = AttentionNavigationRequest(
+                serial = attentionNavigationSerial,
+                conversationId = target.conversationId,
+                entryId = entryId,
+            ))
+        }
+    }
+
+    /** 时间线已消费 Toast 定位请求后清除瞬时状态。 */
+    fun clearAttentionNavigation(serial: Long) {
+        if (ui.attentionNavigation?.serial == serial) ui = ui.copy(attentionNavigation = null)
+    }
+
+    /** 从专用关系表读取当前 TODO 和最近一次实际发送的模型状态消息。 */
+    internal fun withAgentStatus(conversation: ChatConversationUiState): ChatConversationUiState = conversation.copy(
+        agentTodos = todoRepository?.list(conversation.id).orEmpty(),
+        agentStatus = statusRepository?.latest(conversation.id),
+    )
 
     /** 保存或加载失败时更新侧栏可见的简短提示。 */
     fun setPersistenceError(message: String) {
@@ -343,7 +328,7 @@ class ChatWindowState(
     ): ReasoningEffort? = resolvedReasoningEffort(profile, conversation.reasoningEffort)
 
     /** 保留受当前 profile 支持的档位；否则回退到该 profile 的默认档位。 */
-    private fun resolvedReasoningEffort(
+    internal fun resolvedReasoningEffort(
         profile: ConfigProfile,
         preferredEffort: ReasoningEffort,
     ): ReasoningEffort? {
@@ -374,6 +359,7 @@ class ChatWindowState(
     /** 在指定对话上执行原子更新。 */
     internal fun mutateConversation(
         conversationId: String,
+        schedulePersistence: Boolean = true,
         transform: (ChatConversationUiState) -> ChatConversationUiState,
     ) {
         ui = ui.copy(
@@ -385,12 +371,12 @@ class ChatWindowState(
                 }
             },
         )
-        persistenceCoordinator?.schedule(ui.tasks)
+        if (schedulePersistence) persistenceCoordinator?.schedule(ui.tasks)
     }
 
     /** 更新当前活动会话。 */
     internal fun mutateActiveConversation(transform: (ChatConversationUiState) -> ChatConversationUiState) {
-        mutateConversation(ui.activeTaskId, transform)
+        mutateConversation(ui.activeTaskId, transform = transform)
     }
 
     /** 查找指定对话，如果不存在则返回空。 */
@@ -463,6 +449,12 @@ class ChatWindowState(
 
     /** 取消当前正在执行的轮次，并恢复到可继续输入的空闲态。 */
     fun cancelActiveRun() = runController.cancelActiveRun()
+
+    /** 暂停当前运行并保留可继续的 Koog 恢复点。 */
+    fun pauseActiveRun() = recoveryController.pauseActiveRun()
+
+    /** 从检查点继续当前暂停或中断的会话。 */
+    fun resumeActiveRun() = recoveryController.resumeActiveRun()
 
     /** 回答当前挂起问题，并恢复同一轮 agent 执行。 */
     fun answerPendingQuestion(answer: String) = runController.answerPendingQuestion(answer)

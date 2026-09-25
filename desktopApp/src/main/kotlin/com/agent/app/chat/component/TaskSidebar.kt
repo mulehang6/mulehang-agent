@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.agent.app.chat.presentation.resolveWorkspaceForTaskCreation
 import com.agent.app.chat.state.ChatTaskListItemUiState
 import com.agent.app.chat.state.ChatWindowState
+import com.agent.app.chat.state.isStoppable
 import com.agent.app.design.AppDanger
 import com.agent.app.design.AppMuted
 import com.agent.app.design.AppText
@@ -250,7 +251,12 @@ internal fun TaskSidebar(
                 deletingTask = null
             },
         ) {
-            Text("将永久删除“${task.title}”。它的直接子会话会提升为根节点，此操作无法撤销。")
+            Text(buildString {
+                append("将永久删除“${task.title}”。它的直接子会话会提升为根节点，此操作无法撤销。")
+                if (state.ui.tasks.firstOrNull { it.id == task.id }?.executionState?.isStoppable() == true ||
+                    state.activeRunConversationId == task.id
+                ) append(" 当前执行或等待中的 Agent 也会被终止。")
+            })
         }
     }
     blockedDeleteMessage?.let { message ->

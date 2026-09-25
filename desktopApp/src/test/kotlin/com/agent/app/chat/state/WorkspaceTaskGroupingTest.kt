@@ -86,7 +86,7 @@ class WorkspaceTaskGroupingTest {
         )
         assertEquals(ChatTaskStatus.NEW, workspaces.first().sections.first().tasks.first().status)
         assertEquals(ChatTaskStatus.RUNNING, workspaces.first().sections.first().tasks.last().status)
-        assertEquals(ChatTaskStatus.DONE, workspaces.last().sections.last().tasks.single().status)
+        assertEquals(ChatTaskStatus.NONE, workspaces.last().sections.last().tasks.single().status)
     }
 
     /**

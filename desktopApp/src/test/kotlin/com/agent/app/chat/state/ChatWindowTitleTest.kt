@@ -204,8 +204,9 @@ class ChatWindowTitleTest : ChatWindowTestFixture() {
         advanceUntilIdle()
 
         assertNotEquals(deletedConversationId, replacementConversationId)
-        assertEquals(DEFAULT_CONVERSATION_TITLE, state.ui.activeConversation.title)
-        assertEquals(ConversationTitleState.NOT_REQUESTED, state.ui.activeConversation.titleState)
+        assertEquals("", replacementConversationId)
+        assertNull(state.ui.activeConversationOrNull)
+        assertTrue(state.ui.tasks.isEmpty())
     }
 
 }

@@ -39,7 +39,7 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
 
         assertEquals(
             listOf("ChatScreen.kt", "design.png"),
-            state.ui.activeConversation.attachments.map { it.name },
+            state.activeDraftAttachments.map { it.name },
         )
     }
 
@@ -61,7 +61,7 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
 
         state.removeAttachment("D:\\tmp\\ChatScreen.kt")
 
-        assertEquals(listOf("design.png"), state.ui.activeConversation.attachments.map { it.name })
+        assertEquals(listOf("design.png"), state.activeDraftAttachments.map { it.name })
     }
 
     /** prompt 命令先插入编辑器，用户再次发送才运行；`/reload` 则直接执行资源重载控制动作。 */
@@ -109,7 +109,7 @@ class ChatWindowAttachmentTest : ChatWindowTestFixture() {
         state.updateDraft("/review src/App.kt")
         state.sendDraft()
         assertEquals("请审查 src/App.kt", state.ui.draft)
-        assertTrue(state.ui.activeConversation.history.isEmpty())
+        assertNull(state.ui.activeConversationOrNull)
 
         state.sendDraft()
         advanceUntilIdle()

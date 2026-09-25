@@ -84,6 +84,14 @@ private fun reduceContentEvent(
         contextWindow = contextWindow,
     )
 
+    is AgentStreamEvent.ToolCallInterrupted -> markToolCallFailed(
+        conversation = conversation,
+        toolCallId = event.toolCallId,
+        toolName = event.name,
+        reason = event.reason,
+        contextWindow = contextWindow,
+    )
+
     is AgentStreamEvent.QuestionRequested -> {
         val questions = event.request.effectiveQuestions
         conversation.copy(
@@ -114,6 +122,20 @@ private fun reduceContentEvent(
     )
 
     is AgentStreamEvent.Status -> conversation
+    is AgentStreamEvent.StatusSnapshotUpdated -> conversation
+
+    is AgentStreamEvent.UsageUpdated -> conversation.copy(
+        contextUsageFraction = if (event.inputTokens != null && (event.contextWindow ?: 0) > 0) {
+            (event.inputTokens!!.toFloat() / event.contextWindow!!).coerceAtLeast(0f)
+        } else {
+            conversation.contextUsageFraction
+        },
+        providerContextUsageFraction = if (event.inputTokens != null && (event.contextWindow ?: 0) > 0) {
+            (event.inputTokens!!.toFloat() / event.contextWindow!!).coerceAtLeast(0f)
+        } else {
+            conversation.providerContextUsageFraction
+        },
+    )
 
     is AgentStreamEvent.ReasoningDelta -> appendAssistantReasoningHistory(
         appendReasoningDelta(

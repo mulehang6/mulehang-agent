@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -39,8 +41,9 @@ import org.jetbrains.jewel.ui.component.Text
  * 时间线中的思考块展示。
  */
 @Composable
-internal fun TimelineReasoningItem(item: ReasoningItem) {
-    var expanded by remember(item.isStreaming) { mutableStateOf(item.isStreaming) }
+internal fun TimelineReasoningItem(item: ReasoningItem, navigationExpanded: Boolean = false) {
+    val expansion = remember(item.startedAtMillis) { TimelineExpansionState() }
+    val expanded = expansion.expanded(item.isStreaming, navigationExpanded)
     val reasoningTint = timelineReasoningTint(item.isStreaming)
     val shimmerTransition = rememberInfiniteTransition(label = "thinking-shimmer")
     val shimmerOffset by shimmerTransition.animateFloat(
@@ -74,7 +77,7 @@ internal fun TimelineReasoningItem(item: ReasoningItem) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(
-            modifier = Modifier.clickable { expanded = !expanded },
+            modifier = Modifier.clickable { expansion.toggle(item.isStreaming, navigationExpanded) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TimelineReasoningGlyph(streaming = item.isStreaming, tint = reasoningTint)
@@ -107,10 +110,14 @@ internal fun TimelineReasoningItem(item: ReasoningItem) {
  * 时间线中的工具事件条目。
  */
 @Composable
-internal fun TimelineToolGroup(items: List<ToolEventItem>) {
-    var expanded by remember(items.map(ToolEventItem::toolCallId)) {
-        mutableStateOf(initialTimelineToolGroupExpanded())
-    }
+internal fun TimelineToolGroup(
+    items: List<ToolEventItem>,
+    navigationExpanded: Boolean = false,
+    navigationTargetToolCallId: String? = null,
+    onTargetPositioned: (topInWindow: Float, bottomInWindow: Float) -> Unit = { _, _ -> },
+) {
+    val expansion = remember(items.map(ToolEventItem::toolCallId)) { TimelineExpansionState() }
+    val expanded = expansion.expanded(initialTimelineToolGroupExpanded(), navigationExpanded)
     var hovered by remember(items.map(ToolEventItem::toolCallId)) { mutableStateOf(false) }
     val displayItems = items.map { item -> rememberTimelineToolDisplayItem(item) }
     val chevronRotation by animateFloatAsState(
@@ -137,7 +144,7 @@ internal fun TimelineToolGroup(items: List<ToolEventItem>) {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) {
-                expanded = !expanded
+                 expansion.toggle(initialTimelineToolGroupExpanded(), navigationExpanded)
             }
                 .padding(horizontal = 4.dp, vertical = TOOL_EVENT_ROW_VERTICAL_PADDING_DP.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -221,7 +228,16 @@ internal fun TimelineToolGroup(items: List<ToolEventItem>) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 displayItems.forEach { item ->
-                    TimelineToolStackCard(item = item, preview = false)
+                    Box(
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            if (navigationTargetToolCallId != null && item.toolCallId == navigationTargetToolCallId) {
+                                val bounds = coordinates.boundsInWindow(clipBounds = false)
+                                onTargetPositioned(bounds.top, bounds.bottom)
+                            }
+                        },
+                    ) {
+                        TimelineToolStackCard(item = item, preview = false)
+                    }
                 }
             }
         }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.job
+import kotlinx.coroutines.withContext
 import com.agent.shared.agent.api.AgentRunTiming
 import com.agent.shared.agent.koog.isContextOverflowMessage
 import java.util.UUID
@@ -339,7 +340,25 @@ internal class ChatRunController(private val window: ChatWindowState) {
     /**
      * 将 agent 事件应用到指定活动会话。
      */
-    internal fun applyAgentEvent(conversationId: String, event: AgentStreamEvent) {
+    internal suspend fun applyAgentEvent(conversationId: String, event: AgentStreamEvent) {
+        val shouldRefreshTodos =
+            event is AgentStreamEvent.ToolCallFinished || event is AgentStreamEvent.ToolCallFailed ||
+            event is AgentStreamEvent.ToolCallInterrupted
+        val refreshedTodos = if (shouldRefreshTodos) {
+            withContext(window.resourceDispatcher) { window.todoRepository?.list(conversationId).orEmpty() }
+        } else {
+            null
+        }
+        val contextOverflowFailure = (event as? AgentStreamEvent.Failed)
+            ?.reason
+            ?.let(::isContextOverflowMessage) == true
+        val hasRecoveryCheckpoint = if (contextOverflowFailure) {
+            withContext(window.resourceDispatcher) {
+                window.recoveryRepository?.interruptedRun(conversationId)?.hasCheckpoint == true
+            }
+        } else {
+            false
+        }
         with(window) {
             if (event is AgentStreamEvent.StatusSnapshotUpdated) {
                 mutateConversation(conversationId) { conversation ->
@@ -375,17 +394,13 @@ internal class ChatRunController(private val window: ChatWindowState) {
                     idFactory = { UUID.randomUUID().toString() },
                     clock = clock,
                 )
-                val recoverable = event is AgentStreamEvent.Failed &&
-                    isContextOverflowMessage(event.reason) &&
-                    recoveryRepository?.interruptedRun(conversationId)?.hasCheckpoint == true
+                val recoverable = contextOverflowFailure && hasRecoveryCheckpoint
                 val withRecovery = if (recoverable) updated.copy(executionState = ExecutionState.Interrupted) else updated
                 val withActualUsage = withRecovery.providerContextUsageFraction?.let { actual ->
                     withRecovery.copy(contextUsageFraction = actual)
                 } ?: withRecovery
-                if (event is AgentStreamEvent.ToolCallFinished || event is AgentStreamEvent.ToolCallFailed ||
-                    event is AgentStreamEvent.ToolCallInterrupted
-                ) {
-                    withActualUsage.copy(agentTodos = todoRepository?.list(conversationId).orEmpty())
+                if (shouldRefreshTodos) {
+                    withActualUsage.copy(agentTodos = refreshedTodos.orEmpty())
                 } else {
                     withActualUsage
                 }

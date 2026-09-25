@@ -101,6 +101,27 @@ class ChatWindowWorkspaceRemovalTest : ChatWindowTestFixture() {
         assertNull(state.ui.activeConversationOrNull)
     }
 
+    /** 删除新会话页当前工作区时，也应切换到最近可用的其他工作区。 */
+    @Test
+    fun `should retain a recent fallback when disconnecting workspace from new conversation page`() = runTest(dispatcher) {
+        val state = ChatWindowState(
+            resourceDispatcher = dispatcher,
+            sendMessageUseCase = SendMessageUseCase(idleGateway()),
+            snapshot = AppSessionSnapshot(profiles = listOf(profile()), activeProfile = profile()),
+            projectPath = "E:\\current",
+            workspaceDirectoryExists = { true },
+        )
+        state.createConversationForWorkspace("E:\\fallback")
+        state.send("fallback history")
+        advanceUntilIdle()
+        state.showNewConversation("E:\\current")
+
+        state.disconnectWorkspace("E:\\current")
+
+        assertEquals("E:\\fallback", state.ui.newWorkspacePath)
+        assertNull(state.ui.activeConversationOrNull)
+    }
+
     /** 删除非当前工作区不得打断当前会话或清空草稿。 */
     @Test
     fun `should retain active conversation when disconnecting another workspace`() = runTest(dispatcher) {

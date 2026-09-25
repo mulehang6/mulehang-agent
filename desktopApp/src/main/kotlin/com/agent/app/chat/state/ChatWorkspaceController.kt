@@ -1,8 +1,6 @@
 package com.agent.app.chat.state
 
-import com.agent.shared.agent.api.ReasoningEffort
 import com.agent.shared.chat.model.ExecutionState
-import com.agent.shared.tool.model.PermissionPreset
 
 /** 管理会话与工作区的关联、迁移和历史恢复。 */
 internal class ChatWorkspaceController(private val window: ChatWindowState) {
@@ -221,7 +219,10 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
         with(window) {
             val activeConversation = ui.activeConversationOrNull
             val isDisconnectingActiveWorkspace = activeConversation?.workspacePath == workspacePath
-            val fallbackWorkspacePath = if (isDisconnectingActiveWorkspace) {
+            val isDisconnectingNewConversation =
+                ui.activeTaskId.isBlank() && ui.newWorkspacePath == workspacePath
+            val shouldSelectFallback = isDisconnectingActiveWorkspace || isDisconnectingNewConversation
+            val fallbackWorkspacePath = if (shouldSelectFallback) {
                 findRecentAvailableWorkspacePath(excludedWorkspacePath = workspacePath)
             } else {
                 null
@@ -248,9 +249,9 @@ internal class ChatWorkspaceController(private val window: ChatWindowState) {
             ui = ui.copy(
                 tasks = retainedTasks,
             )
-            if (isDisconnectingActiveWorkspace || ui.activeTaskId in removedTaskIds ||
-                (ui.activeTaskId.isBlank() && ui.newWorkspacePath == workspacePath)
-            ) showNewConversation(fallbackWorkspacePath.orEmpty())
+            if (shouldSelectFallback || ui.activeTaskId in removedTaskIds) {
+                showNewConversation(fallbackWorkspacePath.orEmpty())
+            }
             persistenceCoordinator?.schedule(ui.tasks)
         }
     }

@@ -63,17 +63,27 @@ internal class ChatRunRecoveryController(private val window: ChatWindowState) {
                     val target = withContext(resourceDispatcher) {
                         recoveryRepository?.interruptedRun(conversation.id)
                     }
-                    val request = when {
-                        target == null -> baseRequest.copy(traceId = UUID.randomUUID().toString(), resumeRunId = null)
-                        target.userEntryId != null && baseRequest.userEntryId != target.userEntryId ->
+                    val targetUserEntryId = target?.userEntryId
+                    val matchingBaseRequest = if (targetUserEntryId != null &&
+                        baseRequest.userEntryId != targetUserEntryId
+                    ) {
+                        if (conversation.treeFormatVersion == 0 && baseRequest.userEntryId.isBlank()) {
+                            baseRequest.copy(userEntryId = targetUserEntryId)
+                        } else {
                             throw UnavailableAgentCheckpointException("恢复点与当前用户消息不匹配。")
-                        target.hasCheckpoint -> baseRequest.copy(traceId = target.id, resumeRunId = target.id)
+                        }
+                    } else {
+                        baseRequest
+                    }
+                    val request = when {
+                        target == null -> matchingBaseRequest.copy(traceId = UUID.randomUUID().toString(), resumeRunId = null)
+                        target.hasCheckpoint -> matchingBaseRequest.copy(traceId = target.id, resumeRunId = target.id)
                         target.hasToolCalls -> throw UnavailableAgentCheckpointException(
                             "运行曾启动工具，但没有可用检查点；为避免重复执行，当前轮次不能继续。",
                         )
                         else -> {
                             withContext(resourceDispatcher) { recoveryRepository?.abandonRun(target.id) }
-                            baseRequest.copy(traceId = UUID.randomUUID().toString(), resumeRunId = null)
+                            matchingBaseRequest.copy(traceId = UUID.randomUUID().toString(), resumeRunId = null)
                         }
                     }
                     val resources = loadRunResourceSnapshot(conversation.workspacePath)

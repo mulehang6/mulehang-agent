@@ -34,7 +34,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 /**
  * 窗口状态门面，装配会话、附件、执行与标题协作者。
@@ -128,8 +127,19 @@ class ChatWindowState(
 
     /** 当前输入目标的上下文估计；新会话也按所选模型窗口计算。 */
     val activeContextUsageFraction: Float
-        get() = ui.activeConversationOrNull?.contextUsageFraction
-            ?: estimateContextUsage(emptyList(), activeDraftAttachments.size, activeContextWindow())
+        get() {
+            val conversation = ui.activeConversationOrNull ?: return estimateContextUsage(
+                emptyList(),
+                activeDraftAttachments.size,
+                activeContextWindow(),
+            )
+            val storedEstimate = conversation.contextUsageFraction
+            if (activeDraftAttachments.isEmpty()) return storedEstimate
+            return maxOf(
+                storedEstimate,
+                estimateContextUsage(conversation.items, activeDraftAttachments.size, activeContextWindow()),
+            )
+        }
 
     /** 保存当前输入区后切换到工作区的新会话页。 */
     internal fun showNewConversation(workspacePath: String) = draftController.showNewConversation(workspacePath)

@@ -353,24 +353,33 @@ class KoogAgentGateway(
 
         override suspend fun requestQuestion(request: QuestionRequest): String {
             if (runId.isNotBlank()) interactionRequests?.claimQuestion(runId, request)?.let { return it }
-            if (conversationId.isNotBlank() && runId.isNotBlank()) {
-                interactionRequests?.recordQuestion(conversationId, runId, request)
+            val savedRequest = if (conversationId.isNotBlank() && runId.isNotBlank()) {
+                interactionRequests?.recordQuestion(conversationId, runId, request) ?: request
+            } else {
+                request
             }
-            emitEvent(AgentStreamEvent.QuestionRequested(request))
-            return interactionBridge.requestQuestion(request).also { response ->
-                interactionRequests?.consumed(request.requestId, response)
+            emitEvent(AgentStreamEvent.QuestionRequested(savedRequest))
+            return interactionBridge.requestQuestion(savedRequest).also { response ->
+                interactionRequests?.consumed(savedRequest.requestId, response)
             }
         }
 
         override suspend fun requestApproval(request: ApprovalRequest): Boolean {
             if (interactionBridge.isApprovalAutoApproved(request)) return interactionBridge.requestApproval(request)
-            if (runId.isNotBlank()) interactionRequests?.claimApproval(runId, request)?.let { return it }
-            if (conversationId.isNotBlank() && runId.isNotBlank()) {
-                interactionRequests?.recordApproval(conversationId, runId, request)
+            if (runId.isNotBlank()) {
+                interactionRequests?.claimApproval(runId, request)?.let { decision ->
+                    if (decision.allowToolType) interactionBridge.rememberApproval(request)
+                    return decision.approved
+                }
             }
-            emitEvent(AgentStreamEvent.ApprovalRequested(request))
-            return interactionBridge.requestApproval(request).also { approved ->
-                interactionRequests?.consumed(request.requestId, approved.toString())
+            val savedRequest = if (conversationId.isNotBlank() && runId.isNotBlank()) {
+                interactionRequests?.recordApproval(conversationId, runId, request) ?: request
+            } else {
+                request
+            }
+            emitEvent(AgentStreamEvent.ApprovalRequested(savedRequest))
+            return interactionBridge.requestApproval(savedRequest).also { approved ->
+                interactionRequests?.consumed(savedRequest.requestId, approved.toString())
             }
         }
 

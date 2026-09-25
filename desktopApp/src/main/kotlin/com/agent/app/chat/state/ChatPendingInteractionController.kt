@@ -62,7 +62,7 @@ internal class ChatPendingInteractionController(private val window: ChatWindowSt
             val conversationId = resolvePendingApprovalConversationId() ?: return
             val pending = findConversation(conversationId).pendingApproval ?: return
             val approved = response != ApprovalResponse.REJECT_AND_STOP
-            val saved = interactionRequestRepository?.answer(pending.requestId, approved.toString()) == true
+            val saved = interactionRequestRepository?.answer(pending.requestId, response.name) == true
             val live = toolInteractionCoordinator.submitApproval(response)
             if (!live && !saved) return
             pendingApprovalConversationId = null

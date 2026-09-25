@@ -3,7 +3,6 @@ package com.agent.shared.agent.koog
 import com.agent.shared.agent.api.AgentRunRequest
 import com.agent.shared.agent.api.AgentStreamEvent
 import com.agent.shared.persistence.DesktopPersistenceDatabase
-import java.util.UUID
 import kotlinx.coroutines.CancellationException
 
 /** 仅在首次模型请求尚未启动工具时，压缩历史并重试一次。 */
@@ -24,19 +23,16 @@ internal suspend fun runWithContextOverflowRetry(
         throw cancellation
     } catch (error: Exception) {
         if ((database == null && compact == null) || request.resumeRunId != null || toolStarted || !isContextOverflow(error)) throw error
-        val retryRunId = UUID.randomUUID().toString()
-        val compacted = compact?.invoke(request.copy(contextUsageFraction = 1f), retryRunId)
+        val runId = request.traceId
+        val compacted = compact?.invoke(request.copy(contextUsageFraction = 1f), runId)
             ?: ContextCompactionCoordinator(requireNotNull(database)).prepare(
-                request.copy(contextUsageFraction = 1f), retryRunId,
+                request.copy(contextUsageFraction = 1f), runId,
             )
         if (compacted.history == request.history ||
             estimateHistoryTokens(compacted.history) >= estimateHistoryTokens(request.history)
         ) throw error
-        request.traceId.takeIf(String::isNotBlank)?.let { previousRunId ->
-            database?.let { AgentRunRecoveryRepository(it).abandonRun(previousRunId) }
-        }
         emitEvent(AgentStreamEvent.Status("上下文已压缩，正在重试一次。"))
-        return run(compacted.copy(traceId = retryRunId)) { event -> emitEvent(event) }
+        return run(compacted.copy(traceId = request.traceId)) { event -> emitEvent(event) }
     }
 }
 

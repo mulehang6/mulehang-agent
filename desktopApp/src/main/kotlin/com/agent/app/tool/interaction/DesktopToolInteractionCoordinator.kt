@@ -39,6 +39,14 @@ class DesktopToolInteractionCoordinator : DesktopToolInteractionBridge {
         !request.forceManual && request.toolName in autoApprovedToolNames
     }
 
+    /** 恢复本轮已持久化的同类工具授权。 */
+    override fun rememberApproval(request: ApprovalRequest) {
+        if (request.forceManual) return
+        synchronized(lock) {
+            autoApprovedToolNames += request.toolName
+        }
+    }
+
     /**
      * 挂起当前工具调用，直到 UI 提交问题答案。
      */

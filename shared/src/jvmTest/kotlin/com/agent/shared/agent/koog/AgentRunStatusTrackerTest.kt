@@ -47,6 +47,7 @@ class AgentRunStatusTrackerTest {
             AgentTodoRepository(database).rewrite("conversation", listOf(
                 AgentTodoDraft("inspect", "检查", AgentTodoStatus.IN_PROGRESS),
             ))
+            var now = 1_000L
             val tracker = AgentRunStatusTracker(
                 database,
                 AgentRunRequest(
@@ -66,11 +67,12 @@ class AgentRunStatusTrackerTest {
                     contextWindow = 100_000,
                 ),
                 "run",
-                clock = { 1_000L },
+                clock = { now },
                 gitStatus = { "main；已跟踪文件更改 0 项" },
             )
             val (first, text) = assertNotNull(tracker.pendingSnapshot())
             tracker.persist(first, text)
+            now += 500L
             assertNull(tracker.pendingSnapshot())
             tracker.toolStarted()
             tracker.toolFailed("操作失败")

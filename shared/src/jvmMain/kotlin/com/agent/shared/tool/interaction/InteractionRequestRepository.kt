@@ -22,21 +22,27 @@ sealed interface SavedInteractionRequest {
     }
 }
 
+/** 恢复后的审批结果，并保留是否允许本轮后续同类工具。 */
+data class SavedApprovalDecision(
+    val approved: Boolean,
+    val allowToolType: Boolean,
+)
+
 /** 请求和答复单独持久化；只有桥真正取走答复后才标记消费。 */
 class InteractionRequestRepository(private val database: DesktopPersistenceDatabase) {
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
 
     /** 在 UI 展示之前保存原始问题与运行归属。 */
-    fun recordQuestion(conversationId: String, runId: String, request: QuestionRequest) {
+    fun recordQuestion(conversationId: String, runId: String, request: QuestionRequest): QuestionRequest =
         insert(request.requestId, conversationId, runId, "QUESTION", "ask_user",
-            signature(json.encodeToString(request.copy(requestId = ""))), json.encodeToString(request))
-    }
+            signature(json.encodeToString(request.copy(requestId = ""))), json.encodeToString(request), request,
+        ) { payload -> json.decodeFromString<QuestionRequest>(payload) }
 
     /** 在 UI 展示之前保存原始审批与运行归属。 */
-    fun recordApproval(conversationId: String, runId: String, request: ApprovalRequest) {
+    fun recordApproval(conversationId: String, runId: String, request: ApprovalRequest): ApprovalRequest =
         insert(request.requestId, conversationId, runId, "APPROVAL", request.toolName,
-            signature(json.encodeToString(request.copy(requestId = ""))), json.encodeToString(request))
-    }
+            signature(json.encodeToString(request.copy(requestId = ""))), json.encodeToString(request), request,
+        ) { payload -> json.decodeFromString<ApprovalRequest>(payload) }
 
     /** 读取崩溃时最近一项尚待处理的交互。 */
     fun pending(conversationId: String): SavedInteractionRequest? = database.read { queries ->
@@ -75,9 +81,9 @@ class InteractionRequestRepository(private val database: DesktopPersistenceDatab
     )
 
     /** 恢复的审批工具重新发出相同交互时，原子取得尚未消费的决定。 */
-    fun claimApproval(runId: String, request: ApprovalRequest): Boolean? = claim(
+    fun claimApproval(runId: String, request: ApprovalRequest): SavedApprovalDecision? = claim(
         runId, "APPROVAL", signature(json.encodeToString(request.copy(requestId = ""))),
-    )?.toBooleanStrictOrNull()
+    )?.let(::decodeApprovalDecision)
 
     /** 只有回答已落库但尚未交给工具时才允许该工具从恢复点重新进入。 */
     fun hasUnconsumedAnswerForTool(runId: String, toolName: String): Boolean = database.read { queries ->
@@ -98,7 +104,7 @@ class InteractionRequestRepository(private val database: DesktopPersistenceDatab
     }
 
     /** 请求 ID 唯一，插入保持和会话运行记录相同的外键归属。 */
-    private fun insert(
+    private fun <T> insert(
         requestId: String,
         conversationId: String,
         runId: String,
@@ -106,19 +112,30 @@ class InteractionRequestRepository(private val database: DesktopPersistenceDatab
         toolName: String,
         signature: String,
         payload: String,
-    ) {
-        database.write { queries ->
-            queries.insertInteractionRequest(
-                request_id = requestId,
-                conversation_id = conversationId,
-                run_id = runId,
-                kind = kind,
-                tool_name = toolName,
-                signature = signature,
-                request_json = payload,
-                created_at = System.currentTimeMillis(),
-            )
-        }
+        request: T,
+        decodeExisting: (String) -> T,
+    ): T = database.write { queries ->
+        val existing = queries.selectPendingInteractionForReplay(runId, kind, signature).executeAsOneOrNull()
+        if (existing != null) return@write decodeExisting(existing.request_json)
+        queries.insertInteractionRequest(
+            request_id = requestId,
+            conversation_id = conversationId,
+            run_id = runId,
+            kind = kind,
+            tool_name = toolName,
+            signature = signature,
+            request_json = payload,
+            created_at = System.currentTimeMillis(),
+        )
+        request
+    }
+
+    /** 兼容旧版布尔答复，同时恢复本轮允许同类工具的选择。 */
+    private fun decodeApprovalDecision(response: String): SavedApprovalDecision? = when (response) {
+        "true", "APPROVE_ONCE" -> SavedApprovalDecision(approved = true, allowToolType = false)
+        "false", "REJECT_AND_STOP" -> SavedApprovalDecision(approved = false, allowToolType = false)
+        "APPROVE_TOOL_TYPE" -> SavedApprovalDecision(approved = true, allowToolType = true)
+        else -> null
     }
 
     /** 请求内容签名忽略每次工具重建时新生成的随机 requestId。 */

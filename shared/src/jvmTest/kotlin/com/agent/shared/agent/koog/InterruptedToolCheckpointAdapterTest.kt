@@ -52,6 +52,36 @@ class InterruptedToolCheckpointAdapterTest {
         }
     }
 
+    /** 无调用 ID 时，不能把同名旧工具的完成结果误当作当前结果。 */
+    @Test
+    fun `tool call without id does not reuse a finished invocation`() = runTest {
+        val path = Files.createTempDirectory("mulehang-finished-tool").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(path).use { database ->
+            SqliteTaskRepository(database).saveAll(listOf(task()))
+            database.write { queries ->
+                queries.upsertAgentRun("run", "conversation", "turn", "INTERRUPTED", "model", "strategy", "tools", 1, 1, null, null)
+            }
+            AgentRunEventJournal(database, "conversation", "run") { 2L }.record(
+                AgentStreamEvent.ToolCallFailed(
+                    toolCallId = "previous-call",
+                    name = "run_powershell",
+                    reason = "旧调用的失败结果",
+                ),
+            )
+
+            val adapted = InterruptedToolCheckpointAdapter(database, "run").adapt(
+                checkpoint("agent/call_llm_streaming", callId = null),
+            )
+            val results = Json.decodeFromJsonElement(
+                ReceivedToolResults.serializer(),
+                requireNotNull(adapted.checkpoint.graphProperties).lastOutput.toKotlinxJsonElement(),
+            )
+
+            assertEquals(1, adapted.unknownCalls.size)
+            assertTrue(results.toolResults.single().output.contains("结果未知"))
+        }
+    }
+
     /** 已安全完成的节点不应被改写。 */
     @Test
     fun `completed tool node keeps original recovery point`() {
@@ -80,14 +110,14 @@ class InterruptedToolCheckpointAdapterTest {
     }
 
     /** 构造一个模型刚决定调用工具后的 Koog 图检查点。 */
-    private fun checkpoint(nodePath: String): AgentCheckpointData = AgentCheckpointData(
+    private fun checkpoint(nodePath: String, callId: String? = "call-1"): AgentCheckpointData = AgentCheckpointData(
         checkpointId = "checkpoint",
         createdAt = Instant.fromEpochMilliseconds(1),
         messageHistory = buildConversationMessages(
             history = listOf(
                 AgentConversationHistoryMessage.User("执行任务"),
                 AgentConversationHistoryMessage.Assistant(listOf(
-                    AgentConversationHistoryPart.ToolCall("call-1", "run_powershell", "{\"script\":\"side effect\"}"),
+                    AgentConversationHistoryPart.ToolCall(callId, "run_powershell", "{\"script\":\"side effect\"}"),
                 )),
             ),
             prompt = "continue",

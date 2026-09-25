@@ -32,12 +32,16 @@ internal class InterruptedToolCheckpointAdapter(
         val calls = assistant.parts.filterIsInstance<MessagePart.Tool.Call>()
         if (calls.isEmpty()) return InterruptedToolCheckpoint(checkpoint, emptyList())
         val invocations = database.read { queries -> queries.selectToolInvocationsForRun(runId).executeAsList() }
-        val singleCall = calls.singleOrNull()
-        val currentInvocation = singleCall?.let { call ->
-            invocations.lastOrNull { row ->
-                row.tool_name == call.tool && (call.id == null || row.id == "$runId:${call.id}")
+        /** 按调用 ID 精确匹配；旧检查点仅接受尚未完成的同名调用。 */
+        fun findInvocation(call: MessagePart.Tool.Call) = invocations.lastOrNull { row ->
+            row.tool_name == call.tool && if (call.id == null) {
+                row.finished_at == null
+            } else {
+                row.id == "$runId:${call.id}"
             }
         }
+        val singleCall = calls.singleOrNull()
+        val currentInvocation = singleCall?.let(::findInvocation)
         if (calls.size == 1 &&
             InteractionRequestRepository(database).hasUnconsumedAnswerForTool(runId, requireNotNull(singleCall).tool) &&
             currentInvocation?.state !in setOf("COMPLETED", "FAILED")
@@ -47,9 +51,7 @@ internal class InterruptedToolCheckpointAdapter(
         }
         val unknown = mutableListOf<InterruptedToolCall>()
         val results = calls.map { call ->
-            val invocation = invocations.lastOrNull { row ->
-                row.tool_name == call.tool && (call.id == null || row.id == "$runId:${call.id}")
-            }
+            val invocation = findInvocation(call)
             val finished = invocation?.state == "COMPLETED" || invocation?.state == "FAILED"
             val output = if (finished) {
                 invocation.result_json?.let(::resultText).orEmpty()

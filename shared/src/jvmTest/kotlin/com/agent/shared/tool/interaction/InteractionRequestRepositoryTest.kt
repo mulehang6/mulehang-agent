@@ -49,8 +49,46 @@ class InteractionRequestRepositoryTest {
             repository.recordApproval("conversation", "run", request)
             assertIs<SavedInteractionRequest.Approval>(repository.pending("conversation"))
             assertTrue(repository.answer("first", "false"))
-            assertEquals(false, repository.claimApproval("run", request.copy(requestId = "second")))
+            assertEquals(
+                SavedApprovalDecision(approved = false, allowToolType = false),
+                repository.claimApproval("run", request.copy(requestId = "second")),
+            )
             assertNull(repository.claimApproval("run", request.copy(requestId = "third")))
+        }
+    }
+
+    /** 恢复同一挂起问题时复用原 request ID，避免遗留的 Pending 行重新出现。 */
+    @Test
+    fun `pending question replay reuses original request id`() = runTest {
+        val path = Files.createTempDirectory("mulehang-pending-replay").resolve("db.sqlite")
+        DesktopPersistenceDatabase.open(path).use { database ->
+            prepareRun(database)
+            val repository = InteractionRequestRepository(database)
+            val original = QuestionRequest("first", "ask_user", listOf(QuestionPrompt("选择范围")))
+            repository.recordQuestion("conversation", "run", original)
+
+            val replayed = repository.recordQuestion("conversation", "run", original.copy(requestId = "second"))
+
+            assertEquals("first", replayed.requestId)
+            assertEquals("first", assertIs<SavedInteractionRequest.Question>(repository.pending("conversation")).requestId)
+        }
+    }
+
+    /** 恢复审批时保留本轮后续同类工具授权，而不只保存布尔批准结果。 */
+    @Test
+    fun `tool type approval survives replay`() = runTest {
+        val path = Files.createTempDirectory("mulehang-approval-type").resolve("db.sqlite")
+        DesktopPersistenceDatabase.open(path).use { database ->
+            prepareRun(database)
+            val repository = InteractionRequestRepository(database)
+            val request = ApprovalRequest("first", "run_powershell", "执行命令")
+            repository.recordApproval("conversation", "run", request)
+            assertTrue(repository.answer("first", "APPROVE_TOOL_TYPE"))
+
+            assertEquals(
+                SavedApprovalDecision(approved = true, allowToolType = true),
+                repository.claimApproval("run", request.copy(requestId = "second")),
+            )
         }
     }
 

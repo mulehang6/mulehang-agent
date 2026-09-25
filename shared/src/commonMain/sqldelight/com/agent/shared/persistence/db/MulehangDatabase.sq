@@ -506,6 +506,11 @@ SELECT * FROM interaction_request
 WHERE run_id = ? AND kind = ? AND signature = ? AND state = 'ANSWERED'
 ORDER BY answered_at DESC, rowid DESC LIMIT 1;
 
+selectPendingInteractionForReplay:
+SELECT * FROM interaction_request
+WHERE run_id = ? AND kind = ? AND signature = ? AND state = 'PENDING'
+ORDER BY created_at DESC, rowid DESC LIMIT 1;
+
 selectAnsweredInteractionForTool:
 SELECT * FROM interaction_request
 WHERE run_id = ? AND tool_name = ? AND state = 'ANSWERED'

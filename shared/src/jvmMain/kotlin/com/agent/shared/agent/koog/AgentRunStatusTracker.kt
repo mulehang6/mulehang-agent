@@ -24,7 +24,7 @@ internal class AgentRunStatusTracker(
     private val toolCallCount = AtomicInteger()
     private val errorCount = AtomicInteger()
     private val errors = mutableListOf<String>()
-    private var lastMessageText: String? = null
+    private var lastSnapshotFingerprint: AgentStatusSnapshot? = null
     private var contextUsageFraction: Float? = request.contextUsageFraction
 
     /** Provider 返回实际输入 token 后，下一次模型请求使用该值更新状态。 */
@@ -64,8 +64,9 @@ internal class AgentRunStatusTracker(
             contextWindow = request.contextWindow,
             recoveryState = if (request.resumeRunId == null) "正常运行" else "从检查点继续",
         )
+        val fingerprint = snapshot.copy(timestampMillis = 0L, turnElapsedMillis = 0L)
         val message = snapshot.toModelMessage()
-        return if (message == lastMessageText) null else snapshot to message
+        return if (fingerprint == lastSnapshotFingerprint) null else snapshot to message
     }
 
     /** 状态消息已附加到 Koog prompt 后保存相同文本，失败时阻止模型请求。 */
@@ -82,7 +83,7 @@ internal class AgentRunStatusTracker(
                 created_at = snapshot.timestampMillis,
             )
         }
-        lastMessageText = messageText
+        lastSnapshotFingerprint = snapshot.copy(timestampMillis = 0L, turnElapsedMillis = 0L)
     }
 
     private companion object {

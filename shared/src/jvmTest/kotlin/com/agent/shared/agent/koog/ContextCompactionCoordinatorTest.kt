@@ -77,20 +77,28 @@ class ContextCompactionCoordinatorTest {
     @Test
     fun `context overflow compacts and retries only once`() = runTest {
         var attempts = 0
+        var compactedRunId: String? = null
+        val observedTraceIds = mutableListOf<String>()
         val events = mutableListOf<AgentStreamEvent>()
         val result = runWithContextOverflowRetry(
-            request = request().copy(history = history()),
+            request = request().copy(history = history(), traceId = "logical-run"),
             database = null,
             emitEvent = events::add,
-            compact = { input, _ -> input.copy(history = input.history.drop(2), contextAlreadyCompacted = true) },
+            compact = { input, runId ->
+                compactedRunId = runId
+                input.copy(history = input.history.drop(2), contextAlreadyCompacted = true)
+            },
         ) { attempt, _ ->
             attempts++
+            observedTraceIds += attempt.traceId
             if (attempts == 1) error("maximum context length exceeded")
             assertTrue(attempt.contextAlreadyCompacted)
             "已恢复"
         }
         assertEquals("已恢复", result)
         assertEquals(2, attempts)
+        assertEquals("logical-run", compactedRunId)
+        assertEquals(listOf("logical-run", "logical-run"), observedTraceIds)
         assertEquals(1, events.filterIsInstance<AgentStreamEvent.Status>().size)
     }
 

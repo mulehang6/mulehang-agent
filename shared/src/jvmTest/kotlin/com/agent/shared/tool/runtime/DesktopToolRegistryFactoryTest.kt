@@ -4,6 +4,9 @@ import com.agent.shared.tool.interaction.DesktopToolInteractionBridge
 import com.agent.shared.tool.model.ApprovalRequest
 import com.agent.shared.tool.model.PermissionPreset
 import com.agent.shared.tool.model.QuestionRequest
+import com.agent.shared.agent.status.AgentTodoRepository
+import com.agent.shared.persistence.DesktopPersistenceDatabase
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,6 +16,24 @@ import kotlin.test.assertTrue
  * 验证首批桌面工具是否都已注册。
  */
 class DesktopToolRegistryFactoryTest {
+    /** 真实会话启用持久化后应向模型暴露两个 TODO 工具。 */
+    @Test
+    fun `persistent session registers todo tools`() {
+        val path = Files.createTempDirectory("mulehang-todo-tools").resolve("mulehang.db")
+        DesktopPersistenceDatabase.open(path).use { database ->
+            val registry = DesktopToolRegistryFactory(
+                workspacePath = "D:\\repo",
+                permissionPreset = PermissionPreset.DEFAULT,
+                interactionBridge = fakeBridge(),
+                sessionId = "conversation",
+                todoRepository = AgentTodoRepository(database),
+            ).create()
+
+            assertTrue("rewrite_todo_list" in registry.tools.map { it.name })
+            assertTrue("update_todo_status" in registry.tools.map { it.name })
+        }
+    }
+
     /**
      * 工厂创建的注册表应包含首批工具名集合。
      */

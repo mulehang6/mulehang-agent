@@ -37,7 +37,8 @@ class DesktopToolSet(
     private val powerShellTool: DesktopPowerShellTool = DesktopPowerShellTool(),
     private val approvalAgent: ToolApprovalAgent = ManualFallbackToolApprovalAgent,
     hookDispatcher: AgentHookDispatcher = NoAgentHookDispatcher,
-    sessionId: String = "",
+    private val sessionId: String = "",
+    private val fileMutationJournal: FileMutationJournal? = null,
 ) : ToolSet {
     private val fileSupport = DesktopFileToolSupport(workspacePath)
     private val readWriteTools = DesktopReadWriteTools(fileSupport)
@@ -170,7 +171,9 @@ class DesktopToolSet(
                 diffs = pending.previews,
             )
         ) return USER_DECLINED_TOOL_MESSAGE
-        return hookInput.attachContext(readWriteTools.applyPatch(pending))
+        return hookInput.attachContext(readWriteTools.applyPatch(pending) { applied ->
+            fileMutationJournal?.recordPatch(sessionId, applied)
+        })
     }
 
     /**

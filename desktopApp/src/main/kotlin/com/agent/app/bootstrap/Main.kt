@@ -7,12 +7,14 @@ import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
 import java.nio.file.Path
 import java.nio.file.Paths
+import com.agent.app.platform.WindowsToastService
 
 /**
  * 桌面应用入口。
  */
 fun main(args: Array<String>) {
     configureDesktopRendering()
+    WindowsToastService.start()
     application {
         val initialProjectRoot = resolveInitialProjectRoot(args)
         val screenSize = Toolkit.getDefaultToolkit().screenSize
@@ -45,7 +47,7 @@ internal fun configureDesktopRendering() {
  * 解析启动参数中的项目根目录；没有显式工作区时交给 UI 选择流程。
  */
 fun resolveInitialProjectRoot(args: Array<String>): Path? =
-    args.firstOrNull()?.let(Paths::get)?.let(DesktopProjectRootResolver::resolve)
+    args.firstOrNull { !it.startsWith('-') }?.let(Paths::get)?.let(DesktopProjectRootResolver::resolve)
 
 /**
  * 将物理像素尺寸按当前 UI 缩放换算成 Compose Desktop 逻辑 dp，并应用默认窗口占比。

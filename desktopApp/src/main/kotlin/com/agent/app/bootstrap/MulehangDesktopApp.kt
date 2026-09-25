@@ -3,6 +3,7 @@ package com.agent.app.bootstrap
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -19,6 +20,7 @@ import com.agent.app.chat.component.ChatScreen
 import com.agent.app.chat.component.ChatTitleBar
 import com.agent.app.chat.media.DesktopSessionMediaStore
 import com.agent.app.chat.persistence.TaskPersistenceCoordinator
+import com.agent.shared.tool.runtime.FileMutationJournal
 import com.agent.app.chat.state.ChatWindowState
 import com.agent.app.design.DesktopThemeMode
 import com.agent.app.design.DesktopAppearance
@@ -35,12 +37,16 @@ import com.agent.app.platform.BridgeWindowsTitleBarInputToCompose
 import com.agent.app.platform.RegisterGlobalAppearanceShortcuts
 import com.agent.app.platform.SuppressWindowsWindowBorder
 import com.agent.app.platform.loadDesktopTerminalShellCatalog
+import com.agent.app.platform.WindowsToastService
 import com.agent.app.tool.interaction.DesktopToolInteractionCoordinator
 import com.agent.shared.agent.koog.KoogAgentGateway
 import com.agent.shared.agent.koog.KoogBranchSummaryGenerator
 import com.agent.shared.agent.koog.KoogConversationTitleGenerator
-import com.agent.shared.agent.recording.JsonLinesAgentRunRecorder
-import com.agent.shared.agent.recording.RecordingAgentGateway
+import com.agent.shared.agent.koog.AgentRunRecoveryRepository
+import com.agent.shared.agent.status.AgentTodoRepository
+import com.agent.shared.agent.status.AgentStatusRepository
+import com.agent.shared.chat.attention.ConversationAttentionRepository
+import com.agent.shared.tool.interaction.InteractionRequestRepository
 import com.agent.shared.agent.resource.AgentResourceRuntime
 import com.agent.shared.agent.resource.DesktopAgentResourceRequestFactory
 import com.agent.shared.agent.resource.McpConnectionManager
@@ -53,6 +59,7 @@ import com.agent.shared.session.DesktopTerminalPreferences
 import com.agent.shared.session.DesktopUiStateStore
 import com.agent.shared.session.LoadAppSessionUseCase
 import com.agent.shared.chat.persistence.SqliteTaskRepository
+import com.agent.shared.persistence.DesktopPersistenceDatabase
 import com.agent.shared.settings.model.ConfigLayer
 import com.agent.shared.settings.model.SettingsDocument
 import com.agent.shared.settings.persistence.DesktopEnvironmentOverrides
@@ -61,6 +68,9 @@ import com.agent.shared.settings.persistence.DesktopSettingsRepository
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.awt.Frame
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.ui.component.Text
@@ -75,7 +85,14 @@ internal fun MulehangDesktopApp(
     onCloseRequest: () -> Unit,
 ) {
     val userHome = remember { Paths.get(System.getProperty("user.home")) }
-    val uiStateStore = remember { DesktopUiStateStore(userHome.resolve(".mulehang/ui-state.json")) }
+    val persistenceDatabase = remember(userHome) {
+        DesktopPersistenceDatabase.open(userHome.resolve(".mulehang/mulehang.db"))
+    }
+    val uiStateStore = remember(persistenceDatabase, userHome) {
+        DesktopUiStateStore(persistenceDatabase).apply {
+            migrateLegacyState(userHome.resolve(".mulehang/ui-state.json"))
+        }
+    }
     var themeMode by remember { mutableStateOf(DesktopThemeMode.fromStorage(uiStateStore.loadThemeMode())) }
     val fontCatalog = remember { loadDesktopFontCatalog() }
     var appearancePreferences by remember { mutableStateOf(uiStateStore.loadAppearancePreferences()) }
@@ -132,25 +149,28 @@ internal fun MulehangDesktopApp(
     val sessionMediaStore = remember(userHome) { DesktopSessionMediaStore(userHome) }
     val stateHolder = remember { mutableStateOf<ChatWindowState?>(null) }
     val appScope = rememberCoroutineScope()
+    val taskRepository = remember(persistenceDatabase) { SqliteTaskRepository(persistenceDatabase) }
     val taskPersistenceCoordinator = TaskPersistenceCoordinator(
-        repository = remember { SqliteTaskRepository(userHome.resolve(".mulehang/tasks.db")) },
+        repository = taskRepository,
         scope = appScope,
         reportError = { message -> stateHolder.value?.setPersistenceError(message) },
+        fileMutationJournal = remember(persistenceDatabase) { FileMutationJournal(persistenceDatabase) },
     )
-    val koogGateway = remember(toolInteractionCoordinator, mcpConnectionManager) {
+    val koogGateway = remember(toolInteractionCoordinator, mcpConnectionManager, persistenceDatabase) {
         KoogAgentGateway(
             interactionBridge = toolInteractionCoordinator,
             mcpToolRegistryBridge = McpToolRegistryBridge(mcpConnectionManager),
+            persistenceDatabase = persistenceDatabase,
         )
     }
+    val todoRepository = remember(persistenceDatabase) { AgentTodoRepository(persistenceDatabase) }
+    val statusRepository = remember(persistenceDatabase) { AgentStatusRepository(persistenceDatabase) }
+    val recoveryRepository = remember(persistenceDatabase) { AgentRunRecoveryRepository(persistenceDatabase) }
+    val attentionRepository = remember(persistenceDatabase) { ConversationAttentionRepository(persistenceDatabase) }
+    val interactionRequestRepository = remember(persistenceDatabase) { InteractionRequestRepository(persistenceDatabase) }
     val windowState = remember {
         ChatWindowState(
-            sendMessageUseCase = SendMessageUseCase(
-                RecordingAgentGateway(
-                    delegate = koogGateway,
-                    recorder = JsonLinesAgentRunRecorder(),
-                ),
-            ),
+            sendMessageUseCase = SendMessageUseCase(koogGateway),
             snapshot = AppSessionSnapshot(profiles = emptyList(), activeProfile = null),
             projectPath = projectRootState.value?.toString().orEmpty(),
             toolInteractionCoordinator = toolInteractionCoordinator,
@@ -158,6 +178,12 @@ internal fun MulehangDesktopApp(
                 projectRootState.value = DesktopProjectRootResolver.resolve(Paths.get(workspacePath))
             },
             persistenceCoordinator = taskPersistenceCoordinator,
+            todoRepository = todoRepository,
+            statusRepository = statusRepository,
+            recoveryRepository = recoveryRepository,
+            attentionRepository = attentionRepository,
+            interactionRequestRepository = interactionRequestRepository,
+            onAttentionNotification = WindowsToastService::show,
             branchSummaryGenerator = KoogBranchSummaryGenerator(),
             conversationTitleGenerator = KoogConversationTitleGenerator(),
             resourceSnapshotProvider = { workspacePath ->
@@ -190,7 +216,11 @@ internal fun MulehangDesktopApp(
                 }
                 koogGateway.shutdown()
                 mcpConnectionManager.close()
-                windowState.flushPersistence(onCloseRequest)
+                windowState.flushPersistence {
+                    persistenceDatabase.close()
+                    WindowsToastService.close()
+                    onCloseRequest()
+                }
             }
             Unit
         }
@@ -199,7 +229,11 @@ internal fun MulehangDesktopApp(
     LaunchedEffect(projectRootState.value) {
         projectRootState.value?.let { projectRoot ->
             uiStateStore.saveRecentWorkspace(projectRoot.toString())
-            val repository = DesktopAppSessionRepository(projectRoot = projectRoot, userHome = userHome)
+            val repository = DesktopAppSessionRepository(
+                projectRoot = projectRoot,
+                userHome = userHome,
+                uiStateStore = uiStateStore,
+            )
             windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
             projectTrustPrompt = projectRoot.takeIf {
                 shouldPromptForProjectTrust(projectRoot = it, projectTrusted = projectResourcesAreTrusted(userHome, it))
@@ -210,7 +244,10 @@ internal fun MulehangDesktopApp(
         windowState.reloadAgentResources()
     }
     LaunchedEffect(Unit) {
-        runCatching { taskPersistenceCoordinator.load() }
+        runCatching {
+            taskRepository.importLegacyDatabase(userHome.resolve(".mulehang/tasks.db"))
+            taskPersistenceCoordinator.load()
+        }
             .onSuccess { tasks ->
                 windowState.restoreTasks(tasks)
                 taskPersistenceCoordinator.activate(windowState.ui.tasks)
@@ -229,6 +266,33 @@ internal fun MulehangDesktopApp(
             state = desktopWindowState,
             title = "mulehang-agent",
         ) {
+            DisposableEffect(window, windowState) {
+                /** 仅在窗口真正可见时将当前会话视为已查看。 */
+                fun syncAttentionVisibility() {
+                    windowState.attentionController.setWindowVisibleAndFocused(
+                        window.isFocused && (window.extendedState and Frame.ICONIFIED) == 0,
+                    )
+                }
+                val listener = object : WindowAdapter() {
+                    override fun windowGainedFocus(event: WindowEvent?) = syncAttentionVisibility()
+                    override fun windowLostFocus(event: WindowEvent?) = syncAttentionVisibility()
+                    override fun windowStateChanged(event: WindowEvent?) = syncAttentionVisibility()
+                }
+                window.addWindowFocusListener(listener)
+                window.addWindowStateListener(listener)
+                WindowsToastService.setActivationHandler { target ->
+                    window.extendedState = window.extendedState and Frame.ICONIFIED.inv()
+                    window.toFront()
+                    window.requestFocus()
+                    windowState.activateToast(target)
+                }
+                syncAttentionVisibility()
+                onDispose {
+                    WindowsToastService.setActivationHandler(null)
+                    window.removeWindowFocusListener(listener)
+                    window.removeWindowStateListener(listener)
+                }
+            }
             val nativeTitleBarDensity = LocalDensity.current
             val contentOriginYPx = ideaTitleBarContentOriginPx(
                 baseDensity = nativeTitleBarDensity,
@@ -308,7 +372,11 @@ internal fun MulehangDesktopApp(
                         onSettingsChanged = {
                             projectRootState.value?.let { root ->
                                 appScope.launch {
-                                    val repository = DesktopAppSessionRepository(projectRoot = root, userHome = userHome)
+                                    val repository = DesktopAppSessionRepository(
+                                        projectRoot = root,
+                                        userHome = userHome,
+                                        uiStateStore = uiStateStore,
+                                    )
                                     windowState.updateSessionSnapshot(LoadAppSessionUseCase(repository).invoke())
                                 }
                             }
